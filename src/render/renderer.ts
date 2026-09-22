@@ -1,0 +1,80 @@
+import type { StageData } from '../data/types.ts';
+import type { FightGame } from '../game/game.ts';
+import type { FighterView } from './view.ts';
+import type { ImageCache } from '../assets/loader.ts';
+import { FLOOR, H, W } from '../game/constants.ts';
+import { drawCombo, drawEffect, drawParticles, drawProjectile, drawShadow, drawTexts } from './fx.ts';
+
+/* Reads game state, writes pixels. Never mutates the game. */
+export class Renderer {
+  private readonly ctx: CanvasRenderingContext2D;
+  private readonly views: Map<string, FighterView>;
+  private readonly stage: StageData;
+  private readonly images: ImageCache;
+
+  constructor(canvas: HTMLCanvasElement, views: Map<string, FighterView>, stage: StageData, images: ImageCache) {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw Error('Canvas 2D 不可用');
+    this.ctx = ctx;
+    this.views = views;
+    this.stage = stage;
+    this.images = images;
+  }
+
+  draw(g: FightGame): void {
+    const c = this.ctx;
+    c.imageSmoothingEnabled = false;
+    c.clearRect(0, 0, W, H);
+    c.save();
+    if (g.shake > 0) c.translate((g.random() - .5) * g.shake, (g.random() - .5) * g.shake);
+    this.drawStage();
+
+    for (const f of g.fighters) drawShadow(c, f.x, f.y);
+    for (const e of g.effects) {
+      if (e.type !== 'ghost' || e.fighter === undefined) continue;
+      const f = g.fighters[e.fighter];
+      this.view(f.data.id).draw(c, f, e.x, e.y, (e.alpha ?? .3) * (e.life / e.max));
+    }
+    const order = [...g.fighters].sort((a, b) => Number(a.hp > 0) - Number(b.hp > 0) || a.y - b.y);
+    for (const f of order) {
+      const view = this.view(f.data.id);
+      view.draw(c, f, f.x, f.hp <= 0 ? FLOOR : f.y, f.hp <= 0 ? .3 : 1);
+      if (f.blocking) drawEffect(c, { type: 'shield', x: f.x + f.facing * 28, y: f.y - 80, color: '#a6eeff', life: .14, max: .22, radius: 58 });
+    }
+    for (const p of g.projectiles) drawProjectile(c, p, this.images);
+    for (const e of g.effects) if (e.type !== 'ghost') drawEffect(c, e, this.images);
+    drawParticles(c, g.particles);
+    drawTexts(c, g.texts);
+    drawCombo(c, g);
+    if (g.mode === 'training') {
+      c.textAlign = 'center'; c.font = '14px monospace'; c.fillStyle = '#ddd9ee';
+      c.fillText('训练模式 · 无限能量 · 停手后对手恢复', W / 2, 520);
+    }
+    c.restore();
+
+    if (g.flash > 0) { c.fillStyle = `rgba(255,248,221,${g.flash * 2.3})`; c.fillRect(0, 0, W, H); }
+    c.fillStyle = '#0000000c';
+    for (let y = 0; y < H; y += 4) c.fillRect(0, y, W, 1);
+  }
+
+  private view(id: string): FighterView {
+    const v = this.views.get(id);
+    if (!v) throw Error('缺少角色视图：' + id);
+    return v;
+  }
+
+  private drawStage(): void {
+    const c = this.ctx, s = this.stage;
+    const bg = s.image ? this.images.get(s.image) : undefined;
+    if (bg) {
+      c.drawImage(bg, 0, 0, W, H);
+    } else {
+      c.fillStyle = s.sky; c.fillRect(0, 0, W, FLOOR + 4);
+      c.fillStyle = s.ground; c.fillRect(0, FLOOR + 4, W, H - FLOOR - 4);
+      c.fillStyle = s.accent + '30';
+      for (let x = 40; x < W; x += 120) c.fillRect(x, 60 + (x % 240) / 4, 6, 6);
+    }
+    c.fillStyle = '#10101b20'; c.fillRect(0, 0, W, H);
+    c.fillStyle = s.accent + '99'; c.fillRect(0, FLOOR + 3, W, 2);
+  }
+}
