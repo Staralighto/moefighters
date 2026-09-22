@@ -14,10 +14,18 @@ export interface Attack {
   t: number;
   emitted: boolean;
   shots: number;
+  /** Shots this cast will fire. 0 means use the skill's count. */
+  burst: number;
   /** Fighter ids already hit by this attack instance. */
   hit: Set<number>;
   /** Hits this move can absorb during wind-up without being interrupted. */
   endure: number;
+  /** Attack time when 推落 starts the slow lift. 0 means no lift pending. */
+  liftAt: number;
+  /** Attack time when 推落 releases the held fighter. 0 means no release pending. */
+  tossAt: number;
+  /** Fighter id held by 信用 before the slam. -1 means nobody. */
+  hold: number;
 }
 
 export interface QueuedInput { index: number; ttl: number }
@@ -34,6 +42,12 @@ export interface Fighter {
   blocking: boolean;
   stun: number; invuln: number; comboTime: number; hitFlash: number; landing: number; guardBroken: number;
   knocked: number; downTime: number;
+  /** The last hit that connected was a super. Lets 恐湖 break that combo. */
+  hitBySuper: boolean;
+  /** Seconds 爱音之光 keeps the fighter from walking, jumping, dodging, or dashing. */
+  root: number;
+  /** Clean hits taken during root. The second one clears it. */
+  rootHits: number;
   /** Remaining back-dodge time and its cooldown. */
   dodge: number; dodgeCd: number;
   dodgeRequest: boolean;
@@ -63,7 +77,7 @@ export function makeFighter(
     x: init.x, y: FLOOR, vx: 0, vy: 0, facing: init.facing,
     hp: data.hp, energy: init.energy, guard: 100, blocking: false,
     stun: 0, invuln: 0, comboTime: 0, hitFlash: 0, landing: 0, guardBroken: 0,
-    knocked: 0, downTime: 0,
+    knocked: 0, downTime: 0, hitBySuper: false, root: 0, rootHits: 0,
     dodge: 0, dodgeCd: 0, dodgeRequest: false, blockTap: -1,
     attack: null, attackSerial: 0, cooldowns: [0, 0, 0, 0, 0, 0], queue: [],
     jumpRequest: false, jumpBuffer: 0,

@@ -1,7 +1,5 @@
-import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { writeSakikoSheets } from './sakiko-sheet.ts';
+import { sakikoSheetSvg } from './sakiko-sheet.ts';
+import { assertAllWritable, rasterSheet } from './sprite-guard.ts';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { SkillType } from '../src/data/types.ts';
@@ -89,7 +87,8 @@ const CASTS = [
 const BG = '#1a1528';
 const GRID = '#ff36c8';
 const OUTLINE = '#151222';
-/* Largest scale that keeps every pose inside the 128 cell, including raised fists and horizontal kicks. */
+/* Largest scale that keeps every pose inside a 128-body cell, including raised fists and horizontal kicks.
+   Sheet pixels are CELL (256). This scale is not doubled; finished PNGs are replaced, not regenerated. */
 const SCALE = 0.58;
 const FOOT = 12;
 
@@ -151,7 +150,7 @@ function figure(pose: Pose, color: string, build: Build): { svg: string; marks: 
   marks.push({ x: cx, y: cy, r: r + 2 });
   limb(hip, [pose.legF[0] + bend, pose.legF[1] - bend * 2], d.thigh * s, d.shin * s, color);
   limb(shoulder, pose.armF, d.upperArm * s, d.foreArm * s, color);
-  // ponytail: lying scale 0.78 so a ~7-head figure fits a 128 cell after -90°. Bigger weapons → drop this or AABB-pack.
+  // ponytail: lying scale 0.78 so a ~7-head figure fits after -90°. Bigger weapons → drop this or AABB-pack.
   const origin = pose.lying
     ? `translate(${CELL - 16},${CELL / 2}) rotate(-90) scale(0.78)`
     : `translate(${CELL / 2},${CELL - FOOT})`;
@@ -217,44 +216,22 @@ function specialSheet(color: string, build: Build, skills: SkillType[]): string 
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'sprites');
 
-function chromeBin(): string {
-  const candidates = [
-    'C:/Program Files/Google/Chrome/Application/chrome.exe',
-    'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
-  ];
-  const hit = candidates.find(p => existsSync(p));
-  if (!hit) throw new Error('Chrome or Edge is required to rasterize sprite sheets');
-  return hit;
-}
-
-/** Headless screenshot of the SVG, then drop the SVG. The game loads the PNG. */
-function publish(name: string, w: number, h: number): void {
-  const svg = join(dir, name);
-  const png = svg.replace(/\.svg$/, '.png');
-  const profile = mkdtempSync(join(tmpdir(), 'sheet-'));
-  const url = 'file:///' + svg.replaceAll('\\', '/');
-  const run = spawnSync(chromeBin(), [
-    '--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=1',
-    `--user-data-dir=${profile}`, `--window-size=${w},${h}`, `--screenshot=${png}`, url,
-  ], { stdio: 'pipe' });
-  rmSync(profile, { recursive: true, force: true });
-  if (run.status !== 0) throw new Error(`raster ${name} failed\n${run.stderr?.toString() ?? ''}`);
-  const buf = readFileSync(png);
-  const pw = buf.readUInt32BE(16), ph = buf.readUInt32BE(20);
-  if (pw !== w || ph !== h) throw new Error(`${name} raster is ${pw}x${ph}, wanted ${w}x${h}`);
-  rmSync(svg);
-}
-
 for (const [name, d] of Object.entries(DIMS)) console.log(`${name} ${headsTall(d).toFixed(2)} heads`);
 const commonPx: [number, number] = [COMMON_COLS * CELL, COMMON_ROWS * CELL];
 const specialPx: [number, number] = [SPECIAL_COLS * CELL, SPECIAL_ROWS * CELL];
-const written: string[] = [];
+const jobs: { png: string; svg: string; w: number; h: number }[] = [];
 for (const c of CASTS) {
-  writeFileSync(join(dir, `${c.id}-common.svg`), commonSheet(c.color, c.build));
-  writeFileSync(join(dir, `${c.id}-special.svg`), specialSheet(c.color, c.build, c.skills));
-  written.push(`${c.id}-common.svg`, `${c.id}-special.svg`);
+  const folder = join(dir, c.id);
+  jobs.push(
+    { png: join(folder, 'common.png'), svg: commonSheet(c.color, c.build), w: commonPx[0], h: commonPx[1] },
+    { png: join(folder, 'special.png'), svg: specialSheet(c.color, c.build, c.skills), w: specialPx[0], h: specialPx[1] },
+  );
 }
-writeSakikoSheets(dir);
-written.push('sakiko-common.svg', 'sakiko-special.svg');
-for (const name of written) publish(name, name.endsWith('-common.svg') ? commonPx[0] : specialPx[0], name.endsWith('-common.svg') ? commonPx[1] : specialPx[1]);
-console.log(`wrote ${written.length} png sheets (${commonPx.join('x')} common, ${specialPx.join('x')} special)`);
+const sakiko = sakikoSheetSvg();
+jobs.push(
+  { png: join(dir, 'sakiko', 'common.png'), svg: sakiko.common, w: commonPx[0], h: commonPx[1] },
+  { png: join(dir, 'sakiko', 'special.png'), svg: sakiko.special, w: specialPx[0], h: specialPx[1] },
+);
+assertAllWritable(jobs.map(job => job.png));
+for (const job of jobs) rasterSheet(job.png, job.svg, job.w, job.h);
+console.log(`wrote ${jobs.length} png sheets (${commonPx.join('x')} common, ${specialPx.join('x')} special)`);

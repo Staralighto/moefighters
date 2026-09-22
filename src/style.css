@@ -71,6 +71,13 @@ footer { display: flex; justify-content: space-between; gap: 16px; color: var(--
 /* battle */
 body.in-battle { overflow-x: hidden; }
 .battle-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
+.prop-tune { position: fixed; z-index: 30; right: 16px; bottom: 16px; width: 280px; display: grid; gap: 6px; padding: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; font-size: 13px; }
+.prop-tune[hidden] { display: none; }
+.prop-tune p, .prop-tune small { margin: 0; color: var(--muted); }
+.prop-tune label { display: grid; grid-template-columns: 36px 28px 1fr 28px; gap: 4px; align-items: center; }
+.prop-tune label:has(select), .prop-tune label:has([data-step]) { grid-template-columns: 36px 1fr; }
+.prop-tune input, .prop-tune select { width: 100%; background: #0d0c14; color: inherit; border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+.prop-tune button { padding: .2em 0; }
 .arena { position: relative; width: 100%; aspect-ratio: 960 / 540; background: #000; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); }
 .arena canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; outline: none; }
 .hud { position: absolute; inset: 10px 14px auto; display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: start; pointer-events: none; }
@@ -88,13 +95,21 @@ body.in-battle { overflow-x: hidden; }
 .timer b { display: block; font: 900 40px/1 Impact, sans-serif; text-shadow: 0 2px 0 #000; }
 
 .game-banner { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; pointer-events: none; }
-.game-banner small { color: var(--p1); letter-spacing: .3em; font-weight: 700; }
+.game-banner.super-call { transform: translateY(-16%); }
+.game-banner small,
+.end-overlay small {
+  color: #fff;
+  font: 700 20px/1.3 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  letter-spacing: .14em;
+  -webkit-text-stroke: 5px #000;
+  paint-order: stroke fill;
+  text-shadow: 0 2px 0 #000, 2px 0 0 #000, -2px 0 0 #000, 0 -2px 0 #000;
+}
 .game-banner strong { font: italic 900 64px Impact, sans-serif; text-shadow: 0 4px 0 #000; }
 .game-banner strong:empty, .game-banner small:empty { display: none; }
 .game-banner button { pointer-events: auto; margin: 12px auto 0; }
 .end-overlay { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; background: #0b0a12cc; gap: 6px; }
 .end-overlay[hidden] { display: none; }
-.end-overlay small { color: var(--p1); letter-spacing: .3em; font-weight: 700; }
 .end-overlay h2 { margin: 0; font-size: 40px; }
 .end-overlay p { margin: 0; color: var(--muted); }
 .end-overlay > div { display: flex; gap: 10px; justify-content: center; margin-top: 12px; }

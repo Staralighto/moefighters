@@ -1,4 +1,4 @@
-import { ROSTER } from './data/characters.ts';
+import { PLAYABLE } from './data/characters.ts';
 import { STAGES } from './data/stages.ts';
 import { FightGame } from './game/game.ts';
 import { KeyboardInput } from './game/input.ts';
@@ -21,15 +21,16 @@ let lastSetup: MatchSetup | null = null;
 
 const input = new KeyboardInput(() => game);
 input.attach();
+if (import.meta.env.DEV) void import('./render/propTune.ts').then(m => m.mountPropTune());
 
 /* Sprite-backed characters need their image before the select screen can draw them. */
 {
-  const missing = await preload(images, assetsFor(ROSTER, stage));
+  const missing = await preload(images, assetsFor(PLAYABLE, stage));
   if (missing.length) console.warn('缺图，已回退色块人形：' + missing.join(', '));
 }
-const previewViews = createViews(ROSTER, images);
+const previewViews = createViews(PLAYABLE, images);
 
-const select = new SelectScreen(ROSTER, previewViews, startGame, () => { sfx.unlock(); sfx.play('select'); });
+const select = new SelectScreen(PLAYABLE, previewViews, startGame, () => { sfx.unlock(); sfx.play('select'); });
 select.mount();
 
 function selectLoop(now: number): void {

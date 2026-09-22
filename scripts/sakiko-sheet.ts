@@ -1,11 +1,9 @@
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { CELL, COMMON_COLS, COMMON_LABELS, COMMON_ROWS, PHASES, SPECIAL_COLS, SPECIAL_KEYS, SPECIAL_ROWS } from '../src/render/clips.ts';
 import { DIMS, NECK, torsoPoints, torsoRadii, type Pt } from '../src/render/proportions.ts';
 
-/* Colour-block Togawa Sakiko, unarmed. Same 128 grid as the other casts; a PNG replaces the file.
+/* Colour-block Togawa Sakiko, unarmed. Same CELL grid as the other casts; a PNG replaces the file.
    U 忘却步, I 轮舞, O 月牙踢, L 忘却奏鸣.
-   ponytail: one dressed figure, not a second renderer. Ceiling = this palette and the 128 cell. */
+   ponytail: one dressed figure, not a second renderer. Ceiling = this palette and CELL. */
 
 type Limb = [number, number];
 interface Pose {
@@ -334,7 +332,9 @@ function sheet(cols: number, rows: number, labelAt: (c: number, r: number) => st
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${cells.join('')}</svg>\n`;
 }
 
-export function writeSakikoSheets(dir: string): void {
-  writeFileSync(join(dir, 'sakiko-common.svg'), sheet(COMMON_COLS, COMMON_ROWS, (c, r) => COMMON_LABELS[r][c]));
-  writeFileSync(join(dir, 'sakiko-special.svg'), sheet(SPECIAL_COLS, SPECIAL_ROWS, (c, r) => `${SPECIAL_KEYS[c]}-${PHASES[r]}`));
+export function sakikoSheetSvg(): { common: string; special: string } {
+  return {
+    common: sheet(COMMON_COLS, COMMON_ROWS, (c, r) => COMMON_LABELS[r][c]),
+    special: sheet(SPECIAL_COLS, SPECIAL_ROWS, (c, r) => `${SPECIAL_KEYS[c]}-${PHASES[r]}`),
+  };
 }

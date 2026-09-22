@@ -1,6 +1,6 @@
 import type { StageData } from './types.ts';
 
-/* One flat arena for v1. Add `image: '/stages/foo.webp'` to swap in a backdrop. */
+/* Backdrop is drawn over the flat colours. sky/ground remain the fallback if the file is missing. */
 export const STAGES: StageData[] = [
-  { id: 'dojo', name: '练武场', sky: '#241f39', ground: '#17131f', accent: '#d8ff62' },
+  { id: 'dojo', name: '练武场', sky: '#241f39', ground: '#17131f', accent: '#d8ff62', image: '/stages/ring.png' },
 ];

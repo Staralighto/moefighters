@@ -1,11 +1,20 @@
 import type { Effect, FightGame, FloatingText, Particle, Projectile } from '../game/game.ts';
-import { FLOOR } from '../game/constants.ts';
 import type { ImageCache } from '../assets/loader.ts';
 import { CELL } from './clips.ts';
+import { watchProp } from './propLayout.ts';
 
-const CUCUMBER_SRC = '/sprites/mutsumi-cucumber.png';
-const NOTE_SRC = '/sprites/mutsumi-note.png';
-const MORTIS_SRC = '/sprites/mutsumi-mortis.png';
+const CUCUMBER_SRC = '/sprites/mutsumi/cucumber.png';
+const NOTE_SRC = '/sprites/mutsumi/note.png';
+const MORTIS_SRC = '/sprites/mutsumi/mortis.png';
+const KIT_SRC = '/sprites/nyamu/kit.png';
+const MILK_SRC = '/sprites/umiri/milk.png';
+const BAG_SRC = '/sprites/umiri/bag.png';
+const GUITAR_SRC = '/sprites/anon/guitar.png';
+/** Headstock on the current guitar sheet. The body is the far end, so the pivot is not the image center. */
+const GUITAR_HEAD_X = 438 / 512;
+const GUITAR_HEAD_Y = 122 / 256;
+const ANON_NOTE_SRC = '/sprites/anon/note.png';
+const HEART_SRC = '/sprites/anon/heart.png';
 const MORTIS_H = 181;
 
 /* Drop the pose-sheet chrome and the chroma key so a placeholder can sit in the fight. */
@@ -39,6 +48,8 @@ function prop(ctx: CanvasRenderingContext2D, images: ImageCache | undefined, src
   const im = images?.get(src);
   if (!im?.naturalWidth) return false;
   const s = Math.max(16, size);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(keyed(im), -s / 2, -s / 2, s, s);
   return true;
 }
@@ -52,6 +63,38 @@ function mortisFrame(p: number): [number, number] {
   if (p >= 0.74) return [3, 2];
   const beats: [number, number][] = [[2, 1], [3, 1], [2, 1], [3, 1]];
   return beats[Math.min(3, Math.floor((p - 0.34) / 0.1))];
+}
+
+/** The pose she just left, while the flurry is still going. Null on the approach and the exit. */
+export function mortisAfterimage(p: number): [number, number] | null {
+  if (p < 0.34 || p >= 0.74) return null;
+  const cur = mortisFrame(p);
+  const prev = mortisFrame(p - 0.1);
+  if (prev[0] === cur[0] && prev[1] === cur[1]) return null;
+  return prev;
+}
+
+let ghostBuf: HTMLCanvasElement | undefined;
+
+function drawMortisGhost(ctx: CanvasRenderingContext2D, im: HTMLImageElement, col: number, row: number, alpha: number): void {
+  if (typeof document === 'undefined') return;
+  if (!ghostBuf) ghostBuf = document.createElement('canvas');
+  ghostBuf.width = CELL;
+  ghostBuf.height = CELL;
+  const g = ghostBuf.getContext('2d');
+  if (!g) return;
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high';
+  g.clearRect(0, 0, CELL, CELL);
+  g.globalCompositeOperation = 'source-over';
+  g.drawImage(keyed(im), col * CELL, row * CELL, CELL, CELL, 0, 0, CELL, CELL);
+  g.globalCompositeOperation = 'source-atop';
+  g.fillStyle = '#c8ffd2';
+  g.fillRect(0, 0, CELL, CELL);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(ghostBuf, -10 - MORTIS_H / 2, -MORTIS_H, MORTIS_H, MORTIS_H);
+  ctx.restore();
 }
 
 /* Effects are looked up by `type` (from the engine) and projectiles by `fx` (from skill data). Add a case, not an if-chain elsewhere. */
@@ -85,6 +128,7 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.beginPath(); ctx.arc(-22, 12, r * (.8 + p * .4), -1.5, .7); ctx.stroke();
       ctx.strokeStyle = '#fff7de'; ctx.lineWidth = 3; ctx.stroke();
       break;
+    case 'shove':
     case 'grab':
       ctx.translate(e.x, e.y);
       ctx.lineWidth = 5 * (1 - p) + 1;
@@ -120,10 +164,64 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.beginPath(); ctx.arc(-6, 18, r * (.9 + p * .35), -2.55, -.3); ctx.stroke();
       ctx.strokeStyle = '#fff7de'; ctx.lineWidth = 3; ctx.stroke();
       break;
+    case 'arc-kick':
+      // Three-quarter circle: behind, over the head, down into the slam.
+      ctx.translate(e.x - (e.dir ?? 1) * 8, e.y - 36); ctx.scale(e.dir ?? 1, 1);
+      ctx.lineWidth = 7 * (1 - p) + 2;
+      ctx.beginPath(); ctx.arc(6, 8, Math.max(36, r), Math.PI, Math.PI / 2); ctx.stroke();
+      ctx.globalAlpha *= .4; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(-8, 14, Math.max(28, r * .72), Math.PI * .9, Math.PI * .4); ctx.stroke();
+      break;
+    case 'drums': {
+      ctx.translate(e.x, e.y); ctx.scale(e.dir ?? 1, 1);
+      const im = images?.get(KIT_SRC);
+      const w = 360, h = 180;
+      // Image center is the bass drum. The old -110 offset was the side-view seat gap.
+      if (im?.naturalWidth) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(keyed(im), -w / 2, -h + 32, w, h);
+      }
+      else {
+        ctx.beginPath(); ctx.arc(48, -40, 28, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(8, -78, 16, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+    case 'drum-wave': {
+      const grow = 8 + p * (e.radius ?? 24);
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= (1 - p) * .9;
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, grow, 0, Math.PI * 2); ctx.stroke();
+      ctx.lineWidth = 2;
+      ctx.globalAlpha *= .5;
+      ctx.beginPath(); ctx.arc(0, 0, grow * .6, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
     case 'burst':
       ctx.translate(e.x, e.y);
       ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(0, 0, r * p, 0, Math.PI * 2); ctx.stroke();
+      break;
+    case 'ripple': {
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= 1 - p;
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.ellipse(0, 0, (e.radius ?? 300) * p, 16 + p * 10, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = '#c45a6a';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(0, 0, (e.radius ?? 300) * p * .72, 10, 0, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
+    case 'slam':
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= 1 - p;
+      ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.ellipse(0, 0, r * (.4 + p), 18 + p * 14, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#fff6ea';
+      ctx.globalAlpha *= .7;
+      ctx.beginPath(); ctx.ellipse(0, 0, r * .25 * (1 - p), 8, 0, 0, Math.PI * 2); ctx.fill();
       break;
     case 'mortis': {
       const travel = Math.min(1, p / 0.25);
@@ -136,13 +234,60 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       const im = images?.get(MORTIS_SRC);
       ctx.translate(x, e.y);
       ctx.scale(e.dir ?? 1, 1);
+      const ghost = mortisAfterimage(p);
       if (im?.naturalWidth) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        if (ghost) drawMortisGhost(ctx, im, ghost[0], ghost[1], alpha * .5);
+        ctx.globalAlpha = alpha;
         ctx.drawImage(keyed(im), col * CELL, row * CELL, CELL, CELL, -MORTIS_H / 2, -MORTIS_H, MORTIS_H, MORTIS_H);
       } else {
         ctx.fillStyle = e.color;
         ctx.fillRect(-7, -MORTIS_H * .7, 14, MORTIS_H * .42);
         ctx.beginPath(); ctx.arc(0, -MORTIS_H * .8, 12, 0, Math.PI * 2); ctx.fill();
       }
+      break;
+    }
+    case 'strum':
+    case 'spin': {
+      // Headstock stays on the pivot; the body is the far end. Spin orbits her in screen space.
+      // Strum is a held guitar: smaller, neck rising back to the shoulder, body down in front.
+      const elapsed = e.age ?? (e.max - e.life);
+      const im = images?.get(GUITAR_SRC);
+      const spin = e.type === 'spin';
+      const place = watchProp(spin ? 'anon-spin' : 'anon-strum');
+      const u = !spin || elapsed <= .28 ? 0 : Math.min(1, (elapsed - .28) / .7);
+      const angle = spin ? u * Math.PI * 4 + place.rot : place.rot;
+      const dw = place.size;
+      const dh = im?.naturalWidth ? dw * (im.naturalHeight / im.naturalWidth) : dw / 2;
+      const stamp = (src: CanvasImageSource | null, ang: number) => {
+        ctx.save();
+        ctx.translate(e.x, e.y + place.y);
+        if (spin) ctx.translate(place.x, 0);
+        else ctx.scale(e.dir ?? 1, 1);
+        if (!spin) ctx.translate(place.x, 0);
+        ctx.rotate(ang);
+        if (src) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.scale(-1, 1);
+          ctx.drawImage(src, -GUITAR_HEAD_X * dw, -GUITAR_HEAD_Y * dh, dw, dh);
+        } else {
+          ctx.fillStyle = e.color;
+          const len = dw * (spin ? 280 / 420 : 110 / 156);
+          ctx.fillRect(0, -6, len, 12);
+          ctx.beginPath(); ctx.moveTo(len - 30, -6); ctx.lineTo(len + 20, -36); ctx.lineTo(len + 32, 28); ctx.lineTo(len - 30, 6); ctx.fill();
+        }
+        ctx.restore();
+      };
+      // The guitar itself, half faded, a short arc behind. Not during wind-up or the held end.
+      if (spin && im?.naturalWidth && u > 0 && u < 1) {
+        ctx.save();
+        ctx.globalAlpha *= .45;
+        stamp(keyed(im), angle - .5);
+        ctx.restore();
+      }
+      stamp(im?.naturalWidth ? keyed(im) : null, angle);
       break;
     }
     case 'super':
@@ -179,7 +324,7 @@ function noteRibbon(ctx: CanvasRenderingContext2D, p: Projectile): void {
 
 export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, images?: ImageCache): void {
   ctx.save();
-  if (p.fx === 'mutsumi-note') noteRibbon(ctx, p);
+  if (p.fx === 'mutsumi-note' || p.fx === 'chord') noteRibbon(ctx, p);
   else {
     ctx.fillStyle = p.color;
     for (let i = 0; i < p.trail.length; i++) {
@@ -191,6 +336,34 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   ctx.globalAlpha = 1;
   ctx.translate(p.x, p.y);
   switch (p.fx) {
+    case 'milk': {
+      if (p.settled) ctx.translate(0, -p.size * .28);
+      if (!prop(ctx, images, MILK_SRC, p.size)) {
+        ctx.fillStyle = '#6b3a22';
+        ctx.fillRect(-p.radius * .7, -p.radius, p.radius * 1.4, p.radius * 1.8);
+        ctx.fillStyle = '#f2efe6';
+        ctx.fillRect(-p.radius * .45, -p.radius * .85, p.radius * .9, p.radius * .35);
+      }
+      break;
+    }
+    case 'bag': {
+      ctx.rotate(p.age * 3 * Math.sign(p.vx || 1));
+      if (!prop(ctx, images, BAG_SRC, p.size)) {
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.moveTo(-p.radius, -p.radius * .2);
+        ctx.lineTo(-p.radius * .7, p.radius);
+        ctx.lineTo(p.radius * .7, p.radius);
+        ctx.lineTo(p.radius, -p.radius * .2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#151222';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(-p.radius * .25, -p.radius * .55, p.radius * .35, Math.PI, 0); ctx.stroke();
+        ctx.beginPath(); ctx.arc(p.radius * .25, -p.radius * .55, p.radius * .35, Math.PI, 0); ctx.stroke();
+      }
+      break;
+    }
     case 'cucumber': {
       ctx.rotate(p.age * 8 * Math.sign(p.vx || 1));
       if (!prop(ctx, images, CUCUMBER_SRC, p.size)) {
@@ -208,6 +381,28 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
         ctx.fillStyle = '#e7a0b8';
         ctx.fillRect(s * .4, -s * 1.28, s * .18, s * 1.38);
         ctx.beginPath(); ctx.ellipse(-s * .08, s * .18, s * .58, s * .36, -.5, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+    case 'chord': {
+      if (!prop(ctx, images, ANON_NOTE_SRC, p.size)) {
+        const s = Math.max(7, p.radius);
+        ctx.fillStyle = '#ff4f96';
+        ctx.fillRect(s * .4, -s * 1.28, s * .18, s * 1.38);
+        ctx.beginPath(); ctx.ellipse(-s * .08, s * .18, s * .58, s * .36, -.5, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+    case 'heart': {
+      ctx.rotate(p.age * 2);
+      if (!prop(ctx, images, HEART_SRC, p.size)) {
+        const s = Math.max(8, p.radius);
+        ctx.fillStyle = '#ff4f96';
+        ctx.beginPath();
+        ctx.moveTo(0, s * .7);
+        ctx.bezierCurveTo(-s * 1.3, -s * .2, -s * .5, -s * 1.1, 0, -s * .45);
+        ctx.bezierCurveTo(s * .5, -s * 1.1, s * 1.3, -s * .2, 0, s * .7);
+        ctx.fill();
       }
       break;
     }
@@ -229,6 +424,7 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
       ctx.fill();
       break;
     }
+    case 'wail':
     case 'orb':
     default: {
       ctx.rotate(p.age * 6 * Math.sign(p.vx));
@@ -252,25 +448,23 @@ export function drawParticles(ctx: CanvasRenderingContext2D, particles: Particle
   ctx.globalAlpha = 1;
 }
 
+const LIME = new Set(['#d8ff62', '#c6ff85', '#b8ff83', '#b7ff6e']);
+
 export function drawTexts(ctx: CanvasRenderingContext2D, texts: FloatingText[]): void {
   ctx.textAlign = 'center';
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = '#171120';
   for (const t of texts) {
+    const lime = LIME.has(t.color);
     ctx.globalAlpha = Math.min(1, t.life * 4);
-    ctx.font = `900 ${t.size}px 'Microsoft YaHei', sans-serif`;
+    ctx.font = lime
+      ? `700 ${Math.round(t.size * 1.2)}px ui-monospace, Consolas, monospace`
+      : `900 ${t.size}px 'Microsoft YaHei', sans-serif`;
+    ctx.lineWidth = lime ? 6 : 4;
+    ctx.strokeStyle = lime ? '#000' : '#171120';
     ctx.strokeText(t.text, t.x, t.y);
-    ctx.fillStyle = t.color;
+    ctx.fillStyle = lime ? '#fff' : t.color;
     ctx.fillText(t.text, t.x, t.y);
   }
   ctx.globalAlpha = 1;
-}
-
-export function drawShadow(ctx: CanvasRenderingContext2D, x: number, y: number): void {
-  ctx.fillStyle = '#05050c66';
-  ctx.beginPath();
-  ctx.ellipse(x, FLOOR + 3, Math.max(10, 50 - (FLOOR - y) * .09), 9, 0, 0, Math.PI * 2);
-  ctx.fill();
 }
 
 export function drawCombo(ctx: CanvasRenderingContext2D, g: FightGame): void {
@@ -278,10 +472,10 @@ export function drawCombo(ctx: CanvasRenderingContext2D, g: FightGame): void {
     if (f.combo <= 1 || f.comboTime <= 0) continue;
     const left = f.team === 0, x = left ? 42 : 918, y = 205;
     ctx.textAlign = left ? 'left' : 'right';
-    ctx.font = 'italic 45px Impact, sans-serif';
-    ctx.fillStyle = left ? '#d8ff62' : '#ff75a4';
-    ctx.strokeStyle = '#201429';
-    ctx.lineWidth = 4;
+    ctx.font = left ? '700 54px ui-monospace, Consolas, monospace' : 'italic 45px Impact, sans-serif';
+    ctx.fillStyle = left ? '#fff' : '#ff75a4';
+    ctx.strokeStyle = left ? '#000' : '#201429';
+    ctx.lineWidth = left ? 7 : 4;
     ctx.strokeText(f.combo + ' HIT', x, y);
     ctx.fillText(f.combo + ' HIT', x, y);
     ctx.font = '12px monospace';

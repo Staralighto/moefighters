@@ -3,7 +3,7 @@ import type { FightGame } from '../game/game.ts';
 import type { FighterView } from './view.ts';
 import type { ImageCache } from '../assets/loader.ts';
 import { FLOOR, H, W } from '../game/constants.ts';
-import { drawCombo, drawEffect, drawParticles, drawProjectile, drawShadow, drawTexts } from './fx.ts';
+import { drawCombo, drawEffect, drawParticles, drawProjectile, drawTexts } from './fx.ts';
 
 /* Reads game state, writes pixels. Never mutates the game. */
 export class Renderer {
@@ -29,11 +29,10 @@ export class Renderer {
     if (g.shake > 0) c.translate((g.random() - .5) * g.shake, (g.random() - .5) * g.shake);
     this.drawStage();
 
-    for (const f of g.fighters) drawShadow(c, f.x, f.y);
     for (const e of g.effects) {
       if (e.type !== 'ghost' || e.fighter === undefined) continue;
       const f = g.fighters[e.fighter];
-      this.view(f.data.id).draw(c, f, e.x, e.y, (e.alpha ?? .3) * (e.life / e.max));
+      this.view(f.data.id).draw(c, f, e.x, e.y, (e.alpha ?? .3) * (e.life / e.max), e.tint);
     }
     const order = [...g.fighters].sort((a, b) => Number(a.hp > 0) - Number(b.hp > 0) || a.y - b.y);
     for (const f of order) {
@@ -75,6 +74,5 @@ export class Renderer {
       for (let x = 40; x < W; x += 120) c.fillRect(x, 60 + (x % 240) / 4, 6, 6);
     }
     c.fillStyle = '#10101b20'; c.fillRect(0, 0, W, H);
-    c.fillStyle = s.accent + '99'; c.fillRect(0, FLOOR + 3, W, 2);
   }
 }

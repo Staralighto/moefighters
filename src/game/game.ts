@@ -3,7 +3,7 @@ import type { Attack, Fighter } from './fighter.ts';
 import { DECAY_TIMERS, makeFighter } from './fighter.ts';
 import { AIR_SKILLS } from '../data/skills.ts';
 import { advanceAnim } from './animState.ts';
-import { stepProjectiles, updateAttack } from './combat.ts';
+import { stepProjectiles, updateAttack, wailShots } from './combat.ts';
 import { stepAI } from './ai.ts';
 import { CONTROLS, FLOOR, GRAVITY, STEP, X_MAX, X_MIN, clamp } from './constants.ts';
 
@@ -19,7 +19,9 @@ export type SfxKind = 'light' | 'heavy' | 'hit' | 'block' | 'super' | 'select' |
 
 export interface Effect {
   type: string; x: number; y: number; color: string; life: number; max: number;
-  radius?: number; dir?: number; fighter?: number; alpha?: number;
+  radius?: number; dir?: number; fighter?: number; alpha?: number; tint?: string;
+  /** Attack clock for a guitar that has to stay glued to the move. */
+  age?: number;
 }
 export interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string; size: number }
 export interface FloatingText { text: string; x: number; y: number; color: string; life: number; max: number; size: number }
@@ -29,6 +31,8 @@ export interface Projectile {
   attack: Attack; hit: Set<number>; trail: { x: number; y: number }[];
   /** Cucumber boomerang has already turned around once. */
   returned?: boolean;
+  /** Chocolate milk has landed and can be picked up. Bags never set this. */
+  settled?: boolean;
 }
 
 export interface GameOptions {
@@ -202,8 +206,13 @@ export class FightGame {
 
   canAttack(f: Fighter, index: number): boolean {
     if (this.paused || this.phase !== 'fight') return false;
-    if (f.hp <= 0 || f.stun > 0 || f.knocked > 0 || f.blocking || f.dodge > 0 || f.cooldowns[index] > 0) return false;
-    if (index >= 2 && this.airborne(f)) return false;
+    if (f.hp <= 0 || f.blocking || f.dodge > 0 || f.cooldowns[index] > 0) return false;
+    const ripple = index === 4 && f.data.skills[4]?.fx === 'ripple';
+    const downed = f.y >= FLOOR - .1 && f.knocked > 0 && f.vy >= 0;
+    const escape = ripple && f.hitBySuper && !downed;
+    if (!escape && (f.stun > 0 || f.knocked > 0)) return false;
+    if (index >= 2 && this.airborne(f) && !escape) return false;
+    if (f.root > 0 && this.skillFor(f, index).type === 'dash') return false;
     if (index === 5 && f.energy < 100) return false;
     const a = f.attack;
     // Grounded light attacks that connected can cancel into light or heavy.
@@ -216,7 +225,24 @@ export class FightGame {
   attack(f: Fighter, index: number): boolean {
     if (!this.canAttack(f, index)) return false;
     const skill = this.skillFor(f, index);
-    f.attack = { skill, index, serial: ++f.attackSerial, t: 0, emitted: false, shots: 0, hit: new Set(), endure: skill.type === 'endure' ? 1 : 0 };
+    f.attack = {
+      skill, index, serial: ++f.attackSerial, t: 0, emitted: false, shots: 0, hit: new Set(),
+      burst: skill.fx === 'wail' ? wailShots(f.hp, f.data.hp) : 0,
+      endure: skill.type === 'endure' ? 1 : 0,
+      liftAt: 0,
+      tossAt: 0,
+      hold: -1,
+    };
+    if (skill.fx === 'ripple' && f.hitBySuper) {
+      f.stun = 0;
+      f.knocked = 0;
+      f.downTime = 0;
+      f.vx = 0;
+      f.vy = 0;
+      f.y = FLOOR;
+      f.invuln = Math.max(f.invuln, .34);
+      f.hitBySuper = false;
+    }
     f.cooldowns[index] = skill.cd;
     if (index === 5) {
       f.energy = 0;
@@ -337,7 +363,13 @@ export class FightGame {
 
     f.cooldowns = f.cooldowns.map(n => Math.max(0, n - dt));
     for (const key of DECAY_TIMERS) f[key] = Math.max(0, f[key] - dt);
+    if (f.root > 0) {
+      f.root = Math.max(0, f.root - dt);
+      if (f.root === 0) f.rootHits = 0;
+      f.vx = 0;
+    }
     if (f.knocked > 0 && f.y >= FLOOR - .1 && f.vy >= 0) { f.knocked = Math.max(0, f.knocked - dt); f.downTime += dt; }
+    if (f.stun <= 0 && f.knocked <= 0) f.hitBySuper = false;
     if (!f.comboTime) f.combo = 0;
     f.energy = clamp(f.energy + dt * 2, 0, 100);
     if (this.mode === 'training') {
@@ -354,7 +386,7 @@ export class FightGame {
     const free = !f.attack && f.stun <= 0 && !f.knocked && f.dodge <= 0;
     if (f.dodgeRequest) {
       f.dodgeRequest = false;
-      if (grounded && free && f.dodgeCd <= 0) this.startDodge(f);
+      if (grounded && free && f.dodgeCd <= 0 && f.root <= 0) this.startDodge(f);
     }
 
     const block = human ? !!c && this.keys.has(c.block) : this.mode !== 'training' && f.ai.block > 0;
@@ -369,7 +401,7 @@ export class FightGame {
     if (f.jumpRequest) { f.jumpBuffer = .14; f.jumpRequest = false; }
     if (f.jumpBuffer > 0) {
       f.jumpBuffer = Math.max(0, f.jumpBuffer - dt);
-      if (grounded && free && !f.blocking) {
+      if (grounded && free && !f.blocking && f.root <= 0) {
         f.jumpBuffer = 0;
         f.vy = -600;
         this.audio.play('jump');
@@ -383,7 +415,7 @@ export class FightGame {
     if (f.dodge > 0) {
       f.x -= f.facing * DODGE_SPEED * dt;
       f.walk = 0;
-    } else if (f.stun <= 0 && !f.blocking && !f.knocked) {
+    } else if (f.stun <= 0 && !f.blocking && !f.knocked && f.root <= 0) {
       // Air normals keep drift so a jump-in can still be steered. A melee flurry stays planted.
       const flurry = !!f.attack && (f.attack.skill.count ?? 0) > 1 && f.attack.skill.type !== 'projectile';
       const factor = !f.attack ? 1 : f.attack.skill.air ? .6 : f.attack.skill.type === 'light' && !flurry ? .25 : 0;

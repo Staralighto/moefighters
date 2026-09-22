@@ -32,6 +32,7 @@ export function updateHUD(g: FightGame): void {
 export function showBanner(title: string, sub = ''): void {
   $('banner-text').textContent = title;
   $('banner-sub').textContent = sub;
+  $('banner').classList.toggle('super-call', sub.includes('SUPER'));
 }
 
 export function showEnd(winner: Fighter, stats: string): void {

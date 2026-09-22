@@ -5,7 +5,7 @@ export class KeyboardInput {
   private readonly getGame: () => FightGame | null;
   private readonly down = (e: KeyboardEvent) => {
     const g = this.getGame();
-    if (!g || (e.target as HTMLElement | null)?.closest?.('dialog')) return;
+    if (!g || (e.target as HTMLElement | null)?.closest?.('dialog, [data-prop-tune]')) return;
     if (!g.isControl(e.code)) return;
     e.preventDefault();
     if (!e.repeat) g.keyDown(e.code);
