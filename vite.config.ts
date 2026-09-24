@@ -56,4 +56,60 @@ ${lines.join('\n')}
 `;
 }
 
-export default defineConfig({ plugins: [propLayout()] });
+const PAD_IDS = ['atk', 'guard', 'jump', 's1', 's2', 's3', 'stick', 'ult'] as const;
+
+/** Same idea as prop layout: drag the phone buttons, drop writes the data file, fight keeps running. */
+function touchLayout(): Plugin {
+  const file = new URL('./src/ui/touchLayout.data.ts', import.meta.url);
+  return {
+    name: 'touch-layout',
+    configureServer(server) {
+      server.middlewares.use('/__touch-layout', (req, res, next) => {
+        if (req.method !== 'POST') return next();
+        const chunks: Buffer[] = [];
+        req.on('data', (c: Buffer) => chunks.push(c));
+        req.on('end', () => {
+          try {
+            const text = serializeTouch(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+            if (readFileSync(file, 'utf8') !== text) writeFileSync(file, text);
+            res.statusCode = 204;
+            res.end();
+          } catch (err) {
+            res.statusCode = 400;
+            res.end(err instanceof Error ? err.message : 'bad layout');
+          }
+        });
+      });
+    },
+    handleHotUpdate(ctx) {
+      if (ctx.file.replaceAll('\\', '/').endsWith('/src/ui/touchLayout.data.ts')) return [];
+    },
+  };
+}
+
+function serializeTouch(raw: unknown): string {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('layout must be an object');
+  const src = raw as Record<string, unknown>;
+  const lines = PAD_IDS.map(id => {
+    const v = src[id];
+    if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('bad ' + id);
+    const p = v as Record<string, unknown>;
+    const num = (k: string) => {
+      const n = Number(p[k]);
+      if (!Number.isFinite(n) || n < 0 || n > 100) throw new Error('bad ' + id);
+      return Math.round(n * 10) / 10;
+    };
+    return `  ${id}: { x: ${num('x')}, y: ${num('y')} },`;
+  });
+  return `/** 手机按键中心，相对战斗画面宽高的百分比。开发时点「键位」拖动，松手写入这里。手改后刷新。 */
+export const TOUCH_LAYOUT: Record<string, { x: number; y: number }> = {
+${lines.join('\n')}
+};
+`;
+}
+
+export default defineConfig({
+  plugins: [propLayout(), touchLayout()],
+  server: { host: true },
+  preview: { host: true },
+});
