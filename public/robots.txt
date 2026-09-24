@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://moefighters.staralighto.workers.dev/sitemap.xml
+Sitemap: https://moefighters.com/sitemap.xml

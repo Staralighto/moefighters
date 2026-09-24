@@ -2,7 +2,7 @@
 
 同屏街机格斗网页游戏，可选角色来自《BanG Dream!》。支持 1V1、2V2、同键盘双人、人机和训练场，以及手机触控操作。
 
-## [在线游玩](https://moefighters.staralighto.workers.dev/)
+## [在线游玩](https://moefighters.com/)
 
 灵感来源：[抽象大乱斗](https://github.com/XzJoshZ/abstract-brawl)（XzJoshZ）。本项目为独立实现的同人习作，玩法与代码均为自己编写。
 
