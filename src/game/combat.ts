@@ -1,10 +1,13 @@
 import type { Skill } from '../data/types.ts';
 import type { Attack, Fighter } from './fighter.ts';
 import type { FightGame, Projectile } from './game.ts';
-import { CONTROLS, FLOOR, GRAVITY, W, clamp } from './constants.ts';
+import { CONTROLS, FLOOR, GRAVITY, SIDE, W, clamp } from './constants.ts';
 import { drumRow } from '../render/clips.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
+
+/** Blocking a projectile siphons the attacker's energy, proportional to the shot's full damage. */
+const GUARD_DRAIN = .3;
 
 /** 悲鸣: more cries as she breaks. Resolved once per cast so the shared skill stays put. */
 /** 不会再逃避了: every swing except the last stays in place. shots is the swing index before it increments. */
@@ -64,12 +67,15 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .9 : 1);
 
   if (blocked) {
+    const fullHit = damage;
     damage *= skill.super ? .24 : .13;
     defender.guard -= skill.super ? 42 : skill.type === 'heavy' ? 26 : 15;
     defender.stun = .075;
     defender.blockTap = 1;
     defender.energy = clamp(defender.energy + 5, 0, 100);
     attacker.energy = clamp(attacker.energy + 4, 0, 100);
+    // 远程反制：挡下投掷物按其伤害削减对方的气，静默结算，不跳字。
+    if (skill.type === 'projectile') attacker.energy = clamp(attacker.energy - fullHit * GUARD_DRAIN, 0, 100);
     g.effect('shield', defender.x - dir * 30, defender.y - 78, '#8df0ff', .22, { radius: 65 });
     g.audio.play('block');
     g.text('格挡', defender.x, defender.y - 170, '#91eaff', .35, 16);
@@ -78,7 +84,14 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       defender.stun = .9;
       defender.guardBroken = 1.2;
       defender.blocking = false;
-      g.text('破防!', defender.x, defender.y - 200, '#ff75a4', .8, 30);
+      defender.queue = [];
+      defender.jumpRequest = false;
+      defender.jumpBuffer = 0;
+      defender.dodgeRequest = false;
+      defender.dodgeBuffer = 0;
+      defender.blockBuffer = 0;
+      defender.blockLeft = 0;
+      g.text('破防!', defender.x, defender.y - 200, SIDE[0], .8, 30);
     }
   } else {
     attacker.combo = attacker.comboTime > 0 ? attacker.combo + 1 : 1;
@@ -103,10 +116,16 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       defender.stun = skill.fx === 'bag' ? .26 : skill.fx === 'ripple' ? .35 : skill.type === 'light' ? .28 : skill.super ? .42 : .37;
       defender.attack = null;
       defender.hitBySuper = skill.super;
-      // A super wipes the buffer except 恐湖, so the escape can still come out between hits.
-      defender.queue = skill.super && defender.data.skills[4]?.fx === 'ripple'
-        ? defender.queue.filter(q => q.index === 4)
+      // A super wipes the buffer except combo escapes (恐湖, 轮奏), so the escape can still come out between hits.
+      defender.queue = skill.super && defender.data.skills.some(s => s.breakout)
+        ? defender.queue.filter(q => defender.data.skills[q.index]?.breakout)
         : [];
+      defender.jumpRequest = false;
+      defender.jumpBuffer = 0;
+      defender.dodgeRequest = false;
+      defender.dodgeBuffer = 0;
+      defender.blockBuffer = 0;
+      defender.blockLeft = 0;
       defender.blocking = false;
       if (skill.fx === 'heart' && !wasRooted) {
         defender.root = 3;
@@ -144,27 +163,34 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
         defender.vy = 0;
         defender.knocked = 0;
       } else if (isGrab || skill.super || skill.type === 'upper' || skill.type === 'sweep') {
-        defender.vy = skill.type === 'upper' ? -360 : skill.type === 'sweep' ? -140 : -240;
+        defender.vy = skill.type === 'upper' ? -430 : skill.type === 'sweep' ? -140 : -240;
         defender.knocked = .72;
         defender.downTime = 0;
       } else if (skill.type === 'launch') {
         // Float, not knockdown: the defender stays hittable until they land.
-        defender.vy = -520;
-        defender.stun = .9;
+        // High enough to meet with a jump attack; the fall itself is slowed in stepFighter.
+        defender.vy = -600;
+        defender.stun = 1.1;
         g.text('浮空!', defender.x, defender.y - 200, '#ffd27a', .6, 20);
+      }
+      if (!blocked && skill.air && defender.y < FLOOR - .5) {
+        // Juggle: an air normal pops a floating victim slightly upward and locks them briefly.
+        // Small enough that the attacker still has to land; combo escapes past 7 hits still break out.
+        defender.vy = Math.min(defender.vy, -80);
+        defender.stun = Math.max(defender.stun, .4);
       }
       if (attacker.combo >= 7) {
         defender.invuln = .48;
         defender.vx = dir * 470;
         defender.stun = .24;
-        g.text('脱离连段', defender.x, defender.y - 195, '#c6ff85', .7, 16);
+        g.text('脱离连段', defender.x, defender.y - 195, SIDE[1], .7, 16);
       }
     }
     const rushBonus = attacker.data.trait === 'rush' && attacker.hitCount % 3 === 0 ? 14 : 0;
     attacker.energy = clamp(attacker.energy + (skill.super ? 2 : 9) + rushBonus, 0, 100);
     defender.energy = clamp(defender.energy + 7, 0, 100);
     g.audio.play('hit');
-    g.text('-' + Math.round(damage), defender.x + dir * 15, defender.y - 160, skill.super ? '#d8ff62' : '#fff', .65, skill.super ? 30 : 23);
+    g.text('-' + Math.round(damage), defender.x + dir * 15, defender.y - 160, skill.super ? SIDE[attacker.team] : '#fff', .65, skill.super ? 30 : 23);
     g.sparks(defender.x - dir * 23, defender.y - 85, attacker.data.color, skill.super ? 36 : 18, skill.super ? 1.6 : 1);
     g.effect('hit', defender.x - dir * 23, defender.y - 85, attacker.data.color, .25, { radius: skill.super ? 90 : 48 });
   }
@@ -173,11 +199,12 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   const knock = skill.fx === 'bag' || skill.fx === 'heart' ? 0
     : skill.fx === 'chord' ? 160
     : skill.fx === 'spin' && !spinFinale(skill, source) ? 0
-    : skill.fx === 'ripple' ? 620 : skill.fx === 'slam' ? 120 : blocked ? 75 : skill.type === 'light' ? 95 : skill.super ? 340 : 235;
+    : skill.fx === 'ripple' ? 620 : skill.fx === 'slam' ? 120 : blocked ? 75 : skill.knock ?? (skill.type === 'light' ? 95 : skill.super ? 340 : 235);
   if (skill.fx !== 'shove' && defender.invuln <= 0 && !endured) defender.vx = dir * knock;
   if (holdStill) { defender.vx = 0; defender.vy = 0; }
   g.shake = blocked ? 2 : skill.fx === 'slam' ? 14 : skill.super ? 12 : skill.type === 'heavy' ? 7 : 4;
-  g.hitstop = blocked ? .018 : skill.fx === 'slam' ? .09 : skill.super ? .065 : skill.type === 'heavy' ? .065 : .032;
+  const juggleHit = !blocked && !!skill.air && defender.y < FLOOR - .5;
+  g.hitstop = blocked ? .018 : juggleHit ? .085 : skill.fx === 'slam' ? .09 : skill.super ? .065 : skill.type === 'heavy' ? .065 : .032;
   return true;
 }
 
@@ -242,14 +269,29 @@ export function spawnShot(g: FightGame, f: Fighter, a: Attack, offsetY = 0, arc 
   return p;
 }
 
+/** 满场: sixteen notes in two full-stage drops. Slots repeat every 8 so each wave spans the stage. */
+const DRUM_PER_WAVE = 8;
+/** Pause between the two drops, on top of the regular interval. */
+const DRUM_GAP = .55;
+/** Repel pulse while the super is up: anyone closing in gets bounced, again and again. */
+const DRUM_REPEL_EVERY = .3;
+const DRUM_REPEL_RANGE = 180;
+const DRUM_REPEL_PUSH = 520;
+
+export function drumShotTime(s: Skill, i: number): number {
+  const interval = s.interval ?? .1;
+  return s.start + i * interval + Math.floor(i / DRUM_PER_WAVE) * DRUM_GAP;
+}
+
 /** Notes dropped across the whole stage. vx stays 0; stepProjectiles applies vy. */
 function spawnRain(g: FightGame, f: Fighter, a: Attack, index: number): void {
   const s = a.skill;
-  const count = Math.max(1, s.count ?? 8);
+  const pos = index % DRUM_PER_WAVE;
+  const wave = Math.floor(index / DRUM_PER_WAVE);
   const p: Projectile = {
     owner: f.id,
-    x: 70 + (index + .5) * ((W - 140) / count),
-    y: -24 - (index % 3) * 40,
+    x: 70 + (pos + .5) * ((W - 140) / DRUM_PER_WAVE),
+    y: -24 - (pos % 3) * 40 - wave * 70,
     vx: 0,
     vy: 280,
     life: s.life ?? 2.4,
@@ -264,6 +306,17 @@ function spawnRain(g: FightGame, f: Fighter, a: Attack, index: number): void {
     age: 0,
   };
   g.projectiles.push(p);
+}
+
+/** True once this move will not produce more hits. Supers and the throw cinematics stay committed. */
+export function effectSettled(a: Attack): boolean {
+  const s = a.skill;
+  if (s.super || s.fx === 'shove' || s.fx === 'slam') return false;
+  if (s.type === 'dash') return a.t >= s.duration - .08;
+  if (s.type === 'upper') return a.t >= s.start + .25;
+  const volley = a.burst || s.count || 1;
+  if (volley > 1) return a.shots >= volley || (s.fx === 'chord' && a.t >= s.duration - .22);
+  return a.emitted;
 }
 
 export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
@@ -301,17 +354,32 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
     }
   }
 
-  // 满场: push whoever is standing in front, then keep the kit up for the sit. No extra hit.
-  if (s.fx === 'drums' && !a.emitted) {
-    a.emitted = true;
+  // 满场: the kit stays up for the sit; nearby foes are bounced on every pulse. No extra hit.
+  const repel = (power: number) => {
+    let pushed = false;
     for (const o of g.opponents(f)) {
-      if (o.hp <= 0) continue;
-      if ((o.x - f.x) * f.facing >= -20 && Math.abs(o.x - f.x) < 140) {
-        o.vx = f.facing * 480;
-        o.stun = Math.max(o.stun, .25);
+      if (o.hp <= 0 || o.invuln > 0) continue;
+      const dx = o.x - f.x;
+      if (Math.abs(dx) < DRUM_REPEL_RANGE) {
+        const dir = Math.sign(dx) || f.facing;
+        o.vx = dir * power;
+        o.stun = Math.max(o.stun, .22);
+        pushed = true;
       }
     }
+    return pushed;
+  };
+  if (s.fx === 'drums' && !a.emitted) {
+    a.emitted = true;
+    repel(DRUM_REPEL_PUSH);
     g.effect('drums', f.x, f.y, f.data.color, s.duration, { dir: f.facing });
+  }
+  if (s.fx === 'drums' && a.t < s.duration) {
+    const prev = Math.floor(Math.max(0, a.t - dt) / DRUM_REPEL_EVERY);
+    const cur = Math.floor(a.t / DRUM_REPEL_EVERY);
+    if (cur > prev && repel(DRUM_REPEL_PUSH)) {
+      g.effect('burst', f.x, f.y - 80, f.data.color, .25, { radius: DRUM_REPEL_RANGE });
+    }
   }
   if (s.fx === 'drums' && drumRow(a.t, s.duration) === 1 && drumRow(Math.max(0, a.t - dt), s.duration) !== 1) {
     const y = f.y - 78;
@@ -400,12 +468,15 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
 
   const volley = a.burst || s.count || 1;
   if (s.type === 'projectile' && volley > 1) {
-    while (a.shots < volley && a.t >= s.start + a.shots * (s.interval ?? .14)) {
+    if (s.fx === 'drums') {
+      while (a.shots < volley && a.t >= drumShotTime(s, a.shots)) {
+        spawnRain(g, f, a, a.shots);
+        a.shots++;
+      }
+    } else while (a.shots < volley && a.t >= s.start + a.shots * (s.interval ?? .14)) {
       if (s.fx === 'chord' && a.shots >= 3 && !chordHeld(g, f)) break;
-      if (s.fx === 'drums') spawnRain(g, f, a, a.shots);
-      else spawnShot(g, f, a, (a.shots % 3 - 1) * 15, a.shots);
+      spawnShot(g, f, a, (a.shots % 3 - 1) * 15, a.shots);
       a.shots++;
-      g.audio.play('cast');
     }
     if (s.fx === 'chord' && a.shots >= 3 && !chordHeld(g, f) && a.t < s.duration - .22) a.t = s.duration - .22;
   } else if ((s.count ?? 1) > 1) {

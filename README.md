@@ -16,14 +16,14 @@
 
 ## 直接游玩
 
-Windows 双击 `start.bat`，依赖会自动安装并打开浏览器。其他系统在项目目录运行：
+需要 Node.js 22 或更新版本。Windows 双击 `start.bat`，依赖会自动安装并打开浏览器。其他系统在项目目录运行：
 
 ```bash
 npm install
 npm run dev
 ```
 
-打开命令提示的本地地址即可。`npm run build` 构建后可用 `npm run preview` 预览构建产物。音效为 Web Audio 现场合成，首次操作后启动。
+命令行窗口要一直开着，关掉后游戏就停。这台电脑用窗口里的 Local 地址。手机和电脑连同一个局域网，用窗口里的 Network 地址打开。音效为 Web Audio 现场合成，首次操作后启动。`npm run build` 构建后可用 `npm run preview` 预览构建产物。
 
 ## 继续开发
 

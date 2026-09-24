@@ -1,12 +1,13 @@
 /* Headless rule check: runs the fixed-step engine without DOM or canvas. `npm run check`. */
 import { FightGame } from '../src/game/game.ts';
-import { hit } from '../src/game/combat.ts';
+import { drumShotTime, hit } from '../src/game/combat.ts';
 import { ROSTER } from '../src/data/characters.ts';
 import { STAGES } from '../src/data/stages.ts';
-import { STEP } from '../src/game/constants.ts';
+import { FLOOR, STEP } from '../src/game/constants.ts';
 import { clipFor, drumRow } from '../src/render/clips.ts';
 import { mortisAfterimage } from '../src/render/fx.ts';
 import { previewFighter } from '../src/game/fighter.ts';
+import { guideIndex, skillHTML } from '../src/ui/select.ts';
 import { checkSpriteGuard } from './sprite-guard.ts';
 
 checkSpriteGuard();
@@ -57,6 +58,32 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(p2.knocked > 0 || p2.y < 443, 'grab knocks down');
 }
 
+// blocking a projectile siphons the attacker's energy in proportion to the shot, silently
+{
+  const g = newGame(1, 2); const [p1, p2] = g.fighters; dummy(g); // 星火 U = 火球
+  p2.x = p1.x + 300; p2.facing = -1;
+  g.keyDown('ArrowDown'); run(g, .1);
+  p1.energy = 50;
+  const before = p1.energy;
+  g.keyDown('KeyU'); run(g, 1.1);
+  assert.ok(p2.guard < 100, 'the fireball is blocked');
+  // 42 damage: +4 block reward and ~2/s regen against a 12.6 drain, so the net is clearly negative
+  assert.ok(p1.energy < before - 5, `blocked projectile drains energy, saw ${p1.energy}`);
+  assert.ok(g.texts.every(t => !/气|能量|削减/.test(t.text)), 'the drain shows no text');
+}
+
+// blocking melee does not touch the attacker's energy
+{
+  const g = newGame(); const [p1, p2] = g.fighters; dummy(g);
+  p2.x = p1.x + 60; p2.facing = -1;
+  g.keyDown('ArrowDown'); run(g, .1);
+  p1.energy = 50;
+  const before = p1.energy;
+  g.keyDown('KeyJ'); run(g, .4);
+  assert.ok(p2.guard < 100, 'melee is blocked');
+  assert.ok(p1.energy >= before, 'blocking melee does not drain energy');
+}
+
 // super needs 100 energy and spends it
 {
   const g = newGame(); const [p1] = g.fighters; dummy(g);
@@ -95,6 +122,79 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(g.phase, 'finished');
   assert.equal(g.winnerTeam, 0);
   assert.equal(ended, 1);
+}
+
+// both slots CPU: nobody holds a pad, and both sides still walk in
+{
+  const g = new FightGame([ROSTER[0], ROSTER[1]], {
+    mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(11),
+    controllers: [null, null],
+  });
+  assert.equal(g.fighters[0].controller, null, 'left slot is CPU');
+  assert.equal(g.fighters[1].controller, null, 'right slot is CPU');
+  run(g, 4);
+  assert.ok(g.fighters[0].x > 290, `left CPU walked, x=${g.fighters[0].x}`);
+  assert.ok(g.fighters[1].x < 670, `right CPU walked, x=${g.fighters[1].x}`);
+}
+
+// master reads a startup the standard CPU ignores, because the bodies are outside the active-threat range
+{
+  const opts = { mode: 'cpu' as const, stage: STAGES[0], audio: silent, random: () => 0, controllers: [0, null] as (number | null)[] };
+  function windup(difficulty: number) {
+    const g = new FightGame([ROSTER[0], ROSTER[1]], { ...opts, difficulty });
+    g.phase = 'fight';
+    const [human, cpu] = g.fighters;
+    human.x = 400; cpu.x = 570;
+    assert.ok(g.attack(human, 2), 'skill starts');
+    const a = human.attack!;
+    assert.ok(a.t < a.skill.start && Math.abs(human.x - cpu.x) > a.skill.range + 35, 'still winding up, outside the normal threat bubble');
+    cpu.ai.wait = 0;
+    g.step(STEP);
+    return cpu;
+  }
+  const standard = windup(1);
+  assert.equal(standard.dodge, 0, 'standard does not read the startup');
+  assert.equal(standard.ai.block, 0, 'standard does not block the startup');
+  const master = windup(2);
+  assert.equal(master.dodge > 0 || master.ai.block > 0, true, 'master reads the startup');
+}
+
+// 2v2: ally takes no damage, one enemy down keeps the round, a wipe scores
+{
+  const g = new FightGame([ROSTER[0], ROSTER[1], ROSTER[2], ROSTER[3]], {
+    mode: 'team', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(7),
+  });
+  const [p1, ally, e1, e2] = g.fighters;
+  assert.equal(p1.team, 0);
+  assert.equal(ally.team, 0);
+  assert.equal(e1.team, 1);
+  assert.equal(e2.team, 1);
+  assert.equal(p1.controller, 0);
+  assert.equal(ally.controller, null);
+  assert.ok(ally.x < p1.x && p1.x < e1.x && e1.x < e2.x, 'teams spawn on opposite sides');
+  for (const f of g.fighters) if (f !== p1) f.controller = 1;
+  run(g, 2.3);
+  assert.equal(g.phase, 'fight');
+  const allyHp = ally.hp;
+  assert.equal(hit(g, p1, ally, p1.data.skills[0], { hit: new Set() }), false, 'ally is not an enemy');
+  assert.equal(ally.hp, allyHp, 'friendly hit deals no damage');
+  p1.x = ally.x = 300;
+  e1.x = e2.x = 700;
+  run(g, STEP);
+  assert.equal(p1.x, 300, 'teammates do not push each other');
+  assert.equal(ally.x, 300, 'ally keeps the shared spot');
+  assert.equal(e1.x, 700);
+  assert.equal(e2.x, 700, 'enemy pair does not push each other');
+  e1.x = 310;
+  run(g, STEP);
+  assert.ok(Math.abs(e1.x - p1.x) > 10, 'opponents still keep a gap');
+  e1.hp = 0;
+  run(g, STEP);
+  assert.equal(g.phase, 'fight', 'one enemy down does not end the round');
+  e2.hp = 0;
+  run(g, STEP);
+  assert.equal(g.phase, 'roundend');
+  assert.deepEqual(g.wins, [1, 0]);
 }
 
 // training: no clock, energy pinned, target heals
@@ -145,12 +245,12 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 // tapping S dodges backward through a grab
 {
   const g = newGame(); const [p1, p2] = g.fighters; dummy(g);
-  p2.x = p1.x + 60; p2.facing = -1;
+  p1.x = 500; p2.x = p1.x + 60; p2.facing = -1;
   const x = p1.x, hp = p1.hp;
   g.keyDown('KeyS'); run(g, .05); g.keyUp('KeyS'); run(g, STEP);
   assert.ok(p1.dodge > 0, 'short tap starts a dodge');
   g.keyDown('Numpad4'); run(g, .6); // 磐石 U = 熊抱 grab
-  assert.ok(p1.x < x - 60, `dodge moved back, ${x} -> ${p1.x}`);
+  assert.ok(x - p1.x > 280 && x - p1.x < 330, `dodge covers 35% of the stage, moved ${x - p1.x}`);
   assert.equal(p1.hp, hp, 'grab whiffs on the dodging fighter');
   assert.ok(p1.dodgeCd > 0, 'dodge goes on cooldown');
 }
@@ -220,18 +320,58 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(p1.hp, ROSTER[0].hp, 'sweep misses an airborne target');
 }
 
-// launch floats the target and a light connects before it lands
+// launch floats the target high and a jump attack juggles into a combo
 {
   const g = newGame(1, 2); const [p1, p2] = g.fighters; dummy(g); // 星火 I = 焰柱上挑
   p2.x = p1.x + 60; p2.facing = -1;
   g.keyDown('KeyI'); run(g, .2);
   assert.ok(p2.vy < -300 && g.airborne(p2), 'launch floats the target');
   assert.equal(p2.knocked, 0, 'launch is a float, not a knockdown');
-  const hp = p2.hp;
-  run(g, .4);
-  g.keyDown('KeyJ'); run(g, .2);
-  assert.ok(p2.hp < hp, 'a light follows up before the target lands');
-  assert.equal(p1.combo, 2, 'follow-up counts as a combo');
+  run(g, .35);
+  g.keyDown('KeyW'); g.keyDown('KeyJ');
+  let peak = 0, popped = false, popVy = 0;
+  for (let i = 0; i < Math.round(.6 / STEP); i++) {
+    g.step(STEP);
+    peak = Math.max(peak, g.hitstop);
+    if (!popped && p1.combo >= 2) { popped = true; popVy = p2.vy; }
+  }
+  assert.ok(p1.combo >= 2, `jump attack juggles, combo ${p1.combo}`);
+  assert.ok(peak >= .08, `juggle hitstop, saw ${peak}`);
+  assert.ok(popped && popVy < 0 && popVy > -200, `juggle pops slightly upward, saw ${popVy}`);
+}
+
+// CPU slips out of sustained block pressure instead of guard-breaking
+{
+  const g = newGame(0, 2); const [p1, cpu] = g.fighters; // fighters[1] is the AI
+  cpu.guard = 10;
+  let escaped = false;
+  for (let i = 0; i < Math.round(2 / STEP); i++) {
+    cpu.x = p1.x + 120; cpu.facing = -1; // pinned: threatened but out of light range
+    if (!p1.attack) p1.attack = {
+      skill: ROSTER[0].skills[0], index: 0, serial: ++p1.attackSerial,
+      t: 0, emitted: false, shots: 0, hit: new Set(), burst: 0,
+      endure: 0, liftAt: 0, tossAt: 0, hold: -1,
+    };
+    g.step(STEP);
+    if (cpu.dodge > 0 || cpu.dodgeCd > 0 || cpu.y < FLOOR - 1) { escaped = true; break; }
+  }
+  assert.ok(escaped, 'CPU dodges or jumps out of block pressure');
+}
+
+// CPU jumps up to meet a floated victim with an air normal
+{
+  const g = newGame(2, 0); const [vic, cpu] = g.fighters; // fighters[1] is the AI
+  cpu.x = 400; cpu.facing = -1;
+  let jumped = false, airFired = false;
+  for (let i = 0; i < Math.round(1.5 / STEP); i++) {
+    vic.x = 370; vic.y = FLOOR - 120; vic.vy = 0; vic.stun = Math.max(vic.stun, .5); // pinned float
+    g.step(STEP);
+    if (cpu.y < FLOOR - 1) jumped = true;
+    if (cpu.attack?.skill.air) airFired = true;
+    if (jumped && airFired) break;
+  }
+  assert.ok(jumped, 'CPU jumps after a floated victim');
+  assert.ok(airFired, 'CPU meets them with an air normal');
 }
 
 // sprite clip routing: loco / normals / air / special stay on the intended sheet
@@ -332,6 +472,32 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(mortisAfterimage(0.85), null, '墨缇丝 exit has no ghost');
 }
 
+// mutsumi: 轮奏 breaks out of a super with 0.8s invuln, and grants it on a normal cast
+{
+  const mutsumi = ROSTER.findIndex(c => c.id === 'mutsumi');
+  const data = ROSTER[mutsumi];
+  assert.equal(data.skills[3].breakout, true, '轮奏 is a breakout');
+
+  const escape = newGame(mutsumi, 2); const [e1, e2] = escape.fighters; dummy(escape);
+  e1.queue.push({ index: 3, ttl: .18 });
+  hit(escape, e2, e1, e2.data.skills[5], { hit: new Set() });
+  assert.equal(e1.hitBySuper, true, 'a super marks the combo');
+  assert.equal(e1.queue[0]?.index, 3, '轮奏 stays buffered through a super');
+  let escaped = false, invuln = 0;
+  for (let i = 0; i < Math.round(.2 / STEP); i++) {
+    escape.step(STEP);
+    if (e1.attack?.skill.name === '轮奏') { escaped = true; invuln = Math.max(invuln, e1.invuln); }
+  }
+  assert.ok(escaped, '轮奏 comes out during the super');
+  assert.ok(invuln > .7, `the breakout is invulnerable for 0.8s, saw ${invuln}`);
+
+  const normal = newGame(mutsumi, 2); const [n1] = normal.fighters; dummy(normal);
+  normal.keyDown('KeyI');
+  run(normal, .05);
+  assert.equal(n1.attack?.skill.name, '轮奏', '轮奏 casts normally');
+  assert.ok(n1.invuln > .5, `轮奏 grants invuln on cast, saw ${n1.invuln}`);
+}
+
 // uika: wail scales with hp, the crawl misses a jump, the shove throws far
 {
   const uika = ROSTER.findIndex(c => c.id === 'uika');
@@ -421,7 +587,10 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(data.skills[4].range > 160, '月牙踢 reaches');
   assert.equal(data.skills[4].fx, 'arc-kick', '月牙踢 arc');
   assert.equal(data.skills[5].fx, 'drums', '满场 is the kit');
-  assert.ok((data.skills[5].count ?? 0) >= 6, '满场 drops a volley');
+  assert.equal(data.skills[5].count, 16, '满场 drops sixteen notes');
+  const super5 = data.skills[5];
+  assert.ok(drumShotTime(super5, 8) - drumShotTime(super5, 7) > .4, '满场 falls in two waves');
+  assert.ok(drumShotTime(super5, 15) < super5.duration, 'the second wave fits in the super');
 
   const g = newGame(nyamu, 2); const [p1, p2] = g.fighters; dummy(g);
   p1.energy = 100;
@@ -430,6 +599,12 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   g.keyDown('KeyL');
   run(g, .2);
   assert.ok(p2.x > startX + 15, `满场 shoves, moved ${p2.x - startX}`);
+  // Sustained repel: drag the foe back mid-super and it gets bounced again.
+  p2.x = p1.x + 60; p2.vx = 0; p2.stun = 0; p2.invuln = 0;
+  const backX = p2.x;
+  run(g, .45);
+  assert.ok(p1.attack, 'the super is still up');
+  assert.ok(p2.x > backX + 15, `满场 keeps pushing, moved ${p2.x - backX}`);
   let span = 0;
   for (let i = 0; i < Math.round(1.2 / STEP); i++) {
     g.step(STEP);
@@ -625,6 +800,128 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(s2.hp < spinHp - 60, `spin hits from behind, damage ${spinHp - s2.hp}`);
   assert.equal(earlyKnock, 0, 'early spins do not launch');
   assert.ok(s2.knocked > 0, 'the last spin launches');
+}
+
+{
+  assert.equal(guideIndex([null, 0]), 1, 'solo 2P is the movelist');
+  assert.equal(guideIndex([0, 1]), 0, 'earlier player wins when both are human');
+  assert.equal(guideIndex([null, null, 1, 0]), 2, 'team uses the earliest player slot');
+  assert.equal(guideIndex([null, null]), 0, 'all CPU stays on 1P');
+  const first = skillHTML(ROSTER[3]);
+  const second = skillHTML(ROSTER[3], 1);
+  assert.ok(first.includes('<kbd>J</kbd>') && first.includes('<kbd>L</kbd>'), 'cpu and first player show letter keys');
+  assert.ok(second.includes('<kbd>1</kbd>') && second.includes('<kbd>3</kbd>') && !second.includes('<kbd>J</kbd>'), 'later player shows numpad keys');
+  assert.ok(second.includes('1 / 2') && !second.includes('J / K'), 'combo hint follows the numpad set');
+  const touch = skillHTML(ROSTER[3], 0, true);
+  assert.ok(touch.includes('<kbd>轻</kbd>') && touch.includes('<kbd>必</kbd>') && !touch.includes('<kbd>J</kbd>'), 'phone shows on-screen pad labels');
+  assert.ok(touch.includes('轻 / 重') && !touch.includes('J / K'), 'combo hint follows the pad labels');
+}
+
+{
+  const g = newGame(); const [p1] = g.fighters; dummy(g);
+  p1.stun = .45;
+  g.keyDown('KeyJ');
+  g.keyDown('KeyW');
+  run(g, .3);
+  assert.equal(p1.attack, null, 'a light pressed in hitstun waits');
+  assert.equal(p1.vy, 0, 'a jump pressed in hitstun waits');
+  run(g, .25);
+  assert.ok(p1.attack?.skill.air, 'holding jump and attack wakes up into an air normal');
+  assert.ok(p1.vy < 0, 'holding jump leaves the ground when hitstun ends');
+}
+
+{
+  const g = newGame(); const [p1] = g.fighters; dummy(g);
+  g.keyDown('KeyJ'); run(g, STEP * 3);
+  assert.ok(p1.attack && !p1.attack.skill.air, 'the light starts on the ground');
+  g.keyDown('KeyW');
+  g.step(STEP);
+  assert.ok(p1.vy < 0, 'jump during a light leaves the ground');
+  assert.ok(p1.attack?.skill.air, 'the light becomes an air attack');
+  let hops = 0, rising = false;
+  for (let i = 0; i < Math.round(1.6 / STEP); i++) {
+    g.step(STEP);
+    const up = p1.vy < 0 && p1.y < 442;
+    if (up && !rising) hops++;
+    rising = up;
+  }
+  assert.ok(hops >= 2, `held jump and attack hops again after landing, hops ${hops}`);
+
+  const late = newGame(); const [a] = late.fighters; dummy(late);
+  late.keyDown('KeyK');
+  late.step(STEP);
+  late.keyUp('KeyK');
+  late.keyDown('KeyU');
+  run(late, .4);
+  assert.equal(a.attack?.index, 1, 'a skill pressed during a heavy stays buffered');
+  run(late, .35);
+  assert.equal(a.attack?.index, 2, 'the skill comes out when the heavy ends');
+
+  const cool = newGame(); const [c] = cool.fighters; dummy(cool);
+  c.cooldowns[2] = 2;
+  cool.keyDown('KeyU');
+  run(cool, .35);
+  assert.equal(c.queue.length, 0, 'a press while already free still expires on cooldown');
+  assert.equal(c.attack, null, 'cooldown does not release a stale skill');
+
+  const skip = newGame(); const [s] = skip.fighters; dummy(skip);
+  s.cooldowns[2] = 2;
+  skip.keyDown('KeyU');
+  skip.keyDown('KeyI');
+  skip.step(STEP);
+  assert.equal(s.attack?.index, 3, 'a ready skill skips a cooldown sitting in front of it');
+  assert.ok(!s.queue.some(q => q.index === 2), 'the cooldown press does not stay queued behind it');
+
+  const air = newGame(); const [jumper] = air.fighters; dummy(air);
+  jumper.vy = -400;
+  jumper.y = 443 - 200;
+  air.step(STEP);
+  air.keyDown('KeyJ'); air.keyUp('KeyJ');
+  air.step(STEP);
+  air.keyDown('KeyU');
+  let dashed = false;
+  for (let i = 0; i < Math.round(1.6 / STEP); i++) {
+    air.step(STEP);
+    if (jumper.attack?.index === 2) dashed = true;
+  }
+  assert.ok(dashed, 'a ground skill pressed during an air light waits until landing');
+
+  const guard = newGame(); const [g1, g2] = guard.fighters; dummy(guard);
+  g2.x = g1.x + 60; g2.facing = -1;
+  const before = g2.hp;
+  guard.keyDown('KeyJ'); guard.keyUp('KeyJ');
+  guard.step(STEP);
+  guard.keyDown('KeyS'); guard.keyUp('KeyS', false);
+  let blocks = 0;
+  for (let i = 0; i < Math.round(.4 / STEP); i++) {
+    guard.step(STEP);
+    if (g1.blocking) blocks++;
+  }
+  assert.ok(g2.hp < before, 'the light still connects before the block cancel');
+  assert.ok(blocks >= 12, `a block tap during the light comes out, frames ${blocks}`);
+
+  const sakiko = ROSTER.findIndex(c => c.id === 'sakiko');
+  const flurry = newGame(sakiko, 2); const [f1, f2] = flurry.fighters; dummy(flurry);
+  f2.x = f1.x + 50; f2.facing = -1;
+  flurry.keyDown('KeyI');
+  flurry.step(STEP);
+  flurry.keyDown('KeyS'); flurry.keyUp('KeyS', false);
+  let swings = 0, flurryBlocks = 0;
+  for (let i = 0; i < Math.round(.8 / STEP); i++) {
+    flurry.step(STEP);
+    if (f1.attack?.index === 3) swings = Math.max(swings, f1.attack.shots);
+    if (f1.blocking) flurryBlocks++;
+  }
+  assert.ok(swings >= 3, `block cancel waits for all three swings, saw ${swings}`);
+  assert.ok(flurryBlocks > 0, 'block comes out after the flurry finishes hitting');
+
+  const ult = newGame(); const [u] = ult.fighters; dummy(ult);
+  u.energy = 100;
+  ult.keyDown('KeyL');
+  ult.step(STEP);
+  ult.keyDown('KeyS'); ult.keyUp('KeyS', false);
+  run(ult, .5);
+  assert.equal(u.attack?.index, 5, 'a super does not cancel into block');
 }
 
 console.log('selfcheck ok');

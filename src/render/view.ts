@@ -6,7 +6,7 @@ import { SpriteView } from './spriteView.ts';
 
 /* A view turns a Fighter's combat state into pixels. The game never sees this interface. */
 export interface FighterView {
-  draw(ctx: CanvasRenderingContext2D, f: Fighter, x: number, y: number, alpha: number, tint?: string): void;
+  draw(ctx: CanvasRenderingContext2D, f: Fighter, x: number, y: number, alpha: number, tint?: string, outline?: string): void;
 }
 
 function buildFor(data: CharacterData): 'slim' | 'bulky' | 'tall' {

@@ -109,15 +109,19 @@ export class GeometryView implements FighterView {
     this.dims = DIMS[build];
   }
 
-  draw(ctx: CanvasRenderingContext2D, f: Fighter, x: number, y: number, alpha: number): void {
+  draw(ctx: CanvasRenderingContext2D, f: Fighter, x: number, y: number, alpha: number, _tint?: string, outline?: string): void {
     const d = this.dims, pose = poseFor(f);
     ctx.save();
     try {
       ctx.translate(Math.round(x), Math.round(y));
       ctx.scale(f.facing, 1);
       ctx.globalAlpha = alpha;
-      if (f.hitFlash > 0) ctx.filter = 'brightness(2.1)';
-      else if (f.invuln > .1) ctx.filter = 'brightness(1.25)';
+      const parts: string[] = [];
+      if (outline) parts.push([1, 2, 3].flatMap(d => [[d, 0], [-d, 0], [0, d], [0, -d]])
+        .map(([x, y]) => `drop-shadow(${x}px ${y}px 0 ${outline})`).join(' '));
+      if (f.hitFlash > 0) parts.push('brightness(2.1)');
+      else if (f.invuln > .1) parts.push('brightness(1.25)');
+      if (parts.length) ctx.filter = parts.join(' ');
       if (pose.lying) { ctx.translate(-10, -d.torsoW / 2 - 4); ctx.rotate(-Math.PI / 2); }
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';

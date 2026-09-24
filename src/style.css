@@ -5,12 +5,13 @@
   --line: #2f2b45;
   --text: #ece9f7;
   --muted: #9a94b8;
-  --p1: #d8ff62;
-  --p2: #ff75a4;
+  --p1: #FDE979;
+  --p2: #C8F181;
   --cyan: #76e7ff;
+  --font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 "Microsoft YaHei", system-ui, sans-serif; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--font); }
 button { font: inherit; color: inherit; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: .45em .9em; cursor: pointer; }
 button:hover { border-color: var(--muted); }
 button.active { background: var(--p1); color: #14140c; border-color: var(--p1); font-weight: 700; }
@@ -29,29 +30,50 @@ footer { display: flex; justify-content: space-between; gap: 16px; color: var(--
 .sectionline i { font-style: normal; color: var(--p1); margin-right: .5em; }
 .muted { color: var(--muted); font-weight: 400; font-size: 13px; }
 
-.select-stage { display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; gap: 14px; background: linear-gradient(#2a2545, #1a1626); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
-.fighter-preview { display: grid; justify-items: center; gap: 4px; }
-.fighter-preview canvas { width: 240px; height: 290px; image-rendering: pixelated; }
-.player-tag { font-size: 12px; font-weight: 800; letter-spacing: .15em; color: var(--p1); }
-.player-tag.pink { color: var(--p2); }
-.fighter-title { text-align: center; }
-.fighter-title h1 { margin: 0; font-size: 30px; }
-.fighter-title small { color: var(--muted); }
-.fighter-title p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
-.versus { display: grid; justify-items: center; padding-bottom: 90px; }
+.select-stage { position: relative; display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; gap: 14px; overflow: hidden; background: #17131f center bottom / auto no-repeat; border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+.select-stage::before { content: ""; position: absolute; inset: 0; background: rgb(0 0 0 / 40%); pointer-events: none; }
+.select-stage > * { position: relative; z-index: 1; }
+.select-stage.team { grid-template-columns: 1fr 1fr auto 1fr 1fr; }
+.fighter-preview { display: grid; justify-items: center; gap: 2px; cursor: pointer; }
+.fighter-preview[hidden] { display: none; }
+.fighter-preview h1 { margin: 0; font-size: 18px; font-weight: 800; }
+.slot-head { display: grid; justify-items: center; align-content: start; gap: 16px; min-height: 72px; }
+.side-label { font-size: 15px; font-weight: 800; letter-spacing: .14em; color: var(--p1); }
+.side-label.p2 { color: var(--p2); }
+.fighter-preview.active .side-label { text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 4px; }
+.slot-control { display: flex; gap: 2px; padding: 2px; background: #0d0c14; border: 1px solid var(--line); border-radius: 999px; }
+.slot-control[hidden] { display: none; }
+.slot-control button { border: 0; background: transparent; padding: .12em .7em; border-radius: 999px; font-size: 12px; font-weight: 700; color: var(--text); }
+#preview-left .slot-control button.active,
+#preview-ally .slot-control button.active { background: var(--p1); color: #14140c; border-color: var(--p1); }
+#preview-right .slot-control button.active,
+#preview-enemy2 .slot-control button.active { background: var(--p2); color: #14140c; border-color: var(--p2); }
+.fighter-preview canvas { width: min(240px, 100%); height: 290px; object-fit: contain; object-position: center bottom; image-rendering: pixelated; }
+.versus { display: grid; justify-items: center; align-content: center; padding-bottom: 28px; top: -20%; }
 .versus span { font: italic 900 48px Impact, sans-serif; color: var(--p2); }
 .versus small { color: var(--muted); font-size: 12px; }
-
-.choose-bar { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin: 14px 0; }
-.choose-side, .modes, .difficulty { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.rules-row { position: relative; z-index: 2; display: flex; justify-content: center; margin: 14px 0 16px; }
+.rules-summary { display: flex; align-items: center; gap: 8px; background: transparent; border: 1px dashed var(--line); color: var(--text); white-space: nowrap; }
+.rules-summary.fresh { border-style: solid; border-color: var(--p1); color: var(--p1); }
+.rules-summary em { font-style: normal; font-size: 11px; font-weight: 800; letter-spacing: .08em; }
+.rules-summary:not(.fresh) em { display: none; }
+.rules-panel { position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 14px; width: max-content; padding: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 16px 40px #000a; }
+.rules-panel[hidden] { display: none; }
+.rules-panel .modes { display: flex; gap: 6px; }
+.difficulty { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .difficulty span { color: var(--muted); font-size: 13px; }
+.rules-panel.dim-diff .difficulty { opacity: .45; }
 
 .roster { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
 .character { position: relative; display: grid; justify-items: center; padding: 8px 6px; background: var(--panel); }
 .character canvas { width: 96px; height: 96px; }
 .character.p1 { box-shadow: inset 0 0 0 2px var(--p1); }
 .character.p2 { box-shadow: inset 0 0 0 2px var(--p2); }
+.character.ally { box-shadow: inset 0 0 0 2px var(--cyan); }
 .character.p1.p2 { box-shadow: inset 0 0 0 2px var(--p1), inset 0 0 0 4px var(--p2); }
+.character.p1.ally { box-shadow: inset 0 0 0 2px var(--p1), inset 0 0 0 4px var(--cyan); }
+.character.p2.ally { box-shadow: inset 0 0 0 2px var(--p2), inset 0 0 0 4px var(--cyan); }
+.character.p1.p2.ally { box-shadow: inset 0 0 0 2px var(--p1), inset 0 0 0 4px var(--cyan), inset 0 0 0 6px var(--p2); }
 .slot-tag { position: absolute; top: 6px; left: 6px; font-size: 11px; font-weight: 800; background: #0d0c14; border-radius: 5px; padding: 1px 6px; }
 .char-name { font-weight: 700; }
 
@@ -59,6 +81,7 @@ footer { display: flex; justify-content: space-between; gap: 16px; color: var(--
 .movelist { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
 .skill { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; padding: 8px 0; border-top: 1px solid var(--line); position: relative; }
 .skill:first-child { border-top: 0; }
+.flavor { margin: 0 0 4px; color: var(--muted); font-size: 13px; }
 .skill b { display: block; }
 .skill p { margin: 0; color: var(--muted); font-size: 13px; }
 .skill.super kbd { background: var(--p1); color: #14140c; border-color: var(--p1); }
@@ -78,34 +101,53 @@ body.in-battle { overflow-x: hidden; }
 .prop-tune label:has(select), .prop-tune label:has([data-step]) { grid-template-columns: 36px 1fr; }
 .prop-tune input, .prop-tune select { width: 100%; background: #0d0c14; color: inherit; border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
 .prop-tune button { padding: .2em 0; }
-.arena { position: relative; width: 100%; aspect-ratio: 960 / 540; background: #000; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); }
+.arena { position: relative; width: 100%; aspect-ratio: 960 / 540; background: #000; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); container-type: inline-size; }
 .arena canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; outline: none; }
 .hud { position: absolute; inset: 10px 14px auto; display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: start; pointer-events: none; }
+.hud-side { display: grid; gap: 8px; }
 .hud-player { display: grid; gap: 3px; }
+.hud-player[hidden] { display: none; }
+.hud-player.sub .health { height: 10px; }
+.hud-player.second.sub > div:first-child { justify-content: flex-end; }
 .hud-player > div:first-child { display: flex; justify-content: space-between; font-weight: 800; letter-spacing: .04em; text-shadow: 0 1px 0 #000; }
 .hud-player.second { text-align: right; }
 .health, .energy { height: 14px; background: #0c0b12cc; border: 1px solid #ffffff33; border-radius: 4px; overflow: hidden; }
 .energy { height: 6px; }
-.health span, .energy span { display: block; height: 100%; width: 100%; background: linear-gradient(#f6ff9d, var(--p1)); transition: width .08s linear; }
+.health span, .energy span { display: block; height: 100%; width: 100%; background: linear-gradient(#fff6c4, var(--p1)); transition: width .08s linear; }
 .hud-player.second .health span, .hud-player.second .energy span { margin-left: auto; }
-.hud-player.second .health span { background: linear-gradient(#ffc1d6, var(--p2)); }
+.hud-player.second .health span { background: linear-gradient(#eaffc8, var(--p2)); }
 .hud-player small { color: #ddd9ee; font-size: 11px; text-shadow: 0 1px 0 #000; }
+/* 2v2: the two fighters on a side share one row, and the energy bars under them do too. */
+.hud.team .hud-side { grid-template-columns: 1fr 1fr; }
+.hud.team .hud-side:last-child { direction: rtl; }
+.hud.team .hud-side:last-child .hud-player { direction: ltr; }
+.hud.team .hud-player { min-width: 0; }
+.hud.team .hud-player.sub .health { height: 14px; }
+.hud.team .hud-player > div:first-child,
+.hud.team .hud-player small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .timer { text-align: center; min-width: 88px; }
 .timer small { display: block; font-size: 11px; letter-spacing: .2em; color: var(--muted); }
 .timer b { display: block; font: 900 40px/1 Impact, sans-serif; text-shadow: 0 2px 0 #000; }
 
 .game-banner { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; pointer-events: none; }
 .game-banner.super-call { transform: translateY(-16%); }
-.game-banner small,
+.game-banner small {
+  font: 900 20px "Noto Sans SC", "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: clamp(12px, 2.1cqw, 20px);
+  -webkit-text-stroke: 1px #000;
+  paint-order: stroke fill;
+  text-shadow: 0 4px 0 #000;
+}
 .end-overlay small {
   color: #fff;
-  font: 700 20px/1.3 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font: 700 20px/1.3 var(--font);
   letter-spacing: .14em;
   -webkit-text-stroke: 5px #000;
   paint-order: stroke fill;
   text-shadow: 0 2px 0 #000, 2px 0 0 #000, -2px 0 0 #000, 0 -2px 0 #000;
 }
-.game-banner strong { font: italic 900 64px Impact, sans-serif; text-shadow: 0 4px 0 #000; }
+.game-banner strong { font: italic 900 64px Impact, sans-serif; font-size: clamp(22px, 6.7cqw, 64px); text-shadow: 0 4px 0 #000; }
+.game-banner.super-call strong { font: 900 64px "Noto Sans SC", "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif; font-size: clamp(22px, 6.7cqw, 64px); }
 .game-banner strong:empty, .game-banner small:empty { display: none; }
 .game-banner button { pointer-events: auto; margin: 12px auto 0; }
 .end-overlay { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; background: #0b0a12cc; gap: 6px; }
@@ -114,9 +156,22 @@ body.in-battle { overflow-x: hidden; }
 .end-overlay p { margin: 0; color: var(--muted); }
 .end-overlay > div { display: flex; gap: 10px; justify-content: center; margin-top: 12px; }
 
-.battle-guide { margin-top: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 14px; }
-.battle-guide summary { cursor: pointer; font-weight: 700; }
-.battle-guide #battle-skills { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0 18px; }
+#battle-skills { margin-top: 12px; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+#battle-skills .skill { border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); padding: 8px 10px; row-gap: 4px; }
+#battle-skills .skill > div { display: contents; }
+#battle-skills .skill kbd { grid-row: 1; align-self: center; }
+#battle-skills .skill b { grid-column: 2; align-self: center; }
+#battle-skills .skill p { grid-row: 2; grid-column: 1 / -1; }
+#battle-skills .skill:first-child { border-top: 1px solid var(--line); }
+#battle-skills .skill kbd { color: var(--p1); }
+#battle-skills .skill b { font-size: 14px; }
+#battle-skills .skill p { font-size: 12px; }
+#battle-skills .skill kbd { font-size: 12px; }
+#battle-skills .skill .cooldown { font-size: 12px; }
+#battle-skills .skill.super kbd { color: #14140c; }
+#battle-skills .skill.super { padding-right: 18px; }
+#battle-skills .skill.super .charge { position: absolute; right: 6px; top: 8px; bottom: 8px; width: 6px; background: #0d0c14; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+#battle-skills .skill.super .charge i { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: var(--p1); display: block; }
 
 dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 14px; max-width: 560px; padding: 18px 22px; }
 dialog::backdrop { background: #000000aa; }
@@ -125,8 +180,88 @@ dialog::backdrop { background: #000000aa; }
 .key-table h3 { margin: 12px 0 4px; color: var(--p1); }
 .key-table p { margin: 2px 0; color: var(--muted); }
 
-@media (max-width: 760px) {
-  .select-stage { grid-template-columns: 1fr; }
-  .versus { padding: 0; }
+/* touch */
+.touch-only { display: none; }
+body.touch .touch-only { display: block; }
+/* 按键大小跟场地宽度走（cqw），手机与 iPad 同比例；不支持容器单位的旧浏览器回退上一行 vmin。 */
+.touchpad { --atk: clamp(62px, 16vmin, 86px); --sk: clamp(36px, 9.5vmin, 50px); --ring: clamp(96px, 26vmin, 136px); --atk: 9cqw; --sk: 5.4cqw; --ring: 14.6cqw; display: none; position: absolute; inset: 0; pointer-events: none; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.touchpad button { display: grid; place-items: center; padding: 0; pointer-events: auto; touch-action: none; border-radius: 50%; color: #fff; font-weight: 800; text-shadow: 0 1px 0 #000; background: #ffffff2e; border: 2px solid #ffffff73; }
+.touchpad button img { width: 58%; height: 58%; object-fit: contain; pointer-events: none; filter: drop-shadow(0 1px 0 #000); }
+.touchpad button.held { background: #ffffff80; }
+.touchpad button[data-cd] { opacity: .55; }
+.touchpad button[data-cd]::after { content: attr(data-cd); position: absolute; inset: auto 0 1px; font: 700 10px monospace; color: var(--cyan); text-shadow: 0 1px 0 #000; }
+.touchpad [data-pad] { position: absolute; left: var(--x); top: var(--y); transform: translate(-50%, -50%); }
+.tp-stick { --x: 16%; --y: 74%; width: calc(var(--ring) * 1.7); height: calc(var(--ring) * 1.7); pointer-events: auto; touch-action: none; }
+.tp-ring { position: absolute; left: 50%; top: 50%; width: var(--ring); height: var(--ring); transform: translate(-50%, -50%); border-radius: 50%; background: #ffffff1c; border: 2px solid #ffffff66; pointer-events: none; }
+.tp-knob-move { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
+.tp-knob { position: absolute; left: 0; top: 0; width: calc(var(--ring) * .4); height: calc(var(--ring) * .4); margin-left: calc(var(--ring) * -.2); margin-top: calc(var(--ring) * -.2); border-radius: 50%; background: #ffffff8c; border: 2px solid #fff; display: block; }
+body.touch.in-battle .timer { pointer-events: auto; padding: 6px 12px; margin: -6px -12px; }
+.touchpad .tp-tune { position: absolute; z-index: 6; top: max(8px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left)); width: auto; height: 32px; padding: 0 10px; border-radius: 8px; font-size: 12px; pointer-events: auto; }
+body.pad-tune .touchpad [data-pad] { outline: 2px dashed var(--p1); outline-offset: 3px; }
+body.pad-tune .tp-tune { background: var(--p1); color: #14140c; }
+.tp-actions { display: contents; }
+.tp-actions .atk { --x: 89.8%; --y: 88.1%; width: var(--atk); height: var(--atk); font-size: 18px; background: #ffffff59; border-color: #fff; }
+.tp-actions .sk { width: var(--sk); height: var(--sk); font-size: 12px; }
+.tp-actions .guard { --x: 81%; --y: 92.1%; }
+.tp-actions .s1 { --x: 75.2%; --y: 77.2%; }
+.tp-actions .s2 { --x: 84.9%; --y: 75.2%; }
+.tp-actions .s3 { --x: 86.3%; --y: 56.4%; }
+.tp-actions .jump { --x: 92.6%; --y: 54%; }
+.tp-actions .ult { --x: 94.5%; --y: 57.4%; --p: 0; width: calc(var(--sk) + 10px); height: calc(var(--sk) + 10px); }
+.tp-actions .ult img { filter: none; }
+.tp-actions .ult::after { content: ''; position: absolute; left: 21%; top: 21%; width: 58%; height: 58%; background: var(--p1); pointer-events: none; -webkit-mask: var(--ico) center / contain no-repeat; mask: var(--ico) center / contain no-repeat; clip-path: inset(calc((1 - var(--p)) * 100%) 0 0 0); }
+.tp-actions .ult.ready { background: #FDE97973; border-color: var(--p1); box-shadow: 0 0 0 1px var(--p1), 0 0 8px 1px #FDE979aa; }
+/* iOS turns a fast double-tap on HUD text into a selection and a copy menu. */
+body.touch.in-battle #battle {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.rotate-hint { display: none; position: absolute; inset: 0; place-content: center; background: #0b0a12dd; font-weight: 800; font-size: 20px; }
+@media (orientation: landscape) {
+  body.touch.in-battle { position: fixed; inset: 0; height: 100svh; overflow: hidden; }
+  /* svh stays the short viewport, so a fullscreen body would keep the canvas small and the address bar space empty. Stretch to the screen instead. */
+  body.touch.in-battle:fullscreen, body.touch.in-battle:-webkit-full-screen { height: auto; }
+  body.touch.in-battle header, body.touch.in-battle .battle-top, body.touch.in-battle #battle-skills, body.touch.in-battle #battle footer { display: none; }
+  body.touch.in-battle #battle { container-type: size; box-sizing: border-box; width: 100%; height: 100%; max-width: none; margin: 0; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); display: grid; place-items: center; }
+  /* 16:9 box that fits whatever landscape viewport is left after the notch. min-size 0 stops the 960×540 canvas from forcing itself taller than the screen. */
+  body.touch.in-battle .arena { width: min(100cqw, calc(100cqh * 960 / 540)); max-height: 100cqh; aspect-ratio: 960 / 540; min-width: 0; min-height: 0; border: 0; border-radius: 0; }
+  body.touch.in-battle .arena canvas { width: 100%; height: 100%; min-width: 0; min-height: 0; }
+  body.touch.in-battle .touchpad { display: block; }
+}
+@media (orientation: portrait) {
+  body.touch.in-battle .rotate-hint { display: grid; }
+  body.touch.in-battle .end-overlay:not([hidden]) ~ .rotate-hint { display: none; }
+}
+
+/* 竖屏窄屏的堆叠布局。触屏横屏即使视口不足 760px 也不走这里（另有 landscape 规则接管），桌面窄窗口仍生效。 */
+@media (max-width: 760px) and (orientation: portrait), (max-width: 760px) and (hover: hover) {
+  .select-stage, .select-stage.team { grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px; }
+  .versus { grid-column: 1 / -1; order: -1; padding: 0; }
+  #preview-left { order: 1; }
+  #preview-right { order: 2; }
+  #preview-ally { order: 3; }
+  #preview-enemy2 { order: 4; }
+  .fighter-preview canvas { height: 160px; }
+  .slot-head { min-height: 0; gap: 6px; }
+  .rules-summary { white-space: normal; }
+  .rules-panel { flex-wrap: wrap; justify-content: center; width: min(100vw - 48px, 420px); }
   .bottom-grid { grid-template-columns: 1fr; }
+  #battle-skills { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .start-box { position: sticky; bottom: 0; padding: 8px 0; background: var(--bg); }
+}
+
+/* Landscape phones: inset the previews so the portrait shrinks with the width and the row under it can fit. */
+@media (orientation: landscape) {
+  body.touch:not(.in-battle) .select-stage {
+    max-width: 546px;
+    margin-inline: auto;
+  }
+  body.touch:not(.in-battle) .fighter-preview canvas {
+    width: min(120px, 100%);
+    height: auto;
+    aspect-ratio: 240 / 290;
+  }
 }

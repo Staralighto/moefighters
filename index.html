@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#111119">
 <title>MOE FIGHTERS · 格斗</title>
 <link rel="stylesheet" href="/src/style.css">
@@ -17,32 +17,68 @@
 </header>
 
 <main id="selection">
-  <div class="sectionline"><span><i>01</i> 选择你的角色</span><span class="muted">SELECT YOUR FIGHTER</span></div>
-  <div class="select-stage">
-    <div class="fighter-preview left">
-      <div class="player-tag" id="p1tag">PLAYER 1</div>
-      <canvas id="portrait1" width="240" height="290" aria-label="1P 角色预览"></canvas>
-      <div class="fighter-title"><small id="style1"></small><h1 id="name1"></h1><p id="quote1"></p></div>
+  <div class="sectionline"><span><i>01</i> 选择你的角色</span><button id="random" type="button" title="随机当前槽位">⤨ 随机</button></div>
+  <div class="select-stage" id="select-stage">
+    <div class="fighter-preview left" id="preview-left" data-slot="0">
+      <div class="slot-head">
+        <span class="side-label" id="p1tag">1P</span>
+        <div class="slot-control" id="control-left" data-lead="0" role="group" aria-label="1P 控制">
+          <button type="button" data-who="player">玩家</button>
+          <button type="button" data-who="cpu">人机</button>
+        </div>
+      </div>
+      <canvas id="portrait1" width="240" height="290" aria-label="左侧角色预览"></canvas>
+      <h1 id="name1"></h1>
+    </div>
+    <div class="fighter-preview" id="preview-ally" data-slot="1" hidden>
+      <div class="slot-head">
+        <span class="side-label" id="pAtag">2P</span>
+        <div class="slot-control" id="control-ally" data-lead="1" role="group" aria-label="2P 控制">
+          <button type="button" data-who="player">玩家</button>
+          <button type="button" data-who="cpu">人机</button>
+        </div>
+      </div>
+      <canvas id="portraitA" width="240" height="290" aria-label="队友角色预览"></canvas>
+      <h1 id="nameA"></h1>
     </div>
     <div class="versus"><span>VS</span><small id="stage-caption"></small></div>
-    <div class="fighter-preview right">
-      <div class="player-tag pink" id="p2tag">CPU</div>
-      <canvas id="portrait2" width="240" height="290" aria-label="对手角色预览"></canvas>
-      <div class="fighter-title"><small id="style2"></small><h1 id="name2"></h1><p id="quote2"></p></div>
+    <div class="fighter-preview right" id="preview-right" data-slot="1">
+      <div class="slot-head">
+        <span class="side-label p2" id="p2tag">2P</span>
+        <div class="slot-control" id="control-right" data-lead="1" role="group" aria-label="右侧控制">
+          <button type="button" data-who="player">玩家</button>
+          <button type="button" data-who="cpu">人机</button>
+        </div>
+      </div>
+      <canvas id="portrait2" width="240" height="290" aria-label="右侧角色预览"></canvas>
+      <h1 id="name2"></h1>
+    </div>
+    <div class="fighter-preview" id="preview-enemy2" data-slot="3" hidden>
+      <div class="slot-head">
+        <span class="side-label p2" id="pEtag">4P</span>
+        <div class="slot-control" id="control-enemy" data-lead="3" role="group" aria-label="4P 控制">
+          <button type="button" data-who="player">玩家</button>
+          <button type="button" data-who="cpu">人机</button>
+        </div>
+      </div>
+      <canvas id="portraitE" width="240" height="290" aria-label="第二名敌人预览"></canvas>
+      <h1 id="nameE"></h1>
     </div>
   </div>
 
-  <div class="choose-bar">
-    <div class="choose-side">
-      <button class="active" id="choose1" aria-pressed="true">1P 选人</button>
-      <button id="choose2" aria-pressed="false">CPU 选人</button>
-      <button id="random" title="随机当前位置">⤨ 随机</button>
+  <div class="rules-row">
+    <button type="button" id="rules-summary" class="rules-summary" aria-expanded="false" aria-controls="rules-panel">
+      <span id="rules-text">1V1 · 你打人机 · 标准 ›</span>
+      <em id="rules-hint">可更改</em>
+    </button>
+    <div id="rules-panel" class="rules-panel" hidden>
+      <div class="modes" aria-label="规则">
+        <button type="button" data-mode="cpu">1V1</button>
+        <button type="button" data-mode="team">2V2</button>
+        <button type="button" data-mode="training">训练场</button>
+      </div>
+      <div class="difficulty"><span>人机强度</span><button type="button" data-difficulty="0">轻松</button><button type="button" class="active" data-difficulty="1">标准</button><button type="button" data-difficulty="2">大师</button></div>
     </div>
-    <div class="modes" aria-label="对战模式">
-      <button class="active" data-mode="cpu">人机对战</button>
-      <button data-mode="training">训练场</button>
-    </div>
-    <div class="difficulty"><span>CPU 强度</span><button data-difficulty="0">轻松</button><button class="active" data-difficulty="1">标准</button></div>
   </div>
 
   <div id="roster" class="roster"></div>
@@ -50,6 +86,7 @@
   <div class="bottom-grid">
     <section class="movelist">
       <div class="sectionline"><span><i>02</i> <span id="skill-owner"></span> · 招式表</span><small id="passive"></small></div>
+      <p id="flavor" class="flavor"></p>
       <div id="skills"></div>
     </section>
     <section class="start-box">
@@ -57,7 +94,7 @@
       <p id="round-rules">两胜制 · 60 秒 / 回合</p>
     </section>
   </div>
-  <footer><span>A D 移动 · W / 空格 跳跃 · 长按 S 格挡 · 点按 S 后闪 · J K 轻 / 重击（跳中为空击） · U I O 技能 · L 必杀</span></footer>
+  <footer><span id="select-keys">A D 移动 · W / 空格 跳跃 · 长按 S 格挡 · 点按 S 后闪 · J K 轻 / 重击（跳中为空击） · U I O 技能 · L 必杀</span></footer>
 </main>
 
 <main id="battle" hidden>
@@ -69,23 +106,54 @@
   <div class="arena" id="arena">
     <canvas id="game" width="960" height="540" tabindex="0" aria-label="格斗画面"></canvas>
     <div class="hud">
-      <div class="hud-player">
-        <div><b id="hud-name1"></b><span id="score1"></span></div>
-        <div class="health"><span id="hp1"></span></div>
-        <small id="health1"></small>
-        <div class="energy"><span id="mp1"></span></div>
+      <div class="hud-side">
+        <div class="hud-player">
+          <div><b id="hud-name1"></b><span id="score1"></span></div>
+          <div class="health"><span id="hp1"></span></div>
+          <small id="health1"></small>
+          <div class="energy"><span id="mp1"></span></div>
+        </div>
+        <div class="hud-player sub" id="hud-ally" hidden>
+          <div><b id="hud-name3"></b></div>
+          <div class="health"><span id="hp3"></span></div>
+          <small id="health3"></small>
+          <div class="energy"><span id="mp3"></span></div>
+        </div>
       </div>
       <div class="timer"><small id="round">ROUND 1</small><b id="timer">60</b></div>
-      <div class="hud-player second">
-        <div><span id="score2"></span><b id="hud-name2"></b></div>
-        <div class="health"><span id="hp2"></span></div>
-        <small id="health2"></small>
-        <div class="energy"><span id="mp2"></span></div>
+      <div class="hud-side">
+        <div class="hud-player second">
+          <div><span id="score2"></span><b id="hud-name2"></b></div>
+          <div class="health"><span id="hp2"></span></div>
+          <small id="health2"></small>
+          <div class="energy"><span id="mp2"></span></div>
+        </div>
+        <div class="hud-player second sub" id="hud-enemy2" hidden>
+          <div><b id="hud-name4"></b></div>
+          <div class="health"><span id="hp4"></span></div>
+          <small id="health4"></small>
+          <div class="energy"><span id="mp4"></span></div>
+        </div>
       </div>
     </div>
     <div class="game-banner" id="banner">
       <small id="banner-sub"></small><strong id="banner-text"></strong>
       <button id="resume" type="button" hidden>继续战斗 ▶</button>
+      <button id="pause-quit" type="button" hidden>返回选人 ◀</button>
+    </div>
+    <div class="touchpad" id="touchpad">
+      <div class="tp-stick" data-pad="stick">
+        <div class="tp-ring"><i class="tp-knob-move"><b class="tp-knob"></b></i></div>
+      </div>
+      <div class="tp-actions">
+        <button type="button" class="sk s1" data-pad="s1" data-key="KeyU" aria-label="技能1"><img alt="" src="/icons/dash.png"></button>
+        <button type="button" class="sk s2" data-pad="s2" data-key="KeyI" aria-label="技能2"><img alt="" src="/icons/upper.png"></button>
+        <button type="button" class="sk s3" data-pad="s3" data-key="KeyO" aria-label="技能3"><img alt="" src="/icons/grab.png"></button>
+        <button type="button" class="sk jump" data-pad="jump" data-key="Space" aria-label="跳跃"><img alt="" src="/icons/jump.png"></button>
+        <button type="button" class="sk ult" data-pad="ult" data-key="KeyL" aria-label="必杀"><img alt="" src="/icons/ult-gale.png"></button>
+        <button type="button" class="sk guard" data-pad="guard" data-key="KeyS" aria-label="格挡"><img alt="" src="/icons/guard.png"></button>
+        <button type="button" class="atk" data-pad="atk" data-atk aria-label="短按轻击，长按重击"><img alt="" src="/icons/light.png"></button>
+      </div>
     </div>
     <div class="end-overlay" id="end" hidden>
       <small>MATCH COMPLETE</small>
@@ -93,11 +161,9 @@
       <p id="end-info"></p>
       <div><button class="start" id="rematch">再来一局 ↻</button><button id="reselect">重新选人</button></div>
     </div>
+    <div class="rotate-hint">横过来才能打</div>
   </div>
-  <details class="battle-guide" id="battle-guide" open>
-    <summary>招式说明</summary>
-    <div id="battle-skills"></div>
-  </details>
+  <div id="battle-skills"></div>
   <footer><span>J → J → K 轻击起手 · 长按 S 格挡 · 点按 S 后闪躲抓投 · 跳中 J / K 空击 · L 满气必杀</span><span>按 ESC 暂停</span></footer>
 </main>
 
@@ -110,8 +176,13 @@
       <p>长按 S 格挡 · 点按 S 后闪 · J 轻击 · K 重击 · 跳中 J / K 空击</p>
       <p>U / I / O 三个专属技能 · L 必杀</p>
     </div>
+    <div class="touch-only">
+      <h3>手机</h3>
+      <p>左下摇杆只左右移动。跳跃用技能3上方那颗跳。右侧大圆键短按轻击、长按重击。三个技能朝这颗键排成圆弧，防在攻击键左边</p>
+      <p>点按和按住防都是格挡 · 手机只能一名玩家，其余槽位是人机</p>
+    </div>
   </div>
-  <p>命中、受击与格挡都能积攒能量，100 气释放必杀。轻击命中后可接轻击或重击；技能有独立冷却。贴身抓投可破防，点按 S 后闪能躲开抓投；远程弹幕可格挡或跳过，跳过去后可用空击追打，但会被升龙打下来。扫腿只打地面并击倒；上挑把对手挑到空中，落地前能再补一记；霸体招式蓄力期间硬吃一次打击，但抓投和必杀照样打断。防御槽耗尽会破防。每局先赢两回合者获胜，超时比较剩余生命比例。训练场能量持续补满、对手自动恢复，不计胜负。切换窗口会自动暂停。</p>
+  <p>命中、受击与格挡都能积攒能量，100 气释放必杀。轻击命中后可接轻击或重击；技能有独立冷却。贴身抓投可破防，点按 S 后闪能躲开抓投；远程弹幕可格挡或跳过，跳过去后可用空击追打，但会被升龙打下来。扫腿只打地面并击倒；上挑把对手挑到空中，落地前能再补一记；霸体招式蓄力期间硬吃一次打击，但抓投和必杀照样打断。防御槽耗尽会破防。每局先赢两回合者获胜，超时比较剩余生命比例。点槽位上的「玩家 / 人机」决定谁来操作，两边都是人机则只看不打。VS 下面那句是规则，可改成 2V2 或训练场，也能调人机强度。2V2 从左到右是 1P 到 4P，每格都能设玩家或人机，玩家最多两名；一方两人全倒才输本回合。训练场能量持续补满、对手自动恢复，不计胜负。按 1P 到 4P 的先后，先出现的玩家用左手键，后出现的用方向键移动、上跳、下格挡，小键盘 1 / 2 轻重击、4 / 5 / 6 技能、3 必杀。选中后出现的那位时，下方招式表改成这套小键盘；人机槽仍显示左手键。切换窗口会自动暂停。</p>
 </dialog>
 
 <script type="module" src="/src/main.ts"></script>

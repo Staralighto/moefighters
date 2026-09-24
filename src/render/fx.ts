@@ -1,4 +1,5 @@
 import type { Effect, FightGame, FloatingText, Particle, Projectile } from '../game/game.ts';
+import { SIDE } from '../game/constants.ts';
 import type { ImageCache } from '../assets/loader.ts';
 import { CELL } from './clips.ts';
 import { watchProp } from './propLayout.ts';
@@ -448,16 +449,15 @@ export function drawParticles(ctx: CanvasRenderingContext2D, particles: Particle
   ctx.globalAlpha = 1;
 }
 
-const LIME = new Set(['#d8ff62', '#c6ff85', '#b8ff83', '#b7ff6e']);
+const LIME = new Set(['#b7ff6e']);
+export const UI_FONT = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif';
 
 export function drawTexts(ctx: CanvasRenderingContext2D, texts: FloatingText[]): void {
   ctx.textAlign = 'center';
   for (const t of texts) {
     const lime = LIME.has(t.color);
     ctx.globalAlpha = Math.min(1, t.life * 4);
-    ctx.font = lime
-      ? `700 ${Math.round(t.size * 1.2)}px ui-monospace, Consolas, monospace`
-      : `900 ${t.size}px 'Microsoft YaHei', sans-serif`;
+    ctx.font = `${lime ? 700 : 900} ${lime ? Math.round(t.size * 1.2) : t.size}px ${UI_FONT}`;
     ctx.lineWidth = lime ? 6 : 4;
     ctx.strokeStyle = lime ? '#000' : '#171120';
     ctx.strokeText(t.text, t.x, t.y);
@@ -470,15 +470,17 @@ export function drawTexts(ctx: CanvasRenderingContext2D, texts: FloatingText[]):
 export function drawCombo(ctx: CanvasRenderingContext2D, g: FightGame): void {
   for (const f of g.fighters) {
     if (f.combo <= 1 || f.comboTime <= 0) continue;
-    const left = f.team === 0, x = left ? 42 : 918, y = 205;
+    const left = f.team === 0;
+    const slot = g.fighters.filter(m => m.team === f.team).indexOf(f);
+    const x = left ? 42 : 918, y = 205 + slot * 36;
     ctx.textAlign = left ? 'left' : 'right';
-    ctx.font = left ? '700 54px ui-monospace, Consolas, monospace' : 'italic 45px Impact, sans-serif';
-    ctx.fillStyle = left ? '#fff' : '#ff75a4';
-    ctx.strokeStyle = left ? '#000' : '#201429';
-    ctx.lineWidth = left ? 7 : 4;
+    ctx.font = 'italic 45px Impact, sans-serif';
+    ctx.fillStyle = SIDE[f.team];
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 4;
     ctx.strokeText(f.combo + ' HIT', x, y);
     ctx.fillText(f.combo + ' HIT', x, y);
-    ctx.font = '12px monospace';
+    ctx.font = `12px ${UI_FONT}`;
     ctx.fillStyle = '#fff';
     ctx.fillText(f.combo >= 5 ? 'NICE COMBO!' : 'COMBO', x, y + 20);
   }

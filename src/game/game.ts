@@ -1,20 +1,39 @@
 import type { CharacterData, Skill, StageData } from '../data/types.ts';
-import type { Attack, Fighter } from './fighter.ts';
+import type { Attack, Fighter, QueuedInput } from './fighter.ts';
 import { DECAY_TIMERS, makeFighter } from './fighter.ts';
 import { AIR_SKILLS } from '../data/skills.ts';
 import { advanceAnim } from './animState.ts';
-import { stepProjectiles, updateAttack, wailShots } from './combat.ts';
+import { effectSettled, stepProjectiles, updateAttack, wailShots } from './combat.ts';
 import { stepAI } from './ai.ts';
-import { CONTROLS, FLOOR, GRAVITY, STEP, X_MAX, X_MIN, clamp } from './constants.ts';
+import { CONTROLS, FLOOR, GRAVITY, INPUT_BUFFER, SIDE, STEP, X_MAX, X_MIN, clamp } from './constants.ts';
 
 /* Fixed-step arcade simulation. This module never touches the DOM or a canvas; it emits effects as data. */
 
-export type Mode = 'cpu' | 'training';
+export type Mode = 'cpu' | 'training' | 'team';
 export type Phase = 'intro' | 'fight' | 'roundend' | 'finished';
+
+const DUO_SPAWN = [
+  { x: 265, facing: 1 as const, team: 0, controller: 0 as number | null },
+  { x: 695, facing: -1 as const, team: 1, controller: null },
+];
+const TEAM_SPAWN = [
+  { x: 210, facing: 1 as const, team: 0, controller: 0 as number | null },
+  { x: 120, facing: 1 as const, team: 0, controller: null },
+  { x: 750, facing: -1 as const, team: 1, controller: null },
+  { x: 840, facing: -1 as const, team: 1, controller: null },
+];
 
 /** Block key released faster than this becomes a back-dodge instead of a block. */
 export const DODGE_TAP = .12;
-const DODGE_TIME = .28, DODGE_INVULN = .16, DODGE_CD = 1.2, DODGE_SPEED = 520;
+/** A tapped block keeps guarding at least this long after the finger lifts. */
+const BLOCK_MIN = .16;
+/** True while a press should wait instead of expiring. Hitstun, knockdown, a move, a dodge, or a root. */
+function inputLocked(f: Fighter): boolean {
+  return f.stun > 0 || f.knocked > 0 || !!f.attack || f.dodge > 0 || f.root > 0;
+}
+const DODGE_TIME = .28, DODGE_INVULN = .16, DODGE_CD = 1.2;
+/** Back-dodge covers 35% of the stage, enough to clear key skills. */
+const DODGE_SPEED = (X_MAX - X_MIN) * .35 / DODGE_TIME;
 export type SfxKind = 'light' | 'heavy' | 'hit' | 'block' | 'super' | 'select' | 'jump' | 'ko' | 'cast';
 
 export interface Effect {
@@ -38,12 +57,14 @@ export interface Projectile {
 export interface GameOptions {
   mode: Mode;
   difficulty: number;
+  /** Per fighter. Omitted keeps the old default: slot 0 human, everyone else CPU. */
+  controllers?: (number | null)[];
   stage: StageData;
   audio: { play(kind: SfxKind): void };
   random?: () => number;
   onHUD?(g: FightGame): void;
   onBanner?(title: string, sub: string): void;
-  onEnd?(winner: Fighter, stats: string): void;
+  onEnd?(title: string, stats: string): void;
   onPause?(paused: boolean): void;
 }
 
@@ -85,7 +106,7 @@ export class FightGame {
     this.characters = characters;
     this.options = options;
     this.mode = options.mode;
-    this.difficulty = clamp(options.difficulty, 0, 1);
+    this.difficulty = clamp(options.difficulty, 0, 2);
     this.audio = options.audio;
     this.random = options.random ?? Math.random;
     this.totalHits = characters.map(() => 0);
@@ -110,10 +131,11 @@ export class FightGame {
 
   /* ---- round lifecycle ---- */
   resetRound(): void {
+    const spawn = this.mode === 'team' ? TEAM_SPAWN : DUO_SPAWN;
+    const controls = this.options.controllers;
     this.fighters = this.characters.map((d, i) => makeFighter(d, i, {
-      x: i === 0 ? 265 : 695,
-      facing: i === 0 ? 1 : -1,
-      controller: i === 0 ? 0 : null,
+      ...spawn[i],
+      controller: controls ? (controls[i] ?? null) : spawn[i].controller,
       energy: this.mode === 'training' ? 100 : 20,
     }));
     this.projectiles = [];
@@ -145,8 +167,8 @@ export class FightGame {
     if (this.phase === 'finished') return;
     this.paused = force ?? !this.paused;
     this.keys.clear();
-    for (const f of this.fighters) { f.queue = []; f.jumpRequest = false; f.jumpBuffer = 0; f.dodgeRequest = false; f.blockTap = -1; }
-    this.options.onBanner?.(this.paused ? 'PAUSED' : '', this.paused ? '点击下方继续战斗，或按 ESC' : '');
+    for (const f of this.fighters) { f.queue = []; f.jumpRequest = false; f.jumpBuffer = 0; f.dodgeRequest = false; f.dodgeBuffer = 0; f.blockTap = -1; f.blockBuffer = 0; f.blockLeft = 0; }
+    this.options.onBanner?.(this.paused ? 'PAUSED' : '', '');
     this.options.onPause?.(this.paused);
   }
 
@@ -161,18 +183,26 @@ export class FightGame {
       const c = CONTROLS[f.controller];
       if (!c) continue;
       if (c.jump.includes(code)) f.jumpRequest = true;
-      if (code === c.block) f.blockTap = 0;
+      if (code === c.block) { f.blockTap = 0; f.blockBuffer = INPUT_BUFFER; }
       const index = c.attacks.indexOf(code);
-      if (index >= 0) f.queue.push({ index, ttl: .18 });
+      if (index >= 0) {
+        const last = f.queue[f.queue.length - 1];
+        if (last?.index === index) last.ttl = INPUT_BUFFER;
+        else f.queue.push({ index, ttl: INPUT_BUFFER });
+      }
     }
   }
-  keyUp(code: string): void {
+  keyUp(code: string, dodge = true): void {
     this.keys.delete(code);
     for (const f of this.fighters) {
       const c = f.controller !== null ? CONTROLS[f.controller] : undefined;
       if (!c || code !== c.block) continue;
       // A clean short tap (no hit absorbed while holding) is a dodge; a hold was a block.
-      if (f.blockTap >= 0 && f.blockTap < DODGE_TAP) f.dodgeRequest = true;
+      // Touch passes dodge=false: a tap on the phone block button stays a block, and is remembered.
+      const tap = f.blockTap >= 0 && f.blockTap < DODGE_TAP;
+      if (dodge && tap) { f.dodgeRequest = true; f.blockBuffer = 0; }
+      else if (!dodge && tap) f.blockBuffer = INPUT_BUFFER;
+      else f.blockBuffer = 0;
       f.blockTap = -1;
     }
   }
@@ -197,7 +227,7 @@ export class FightGame {
   }
 
   /* ---- attacks ---- */
-  airborne(f: Fighter): boolean { return f.y < FLOOR - .5; }
+  airborne(f: Fighter): boolean { return f.y < FLOOR - .5 || f.vy < 0; }
 
   /** The move a key would produce right now: shared air normals off the ground, the character's list on it. */
   skillFor(f: Fighter, index: number): Skill {
@@ -207,9 +237,9 @@ export class FightGame {
   canAttack(f: Fighter, index: number): boolean {
     if (this.paused || this.phase !== 'fight') return false;
     if (f.hp <= 0 || f.blocking || f.dodge > 0 || f.cooldowns[index] > 0) return false;
-    const ripple = index === 4 && f.data.skills[4]?.fx === 'ripple';
+    const breakout = !!f.data.skills[index]?.breakout;
     const downed = f.y >= FLOOR - .1 && f.knocked > 0 && f.vy >= 0;
-    const escape = ripple && f.hitBySuper && !downed;
+    const escape = breakout && f.hitBySuper && !downed;
     if (!escape && (f.stun > 0 || f.knocked > 0)) return false;
     if (index >= 2 && this.airborne(f) && !escape) return false;
     if (f.root > 0 && this.skillFor(f, index).type === 'dash') return false;
@@ -233,15 +263,17 @@ export class FightGame {
       tossAt: 0,
       hold: -1,
     };
-    if (skill.fx === 'ripple' && f.hitBySuper) {
+    if (skill.breakout && f.hitBySuper) {
       f.stun = 0;
       f.knocked = 0;
       f.downTime = 0;
       f.vx = 0;
       f.vy = 0;
       f.y = FLOOR;
-      f.invuln = Math.max(f.invuln, .34);
+      f.invuln = Math.max(f.invuln, skill.invuln ?? .34);
       f.hitBySuper = false;
+    } else if (skill.breakout && skill.invuln) {
+      f.invuln = Math.max(f.invuln, skill.invuln);
     }
     f.cooldowns[index] = skill.cd;
     if (index === 5) {
@@ -257,8 +289,38 @@ export class FightGame {
     }
     if (skill.type === 'dash') f.invuln = skill.super ? .42 : (skill.invuln ?? 0);
     if (skill.type === 'upper') { f.vy = -580; f.invuln = Math.max(f.invuln, .2); }
-    if (skill.air && skill.type === 'heavy') f.vy = Math.max(f.vy, 180);
+    // A rising jump keeps its upward speed. The dive kick only adds to a fall.
+    if (skill.air && skill.type === 'heavy' && f.vy >= 0) f.vy = Math.max(f.vy, 180);
     return true;
+  }
+
+  /** A long cooldown or an empty super meter should not sit in front of a move that can happen now. */
+  private staleIntent(f: Fighter, index: number): boolean {
+    if (f.cooldowns[index] > INPUT_BUFFER) return true;
+    return index === 5 && f.energy < 100 && this.mode !== 'training';
+  }
+
+  /** Keep a press that is only waiting on a lock, landing, or a cooldown about to end. */
+  private bufferHolds(f: Fighter, index: number): boolean {
+    if (f.stun > 0 || f.knocked > 0 || !!f.attack || f.dodge > 0 || f.root > 0) return true;
+    if (this.airborne(f) && index >= 2) return true;
+    if (this.staleIntent(f, index)) return false;
+    return f.cooldowns[index] > 0;
+  }
+
+  /** Fire the first legal attack. An earlier press that cannot happen soon is dropped. */
+  private releaseQueue(f: Fighter, dt: number): boolean {
+    let fired = false;
+    const skipped: QueuedInput[] = [];
+    const later: QueuedInput[] = [];
+    for (const q of f.queue) {
+      if (!fired && this.attack(f, q.index)) { fired = true; continue; }
+      (fired ? later : skipped).push(q);
+    }
+    const pending = fired ? [...skipped.filter(q => !this.staleIntent(f, q.index)), ...later] : [...f.queue];
+    for (const q of pending) if (!this.bufferHolds(f, q.index)) q.ttl -= dt;
+    f.queue = pending.filter(q => q.ttl > 0).slice(-4);
+    return fired;
   }
 
   /* ---- simulation ---- */
@@ -290,8 +352,8 @@ export class FightGame {
           this.phase = 'finished';
           const team = this.wins[0] >= 2 ? 0 : 1;
           this.winnerTeam = team;
-          const winner = this.fighters.find(f => f.team === team && f.hp > 0) ?? this.fighters[team];
-          this.options.onEnd?.(winner, `${this.wins[0]} : ${this.wins[1]} · 1P 最高 ${this.maxCombo[0]} 连击 · ${this.totalHits[0]} 次命中`);
+          const lead = this.fighters[0];
+          this.options.onEnd?.(this.teamNames(team) + ' 获胜', `${this.wins[0]} : ${this.wins[1]} · ${lead.data.name} 最高 ${this.maxCombo[0]} 连击 · ${this.totalHits[lead.id]} 次命中`);
         } else {
           this.round++;
           this.resetRound();
@@ -304,12 +366,13 @@ export class FightGame {
     if (this.mode !== 'training') this.time -= dt;
     stepAI(this, dt);
     for (const f of this.fighters) this.stepFighter(f, dt);
+    if (this.mode === 'team') this.separate();
     for (const f of this.fighters) advanceAnim(f, dt);
     stepProjectiles(this, dt);
 
     if (this.mode === 'training') {
       for (const f of this.fighters) {
-        if (f.hp <= 0) { f.hp = f.data.hp; f.stun = .5; this.text('训练恢复', f.x, f.y - 185, '#b8ff83'); }
+        if (f.hp <= 0) { f.hp = f.data.hp; f.stun = .5; this.text('训练恢复', f.x, f.y - 185, SIDE[1]); }
       }
     } else if (!this.teamAlive(0) || !this.teamAlive(1) || this.time <= 0) {
       this.endRound();
@@ -329,9 +392,33 @@ export class FightGame {
     this.projectiles = [];
     for (const f of this.fighters) { f.queue = []; f.attack = null; }
     const title = draw ? 'DRAW' : this.time <= 0 ? 'TIME UP' : 'K.O.';
-    this.setBanner(title, draw ? '平局 · 再战一回合' : this.fighters[winner].data.name + ' 赢下本回合');
+    this.setBanner(title, draw ? '平局 · 再战一回合' : this.teamNames(winner) + ' 赢下本回合');
     this.audio.play('ko');
     this.options.onHUD?.(this);
+  }
+
+  private teamNames(team: number): string {
+    return this.fighters.filter(f => f.team === team).map(f => f.data.name).join(' & ');
+  }
+
+  /** ponytail: 36px gap only between teams. Teammates have no body and pass through. */
+  private separate(): void {
+    const GAP = 36;
+    const live = this.fighters.filter(f => f.hp > 0);
+    for (let i = 0; i < live.length; i++) {
+      for (let j = i + 1; j < live.length; j++) {
+        const a = live[i], b = live[j];
+        if (a.team === b.team) continue;
+        if (Math.abs(a.y - b.y) >= 40) continue;
+        const dx = b.x - a.x;
+        const adx = Math.abs(dx);
+        if (adx >= GAP) continue;
+        const push = (GAP - adx) / 2;
+        const sign = dx === 0 ? 1 : Math.sign(dx);
+        a.x = clamp(a.x - sign * push, X_MIN, X_MAX);
+        b.x = clamp(b.x + sign * push, X_MIN, X_MAX);
+      }
+    }
   }
 
   private fall(f: Fighter, dt: number): void {
@@ -341,7 +428,7 @@ export class FightGame {
   }
 
   private retire(f: Fighter): void {
-    f.hp = 0; f.attack = null; f.queue = []; f.jumpRequest = false; f.jumpBuffer = 0; f.dodgeRequest = false; f.dodge = 0; f.blocking = false; f.ai.move = 0; f.ai.block = 0;
+    f.hp = 0; f.attack = null; f.queue = []; f.jumpRequest = false; f.jumpBuffer = 0; f.dodgeRequest = false; f.dodgeBuffer = 0; f.blockBuffer = 0; f.blockLeft = 0; f.dodge = 0; f.blocking = false; f.ai.move = 0; f.ai.block = 0;
   }
 
   private startDodge(f: Fighter): void {
@@ -382,15 +469,39 @@ export class FightGame {
     const move = human
       ? (c && this.keys.has(c.right) ? 1 : 0) - (c && this.keys.has(c.left) ? 1 : 0)
       : this.mode !== 'training' ? f.ai.move : 0;
+    const blockHeld = human ? !!c && this.keys.has(c.block) : this.mode !== 'training' && f.ai.block > 0;
 
-    const free = !f.attack && f.stun <= 0 && !f.knocked && f.dodge <= 0;
-    if (f.dodgeRequest) {
-      f.dodgeRequest = false;
-      if (grounded && free && f.dodgeCd <= 0 && f.root <= 0) this.startDodge(f);
+    if (f.dodgeRequest) { f.dodgeBuffer = INPUT_BUFFER; f.dodgeRequest = false; }
+    // Humans can cut recovery into a block or a dodge once the move has already hit. CPU stays committed.
+    if (human && f.attack && effectSettled(f.attack)) {
+      const wantDodge = f.dodgeBuffer > 0 && grounded && f.dodgeCd <= 0 && f.root <= 0;
+      const wantBlock = (blockHeld || f.blockBuffer > 0) && grounded && f.guardBroken <= 0 && f.guard > 0;
+      if (wantDodge) {
+        f.attack = null;
+        f.dodgeBuffer = 0;
+        f.blockBuffer = 0;
+        this.startDodge(f);
+      } else if (wantBlock) {
+        f.attack = null;
+        if (!blockHeld) f.blockLeft = Math.max(f.blockLeft, BLOCK_MIN);
+        f.blockBuffer = 0;
+      }
     }
 
-    const block = human ? !!c && this.keys.has(c.block) : this.mode !== 'training' && f.ai.block > 0;
-    f.blocking = !!(block && grounded && free && f.guardBroken <= 0 && f.guard > 0);
+    let free = !f.attack && f.stun <= 0 && !f.knocked && f.dodge <= 0;
+    if (f.dodgeBuffer > 0) {
+      if (grounded && free && f.dodgeCd <= 0 && f.root <= 0) { f.dodgeBuffer = 0; this.startDodge(f); free = false; }
+      else if (grounded && !inputLocked(f)) f.dodgeBuffer = Math.max(0, f.dodgeBuffer - dt);
+    }
+
+    const canGuard = grounded && free && f.guardBroken <= 0 && f.guard > 0;
+    if (canGuard && (blockHeld || f.blockLeft > 0 || f.blockBuffer > 0)) {
+      if (!blockHeld && f.blockBuffer > 0) f.blockLeft = Math.max(f.blockLeft, BLOCK_MIN);
+      if (!blockHeld) f.blockBuffer = 0;
+      f.blocking = blockHeld || f.blockLeft > 0;
+    } else f.blocking = false;
+    if (f.blockLeft > 0) f.blockLeft = Math.max(0, f.blockLeft - dt);
+    if (f.blockBuffer > 0 && !inputLocked(f) && !this.airborne(f)) f.blockBuffer = Math.max(0, f.blockBuffer - dt);
     if (!f.blocking) f.guard = clamp(f.guard + dt * 15, 0, 100);
 
     if (free) {
@@ -398,19 +509,36 @@ export class FightGame {
       if (!human && o && (f.ai.block > 0 || f.queue.length)) f.facing = f.ai.block > 0 ? f.ai.facing : (o.x >= f.x ? 1 : -1);
     }
 
-    if (f.jumpRequest) { f.jumpBuffer = .14; f.jumpRequest = false; }
-    if (f.jumpBuffer > 0) {
-      f.jumpBuffer = Math.max(0, f.jumpBuffer - dt);
-      if (grounded && free && !f.blocking && f.root <= 0) {
+    if (f.jumpRequest) { f.jumpBuffer = INPUT_BUFFER; f.jumpRequest = false; }
+    const jumpHeld = human && !!c && c.jump.some(code => this.keys.has(code));
+    const canHop = grounded && f.stun <= 0 && f.knocked <= 0 && f.dodge <= 0 && !f.blocking && f.root <= 0;
+    // A held jump leaves the ground during a jab and comes back out on landing. Skills stay put.
+    if (jumpHeld && canHop && f.vy >= 0 && !(f.attack && f.attack.index > 1)) {
+      const convert = f.attack && !f.attack.skill.air && f.attack.index <= 1 ? f.attack.index : -1;
+      if (convert >= 0) { f.cooldowns[convert] = 0; f.attack = null; }
+      f.vy = -600;
+      f.jumpBuffer = 0;
+      this.audio.play('jump');
+      this.effect('dust', f.x, FLOOR, '#afa1c1', .3, { radius: 25 });
+      if (convert >= 0) this.attack(f, convert);
+    }
+    const fired = this.releaseQueue(f, dt);
+    if (fired && !jumpHeld) { f.jumpBuffer = 0; f.jumpRequest = false; }
+    else if (f.jumpBuffer > 0) {
+      if (canHop && !f.attack) {
         f.jumpBuffer = 0;
         f.vy = -600;
         this.audio.play('jump');
         this.effect('dust', f.x, FLOOR, '#afa1c1', .3, { radius: 25 });
+      } else if (grounded && !inputLocked(f)) f.jumpBuffer = Math.max(0, f.jumpBuffer - dt);
+    }
+    if (human && c && this.airborne(f) && !f.attack) {
+      const index = this.keys.has(c.attacks[1]) ? 1 : this.keys.has(c.attacks[0]) ? 0 : -1;
+      if (index >= 0) {
+        if (f.vy < 0 && f.y >= FLOOR - 2) f.cooldowns[index] = 0;
+        this.attack(f, index);
       }
     }
-
-    f.queue = f.queue.filter(q => { q.ttl -= dt; return q.ttl > 0; }).slice(-4);
-    if (f.queue.length && this.attack(f, f.queue[0].index)) f.queue.shift();
 
     if (f.dodge > 0) {
       f.x -= f.facing * DODGE_SPEED * dt;
@@ -425,7 +553,9 @@ export class FightGame {
 
     f.x += f.vx * dt;
     f.vx *= Math.exp(-9 * dt);
-    f.vy += GRAVITY * dt;
+    // A juggled float falls slower, so launch into a jump attack has time to connect.
+    const juggled = !grounded && f.stun > 0 && f.knocked <= 0;
+    f.vy += GRAVITY * (juggled ? .6 : 1) * dt;
     f.y += f.vy * dt;
     if (f.y > FLOOR) {
       if (f.vy > 350) { f.landing = .12; this.effect('dust', f.x, FLOOR, '#afa1c1', .3, { radius: 25 }); }

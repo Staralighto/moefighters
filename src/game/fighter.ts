@@ -51,8 +51,14 @@ export interface Fighter {
   /** Remaining back-dodge time and its cooldown. */
   dodge: number; dodgeCd: number;
   dodgeRequest: boolean;
+  /** Seconds a dodge press is kept. The clock pauses while the fighter cannot act. */
+  dodgeBuffer: number;
   /** Seconds the block key has been held; -1 when released. A tap shorter than DODGE_TAP becomes a dodge. */
   blockTap: number;
+  /** A block press kept until it can happen. The clock pauses while a move or stun is on. */
+  blockBuffer: number;
+  /** A released tap keeps guarding this long, so the block is actually there. */
+  blockLeft: number;
   attack: Attack | null;
   attackSerial: number;
   cooldowns: number[];
@@ -62,7 +68,7 @@ export interface Fighter {
   combo: number; hitCount: number;
   walk: number;
   animState: AnimState; animTime: number; animSerial: number;
-  ai: { wait: number; move: number; block: number; facing: 1 | -1 };
+  ai: { wait: number; move: number; block: number; facing: 1 | -1; press: number };
 }
 
 export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd'] as const;
@@ -70,26 +76,26 @@ export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing
 export function makeFighter(
   data: CharacterData,
   id: number,
-  init: { x: number; facing: 1 | -1; controller: number | null; energy: number },
+  init: { x: number; facing: 1 | -1; controller: number | null; energy: number; team: number },
 ): Fighter {
   return {
-    data, id, team: id % 2, controller: init.controller,
+    data, id, team: init.team, controller: init.controller,
     x: init.x, y: FLOOR, vx: 0, vy: 0, facing: init.facing,
     hp: data.hp, energy: init.energy, guard: 100, blocking: false,
     stun: 0, invuln: 0, comboTime: 0, hitFlash: 0, landing: 0, guardBroken: 0,
     knocked: 0, downTime: 0, hitBySuper: false, root: 0, rootHits: 0,
-    dodge: 0, dodgeCd: 0, dodgeRequest: false, blockTap: -1,
+    dodge: 0, dodgeCd: 0, dodgeRequest: false, dodgeBuffer: 0, blockTap: -1, blockBuffer: 0, blockLeft: 0,
     attack: null, attackSerial: 0, cooldowns: [0, 0, 0, 0, 0, 0], queue: [],
     jumpRequest: false, jumpBuffer: 0,
     combo: 0, hitCount: 0, walk: 0,
     animState: 'idle', animTime: 0, animSerial: 0,
-    ai: { wait: .5, move: 0, block: 0, facing: init.facing },
+    ai: { wait: .5, move: 0, block: 0, facing: init.facing, press: 0 },
   };
 }
 
 /** Idle stand-in for select-screen portraits. */
 export function previewFighter(data: CharacterData, time: number, facing: 1 | -1 = 1): Fighter {
-  const f = makeFighter(data, 0, { x: 0, facing, controller: null, energy: 0 });
+  const f = makeFighter(data, 0, { x: 0, facing, controller: null, energy: 0, team: 0 });
   f.animTime = time;
   return f;
 }

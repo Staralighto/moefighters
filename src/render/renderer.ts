@@ -2,8 +2,11 @@ import type { StageData } from '../data/types.ts';
 import type { FightGame } from '../game/game.ts';
 import type { FighterView } from './view.ts';
 import type { ImageCache } from '../assets/loader.ts';
-import { FLOOR, H, W } from '../game/constants.ts';
-import { drawCombo, drawEffect, drawParticles, drawProjectile, drawTexts } from './fx.ts';
+import { FLOOR, H, SIDE, W } from '../game/constants.ts';
+import { drawCombo, drawEffect, drawParticles, drawProjectile, drawTexts, UI_FONT } from './fx.ts';
+
+/** Hard 1px rim, yellow for the left team and green for the right. Only used in 2v2. */
+const TEAM_GLOW = SIDE;
 
 /* Reads game state, writes pixels. Never mutates the game. */
 export class Renderer {
@@ -37,7 +40,8 @@ export class Renderer {
     const order = [...g.fighters].sort((a, b) => Number(a.hp > 0) - Number(b.hp > 0) || a.y - b.y);
     for (const f of order) {
       const view = this.view(f.data.id);
-      view.draw(c, f, f.x, f.hp <= 0 ? FLOOR : f.y, f.hp <= 0 ? .3 : 1);
+      const outline = g.mode === 'team' ? TEAM_GLOW[f.team] : undefined;
+      view.draw(c, f, f.x, f.hp <= 0 ? FLOOR : f.y, f.hp <= 0 ? .3 : 1, undefined, outline);
       if (f.blocking) drawEffect(c, { type: 'shield', x: f.x + f.facing * 28, y: f.y - 80, color: '#a6eeff', life: .14, max: .22, radius: 58 });
     }
     for (const p of g.projectiles) drawProjectile(c, p, this.images);
@@ -46,7 +50,7 @@ export class Renderer {
     drawTexts(c, g.texts);
     drawCombo(c, g);
     if (g.mode === 'training') {
-      c.textAlign = 'center'; c.font = '14px monospace'; c.fillStyle = '#ddd9ee';
+      c.textAlign = 'center'; c.font = `14px ${UI_FONT}`; c.fillStyle = '#ddd9ee';
       c.fillText('训练模式 · 无限能量 · 停手后对手恢复', W / 2, 520);
     }
     c.restore();

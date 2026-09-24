@@ -28,7 +28,12 @@ export interface Skill {
   interval?: number;
   size?: number;
   life?: number;
+  /** Startup invuln for dashes; for breakout skills, the invuln granted on every cast. */
   invuln?: number;
+  /** Combo escape (e.g. 恐湖, 轮奏): stays buffered through a super and clears control on cast. */
+  breakout?: boolean;
+  /** Per-skill hit knockback velocity; falls back to the type/fx default when unset. */
+  knock?: number;
 }
 
 export type Trait = 'rush' | 'focus' | 'armor';
