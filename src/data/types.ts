@@ -41,7 +41,7 @@ export type Trait = 'rush' | 'focus' | 'armor';
 /** How a character is drawn. Swap the spec, not the code. PNG of the same grid replaces the SVG path. */
 export type ViewSpec =
   | { kind: 'geometry'; build: 'slim' | 'bulky' | 'tall' }
-  | { kind: 'sprite'; common: string; special: string; height: number; extras?: string[] };
+  | { kind: 'sprite'; common: string; special: string; height: number; frenzy?: string; extras?: string[] };
 
 export interface CharacterData {
   id: string;

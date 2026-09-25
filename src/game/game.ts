@@ -34,6 +34,9 @@ function inputLocked(f: Fighter): boolean {
 const DODGE_TIME = .28, DODGE_INVULN = .16, DODGE_CD = 1.2;
 /** Back-dodge covers 35% of the stage, enough to clear key skills. */
 const DODGE_SPEED = (X_MAX - X_MIN) * .35 / DODGE_TIME;
+/** 狂化连招: three ground jabs inside the window arm the next press as the heavy, so mashing J keeps looping. */
+const FRENZY_CHAIN_JABS = 3;
+const FRENZY_CHAIN_WINDOW = .6;
 export type SfxKind = 'light' | 'heavy' | 'hit' | 'block' | 'super' | 'select' | 'jump' | 'ko' | 'cast';
 
 export interface Effect {
@@ -252,11 +255,19 @@ export class FightGame {
     return true;
   }
 
+  /** 狂化连招: while the chain is warm, the ground press after the third jab resolves as the kick. */
+  private frenzyChain(f: Fighter, index: number): number {
+    if (index !== 0 || f.frenzy <= 0 || this.airborne(f)) return index;
+    if (f.jabChainClock <= 0) f.jabChain = 0;
+    return f.jabChain >= FRENZY_CHAIN_JABS ? 1 : 0;
+  }
+
   attack(f: Fighter, index: number): boolean {
-    if (!this.canAttack(f, index)) return false;
-    const skill = this.skillFor(f, index);
+    const slot = this.frenzyChain(f, index);
+    if (!this.canAttack(f, slot)) return false;
+    const skill = this.skillFor(f, slot);
     f.attack = {
-      skill, index, serial: ++f.attackSerial, t: 0, emitted: false, shots: 0, hit: new Set(),
+      skill, index: slot, serial: ++f.attackSerial, t: 0, emitted: false, shots: 0, hit: new Set(),
       burst: skill.fx === 'wail' ? wailShots(f.hp, f.data.hp) : 0,
       endure: skill.type === 'endure' ? 1 : 0,
       liftAt: 0,
@@ -275,8 +286,9 @@ export class FightGame {
     } else if (skill.breakout && skill.invuln) {
       f.invuln = Math.max(f.invuln, skill.invuln);
     }
-    f.cooldowns[index] = skill.cd;
-    if (index === 5) {
+    // Frenzy shortens the recast wait of the ground jab and kick to match the faster clock.
+    f.cooldowns[slot] = skill.cd * (f.frenzy > 0 && slot <= 1 && !skill.air ? .6 : 1);
+    if (slot === 5) {
       f.energy = 0;
       f.invuln = .64;
       this.flash = .15;
@@ -285,12 +297,17 @@ export class FightGame {
       this.setBanner(skill.name, f.data.name + ' · SUPER', 1.0);
       this.effect('super', f.x, f.y - 80, f.data.color, .8, { radius: 160 });
     } else {
-      this.audio.play(index === 0 ? 'light' : index === 1 ? 'heavy' : 'cast');
+      this.audio.play(slot === 0 ? 'light' : slot === 1 ? 'heavy' : 'cast');
     }
     if (skill.type === 'dash') f.invuln = skill.super ? .42 : (skill.invuln ?? 0);
     if (skill.type === 'upper') { f.vy = -580; f.invuln = Math.max(f.invuln, .2); }
     // A rising jump keeps its upward speed. The dive kick only adds to a fall.
     if (skill.air && skill.type === 'heavy' && f.vy >= 0) f.vy = Math.max(f.vy, 180);
+    // 狂化连招: ground jabs stack the chain; any heavy out of it spends the chain.
+    if (f.frenzy > 0 && slot <= 1 && !this.airborne(f)) {
+      if (slot === 0) { f.jabChain++; f.jabChainClock = FRENZY_CHAIN_WINDOW; }
+      else f.jabChain = 0;
+    }
     return true;
   }
 

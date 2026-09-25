@@ -802,6 +802,138 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(s2.knocked > 0, 'the last spin launches');
 }
 
+// soyo: onegai catch-pause-launch, resolve shove and 8s frenzy, two trailed notes, a short shout
+{
+  const soyo = ROSTER.findIndex(c => c.id === 'soyo');
+  assert.ok(soyo >= 0, 'soyo is on the roster');
+  const data = ROSTER[soyo];
+  assert.equal(data.name, '长崎素世', 'soyo uses the chosen display name');
+  assert.equal(data.skills[2].name, '求你了！', 'U is 求你了！');
+  assert.equal(data.skills[2].fx, 'onegai', 'U keeps the onegai fx');
+  assert.equal(data.skills[4].count, 2, '不甘的演奏 fires two notes');
+  assert.equal(data.skills[4].cd, 2, '不甘的演奏 cools in two seconds');
+  assert.equal(data.skills[5].fx, 'shout', 'the super is the 春日影 shout');
+  assert.ok((data.skills[5].life ?? 0) * (data.skills[5].speed ?? 0) < 260, 'the shout wave covers about a quarter of the stage');
+  assert.ok(data.view.kind === 'sprite' && !!data.view.frenzy, 'soyo preloads a frenzy sheet');
+
+  const grab = newGame(soyo, 2); const [c1, c2] = grab.fighters; dummy(grab);
+  c2.x = c1.x + 100; c2.facing = -1;
+  const grabHp = c2.hp;
+  grab.keyDown('KeyU');
+  run(grab, .35);
+  assert.equal(c1.attack?.index, 2, 'onegai started');
+  assert.equal(c1.attack?.hold, c2.id, 'onegai caught the wrist');
+  let minY = c2.y, peakShake = 0;
+  for (let i = 0; i < Math.round(1.0 / STEP); i++) {
+    grab.step(STEP);
+    minY = Math.min(minY, c2.y);
+    peakShake = Math.max(peakShake, grab.shake);
+  }
+  assert.ok(c2.hp < grabHp - 50, `the headbutt connects, damage ${grabHp - c2.hp}`);
+  assert.ok(minY < FLOOR - 40, `the headbutt launches, peak ${FLOOR - minY}`);
+  assert.ok(c2.knocked > 0, 'the headbutt knocks down');
+  assert.ok(peakShake >= 8, `the launch shakes the screen, saw ${peakShake}`);
+  assert.equal(c1.attack, null, 'onegai plays out and ends');
+
+  const miss = newGame(soyo, 2); const [m1, m2] = miss.fighters; dummy(miss);
+  m2.x = m1.x + 420;
+  miss.keyDown('KeyU');
+  run(miss, .8);
+  assert.equal(m1.attack, null, 'a whiffed onegai ends early');
+  assert.equal(m2.hp, m2.data.hp, 'the whiff deals nothing');
+
+  const repel = newGame(soyo, 2); const [r1, r2] = repel.fighters; dummy(repel);
+  r2.x = r1.x + 90; r2.facing = -1;
+  const rx = r2.x;
+  repel.keyDown('KeyI');
+  run(repel, .6);
+  assert.ok(r2.x > rx + 30, `resolve shoves nearby foes, moved ${r2.x - rx}`);
+
+  const fren = newGame(soyo, 2); const [g1, g2] = fren.fighters; dummy(fren);
+  fren.keyDown('KeyI');
+  run(fren, .55);
+  assert.ok(g1.frenzy > 7, `resolve grants frenzy, left ${g1.frenzy}`);
+  run(fren, .6);
+  assert.ok(fren.attack(g1, 0), 'a light comes out after the resolve');
+  assert.ok(g1.cooldowns[0] > 0 && g1.cooldowns[0] < .2, `frenzy light cooldown is cut, got ${g1.cooldowns[0]}`);
+  run(fren, .3);
+  assert.equal(g1.attack, null, 'the frenzy light plays out fast');
+  run(fren, 8.1);
+  assert.equal(g1.frenzy, 0, 'frenzy expires after eight seconds');
+
+  // 狂化连招: mashing J loops light ×3 into an automatic heavy, and a pause beyond the window cools the chain
+  const mash = newGame(soyo, 2); const [j1] = mash.fighters; dummy(mash);
+  j1.energy = 100;
+  mash.keyDown('KeyI');
+  run(mash, 1.0);
+  assert.ok(j1.frenzy > 6, 'frenzy is up for the chain');
+  const presses: number[] = [];
+  const jab = () => {
+    mash.keyDown('KeyJ');
+    run(mash, STEP);
+    presses.push(j1.attack?.index ?? -1);
+    mash.keyUp('KeyJ');
+    run(mash, .4);
+  };
+  jab(); jab(); jab();
+  assert.deepEqual(presses, [0, 0, 0], 'three jabs chain as lights');
+  jab();
+  assert.deepEqual(presses, [0, 0, 0, 1], 'the fourth press comes out as the heavy');
+  jab();
+  assert.deepEqual(presses, [0, 0, 0, 1, 0], 'the chain restarts after the auto-heavy');
+  run(mash, .8);
+  jab(); jab(); jab(); jab();
+  assert.deepEqual(presses, [0, 0, 0, 1, 0, 0, 0, 0, 1], 'a pause beyond the window cools the chain, then it rebuilds');
+
+  const sob = newGame(soyo, 2); const [b1, b2] = sob.fighters; dummy(sob);
+  b2.x = 980;
+  sob.keyDown('KeyO');
+  run(sob, 1.5);
+  const notes = sob.projectiles.filter(p => p.fx === 'sob');
+  assert.equal(notes.length, 2, `two ground notes, saw ${notes.length}`);
+  assert.ok(notes.every(p => p.y > FLOOR - 60), 'the notes hug the floor');
+  assert.ok(Math.abs(notes[0].y - notes[1].y) > 10, 'the two notes ride different heights');
+
+  const shout = newGame(soyo, 2); const [w1, w2] = shout.fighters; dummy(shout);
+  w2.x = w1.x + 200; w2.facing = -1;
+  w1.energy = 100;
+  shout.keyDown('KeyL');
+  run(shout, .7);
+  assert.ok(w2.root > 3, `the shout roots for four seconds, left ${w2.root}`);
+  assert.equal(w1.attack, null, 'she is free the moment the wave leaves');
+  hit(shout, w1, w2, w1.data.skills[0], { hit: new Set() });
+  assert.ok(w2.root > 0, 'the first hit keeps the root');
+  hit(shout, w1, w2, w1.data.skills[0], { hit: new Set() });
+  assert.equal(w2.root, 0, 'the second hit clears the root');
+  assert.ok(shout.attack(w1, 0), 'she acts immediately after the wave');
+
+  // The wave itself dies of range with nothing in the way.
+  const far = newGame(soyo, 2); const [f1, f2] = far.fighters; dummy(far);
+  f2.x = f1.x + 700; f2.invuln = 5;
+  f1.energy = 100;
+  far.keyDown('KeyL');
+  let waveX0 = -1, waveMax = 0, waveGone = false;
+  for (let i = 0; i < Math.round(1.4 / STEP); i++) {
+    far.step(STEP);
+    const wave = far.projectiles.find(p => p.fx === 'shout');
+    if (wave) {
+      if (waveX0 < 0) waveX0 = wave.x;
+      waveMax = Math.max(waveMax, wave.x - waveX0);
+    } else if (waveX0 >= 0) waveGone = true;
+  }
+  assert.ok(waveGone && waveMax < 260, `the shout dies of range, flew ${waveMax}`);
+
+  const pf = previewFighter(data, 0);
+  pf.attack = { skill: data.skills[0], index: 0, serial: 1, t: .12, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1 };
+  pf.frenzy = 5;
+  assert.equal(clipFor(pf).sheet, 'frenzy', 'frenzy lights read the frenzy sheet');
+  pf.attack = null;
+  assert.equal(clipFor(pf).col, 0, 'frenzy idle stands on the stance cell');
+  assert.equal(clipFor(pf).row, 2, 'frenzy idle uses row 2');
+  pf.frenzy = 0;
+  assert.equal(clipFor(pf).sheet, 'common', 'calm lights read the common sheet');
+}
+
 {
   assert.equal(guideIndex([null, 0]), 1, 'solo 2P is the movelist');
   assert.equal(guideIndex([0, 1]), 0, 'earlier player wins when both are human');

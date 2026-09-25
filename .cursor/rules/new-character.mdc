@@ -1,0 +1,6 @@
+---
+description: 用户要做新角色、新战士、精灵表或图生图提示词时，先读 docs/new-character-sop.md 并按它做完。
+alwaysApply: false
+---
+
+做新的可玩角色时，先读并遵循 `docs/new-character-sop.md`。格子、出图、提示词和踩坑都在那份文档里。不要改 8×3 / 4×3。不要整包重跑 `npm run sheets`，那会盖掉已有成图。

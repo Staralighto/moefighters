@@ -16,6 +16,8 @@ export interface Dims {
 /**
  * Bishoujo, about 7.2–7.6 heads: long legs, narrow waist, small head.
  * `bulky` is the sturdier girl (wider hip, thicker limbs), not a male tank.
+ * These are unit-space numbers, not pixels. In a 256 cell a sheet script needs
+ * SCALE ≈ 1.16 so the figure fills it; 0.58 is the old 128-cell figure.
  */
 export const DIMS: Record<Build, Dims> = {
   slim: { torsoW: 18, torsoH: 40, headR: 11, limb: 6, upperArm: 22, foreArm: 20, thigh: 48, shin: 46 },

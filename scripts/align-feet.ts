@@ -22,6 +22,21 @@ const FEET = [
   { name: '格挡', col: 6 },
 ] as const;
 
+/** Reference cells for the foot line: the six grounded loco cells on a common sheet,
+    every non-empty cell on a 4-column special or frenzy sheet. */
+function footRefs(img: Image): { name: string; y: number }[] {
+  if (img.w === SHEET_W) return FEET.map(f => ({ name: f.name, y: cellBottom(img, f.col, 0) }));
+  if (img.w === 1024) {
+    const refs: { name: string; y: number }[] = [];
+    for (let row = 0; row < 3; row++) for (let col = 0; col < 4; col++) {
+      const y = cellBottom(img, col, row);
+      if (y >= 0) refs.push({ name: `第${row + 1}行第${col + 1}格`, y });
+    }
+    return refs;
+  }
+  throw new Error(`只认 ${SHEET_W}×${SHEET_H} 或 1024×768，这张是 ${img.w}×${img.h}`);
+}
+
 export function cellBottom(img: Image, col: number, row: number): number {
   const x0 = col * CELL;
   const y0 = row * CELL;
@@ -44,9 +59,9 @@ export function median(values: number[]): number {
 }
 
 export function footShift(img: Image): { bottoms: { name: string; y: number }[]; mid: number; dy: number } {
-  const bottoms = FEET.map(f => ({ name: f.name, y: cellBottom(img, f.col, 0) }));
+  const bottoms = footRefs(img);
   const present = bottoms.filter(b => b.y >= 0);
-  if (present.length < 4) throw new Error('站立、走路、格挡里能用的脚线不足 4 格');
+  if (present.length < 4) throw new Error('能用的脚线不足 4 格');
   const mid = median(present.map(b => b.y));
   return { bottoms, mid, dy: TARGET - mid };
 }
@@ -98,8 +113,8 @@ function previewPath(src: string): string {
 function alignFile(src: string): void {
   const abs = resolve(src);
   const img = decodePng(readFileSync(abs));
-  if (img.w !== SHEET_W || img.h !== SHEET_H) {
-    throw new Error(`通用表必须是 ${SHEET_W}×${SHEET_H}，这张是 ${img.w}×${img.h}`);
+  if (img.h !== SHEET_H || (img.w !== SHEET_W && img.w !== 1024)) {
+    throw new Error(`只认 ${SHEET_W}×${SHEET_H} 通用表或 1024×768 四格表，这张是 ${img.w}×${img.h}`);
   }
   const plan = footShift(img);
   for (const b of plan.bottoms) console.log(`${b.name} 底边 ${b.y < 0 ? '空' : b.y}`);
@@ -147,6 +162,18 @@ function selfCheck(): void {
   const at = (col: number, row: number, y: number) => img.rgba[((row * CELL + y) * SHEET_W + col * CELL + 8) * 4 + 3];
   if (at(0, 0, TARGET) !== 255 || at(5, 0, 197 + plan.dy) !== 255) throw new Error('跳跃没有跟着脚一起走');
   if (at(1, 1, 233 + plan.dy) !== 255 || at(1, 1, TARGET) === 255) throw new Error('倒地被拉到了脚线上');
+  const four: Image = { w: 1024, h: SHEET_H, rgba: Buffer.alloc(1024 * SHEET_H * 4) };
+  const paint4 = (col: number, row: number, y: number) => {
+    const i = ((row * CELL + y) * 1024 + col * CELL + 8) * 4;
+    four.rgba[i] = 255; four.rgba[i + 1] = 40; four.rgba[i + 2] = 80; four.rgba[i + 3] = 255;
+  };
+  paint4(0, 0, 251); paint4(1, 0, 250); paint4(2, 1, 252); paint4(1, 2, 249);
+  paint4(3, 2, 200);
+  const plan4 = footShift(four);
+  /* The outlier cell is in the reference set too: five bottoms sort to 200,249,250,251,252. */
+  if (plan4.mid !== 250 || plan4.dy !== TARGET - 250) throw new Error('四格表中位数算错');
+  shiftSheet(four, plan4.dy);
+  if (four.rgba[((2 * CELL + 200 + plan4.dy) * 1024 + 3 * CELL + 8) * 4 + 3] !== 255) throw new Error('四格表离群格没有跟着平移');
   console.log('align-feet check ok');
 }
 

@@ -186,9 +186,38 @@ export const ROSTER: CharacterData[] = [
       }),
     ],
   },
+  {
+    id: 'soyo', name: '长崎素世', title: '贝斯 / 假面', quote: '为什么要演奏春日影！', color: '#FFDD88',
+    ...stats('rush'),
+    view: {
+      kind: 'sprite', common: '/sprites/soyo/common.png', special: '/sprites/soyo/special.png', height: 181,
+      frenzy: '/sprites/soyo/frenzy.png',
+      extras: ['/sprites/soyo/note.png'],
+    },
+    skills: [
+      skill(0, 'light', '挥手'),
+      skill(1, 'heavy', '横踢'),
+      skill(2, 'grab', '求你了！', {
+        damage: 66, range: 130, start: .18, duration: 1.2, cd: 7, speed: 520, fx: 'onegai',
+        desc: '冲刺抓住对方，停顿后头撞击飞；无视格挡',
+      }),
+      skill(3, 'endure', '就由我来结束一切', {
+        damage: 0, start: .42, duration: .9, cd: 10, fx: 'resolve',
+        desc: '霸体表情，震开周围敌人；8 秒内攻速大增，轻击三连后自动接重击',
+      }),
+      skill(4, 'projectile', '不甘的演奏', {
+        damage: 30, count: 2, interval: .34, speed: 380, size: 52, start: .3, duration: 1.0, cd: 2, life: 2.2, fx: 'sob',
+        desc: '哭奏贝斯，两枚贴地音符；跳起可躲',
+      }),
+      skill(5, 'projectile', '为什么要演奏春日影', {
+        damage: 72, speed: 430, size: 150, start: .34, duration: 1.15, life: .56, fx: 'shout',
+        desc: '音波推进四分之一战场，出手即可行动；定身 4 秒，受击两次解除',
+      }),
+    ],
+  },
 ];
 
 /** Select screen. gale, ember and boulder stay on ROSTER for the headless checks. */
-export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon');
+export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo');
 
 export const ROSTER_BY_ID = new Map(ROSTER.map(c => [c.id, c]));

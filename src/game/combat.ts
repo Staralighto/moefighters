@@ -9,6 +9,17 @@ import { drumRow } from '../render/clips.ts';
 /** Blocking a projectile siphons the attacker's energy, proportional to the shot's full damage. */
 const GUARD_DRAIN = .3;
 
+/** 就由我来结束一切: seconds the frenzy lasts and how much faster her ground J/K clock runs. */
+const FRENZY_TIME = 8;
+const FRENZY_RATE = 1.55;
+/** The brown of her hair, used for the frenzy afterimages. */
+const FRENZY_TINT = '#a5714f';
+/** 就由我来结束一切: the cast shoves everyone inside this radius away, no damage. */
+const RESOLVE_REPEL_RANGE = 190;
+const RESOLVE_REPEL_PUSH = 540;
+/** 求你了: the kneel holds this long after the catch, so the pause reads before the headbutt. */
+const ONEGAI_PAUSE = .5;
+
 /** 悲鸣: more cries as she breaks. Resolved once per cast so the shared skill stays put. */
 /** 不会再逃避了: every swing except the last stays in place. shots is the swing index before it increments. */
 function spinFinale(skill: Skill, source: HitSource): boolean {
@@ -135,6 +146,21 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
         defender.knocked = 0;
         defender.stun = .25;
         holdStill = true;
+      } else if (skill.fx === 'shout' && !wasRooted) {
+        // 为什么要演奏春日影: rooted for four seconds; the wave itself still shoves a little.
+        defender.root = 4;
+        defender.rootHits = 0;
+        defender.stun = .3;
+        g.text('定身!', defender.x, defender.y - 195, '#ffd27a', .6, 20);
+      } else if (skill.fx === 'onegai') {
+        // The headbutt hurls them out of the kneel: a real launch, and the grab shakes the root off.
+        defender.root = 0;
+        defender.rootHits = 0;
+        holdStill = false;
+        defender.vy = -440;
+        defender.knocked = .72;
+        defender.downTime = 0;
+        defender.stun = .5;
       } else if (skill.fx === 'spin' && !spinFinale(skill, source)) {
         defender.vy = 0;
         defender.knocked = 0;
@@ -198,13 +224,14 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   defender.hp = clamp(defender.hp - damage, 0, defender.data.hp);
   const knock = skill.fx === 'bag' || skill.fx === 'heart' ? 0
     : skill.fx === 'chord' ? 160
+    : skill.fx === 'onegai' ? 360 : skill.fx === 'shout' ? 110
     : skill.fx === 'spin' && !spinFinale(skill, source) ? 0
     : skill.fx === 'ripple' ? 620 : skill.fx === 'slam' ? 120 : blocked ? 75 : skill.knock ?? (skill.type === 'light' ? 95 : skill.super ? 340 : 235);
   if (skill.fx !== 'shove' && defender.invuln <= 0 && !endured) defender.vx = dir * knock;
   if (holdStill) { defender.vx = 0; defender.vy = 0; }
-  g.shake = blocked ? 2 : skill.fx === 'slam' ? 14 : skill.super ? 12 : skill.type === 'heavy' ? 7 : 4;
+  g.shake = blocked ? 2 : skill.fx === 'slam' ? 14 : skill.fx === 'onegai' ? 10 : skill.super ? 12 : skill.type === 'heavy' ? 7 : 4;
   const juggleHit = !blocked && !!skill.air && defender.y < FLOOR - .5;
-  g.hitstop = blocked ? .018 : juggleHit ? .085 : skill.fx === 'slam' ? .09 : skill.super ? .065 : skill.type === 'heavy' ? .065 : .032;
+  g.hitstop = blocked ? .018 : juggleHit ? .085 : skill.fx === 'slam' ? .09 : skill.fx === 'onegai' ? .08 : skill.super ? .065 : skill.type === 'heavy' ? .065 : .032;
   return true;
 }
 
@@ -323,7 +350,13 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
   const a = f.attack;
   if (!a) return;
   const s = a.skill;
-  a.t += dt;
+  // Frenzy only hurries the ground jab and kick; specials and air normals keep their own clock.
+  const rate = f.frenzy > 0 && a.index <= 1 && !s.air ? FRENZY_RATE : 1;
+  a.t += dt * rate;
+  // 狂化: every attack trails a brown afterimage of whatever pose she is in right now.
+  if (f.frenzy > 0 && Math.floor(a.t * 16) !== Math.floor((a.t - dt * rate) * 16)) {
+    g.effect('ghost', f.x - f.facing * 20, f.y, f.data.color, .28, { fighter: f.id, alpha: .5, tint: FRENZY_TINT });
+  }
 
   // 推落: a short hold, a small lift, then the throw. Facing stays toward the attacker.
   if (s.fx === 'shove' && a.tossAt > 0) {
@@ -454,6 +487,52 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
     }
   }
   if (s.fx === 'slam' && a.hold < 0 && a.t > s.start + .5) a.t = s.duration;
+  // 求你了: a short lunge, she catches a wrist, a frozen beat, the kneel pause, then the headbutt launches.
+  if (s.fx === 'onegai' && a.hold < 0 && a.t >= s.start && a.t < s.start + .42) {
+    f.x += f.facing * (s.speed ?? 520) * dt;
+    if (Math.floor(a.t * 16) !== Math.floor((a.t - dt) * 16)) {
+      g.effect('ghost', f.x - f.facing * 24, f.y, f.data.color, .3, { fighter: f.id, alpha: .35 });
+    }
+    for (const o of g.opponents(f)) {
+      if (o.hp <= 0 || o.invuln > 0) continue;
+      const front = (o.x - f.x) * f.facing >= -20;
+      if (Math.abs(o.x - f.x) < s.range && front && Math.abs(o.y - f.y) < 112) {
+        a.hold = o.id;
+        a.tossAt = a.t + ONEGAI_PAUSE;
+        // The catch lands with a freeze-frame and a flash, so the pause reads as power, not lag.
+        g.hitstop = Math.max(g.hitstop, .09);
+        g.effect('grab', o.x, o.y - 80, f.data.color, .3, { radius: 55 });
+        o.stun = Math.max(o.stun, .35);
+        o.vx = 0;
+        o.vy = 0;
+        o.knocked = 0;
+        o.attack = null;
+        o.queue = [];
+        break;
+      }
+    }
+  }
+  if (s.fx === 'onegai' && a.hold >= 0 && a.tossAt > 0) {
+    const o = g.fighters.find(p => p.id === a.hold);
+    if (o && o.hp > 0) {
+      if (a.t < a.tossAt) {
+        // Held by the wrist in front of the kneel, turned to face her.
+        o.x = f.x + f.facing * 58;
+        o.y = FLOOR;
+        o.vx = 0;
+        o.vy = 0;
+        o.knocked = 0;
+        o.stun = Math.max(o.stun, .3);
+        o.facing = (-f.facing) as 1 | -1;
+      } else {
+        hit(g, f, o, s, a);
+        g.effect('hit', o.x, o.y - 90, f.data.color, .25, { radius: 60 });
+        a.tossAt = 0;
+        a.t = Math.max(a.t, s.duration - .3);
+      }
+    }
+  }
+  if (s.fx === 'onegai' && a.hold < 0 && a.t >= s.start + .42) a.t = s.duration;
   // The rising fist stays live for a while so it catches jumpers at any height.
   if (s.type === 'upper' && a.t >= s.start && a.t < s.start + .25) applyMelee(g, f, a);
 
@@ -475,10 +554,14 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
       }
     } else while (a.shots < volley && a.t >= s.start + a.shots * (s.interval ?? .14)) {
       if (s.fx === 'chord' && a.shots >= 3 && !chordHeld(g, f)) break;
-      spawnShot(g, f, a, (a.shots % 3 - 1) * 15, a.shots);
+      // 不甘的演奏: two notes leave the bass at the floor, the second a shade lower than the first.
+      const off = s.fx === 'sob' ? (a.shots === 0 ? 45 : 70) : (a.shots % 3 - 1) * 15;
+      spawnShot(g, f, a, off, a.shots);
       a.shots++;
     }
     if (s.fx === 'chord' && a.shots >= 3 && !chordHeld(g, f) && a.t < s.duration - .22) a.t = s.duration - .22;
+    // 为什么要演奏春日影: the last wave carries the whole super, so the moment it leaves she is free to act.
+    if (s.fx === 'shout' && a.shots >= volley) a.t = s.duration;
   } else if ((s.count ?? 1) > 1) {
     // ponytail: N swings, one cooldown. Each swing gets a fresh hit set so the same target can be caught again.
     const ring = [
@@ -496,9 +579,21 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
     }
   } else if (!a.emitted && a.t >= s.start) {
     a.emitted = true;
-    if (s.type === 'projectile') {
+    if (s.fx === 'resolve') {
+      // 就由我来结束一切: no strike, just the mask dropping. The ripple shoves everyone away; the frenzy clock starts here.
+      f.frenzy = FRENZY_TIME;
+      g.effect('resolve', f.x, f.y - 80, f.data.color, .75, { radius: RESOLVE_REPEL_RANGE });
+      for (const o of g.opponents(f)) {
+        if (o.hp <= 0 || o.invuln > 0) continue;
+        const dx = o.x - f.x;
+        if (Math.abs(dx) < RESOLVE_REPEL_RANGE) {
+          o.vx = (Math.sign(dx) || f.facing) * RESOLVE_REPEL_PUSH;
+          o.stun = Math.max(o.stun, .22);
+        }
+      }
+    } else if (s.type === 'projectile') {
       spawnShot(g, f, a);
-    } else if (s.type !== 'dash' && s.fx !== 'slam') {
+    } else if (s.type !== 'dash' && s.fx !== 'slam' && s.fx !== 'onegai') {
       if (s.type !== 'upper') applyMelee(g, f, a);
       if (s.fx === 'ripple') g.effect('ripple', f.x, FLOOR, f.data.color, .45, { radius: s.range });
       else g.effect(s.fx, f.x + f.facing * 65, f.y - (s.type === 'sweep' ? 22 : 83), f.data.color, .22, { dir: f.facing, radius: s.range * .5 });
@@ -550,7 +645,7 @@ export function stepProjectiles(g: FightGame, dt: number): void {
       }
     }
     p.trail.push({ x: p.x, y: p.y });
-    const trailCap = p.fx === 'mutsumi-note' || p.fx === 'chord' ? 14 : 7;
+    const trailCap = p.fx === 'mutsumi-note' || p.fx === 'chord' || p.fx === 'sob' ? 14 : 7;
     if (p.trail.length > trailCap) p.trail.shift();
     if (p.settled && p.fx === 'milk' && owner && owner.hp > 0 && Math.abs(owner.x - p.x) < 40 && owner.y >= FLOOR - 1) {
       owner.energy = clamp(owner.energy + 26, 0, 100);

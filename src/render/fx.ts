@@ -15,6 +15,7 @@ const GUITAR_SRC = '/sprites/anon/guitar.png';
 const GUITAR_HEAD_X = 438 / 512;
 const GUITAR_HEAD_Y = 122 / 256;
 const ANON_NOTE_SRC = '/sprites/anon/note.png';
+const SOYO_NOTE_SRC = '/sprites/soyo/note.png';
 const HEART_SRC = '/sprites/anon/heart.png';
 const MORTIS_H = 181;
 
@@ -215,6 +216,24 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.beginPath(); ctx.ellipse(0, 0, (e.radius ?? 300) * p * .72, 10, 0, 0, Math.PI * 2); ctx.stroke();
       break;
     }
+    case 'resolve': {
+      // 就由我来结束一切: brown shockwave rings spreading from her stance, a pale crest on the outer wave.
+      const r = e.radius ?? 190;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= (1 - p) * .95;
+      for (let i = 0; i < 3; i++) {
+        const ring = Math.min(1, p * 1.5 - i * .18);
+        if (ring <= 0) continue;
+        ctx.strokeStyle = i === 2 ? '#f6e7bd' : '#a5714f';
+        ctx.lineWidth = (7 - i * 2) * (1 - p) + 1;
+        ctx.beginPath(); ctx.ellipse(0, 0, r * ring, r * .34 * ring, 0, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.strokeStyle = '#a5714f';
+      ctx.lineWidth = 3 * (1 - p) + 1;
+      ctx.beginPath(); ctx.moveTo(-r * .3, 8); ctx.lineTo(-r * .3, -r * .55 * p - 8); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(r * .3, 8); ctx.lineTo(r * .3, -r * .55 * p - 8); ctx.stroke();
+      break;
+    }
     case 'slam':
       ctx.translate(e.x, e.y);
       ctx.globalAlpha *= 1 - p;
@@ -304,7 +323,7 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
 }
 
 /** Straight pale ribbon behind a note, so the lane stays readable. */
-function noteRibbon(ctx: CanvasRenderingContext2D, p: Projectile): void {
+function noteRibbon(ctx: CanvasRenderingContext2D, p: Projectile, outer = '#e7a0b8', inner = '#ff4f96'): void {
   const pts = p.trail;
   if (pts.length < 2) return;
   ctx.lineCap = 'round';
@@ -319,13 +338,14 @@ function noteRibbon(ctx: CanvasRenderingContext2D, p: Projectile): void {
     ctx.lineTo(p.x, p.y);
     ctx.stroke();
   };
-  stroke(7, '#e7a0b8', .35);
-  stroke(3, '#ff4f96', .7);
+  stroke(7, outer, .35);
+  stroke(3, inner, .7);
 }
 
 export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, images?: ImageCache): void {
   ctx.save();
   if (p.fx === 'mutsumi-note' || p.fx === 'chord') noteRibbon(ctx, p);
+  else if (p.fx === 'sob') noteRibbon(ctx, p, '#f4e7b4', '#e8c96a');
   else {
     ctx.fillStyle = p.color;
     for (let i = 0; i < p.trail.length; i++) {
@@ -392,6 +412,42 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
         ctx.fillRect(s * .4, -s * 1.28, s * .18, s * 1.38);
         ctx.beginPath(); ctx.ellipse(-s * .08, s * .18, s * .58, s * .36, -.5, 0, Math.PI * 2); ctx.fill();
       }
+      break;
+    }
+    case 'sob': {
+      // A cream note with a tear; the trail dots above already carry her colour.
+      if (!prop(ctx, images, SOYO_NOTE_SRC, p.size)) {
+        const s = Math.max(7, p.radius);
+        ctx.fillStyle = '#e8c96a';
+        ctx.fillRect(s * .4, -s * 1.28, s * .18, s * 1.38);
+        ctx.beginPath(); ctx.ellipse(-s * .08, s * .18, s * .58, s * .36, -.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(s * .52, s * .3);
+        ctx.bezierCurveTo(s * .3, s * .95, s * .66, s * 1.05, s * .56, s * .55);
+        ctx.fill();
+      }
+      break;
+    }
+    case 'shout': {
+      // 为什么要演奏春日影: three stacked crescents leaning into the travel, notes riding the front.
+      const r = Math.max(40, p.size * .85);
+      ctx.scale(Math.sign(p.vx) || 1, 1);
+      ctx.strokeStyle = p.color;
+      for (let i = 0; i < 3; i++) {
+        ctx.globalAlpha = (1 - i * .28) * .95;
+        ctx.lineWidth = 9 - i * 2.5;
+        ctx.beginPath();
+        ctx.arc(-r * .3 - i * r * .22, 0, r - i * 12, -1.15, 1.15);
+        ctx.stroke();
+      }
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = .9;
+      const note = (ny: number) => {
+        ctx.fillRect(r * .18, ny - 11, 3, 11);
+        ctx.beginPath(); ctx.ellipse(r * .12, ny, 5, 3.4, -.5, 0, Math.PI * 2); ctx.fill();
+      };
+      note(-r * .45);
+      note(r * .3);
       break;
     }
     case 'heart': {

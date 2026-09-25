@@ -46,7 +46,7 @@ const NORMAL: Record<'light' | 'heavy' | 'airLight' | 'airHeavy', { c: number; r
 };
 
 export interface Clip {
-  sheet: 'common' | 'special';
+  sheet: 'common' | 'special' | 'frenzy';
   col: number;
   row: number;
   sx: number;
@@ -81,9 +81,25 @@ export function heartRow(t: number, start: number): number {
   return 2;
 }
 
+/** 狂化 J/K on the frenzy sheet. Row 0 is the light flurry, row 1 the kicks.
+ *  Cells: 0 windup, 1 and 2 the two flurry beats, 3 the follow-through. */
+export function soyoFrenzyFrame(kind: 'light' | 'heavy', t: number, s: { start: number; duration: number }): [number, number] {
+  const row = kind === 'light' ? 0 : 1;
+  if (t < s.start) return [0, row];
+  if (t >= s.duration - .1) return [3, row];
+  const span = Math.max(.05, s.duration - .1 - s.start);
+  const beat = Math.floor(((t - s.start) / span) * 2);
+  return [1 + Math.min(1, beat), row];
+}
+
 /** Which cell a fighter occupies this frame. Missing sheets still fall back in SpriteView. */
 export function clipFor(f: Fighter): Clip {
   if (f.attack) {
+    // 狂化: ground J/K read the frenzy sheet, everything else keeps its own cells.
+    if (f.frenzy > 0 && f.attack.index <= 1 && !f.attack.skill.air) {
+      const [col, row] = soyoFrenzyFrame(f.attack.index === 0 ? 'light' : 'heavy', f.attack.t, f.attack.skill);
+      return { sheet: 'frenzy', col, row, sx: col * CELL, sy: row * CELL };
+    }
     if (f.attack.skill.fx === 'drums') return at('special', f.attack.index - 2, drumRow(f.attack.t, f.attack.skill.duration));
     if (f.attack.skill.fx === 'chord') return at('special', f.attack.index - 2, chordRow(f.attack.t, f.attack.skill.duration));
     if (f.attack.skill.fx === 'heart') return at('special', f.attack.index - 2, heartRow(f.attack.t, f.attack.skill.start));
@@ -104,6 +120,8 @@ export function clipFor(f: Fighter): Clip {
     return at('special', f.attack.index - 2, phase);
   }
   const state = stateFor(f);
+  // 狂化 stance while she is otherwise just standing around.
+  if (f.frenzy > 0 && state === 'idle') return at('frenzy', 0, 2);
   // 4 frames at 8 Hz: one stride is 0.5s.
   if (state === 'run') return loco(RUN_FRAMES[Math.floor(f.animTime * 8) % 4]);
   if (state === 'ko' || state === 'down' || state === 'hurt' || state === 'dodge' || state === 'block' || state === 'jump') return loco(state);

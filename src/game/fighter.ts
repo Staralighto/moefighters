@@ -48,6 +48,11 @@ export interface Fighter {
   root: number;
   /** Clean hits taken during root. The second one clears it. */
   rootHits: number;
+  /** Seconds left of 就由我来结束一切: faster J/K, the frenzy sheet, brown afterimages. */
+  frenzy: number;
+  /** 就由我来结束一切: ground lights chained during the frenzy, and seconds before the chain cools off. */
+  jabChain: number;
+  jabChainClock: number;
   /** Remaining back-dodge time and its cooldown. */
   dodge: number; dodgeCd: number;
   dodgeRequest: boolean;
@@ -71,7 +76,7 @@ export interface Fighter {
   ai: { wait: number; move: number; block: number; facing: 1 | -1; press: number };
 }
 
-export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd'] as const;
+export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock'] as const;
 
 export function makeFighter(
   data: CharacterData,
@@ -83,7 +88,8 @@ export function makeFighter(
     x: init.x, y: FLOOR, vx: 0, vy: 0, facing: init.facing,
     hp: data.hp, energy: init.energy, guard: 100, blocking: false,
     stun: 0, invuln: 0, comboTime: 0, hitFlash: 0, landing: 0, guardBroken: 0,
-    knocked: 0, downTime: 0, hitBySuper: false, root: 0, rootHits: 0,
+    knocked: 0, downTime: 0, hitBySuper: false, root: 0, rootHits: 0, frenzy: 0,
+    jabChain: 0, jabChainClock: 0,
     dodge: 0, dodgeCd: 0, dodgeRequest: false, dodgeBuffer: 0, blockTap: -1, blockBuffer: 0, blockLeft: 0,
     attack: null, attackSerial: 0, cooldowns: [0, 0, 0, 0, 0, 0], queue: [],
     jumpRequest: false, jumpBuffer: 0,
