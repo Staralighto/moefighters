@@ -934,6 +934,180 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(clipFor(pf).sheet, 'common', 'calm lights read the common sheet');
 }
 
+// tomori: the stone shoves, the plaster braces without flinching, the well drags and ticks, the sing summons a teammate
+{
+  const tomori = ROSTER.findIndex(c => c.id === 'tomori');
+  assert.ok(tomori >= 0, 'tomori is on the roster');
+  const data = ROSTER[tomori];
+  assert.equal(data.name, '高松灯', 'tomori display name');
+  assert.equal(data.skills[2].fx, 'stone', 'U is the stone');
+  assert.equal(data.skills[2].damage, 12, 'the stone pokes for little');
+  assert.ok((data.skills[2].knock ?? 0) >= 300, `the stone knocks back hard, saw ${data.skills[2].knock}`);
+  assert.ok(data.skills[2].cd <= 1, 'the stone cools almost instantly');
+  assert.equal(data.skills[3].breakout, true, 'the plaster is a breakout');
+  assert.equal(data.skills[4].fx, 'blackhole', 'O is the well');
+  assert.equal(data.skills[4].knock, 0, 'the well does not knock back, the pull owns the body');
+  assert.equal(data.skills[5].fx, 'poem', 'the super is the sing');
+  assert.ok(data.skills[5].start >= 1, 'the sing lasts a second');
+
+  // U: the stone flies and shoves the dummy
+  {
+    const g = newGame(tomori, 2); const [t1, t2] = g.fighters; dummy(g);
+    t2.x = t1.x + 260; t2.facing = -1;
+    const sx = t2.x;
+    g.keyDown('KeyU');
+    run(g, .8);
+    assert.ok(t2.x > sx + 25, `the stone shoves, moved ${t2.x - sx}`);
+    assert.ok(g.projectiles.every(p => p.fx !== 'stone'), 'the stone dies on the hit');
+  }
+
+  // I: the plaster shoves the crowd and braces her; a hit during the brace does not stop a move
+  {
+    const g = newGame(tomori, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 90; p2.facing = -1;
+    const px = p2.x;
+    g.keyDown('KeyI');
+    run(g, .5);
+    assert.ok(p1.braced > 5, `the plaster braces for six seconds, left ${p1.braced}`);
+    assert.ok(g.effects.some(e => e.type === 'plaster' && e.max >= 1), 'the cast spawns the plaster pulse');
+    assert.ok(p2.x > px + 30, `the plaster shoves, moved ${p2.x - px}`);
+    run(g, .5);
+    g.keyDown('KeyJ');
+    run(g, STEP);
+    const serial = p1.attack?.serial;
+    assert.ok(serial !== undefined, 'her light started');
+    const hp = p1.hp;
+    hit(g, p2, p1, p2.data.skills[0], { hit: new Set() });
+    const taken = hp - p1.hp;
+    assert.ok(taken > 12 && taken < 22, `the brace blunts damage by a third, took ${taken}`);
+    assert.equal(p1.stun, 0, 'braced does not flinch');
+    assert.equal(p1.attack?.serial, serial, 'braced does not stop the move');
+    run(g, .5);
+    assert.equal(p1.attack, null, 'the light played out on its own clock');
+    run(g, 5.4);
+    assert.equal(p1.braced, 0, 'the brace expires');
+  }
+
+  // I is a breakout: buffered through a super like 轮奏
+  {
+    const g = newGame(tomori, 2); const [e1, e2] = g.fighters; dummy(g);
+    e1.queue.push({ index: 3, ttl: .18 });
+    hit(g, e2, e1, e2.data.skills[5], { hit: new Set() });
+    assert.equal(e1.hitBySuper, true, 'a super marks the combo');
+    assert.equal(e1.queue[0]?.index, 3, 'the plaster stays buffered through a super');
+  }
+
+  // grabs ignore the brace, but a plain hit does not flinch it
+  {
+    const g = newGame(tomori, 2); const [b1, b2] = g.fighters; dummy(g);
+    b1.braced = 6;
+    const hp = b1.hp;
+    hit(g, b2, b1, b2.data.skills[0], { hit: new Set() });
+    assert.ok(b1.hp < hp, 'the brace takes damage');
+    assert.equal(b1.stun, 0, 'the brace does not flinch');
+    hit(g, b2, b1, b2.data.skills[2], { hit: new Set() }); // 磐石 U = 熊抱 grab
+    assert.ok(b1.knocked > 0, 'a grab still goes through the brace');
+  }
+
+  // O: the well spawns ahead, drags the dummy to its centre and ticks low damage
+  {
+    const g = newGame(tomori, 2); const [h1, h2] = g.fighters; dummy(g);
+    h2.x = h1.x + 300; h2.facing = -1;
+    g.keyDown('KeyO');
+    run(g, .5);
+    const well = g.projectiles.find(p => p.fx === 'blackhole');
+    assert.ok(well, 'the well spawns');
+    const centre = h1.x + 320;
+    assert.ok(Math.abs(h2.x - centre) < 40, `the well drags, off by ${Math.abs(h2.x - centre)}`);
+    run(g, .9);
+    const drained = h2.data.hp - h2.hp;
+    assert.ok(drained > 20, `the well ticks, dealt ${drained}`);
+    run(g, .8);
+    assert.ok(g.projectiles.every(p => p.fx !== 'blackhole'), 'the well fades');
+  }
+
+  // L: the sing shoves, a teammate answers, fights, dies early, and a new one bows out on time
+  {
+    const g = newGame(tomori, 2); const [s1, s2] = g.fighters; dummy(g);
+    s1.energy = 100;
+    s2.x = s1.x + 70; s2.facing = -1;
+    const ex = s2.x;
+    g.keyDown('KeyL');
+    run(g, .2);
+    assert.ok(s2.x > ex + 20, `the first note shoves, moved ${s2.x - ex}`);
+    assert.equal(g.fighters.length, 2, 'no teammate during the sing');
+    run(g, .95);
+    assert.equal(g.fighters.length, 3, 'the teammate takes the stage');
+    const mate = g.fighters[2];
+    assert.equal(mate.minion, true, 'the ally is a minion');
+    assert.equal(mate.data.hp, 200, 'the health cap is 200, not a fraction');
+    assert.equal(mate.hp, 200, 'the teammate spawns at full health on the lowered cap');
+    assert.ok((mate.life ?? 0) > 11, `twelve seconds on the clock, left ${mate.life}`);
+    const before = s2.hp;
+    run(g, 2.5);
+    assert.ok(Number.isFinite(g.totalHits[mate.id]), 'minion hits land in the score tables');
+    assert.ok(s2.hp < before, 'the teammate swings on her own');
+    mate.hp = 5;
+    hit(g, s2, mate, s2.data.skills[0], { hit: new Set() });
+    run(g, STEP * 16); // the hit's hitstop eats the first few steps
+    assert.equal(g.fighters.length, 2, 'the teammate leaves when defeated');
+
+    s2.hp = s2.data.hp; // the master-brain teammate could wear the dummy down; keep the round alive on purpose
+    s1.energy = 100;
+    g.keyUp('KeyL');
+    g.keyDown('KeyL');
+    run(g, 1.3);
+    assert.equal(g.fighters.length, 3, 'the teammate answers again');
+    // Hitstop steals steps from the life clock, so bow-out needs a little more than twelve sim-seconds.
+    for (let i = 0; i < Math.round(16 / STEP); i++) { g.step(STEP); if (g.fighters.length === 2) break; }
+    assert.equal(g.fighters.length, 2, 'the teammate bows out when time is up');
+  }
+
+  // the round ends even with a teammate standing
+  {
+    const g = newGame(tomori, 2); const [r1] = g.fighters; dummy(g);
+    r1.energy = 100;
+    g.keyDown('KeyL');
+    run(g, 1.3);
+    assert.equal(g.fighters.length, 3, 'a teammate is up');
+    r1.hp = 0;
+    run(g, STEP);
+    assert.equal(g.phase, 'roundend', 'the round ignores the minion');
+  }
+
+  // team mode: the teammate id never collides with a real fighter slot
+  {
+    const g = new FightGame([ROSTER[tomori], ROSTER[0], ROSTER[2], ROSTER[1]], {
+      mode: 'team', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(7),
+    });
+    run(g, 2.3);
+    const lead = g.fighters[0];
+    lead.energy = 100;
+    assert.ok(g.attack(lead, 5), 'the sing starts in team mode');
+    run(g, 1.15);
+    assert.equal(g.fighters.length, 5, 'the teammate joins the team fight');
+    assert.equal(new Set(g.fighters.map(f => f.id)).size, g.fighters.length, 'fighter ids stay unique');
+  }
+}
+
+{
+  const tomoriData = ROSTER[ROSTER.findIndex(c => c.id === 'tomori')];
+  // L: the sung note holds for 0.6s before the summon, then the bow
+  const pf = previewFighter(tomoriData, 0);
+  pf.attack = { skill: tomoriData.skills[5], index: 5, serial: 1, t: 0, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1 };
+  assert.deepEqual([clipFor(pf).col, clipFor(pf).row], [3, 0], 'the sing starts on the breath');
+  pf.attack.t = tomoriData.skills[5].start - .6;
+  assert.equal(clipFor(pf).row, 1, 'the sung note takes over 0.6s before the summon');
+  pf.attack.t = tomoriData.skills[5].start - .01;
+  assert.equal(clipFor(pf).row, 1, 'still singing at the summon');
+  pf.attack.t = tomoriData.skills[5].start + .05;
+  assert.equal(clipFor(pf).row, 2, 'the bow follows the summon');
+
+  const pf2 = previewFighter(tomoriData, 0);
+  pf2.attack = { skill: tomoriData.skills[2], index: 2, serial: 1, t: 0, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1 };
+  assert.deepEqual([clipFor(pf2).col, clipFor(pf2).row], [0, 0], 'the stone reads the U column');
+}
+
 {
   assert.equal(guideIndex([null, 0]), 1, 'solo 2P is the movelist');
   assert.equal(guideIndex([0, 1]), 0, 'earlier player wins when both are human');

@@ -2,6 +2,7 @@ import type { CharacterData, Skill, StageData } from '../data/types.ts';
 import type { Attack, Fighter, QueuedInput } from './fighter.ts';
 import { DECAY_TIMERS, makeFighter } from './fighter.ts';
 import { AIR_SKILLS } from '../data/skills.ts';
+import { ROSTER_BY_ID } from '../data/characters.ts';
 import { advanceAnim } from './animState.ts';
 import { effectSettled, stepProjectiles, updateAttack, wailShots } from './combat.ts';
 import { stepAI } from './ai.ts';
@@ -37,6 +38,11 @@ const DODGE_SPEED = (X_MAX - X_MIN) * .35 / DODGE_TIME;
 /** 狂化连招: three ground jabs inside the window arm the next press as the heavy, so mashing J keeps looping. */
 const FRENZY_CHAIN_JABS = 3;
 const FRENZY_CHAIN_WINDOW = .6;
+/** 诗超绊: the teammate's health CAP is this slice of the borrowed sheet, for this long. The brain is the master AI (stepAI). */
+const MINION_HP_RATIO = .2;
+const MINION_LIFE = 12;
+/** Who can answer the call. ponytail: roster ids only, so a teammate is always a finished character. */
+const MINION_POOL = ['anon', 'soyo'] as const;
 export type SfxKind = 'light' | 'heavy' | 'hit' | 'block' | 'super' | 'select' | 'jump' | 'ko' | 'cast';
 
 export interface Effect {
@@ -55,6 +61,8 @@ export interface Projectile {
   returned?: boolean;
   /** Chocolate milk has landed and can be picked up. Bags never set this. */
   settled?: boolean;
+  /** 奇独点: the last damage tick this well fired. */
+  ticked?: number;
 }
 
 export interface GameOptions {
@@ -104,6 +112,8 @@ export class FightGame {
   private uiClock = 0;
   private bannerLeft = 0;
   private lastBanner = '';
+  /** Minion ids start past any real slot (team mode has 0-3): every id stays unique, so hit sets and holds never alias. */
+  private minionSeq = 100;
 
   constructor(characters: CharacterData[], options: GameOptions) {
     this.characters = characters;
@@ -119,15 +129,17 @@ export class FightGame {
 
   /* ---- queries ---- */
   isEnemy(a: Fighter | undefined, b: Fighter | undefined): boolean { return !!a && !!b && a.team !== b.team; }
+  /** By id, never by array slot: a summoned teammate's id has nothing to do with its position. */
+  fighterById(id: number): Fighter | undefined { return this.fighters.find(f => f.id === id); }
   opponents(f: Fighter): Fighter[] { return this.fighters.filter(o => this.isEnemy(f, o) && o.hp > 0); }
   targetFor(f: Fighter): Fighter | undefined {
     return this.opponents(f).sort((a, b) => Math.abs(a.x - f.x) - Math.abs(b.x - f.x))[0];
   }
   teamHealth(team: number): number {
-    const members = this.fighters.filter(f => f.team === team);
+    const members = this.fighters.filter(f => f.team === team && !f.minion);
     return members.reduce((n, f) => n + f.hp, 0) / members.reduce((n, f) => n + f.data.hp, 0);
   }
-  teamAlive(team: number): boolean { return this.fighters.some(f => f.team === team && f.hp > 0); }
+  teamAlive(team: number): boolean { return this.fighters.some(f => f.team === team && f.hp > 0 && !f.minion); }
   isControl(code: string): boolean {
     return code === 'Escape' || CONTROLS.some(c => c.left === code || c.right === code || c.block === code || c.jump.includes(code) || c.attacks.includes(code));
   }
@@ -383,6 +395,7 @@ export class FightGame {
     if (this.mode !== 'training') this.time -= dt;
     stepAI(this, dt);
     for (const f of this.fighters) this.stepFighter(f, dt);
+    this.stepMinions(dt);
     if (this.mode === 'team') this.separate();
     for (const f of this.fighters) advanceAnim(f, dt);
     stepProjectiles(this, dt);
@@ -436,6 +449,50 @@ export class FightGame {
         b.x = clamp(b.x + sign * push, X_MIN, X_MAX);
       }
     }
+  }
+
+  /** 诗超绊: a MyGO teammate answers the call — a real Fighter whose health cap is 20% of the borrowed sheet. */
+  summonAlly(owner: Fighter): void {
+    const old = this.fighters.find(f => f.minion && f.team === owner.team);
+    if (old) this.dismissMinion(old, false);
+    const data = ROSTER_BY_ID.get(MINION_POOL[Math.floor(this.random() * MINION_POOL.length)]);
+    if (!data) return;
+    const m = makeFighter({ ...data, hp: Math.round(data.hp * MINION_HP_RATIO) }, this.minionSeq++, {
+      x: clamp(owner.x - owner.facing * 46, X_MIN, X_MAX),
+      facing: owner.facing,
+      controller: null,
+      energy: 0,
+      team: owner.team,
+    });
+    m.hp = m.data.hp;
+    m.minion = true;
+    m.life = MINION_LIFE;
+    while (this.totalHits.length <= m.id) { this.totalHits.push(0); this.maxCombo.push(0); }
+    this.fighters.push(m);
+    this.sparks(m.x, m.y - 80, m.data.color, 16);
+    this.effect('super', m.x, m.y - 80, m.data.color, .5, { radius: 60 });
+    this.text(m.data.name + '！', m.x, m.y - 210, m.data.color, .8, 20);
+  }
+
+  private dismissMinion(m: Fighter, expired: boolean): void {
+    const i = this.fighters.indexOf(m);
+    if (i < 0) return;
+    this.fighters.splice(i, 1);
+    this.sparks(m.x, m.y - 80, m.data.color, 18);
+    this.effect('burst', m.x, m.y - 80, m.data.color, .35, { radius: 60 });
+    if (expired) this.text('谢幕', m.x, m.y - 200, m.data.color, .8, 18);
+  }
+
+  /** 诗超绊: the teammate's brain is stepAI on the master tier; this pass only ages and retires them. */
+  private stepMinions(dt: number): void {
+    if (!this.fighters.some(f => f.minion)) return;
+    const gone: Fighter[] = [];
+    for (const m of this.fighters) {
+      if (!m.minion) continue;
+      m.life = (m.life ?? 0) - dt;
+      if (m.hp <= 0 || m.life <= 0) gone.push(m);
+    }
+    for (const m of gone) this.dismissMinion(m, m.hp > 0);
   }
 
   private fall(f: Fighter, dt: number): void {

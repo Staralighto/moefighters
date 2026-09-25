@@ -18,3 +18,6 @@ Thumbs.db
 # 开发文档默认留本地，只有 docs/public/ 可公开
 docs/*
 !docs/public/
+
+# ZCode 本地工具配置，不进 git
+.zcodeignore

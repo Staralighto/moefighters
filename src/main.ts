@@ -96,7 +96,8 @@ async function startGame(setup: MatchSetup): Promise<void> {
     onEnd: showEnd,
     onPause: paused => { $('pause').textContent = paused ? '继续 ESC' : '暂停 ESC'; $('resume').hidden = !paused; $('pause-quit').hidden = !paused; },
   });
-  renderer = new Renderer($('game') as HTMLCanvasElement, createViews(setup.characters, images), stage, images);
+  // previewViews covers the whole roster: a 诗超绊 teammate borrows anon/soyo sheets mid-match.
+  renderer = new Renderer($('game') as HTMLCanvasElement, previewViews, stage, images);
   raf = requestAnimationFrame(frame);
   if (!document.body.classList.contains('touch')) {
     $('game').focus();

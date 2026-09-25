@@ -34,7 +34,9 @@ export class Renderer {
 
     for (const e of g.effects) {
       if (e.type !== 'ghost' || e.fighter === undefined) continue;
-      const f = g.fighters[e.fighter];
+      // By id: a summoned teammate can leave mid-effect, so index lookups would alias or miss.
+      const f = g.fighters.find(x => x.id === e.fighter);
+      if (!f) continue;
       this.view(f.data.id).draw(c, f, e.x, e.y, (e.alpha ?? .3) * (e.life / e.max), e.tint);
     }
     const order = [...g.fighters].sort((a, b) => Number(a.hp > 0) - Number(b.hp > 0) || a.y - b.y);
@@ -43,6 +45,13 @@ export class Renderer {
       const outline = g.mode === 'team' ? TEAM_GLOW[f.team] : undefined;
       view.draw(c, f, f.x, f.hp <= 0 ? FLOOR : f.y, f.hp <= 0 ? .3 : 1, undefined, outline);
       if (f.blocking) drawEffect(c, { type: 'shield', x: f.x + f.facing * 28, y: f.y - 80, color: '#a6eeff', life: .14, max: .22, radius: 58 });
+      if (f.minion && f.hp > 0) {
+        const bw = 44, bx = Math.round(f.x) - bw / 2, by = Math.round(f.y) - 196;
+        c.fillStyle = '#171120aa';
+        c.fillRect(bx - 1, by - 1, bw + 2, 5);
+        c.fillStyle = f.data.color;
+        c.fillRect(bx, by, Math.max(0, bw * (f.hp / f.data.hp)), 3);
+      }
     }
     for (const p of g.projectiles) drawProjectile(c, p, this.images);
     for (const e of g.effects) if (e.type !== 'ghost') drawEffect(c, e, this.images);

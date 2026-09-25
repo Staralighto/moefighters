@@ -215,9 +215,37 @@ export const ROSTER: CharacterData[] = [
       }),
     ],
   },
+  {
+    id: 'tomori', name: '高松灯', title: '主唱 / 迷子', quote: '那……能陪我组一辈子的乐队吗？', color: '#77BBDD',
+    ...stats('focus'),
+    view: {
+      kind: 'sprite', common: '/sprites/tomori/common.png', special: '/sprites/tomori/special.png', height: 181,
+      extras: ['/sprites/tomori/stone.png', '/sprites/tomori/plaster.png'],
+    },
+    skills: [
+      skill(0, 'light', '轻拍'),
+      skill(1, 'heavy', '横踢'),
+      skill(2, 'projectile', '飞砾谱', {
+        damage: 12, knock: 380, speed: 540, size: 44, start: .16, duration: .5, life: 1.5, cd: .8, fx: 'stone',
+        desc: '花坛捡来的小石头；命中强击退，专打断起手',
+      }),
+      skill(3, 'endure', '绊创膏', {
+        damage: 0, start: .3, duration: .85, cd: 9, breakout: true, fx: 'plaster',
+        desc: '解控；贴上企鹅创可贴震开周围敌人，6 秒内不易被打断、受伤降低 33%',
+      }),
+      skill(4, 'projectile', '奇独点', {
+        damage: 8, knock: 0, interval: .2, start: .3, duration: .75, cd: 8, life: 1.4, size: 150, fx: 'blackhole',
+        desc: '前方生成黑洞，吸住敌人并多段低伤，1.4 秒后消失；出手后即可行动，跳出可躲伤害，冲刺可脱',
+      }),
+      skill(5, 'endure', '诗超绊', {
+        damage: 0, start: 1.0, duration: 1.35, fx: 'poem',
+        desc: '原地歌唱 1 秒震退对手，随后召唤 1 名 MyGO 队友并肩 12 秒；队友生命只有两成，被击败提前退场',
+      }),
+    ],
+  },
 ];
 
 /** Select screen. gale, ember and boulder stay on ROSTER for the headless checks. */
-export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo');
+export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori');
 
 export const ROSTER_BY_ID = new Map(ROSTER.map(c => [c.id, c]));

@@ -21,9 +21,10 @@ const READ_CHANCE = [0, 0, .68];
 
 export function stepAI(g: FightGame, dt: number): void {
   if (g.mode === 'training') return;
-  const hard = g.difficulty;
   for (const f of g.fighters) {
     if (f.controller !== null || f.hp <= 0) continue;
+    // 诗超绊 teammates always run the master brain, whatever the match difficulty is.
+    const hard = f.minion ? 2 : g.difficulty;
     const o = aiTarget(g, f);
     if (!o) continue;
     const dist = Math.abs(o.x - f.x);
@@ -36,7 +37,7 @@ export function stepAI(g: FightGame, dt: number): void {
     if (f.stun > 0 || f.knocked > 0 || f.dodge > 0) continue;
 
     const incoming = g.projectiles.find(p =>
-      g.isEnemy(f, g.fighters[p.owner]) && p.life > 0 && (f.x - p.x) * p.vx >= 0 &&
+      g.isEnemy(f, g.fighterById(p.owner)) && p.life > 0 && (f.x - p.x) * p.vx >= 0 &&
       Math.abs(p.x - f.x) < PROJECTILE_SIGHT[hard] && Math.abs(p.y - (f.y - 80)) < 95);
     const threatened = g.opponents(f).find(v => v.attack && Math.abs(v.x - f.x) < Math.min(240, v.attack.skill.range + 35));
     const grabThreat = threatened?.attack?.skill.type === 'grab';

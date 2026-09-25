@@ -53,6 +53,8 @@ export interface Fighter {
   /** 就由我来结束一切: ground lights chained during the frenzy, and seconds before the chain cools off. */
   jabChain: number;
   jabChainClock: number;
+  /** 绊创膏: seconds of no-flinch left. Hits still land, but nothing stops the move in progress. */
+  braced: number;
   /** Remaining back-dodge time and its cooldown. */
   dodge: number; dodgeCd: number;
   dodgeRequest: boolean;
@@ -74,9 +76,13 @@ export interface Fighter {
   walk: number;
   animState: AnimState; animTime: number; animSerial: number;
   ai: { wait: number; move: number; block: number; facing: 1 | -1; press: number };
+  /** 诗超绊 teammate: a real Fighter on loan. Never counts toward the round, never gets the CPU brain. */
+  minion?: boolean;
+  /** Seconds before a summoned teammate bows out. Only minions carry it; kept out of DECAY_TIMERS on purpose. */
+  life?: number;
 }
 
-export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock'] as const;
+export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braced'] as const;
 
 export function makeFighter(
   data: CharacterData,
@@ -89,7 +95,7 @@ export function makeFighter(
     hp: data.hp, energy: init.energy, guard: 100, blocking: false,
     stun: 0, invuln: 0, comboTime: 0, hitFlash: 0, landing: 0, guardBroken: 0,
     knocked: 0, downTime: 0, hitBySuper: false, root: 0, rootHits: 0, frenzy: 0,
-    jabChain: 0, jabChainClock: 0,
+    jabChain: 0, jabChainClock: 0, braced: 0,
     dodge: 0, dodgeCd: 0, dodgeRequest: false, dodgeBuffer: 0, blockTap: -1, blockBuffer: 0, blockLeft: 0,
     attack: null, attackSerial: 0, cooldowns: [0, 0, 0, 0, 0, 0], queue: [],
     jumpRequest: false, jumpBuffer: 0,

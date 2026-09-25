@@ -17,6 +17,8 @@ const GUITAR_HEAD_Y = 122 / 256;
 const ANON_NOTE_SRC = '/sprites/anon/note.png';
 const SOYO_NOTE_SRC = '/sprites/soyo/note.png';
 const HEART_SRC = '/sprites/anon/heart.png';
+const STONE_SRC = '/sprites/tomori/stone.png';
+const PLASTER_SRC = '/sprites/tomori/plaster.png';
 const MORTIS_H = 181;
 
 /* Drop the pose-sheet chrome and the chroma key so a placeholder can sit in the fight. */
@@ -232,6 +234,59 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.lineWidth = 3 * (1 - p) + 1;
       ctx.beginPath(); ctx.moveTo(-r * .3, 8); ctx.lineTo(-r * .3, -r * .55 * p - 8); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(r * .3, 8); ctx.lineTo(r * .3, -r * .55 * p - 8); ctx.stroke();
+      break;
+    }
+    case 'plaster': {
+      // 绊创膏: the plaster pulses — three translucent copies of itself scale up and spin out from the one on her chest.
+      const im = images?.get(PLASTER_SRC);
+      const base = Math.min(1, e.life * 3);
+      ctx.translate(e.x, e.y);
+      const draw = (scale: number, alpha: number, rot: number) => {
+        if (alpha <= 0) return;
+        ctx.save();
+        ctx.rotate(rot);
+        ctx.globalAlpha = alpha;
+        const w = 120 * scale;
+        if (im?.naturalWidth) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(keyed(im), -w / 2, -w / 2, w, w);
+        } else {
+          ctx.fillStyle = '#f7e8da';
+          square(-w * .4, -w * .12, w * .8, w * .24);
+          ctx.fillStyle = e.color;
+          for (const px of [-w * .12, w * .12]) {
+            ctx.beginPath(); ctx.arc(px, 0, w * .08, 0, Math.PI * 2); ctx.fill();
+          }
+        }
+        ctx.restore();
+      };
+      for (let i = 0; i < 3; i++) {
+        const tt = Math.min(1, Math.max(0, (p * 1.2 - i * .22) / .55));
+        if (tt <= 0 || tt >= 1) continue;
+        draw(1 + tt * 1.2, (1 - tt) * .55, (e.dir ?? 1) * (-.45 + tt * .8));
+      }
+      draw(1, base * .95, (e.dir ?? 1) * -.45);
+      break;
+    }
+    case 'poem': {
+      // 诗超绊: three rings swell out of the stance for the length of the sing, notes riding the front.
+      const r = e.radius ?? 220;
+      ctx.translate(e.x, e.y);
+      for (let i = 0; i < 3; i++) {
+        const ring = Math.min(1, p * 1.25 - i * .16);
+        if (ring <= 0) continue;
+        ctx.globalAlpha = (1 - p) * (.9 - i * .22);
+        ctx.lineWidth = (6 - i * 2) * (1 - p) + 1;
+        ctx.beginPath(); ctx.ellipse(0, 0, r * ring, r * .36 * ring, 0, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.fillStyle = '#fff9e6';
+      ctx.globalAlpha = (1 - p) * .9;
+      for (const side of [-1, 1]) {
+        const nx = side * r * .55 * p, ny = -r * (.28 + side * .08) * p;
+        ctx.fillRect(nx - 1.5, ny - 9, 3, 9);
+        ctx.beginPath(); ctx.ellipse(nx - 3, ny, 4.5, 3, -.5, 0, Math.PI * 2); ctx.fill();
+      }
       break;
     }
     case 'slam':
@@ -481,6 +536,60 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
       ctx.fill();
       break;
     }
+    case 'stone': {
+      // 飞砾谱: a pebble with a crayon star, tumbling as it flies.
+      if (!prop(ctx, images, STONE_SRC, p.size)) {
+        ctx.rotate(p.age * 7 * Math.sign(p.vx || 1));
+        const r = p.radius;
+        ctx.fillStyle = '#b9b2ad';
+        ctx.beginPath(); ctx.ellipse(0, 0, r * 1.05, r * .8, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#948d88';
+        ctx.beginPath(); ctx.ellipse(-r * .25, r * .15, r * .45, r * .3, .4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.moveTo(r * .1, -r * .5); ctx.lineTo(r * .32, 0); ctx.lineTo(r * .1, r * .5); ctx.lineTo(-r * .12, 0);
+        ctx.closePath(); ctx.fill();
+      }
+      break;
+    }
+    case 'blackhole': {
+      // 奇独点: a face-on circular well — black core, purple spiral arms curling inward, pale specks falling in.
+      const span = p.skill.life ?? 1.4;
+      const r = Math.max(40, p.size * 1.2 * (1 - .3 * Math.min(1, p.age / span)));
+      const base = Math.min(1, p.life * 3);
+      ctx.globalAlpha = base;
+      ctx.fillStyle = '#0c0918';
+      ctx.beginPath(); ctx.arc(0, 0, r * .48, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#3d2a6b';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, r * .5, 0, Math.PI * 2); ctx.stroke();
+      for (let i = 0; i < 3; i++) {
+        const a0 = p.age * 3.2 + (i * Math.PI * 2) / 3;
+        let prev: [number, number] | null = null;
+        for (let s = 0; s <= 12; s++) {
+          const t = s / 12;
+          const ang = a0 - t * 3.6;
+          const rad = r * (.95 - .52 * t);
+          const cur: [number, number] = [Math.cos(ang) * rad, Math.sin(ang) * rad];
+          if (prev) {
+            ctx.globalAlpha = base * (.8 - t * .5);
+            ctx.strokeStyle = t > .55 ? '#a98be0' : '#6d3fb8';
+            ctx.lineWidth = 4.5 - t * 3;
+            ctx.beginPath(); ctx.moveTo(prev[0], prev[1]); ctx.lineTo(cur[0], cur[1]); ctx.stroke();
+          }
+          prev = cur;
+        }
+      }
+      ctx.fillStyle = '#e6d9ff';
+      for (let i = 0; i < 4; i++) {
+        const t = (p.age * .7 + i / 4) % 1;
+        const ang = p.age * 2.6 + i * 1.57;
+        const rad = r * (1 - t * .92);
+        ctx.globalAlpha = base * (1 - t) * .9;
+        ctx.beginPath(); ctx.arc(Math.cos(ang) * rad, Math.sin(ang) * rad, 2, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
     case 'wail':
     case 'orb':
     default: {
@@ -525,7 +634,7 @@ export function drawTexts(ctx: CanvasRenderingContext2D, texts: FloatingText[]):
 
 export function drawCombo(ctx: CanvasRenderingContext2D, g: FightGame): void {
   for (const f of g.fighters) {
-    if (f.combo <= 1 || f.comboTime <= 0) continue;
+    if (f.minion || f.combo <= 1 || f.comboTime <= 0) continue;
     const left = f.team === 0;
     const slot = g.fighters.filter(m => m.team === f.team).indexOf(f);
     const x = left ? 42 : 918, y = 205 + slot * 36;

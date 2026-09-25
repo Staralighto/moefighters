@@ -81,6 +81,13 @@ export function heartRow(t: number, start: number): number {
   return 2;
 }
 
+/** 诗超绊: a short breath, a 0.6s sung note that lands right on the summon, then the bow. */
+export function poemRow(t: number, start: number): number {
+  if (t < start - .6) return 0;
+  if (t < start) return 1;
+  return 2;
+}
+
 /** 狂化 J/K on the frenzy sheet. Row 0 is the light flurry, row 1 the kicks.
  *  Cells: 0 windup, 1 and 2 the two flurry beats, 3 the follow-through. */
 export function soyoFrenzyFrame(kind: 'light' | 'heavy', t: number, s: { start: number; duration: number }): [number, number] {
@@ -103,6 +110,7 @@ export function clipFor(f: Fighter): Clip {
     if (f.attack.skill.fx === 'drums') return at('special', f.attack.index - 2, drumRow(f.attack.t, f.attack.skill.duration));
     if (f.attack.skill.fx === 'chord') return at('special', f.attack.index - 2, chordRow(f.attack.t, f.attack.skill.duration));
     if (f.attack.skill.fx === 'heart') return at('special', f.attack.index - 2, heartRow(f.attack.t, f.attack.skill.start));
+    if (f.attack.skill.fx === 'poem') return at('special', f.attack.index - 2, poemRow(f.attack.t, f.attack.skill.start));
     if (f.attack.skill.fx === 'spin') {
       const t = f.attack.t, s = f.attack.skill;
       const row = t < s.start ? 0 : t >= s.duration - .26 ? 2 : 1;

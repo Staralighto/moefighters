@@ -1,7 +1,7 @@
 import type { Skill } from '../data/types.ts';
 import type { Attack, Fighter } from './fighter.ts';
 import type { FightGame, Projectile } from './game.ts';
-import { CONTROLS, FLOOR, GRAVITY, SIDE, W, clamp } from './constants.ts';
+import { CONTROLS, FLOOR, GRAVITY, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
 import { drumRow } from '../render/clips.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
@@ -19,6 +19,18 @@ const RESOLVE_REPEL_RANGE = 190;
 const RESOLVE_REPEL_PUSH = 540;
 /** 求你了: the kneel holds this long after the catch, so the pause reads before the headbutt. */
 const ONEGAI_PAUSE = .5;
+/** 绊创膏: seconds of no-flinch, the damage cut while it holds, and the shove the plaster gives the people around her. */
+const BRACED_TIME = 6;
+const BRACED_DAMAGE = .67;
+const PLASTER_REPEL_RANGE = 190;
+const PLASTER_REPEL_PUSH = 500;
+/** 奇独点: the well spawns this far ahead and drags bodies toward its centre. Airborne bodies feel a fraction of it. */
+const BLACKHOLE_DIST = 320;
+const BLACKHOLE_RADIUS = 150;
+const BLACKHOLE_PULL = 200;
+/** 诗超绊: the first note clears this radius, so the one-second sing is not free to walk into. */
+const POEM_REPEL_RANGE = 220;
+const POEM_REPEL_PUSH = 420;
 
 /** 悲鸣: more cries as she breaks. Resolved once per cast so the shared skill stays put. */
 /** 不会再逃避了: every swing except the last stays in place. shots is the swing index before it increments. */
@@ -75,7 +87,9 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   const armour = defender.attack;
   const rippleLive = !!armour && armour.skill.fx === 'ripple' && armour.t < armour.skill.duration - .22;
   const endured = !blocked && !!armour && armour.endure > 0 && (rippleLive || armour.t < armour.skill.start) && !isGrab && !skill.super;
-  let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .9 : 1);
+  // 绊创膏: the buffed fighter eats the damage without the flinch. Grabs and supers ignore the plaster.
+  const braced = !blocked && defender.braced > 0 && !isGrab && !skill.super;
+  let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .9 : 1) * (braced ? BRACED_DAMAGE : 1);
 
   if (blocked) {
     const fullHit = damage;
@@ -115,6 +129,14 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     if (endured && armour) {
       if (armour.skill.fx !== 'ripple') armour.endure--;
       g.text('霸体', defender.x, defender.y - 195, '#ffd27a', .5, 18);
+    } else if (braced) {
+      // 绊创膏: the hit lands, nothing flinches. The 7-hit escape below still applies.
+      if (attacker.combo >= 7) {
+        defender.invuln = .48;
+        defender.vx = dir * 470;
+        defender.stun = .24;
+        g.text('脱离连段', defender.x, defender.y - 195, SIDE[1], .7, 16);
+      }
     } else {
       if (wasRooted) {
         defender.rootHits++;
@@ -227,7 +249,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     : skill.fx === 'onegai' ? 360 : skill.fx === 'shout' ? 110
     : skill.fx === 'spin' && !spinFinale(skill, source) ? 0
     : skill.fx === 'ripple' ? 620 : skill.fx === 'slam' ? 120 : blocked ? 75 : skill.knock ?? (skill.type === 'light' ? 95 : skill.super ? 340 : 235);
-  if (skill.fx !== 'shove' && defender.invuln <= 0 && !endured) defender.vx = dir * knock;
+  if (skill.fx !== 'shove' && defender.invuln <= 0 && !endured) defender.vx = dir * knock * (braced ? .5 : 1);
   if (holdStill) { defender.vx = 0; defender.vy = 0; }
   g.shake = blocked ? 2 : skill.fx === 'slam' ? 14 : skill.fx === 'onegai' ? 10 : skill.super ? 12 : skill.type === 'heavy' ? 7 : 4;
   const juggleHit = !blocked && !!skill.air && defender.y < FLOOR - .5;
@@ -274,12 +296,14 @@ export function spawnShot(g: FightGame, f: Fighter, a: Attack, offsetY = 0, arc 
   const s = a.skill;
   const lob = s.fx === 'milk' ? MILK_ARC : s.fx === 'bag' ? BAG_ARCS[arc % BAG_ARCS.length] : null;
   if (s.fx === 'milk') g.projectiles = g.projectiles.filter(p => !(p.fx === 'milk' && p.owner === f.id));
+  // 奇独点: the well takes a fixed spot ahead and never travels.
+  const hole = s.fx === 'blackhole';
   const speed = lob ? lob.vx : (s.speed ?? (s.super ? 650 : 480)) * (f.data.trait === 'focus' ? 1.15 : 1);
   const p: Projectile = {
     owner: f.id,
-    x: f.x + f.facing * 53,
-    y: f.y - 85 + offsetY,
-    vx: f.facing * speed,
+    x: hole ? clamp(f.x + f.facing * BLACKHOLE_DIST, X_MIN, X_MAX) : f.x + f.facing * 53,
+    y: hole ? FLOOR - 95 : f.y - 85 + offsetY,
+    vx: hole ? 0 : f.facing * speed,
     vy: lob ? lob.vy : 0,
     life: s.life ?? 2.7,
     skill: s,
@@ -428,6 +452,20 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
       .sort((p, q) => Math.abs(p.x - f.x) - Math.abs(q.x - f.x))[0];
     const dist = foe ? Math.max(48, Math.abs(foe.x - f.x)) : s.range;
     g.effect('mortis', f.x, f.y, f.data.color, s.duration, { dir: f.facing, radius: dist });
+  }
+
+  // 诗超绊: the first note shoves everyone nearby, so the one-second sing is not free to walk into.
+  if (s.fx === 'poem' && a.shots === 0) {
+    a.shots = 1;
+    for (const o of g.opponents(f)) {
+      if (o.hp <= 0 || o.invuln > 0) continue;
+      const dx = o.x - f.x;
+      if (Math.abs(dx) < POEM_REPEL_RANGE) {
+        o.vx = (Math.sign(dx) || f.facing) * POEM_REPEL_PUSH;
+        o.stun = Math.max(o.stun, .2);
+      }
+    }
+    g.effect('poem', f.x, f.y - 80, f.data.color, s.start, { radius: POEM_REPEL_RANGE });
   }
 
   if (s.type === 'dash' && a.t >= s.start && a.t < s.duration - .08) {
@@ -591,6 +629,21 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
           o.stun = Math.max(o.stun, .22);
         }
       }
+    } else if (s.fx === 'plaster') {
+      // 绊创膏: the plaster on her chest pulses three translucent copies of itself, then holds.
+      f.braced = BRACED_TIME;
+      g.effect('plaster', f.x, f.y - 80, f.data.color, 1.2, { dir: f.facing });
+      for (const o of g.opponents(f)) {
+        if (o.hp <= 0 || o.invuln > 0) continue;
+        const dx = o.x - f.x;
+        if (Math.abs(dx) < PLASTER_REPEL_RANGE) {
+          o.vx = (Math.sign(dx) || f.facing) * PLASTER_REPEL_PUSH;
+          o.stun = Math.max(o.stun, .2);
+        }
+      }
+    } else if (s.fx === 'poem') {
+      // 诗超绊: the sing lands, and a teammate takes the stage beside her.
+      g.summonAlly(f);
     } else if (s.type === 'projectile') {
       spawnShot(g, f, a);
     } else if (s.type !== 'dash' && s.fx !== 'slam' && s.fx !== 'onegai') {
@@ -609,6 +662,29 @@ export function stepProjectiles(g: FightGame, dt: number): void {
   for (const p of g.projectiles) {
     p.life -= dt;
     p.age += dt;
+    if (p.fx === 'blackhole') {
+      // 奇独点: a standing well. It drags bodies toward the centre and ticks the skill's damage on its interval.
+      const owner = g.fighterById(p.owner);
+      if (!owner) continue;
+      for (const o of g.opponents(owner)) {
+        if (o.hp <= 0 || o.invuln > 0) continue;
+        const dx = p.x - o.x;
+        if (Math.abs(dx) < BLACKHOLE_RADIUS) {
+          o.vx = Math.sign(dx) * BLACKHOLE_PULL * (o.y < FLOOR - .5 ? .4 : 1);
+        }
+      }
+      const tick = Math.floor(p.age / (p.skill.interval ?? .2));
+      if (tick !== p.ticked) {
+        p.ticked = tick;
+        p.hit.clear();
+        for (const o of g.opponents(owner)) {
+          if (Math.abs(o.x - p.x) < BLACKHOLE_RADIUS && Math.abs(o.y - 83 - p.y) < 72) {
+            hit(g, owner, o, p.skill, { hit: p.hit }, p.x);
+          }
+        }
+      }
+      continue;
+    }
     // Outbound half, then one turn. The hit list clears so the way back can connect again.
     if (p.fx === 'cucumber' && !p.returned && p.age >= (p.skill.life ?? 2.4) / 2) {
       p.vx = -p.vx;
@@ -616,7 +692,7 @@ export function stepProjectiles(g: FightGame, dt: number): void {
       p.returned = true;
     }
     if ((p.fx === 'milk' || p.fx === 'bag') && !p.settled) p.vy += GRAVITY * dt;
-    const owner = g.fighters[p.owner];
+    const owner = g.fighterById(p.owner);
     if (p.fx === 'chord' && owner && owner.hp > 0) {
       const foe = g.opponents(owner).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
       if (foe) {
@@ -652,7 +728,7 @@ export function stepProjectiles(g: FightGame, dt: number): void {
       p.life = 0;
       g.text('+26', owner.x, owner.y - 170, owner.data.color, .6, 18);
     }
-    for (const target of g.opponents(owner)) {
+    if (owner) for (const target of g.opponents(owner)) {
       if (!p.settled && p.life > 0 && Math.abs(p.x - target.x) < 38 + p.radius && Math.abs(p.y - (target.y - 83)) < 72) {
         if (hit(g, owner, target, p.skill, { hit: p.hit }, p.x - Math.sign(p.vx) * 40)) {
           g.effect('burst', p.x, p.y, p.color, .3, { radius: p.size * .8 });
@@ -667,7 +743,8 @@ export function stepProjectiles(g: FightGame, dt: number): void {
   for (let i = 0; i < g.projectiles.length; i++) {
     for (let j = i + 1; j < g.projectiles.length; j++) {
       const p = g.projectiles[i], q = g.projectiles[j];
-      if (!p.settled && !q.settled && g.isEnemy(g.fighters[p.owner], g.fighters[q.owner]) && p.life > 0 && q.life > 0 && Math.abs(p.x - q.x) < 25 && Math.abs(p.y - q.y) < 27) {
+      // Shots die on each other; the well is a zone, so shots pass through it.
+      if (!p.settled && !q.settled && p.fx !== 'blackhole' && q.fx !== 'blackhole' && g.isEnemy(g.fighterById(p.owner), g.fighterById(q.owner)) && p.life > 0 && q.life > 0 && Math.abs(p.x - q.x) < 25 && Math.abs(p.y - q.y) < 27) {
         p.life = q.life = 0;
         g.sparks(p.x, p.y, '#fff', 12);
       }
