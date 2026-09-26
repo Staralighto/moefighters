@@ -1,8 +1,9 @@
 // @ts-nocheck — Node script. App typecheck includes it only through selfcheck.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { crc32 } from 'node:zlib';
 
 /* Finished art has no marker. A sheet script may overwrite only a missing file or one it stamped.
@@ -99,7 +100,21 @@ export function rasterSheet(pngPath: string, svg: string, w: number, h: number):
   writeFileSync(pngPath, stampPlaceholder(buf));
 }
 
+/** Every rasterSheet caller shares SHEET_SCALE; a private literal is how the 128-era
+    0.58 came back (copied from a stale template into a new character's script). */
+export function checkSheetScale(): void {
+  const here = dirname(fileURLToPath(import.meta.url));
+  for (const f of readdirSync(here)) {
+    if (!f.endsWith('.ts') || f === 'sprite-guard.ts' || f === 'selfcheck.ts') continue;
+    const text = readFileSync(join(here, f), 'utf8');
+    if (!text.includes('rasterSheet(')) continue;
+    if (!text.includes('SHEET_SCALE')) throw Error(f + ' must import SHEET_SCALE from proportions.ts');
+    if (/const SCALE\b/.test(text)) throw Error(f + ' pins a private SCALE literal; use SHEET_SCALE');
+  }
+}
+
 export function checkSpriteGuard(): void {
+  checkSheetScale();
   const ihdr = chunk('IHDR', Buffer.from([0, 0, 0, 1, 0, 0, 0, 1, 8, 2, 0, 0, 0]));
   const png = Buffer.concat([SIG, ihdr, chunk('IEND', Buffer.alloc(0))]);
   if (isPlaceholderPng(png)) throw new Error('blank png looked like a placeholder');

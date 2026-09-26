@@ -2,7 +2,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertAllWritable, rasterSheet } from './sprite-guard.ts';
 import { CELL, COMMON_COLS, COMMON_LABELS, COMMON_ROWS, SPECIAL_COLS, SPECIAL_ROWS } from '../src/render/clips.ts';
-import { DIMS, NECK, torsoPoints, torsoRadii, type Dims, type Pt } from '../src/render/proportions.ts';
+import { DIMS, NECK, torsoPoints, torsoRadii, type Dims, type Pt, SHEET_SCALE } from '../src/render/proportions.ts';
 
 /* Colour-block Tomori only. Do not import write-sheets.ts — that script redraws the whole cast.
    ponytail: short hair, so just the cap; the lyrics notebook rides column 4 only.
@@ -80,7 +80,6 @@ const BG = '#1a1528';
 const GRID = '#ff36c8';
 const OUTLINE = '#151222';
 /* Body fills the 256 cell. 0.58 was the old 128-tall figure left in the middle of the cell. */
-const SCALE = 1.16;
 const FOOT = 12;
 /* 灯蓝, the official image colour. */
 const COLOR = '#77BBDD';
@@ -120,7 +119,7 @@ function bookOf(shoulder: Pt): { svg: string; marks: Mark[] } {
 function figure(pose: Pose): { svg: string; marks: Mark[] } {
   // Petite: she is the smallest of the cast.
   const d: Dims = { ...DIMS.slim, torsoW: 19, limb: 6 };
-  const s = SCALE;
+  const s = SHEET_SCALE;
   const dark = shade(COLOR, .6);
   const light = shade(COLOR, 1.35);
   const legLen = (d.thigh + d.shin) * s;

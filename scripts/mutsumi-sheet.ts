@@ -2,7 +2,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertAllWritable, rasterSheet } from './sprite-guard.ts';
 import { CELL, COMMON_COLS, COMMON_LABELS, COMMON_ROWS, SPECIAL_COLS, SPECIAL_ROWS } from '../src/render/clips.ts';
-import { DIMS, NECK, torsoPoints, torsoRadii, type Pt } from '../src/render/proportions.ts';
+import { DIMS, NECK, torsoPoints, torsoRadii, type Pt, SHEET_SCALE } from '../src/render/proportions.ts';
 
 /* Colour-block Mutsumi only. Do not import write-sheets.ts — that script redraws the whole cast.
    ponytail: one guitar polygon on the two columns that hold it. Ceiling = CELL. */
@@ -73,7 +73,6 @@ const PINK = '#ff4f96';
 const GUARD = '#f6f3ee';
 const MAPLE = '#e6c48a';
 const PICKUP = '#1a1a1e';
-const SCALE = 0.58;
 const FOOT = 12;
 const COLOR = '#779977';
 
@@ -139,7 +138,7 @@ function guitarOf(shoulder: Pt, kind: Guitar): { svg: string; marks: Mark[] } {
 
 function figure(pose: Pose): { svg: string; marks: Mark[] } {
   const d = DIMS.slim;
-  const s = SCALE;
+  const s = SHEET_SCALE;
   const dark = shade(COLOR, .6);
   const light = shade(COLOR, 1.35);
   const legLen = (d.thigh + d.shin) * s;

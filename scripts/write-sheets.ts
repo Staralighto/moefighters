@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { SkillType } from '../src/data/types.ts';
 import { CELL, COMMON_COLS, COMMON_LABELS, COMMON_ROWS, PHASES, SPECIAL_COLS, SPECIAL_KEYS, SPECIAL_ROWS } from '../src/render/clips.ts';
-import { DIMS, NECK, headsTall, torsoPoints, torsoRadii, type Build, type Pt } from '../src/render/proportions.ts';
+import { DIMS, NECK, headsTall, torsoPoints, torsoRadii, type Build, type Pt, SHEET_SCALE } from '../src/render/proportions.ts';
 
 /* ponytail: static SVG dump; runtime never imports this. Ceiling = colour-block girls, upgrade = replace the files with img2img PNGs of the same grid. */
 
@@ -89,7 +89,6 @@ const GRID = '#ff36c8';
 const OUTLINE = '#151222';
 /* Largest scale that keeps every pose inside a 128-body cell, including raised fists and horizontal kicks.
    Sheet pixels are CELL (256). This scale is not doubled; finished PNGs are replaced, not regenerated. */
-const SCALE = 0.58;
 const FOOT = 12;
 
 function shade(hex: string, k: number): string {
@@ -110,7 +109,7 @@ function poly(pts: Pt[], fill: string): string {
 
 function figure(pose: Pose, color: string, build: Build): { svg: string; marks: Mark[] } {
   const d = DIMS[build];
-  const s = SCALE;
+  const s = SHEET_SCALE;
   const dark = shade(color, .6);
   const light = shade(color, 1.35);
   const legLen = (d.thigh + d.shin) * s;

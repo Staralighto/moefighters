@@ -1,16 +1,16 @@
 import type { CharacterData, Skill, StageData } from '../data/types.ts';
 import type { Attack, Fighter, QueuedInput } from './fighter.ts';
-import { DECAY_TIMERS, makeFighter } from './fighter.ts';
+import { DECAY_TIMERS, gainEnergy, makeFighter } from './fighter.ts';
 import { AIR_SKILLS } from '../data/skills.ts';
 import { ROSTER_BY_ID } from '../data/characters.ts';
 import { advanceAnim } from './animState.ts';
 import { effectSettled, stepProjectiles, updateAttack, wailShots } from './combat.ts';
 import { stepAI } from './ai.ts';
-import { CONTROLS, FLOOR, GRAVITY, INPUT_BUFFER, SIDE, STEP, X_MAX, X_MIN, clamp } from './constants.ts';
+import { COMBO_DECAY, COMBO_ESCAPE, CONTROLS, FLOOR, GRAVITY, INPUT_BUFFER, SIDE, STEP, X_MAX, X_MIN, clamp } from './constants.ts';
 
 /* Fixed-step arcade simulation. This module never touches the DOM or a canvas; it emits effects as data. */
 
-export type Mode = 'cpu' | 'training' | 'team';
+export type Mode = 'cpu' | 'training' | 'team' | 'challenge';
 export type Phase = 'intro' | 'fight' | 'roundend' | 'finished';
 
 const DUO_SPAWN = [
@@ -23,6 +23,12 @@ const TEAM_SPAWN = [
   { x: 750, facing: -1 as const, team: 1, controller: null },
   { x: 840, facing: -1 as const, team: 1, controller: null },
 ];
+/** Challenge is a 2-on-1: the solo human left, the random CPU pair right. */
+const CHALLENGE_SPAWN = [
+  { x: 210, facing: 1 as const, team: 0, controller: 0 as number | null },
+  { x: 750, facing: -1 as const, team: 1, controller: null },
+  { x: 840, facing: -1 as const, team: 1, controller: null },
+];
 
 /** Block key released faster than this becomes a back-dodge instead of a block. */
 export const DODGE_TAP = .12;
@@ -30,7 +36,7 @@ export const DODGE_TAP = .12;
 const BLOCK_MIN = .16;
 /** True while a press should wait instead of expiring. Hitstun, knockdown, a move, a dodge, or a root. */
 function inputLocked(f: Fighter): boolean {
-  return f.stun > 0 || f.knocked > 0 || !!f.attack || f.dodge > 0 || f.root > 0;
+  return f.stun > 0 || f.knocked > 0 || !!f.attack || f.dodge > 0 || f.root > 0 || f.ban > 0;
 }
 const DODGE_TIME = .28, DODGE_INVULN = .16, DODGE_CD = 1.2;
 /** Back-dodge covers 35% of the stage, enough to clear key skills. */
@@ -70,6 +76,10 @@ export interface GameOptions {
   difficulty: number;
   /** Per fighter. Omitted keeps the old default: slot 0 human, everyone else CPU. */
   controllers?: (number | null)[];
+  /** Per fighter slot. Challenge decks only; omitted keeps every fighter neutral. */
+  mods?: ChallengeMods[];
+  /** Rounds a side needs to win the match. Defaults to the classic best-of-three (first to 2). */
+  roundsToWin?: number;
   stage: StageData;
   audio: { play(kind: SfxKind): void };
   random?: () => number;
@@ -79,11 +89,51 @@ export interface GameOptions {
   onPause?(paused: boolean): void;
 }
 
+/** One slot's card deck, aggregated from the picked stack counts by challenge.ts aggregatePicks.
+    Every field is optional and defaults to neutral, so {} arms nothing. */
+export interface ChallengeMods {
+  /** Challenge mode's own base damage boost for the player slot, kept apart from deck buffs so they multiply on top. */
+  baseDamage?: number;
+  /** 焚音打: multiplier on final damage. */
+  damage?: number;
+  /** 没问题的哦: fraction of max health healed per second. */
+  regen?: number;
+  /** 最喜欢闪闪发光的东西！: crit chance per unblocked hit. */
+  crit?: number;
+  /** 碧天伴走: seconds added to the combo window, and the decay per extra combo hit. */
+  comboTimeBonus?: number;
+  comboDecay?: number;
+  /** 来组乐队吧！: multiplier on every energy gain. */
+  energyMul?: number;
+  /** 就算是迷子也要前进: walk-speed multiplier and back-dodge-cooldown multiplier. */
+  moveMul?: number;
+  dodgeCdMul?: number;
+  /** 再来一次: multiplier on skill cooldowns. */
+  cdMul?: number;
+  /** 堕天: added damage multiplier while the attacker is below half health. */
+  lowHpDmg?: number;
+  /** 这是最后通牒: added damage multiplier while the defender is below quarter health. */
+  executeDmg?: number;
+  /** 潜在表明: fraction of damage dealt healed back. */
+  lifesteal?: number;
+  /** 竟敢无视灯: fraction of melee damage reflected at the attacker. */
+  thorns?: number;
+  /** 我会保护小睦: multiplier on hitstun taken, and the combo count that frees the victim. */
+  stunMul?: number;
+  escapeCombo?: number;
+  /** 想成为人类: cheat-death charges for this round. */
+  deathSave?: number;
+  /** 因为我爱慕虚荣: damage/energy bonus armed by the first kill of the round. */
+  vainDamage?: number;
+  vainEnergy?: number;
+}
+
 export class FightGame {
   readonly characters: CharacterData[];
   readonly options: GameOptions;
   readonly mode: Mode;
   readonly difficulty: number;
+  readonly roundsToWin: number;
   readonly audio: GameOptions['audio'];
   readonly random: () => number;
 
@@ -120,6 +170,7 @@ export class FightGame {
     this.options = options;
     this.mode = options.mode;
     this.difficulty = clamp(options.difficulty, 0, 2);
+    this.roundsToWin = Math.max(1, Math.round(options.roundsToWin ?? 2));
     this.audio = options.audio;
     this.random = options.random ?? Math.random;
     this.totalHits = characters.map(() => 0);
@@ -146,13 +197,39 @@ export class FightGame {
 
   /* ---- round lifecycle ---- */
   resetRound(): void {
-    const spawn = this.mode === 'team' ? TEAM_SPAWN : DUO_SPAWN;
+    const spawn = this.mode === 'team' ? TEAM_SPAWN
+      : this.mode === 'challenge' ? (this.characters.length === 2 ? DUO_SPAWN : CHALLENGE_SPAWN)
+      : DUO_SPAWN;
     const controls = this.options.controllers;
-    this.fighters = this.characters.map((d, i) => makeFighter(d, i, {
-      ...spawn[i],
-      controller: controls ? (controls[i] ?? null) : spawn[i].controller,
-      energy: this.mode === 'training' ? 100 : 20,
-    }));
+    this.fighters = this.characters.map((d, i) => {
+      const f = makeFighter(d, i, {
+        ...spawn[i],
+        controller: controls ? (controls[i] ?? null) : spawn[i].controller,
+        energy: this.mode === 'training' ? 100 : 20,
+      });
+      const m = this.options.mods?.[i];
+      f.dmgMul = m?.damage ?? 1;
+      f.baseDmgMul = m?.baseDamage ?? 1;
+      f.regen = m?.regen ?? 0;
+      f.critChance = m?.crit ?? 0;
+      f.comboTimeBonus = m?.comboTimeBonus ?? 0;
+      f.comboDecay = m?.comboDecay ?? COMBO_DECAY;
+      f.energyMul = m?.energyMul ?? 1;
+      f.moveMul = m?.moveMul ?? 1;
+      f.dodgeCdMul = m?.dodgeCdMul ?? 1;
+      f.cdMul = m?.cdMul ?? 1;
+      f.lowHpDmg = m?.lowHpDmg ?? 0;
+      f.executeDmg = m?.executeDmg ?? 0;
+      f.lifesteal = m?.lifesteal ?? 0;
+      f.thorns = m?.thorns ?? 0;
+      f.stunMul = m?.stunMul ?? 1;
+      f.escapeCombo = m?.escapeCombo ?? COMBO_ESCAPE;
+      f.deathSave = m?.deathSave ?? 0;
+      // vain re-arms every round from the deck; the kill itself spends it until the next reset.
+      f.vainDmg = m?.vainDamage ?? 0;
+      f.vainEnergy = m?.vainEnergy ?? 0;
+      return f;
+    });
     this.projectiles = [];
     this.effects = [];
     this.particles = [];
@@ -162,7 +239,7 @@ export class FightGame {
     this.phaseTime = 2.25;
     this.hitstop = 0;
     this.keys.clear();
-    this.setBanner('ROUND ' + this.round, '先赢两回合 · READY');
+    this.setBanner('ROUND ' + this.round, this.roundsToWin === 1 ? '单回合决胜 · READY' : '先赢两回合 · READY');
     this.options.onHUD?.(this);
   }
 
@@ -255,9 +332,9 @@ export class FightGame {
     const breakout = !!f.data.skills[index]?.breakout;
     const downed = f.y >= FLOOR - .1 && f.knocked > 0 && f.vy >= 0;
     const escape = breakout && f.hitBySuper && !downed;
-    if (!escape && (f.stun > 0 || f.knocked > 0)) return false;
+    if (f.ban > 0 || (!escape && (f.stun > 0 || f.knocked > 0))) return false;
     if (index >= 2 && this.airborne(f) && !escape) return false;
-    if (f.root > 0 && this.skillFor(f, index).type === 'dash') return false;
+    if ((f.root > 0 || f.ban > 0) && this.skillFor(f, index).type === 'dash') return false;
     if (index === 5 && f.energy < 100) return false;
     const a = f.attack;
     // Grounded light attacks that connected can cancel into light or heavy.
@@ -299,7 +376,7 @@ export class FightGame {
       f.invuln = Math.max(f.invuln, skill.invuln);
     }
     // Frenzy shortens the recast wait of the ground jab and kick to match the faster clock.
-    f.cooldowns[slot] = skill.cd * (f.frenzy > 0 && slot <= 1 && !skill.air ? .6 : 1);
+    f.cooldowns[slot] = skill.cd * f.cdMul * (f.frenzy > 0 && slot <= 1 && !skill.air ? .6 : 1);
     if (slot === 5) {
       f.energy = 0;
       f.invuln = .64;
@@ -331,7 +408,7 @@ export class FightGame {
 
   /** Keep a press that is only waiting on a lock, landing, or a cooldown about to end. */
   private bufferHolds(f: Fighter, index: number): boolean {
-    if (f.stun > 0 || f.knocked > 0 || !!f.attack || f.dodge > 0 || f.root > 0) return true;
+    if (f.stun > 0 || f.knocked > 0 || !!f.attack || f.dodge > 0 || f.root > 0 || f.ban > 0) return true;
     if (this.airborne(f) && index >= 2) return true;
     if (this.staleIntent(f, index)) return false;
     return f.cooldowns[index] > 0;
@@ -377,9 +454,9 @@ export class FightGame {
     if (this.phase === 'roundend') {
       this.phaseTime -= dt;
       if (this.phaseTime <= 0) {
-        if (this.wins.some(n => n >= 2)) {
+        if (this.wins.some(n => n >= this.roundsToWin)) {
           this.phase = 'finished';
-          const team = this.wins[0] >= 2 ? 0 : 1;
+          const team = this.wins[0] >= this.roundsToWin ? 0 : 1;
           this.winnerTeam = team;
           const lead = this.fighters[0];
           this.options.onEnd?.(this.teamNames(team) + ' 获胜', `${this.wins[0]} : ${this.wins[1]} · ${lead.data.name} 最高 ${this.maxCombo[0]} 连击 · ${this.totalHits[lead.id]} 次命中`);
@@ -396,7 +473,7 @@ export class FightGame {
     stepAI(this, dt);
     for (const f of this.fighters) this.stepFighter(f, dt);
     this.stepMinions(dt);
-    if (this.mode === 'team') this.separate();
+    if (this.mode === 'team' || this.mode === 'challenge') this.separate();
     for (const f of this.fighters) advanceAnim(f, dt);
     stepProjectiles(this, dt);
 
@@ -507,7 +584,7 @@ export class FightGame {
 
   private startDodge(f: Fighter): void {
     f.dodge = DODGE_TIME;
-    f.dodgeCd = DODGE_CD;
+    f.dodgeCd = DODGE_CD * f.dodgeCdMul;
     f.invuln = Math.max(f.invuln, DODGE_INVULN);
     f.blocking = false;
     f.walk = 0;
@@ -522,17 +599,20 @@ export class FightGame {
     const c = f.controller !== null ? CONTROLS[f.controller] : undefined;
     const human = f.controller !== null;
 
-    f.cooldowns = f.cooldowns.map(n => Math.max(0, n - dt));
+    f.cooldowns = f.cooldowns.map(n => Math.max(0, n - dt * (f.data.trait === 'beat' ? 1 + f.beatStacks * .06 : 1)));
     for (const key of DECAY_TIMERS) f[key] = Math.max(0, f[key] - dt);
     if (f.root > 0) {
       f.root = Math.max(0, f.root - dt);
       if (f.root === 0) f.rootHits = 0;
       f.vx = 0;
     }
+    // 我要拉黑他: frozen solid — knockback from follow-up hits never moves the body.
+    if (f.ban > 0) f.vx = 0;
     if (f.knocked > 0 && f.y >= FLOOR - .1 && f.vy >= 0) { f.knocked = Math.max(0, f.knocked - dt); f.downTime += dt; }
     if (f.stun <= 0 && f.knocked <= 0) f.hitBySuper = false;
     if (!f.comboTime) f.combo = 0;
-    f.energy = clamp(f.energy + dt * 2, 0, 100);
+    gainEnergy(f, dt * 2);
+    if (f.regen > 0) f.hp = Math.min(f.data.hp, f.hp + f.data.hp * f.regen * dt);
     if (this.mode === 'training') {
       f.energy = 100;
       if (f.id === 1 && f.stun === 0 && !this.fighters[0].comboTime) f.hp = Math.min(f.data.hp, f.hp + dt * 350);
@@ -548,7 +628,7 @@ export class FightGame {
     if (f.dodgeRequest) { f.dodgeBuffer = INPUT_BUFFER; f.dodgeRequest = false; }
     // Humans can cut recovery into a block or a dodge once the move has already hit. CPU stays committed.
     if (human && f.attack && effectSettled(f.attack)) {
-      const wantDodge = f.dodgeBuffer > 0 && grounded && f.dodgeCd <= 0 && f.root <= 0;
+      const wantDodge = f.dodgeBuffer > 0 && grounded && f.dodgeCd <= 0 && f.root <= 0 && f.ban <= 0;
       const wantBlock = (blockHeld || f.blockBuffer > 0) && grounded && f.guardBroken <= 0 && f.guard > 0;
       if (wantDodge) {
         f.attack = null;
@@ -564,7 +644,7 @@ export class FightGame {
 
     let free = !f.attack && f.stun <= 0 && !f.knocked && f.dodge <= 0;
     if (f.dodgeBuffer > 0) {
-      if (grounded && free && f.dodgeCd <= 0 && f.root <= 0) { f.dodgeBuffer = 0; this.startDodge(f); free = false; }
+      if (grounded && free && f.dodgeCd <= 0 && f.root <= 0 && f.ban <= 0) { f.dodgeBuffer = 0; this.startDodge(f); free = false; }
       else if (grounded && !inputLocked(f)) f.dodgeBuffer = Math.max(0, f.dodgeBuffer - dt);
     }
 
@@ -585,7 +665,7 @@ export class FightGame {
 
     if (f.jumpRequest) { f.jumpBuffer = INPUT_BUFFER; f.jumpRequest = false; }
     const jumpHeld = human && !!c && c.jump.some(code => this.keys.has(code));
-    const canHop = grounded && f.stun <= 0 && f.knocked <= 0 && f.dodge <= 0 && !f.blocking && f.root <= 0;
+    const canHop = grounded && f.stun <= 0 && f.knocked <= 0 && f.dodge <= 0 && !f.blocking && f.root <= 0 && f.ban <= 0;
     // A held jump leaves the ground during a jab and comes back out on landing. Skills stay put.
     if (jumpHeld && canHop && f.vy >= 0 && !(f.attack && f.attack.index > 1)) {
       const convert = f.attack && !f.attack.skill.air && f.attack.index <= 1 ? f.attack.index : -1;
@@ -617,11 +697,12 @@ export class FightGame {
     if (f.dodge > 0) {
       f.x -= f.facing * DODGE_SPEED * dt;
       f.walk = 0;
-    } else if (f.stun <= 0 && !f.blocking && !f.knocked && f.root <= 0) {
+    } else if (f.stun <= 0 && !f.blocking && !f.knocked && f.root <= 0 && f.ban <= 0) {
       // Air normals keep drift so a jump-in can still be steered. A melee flurry stays planted.
       const flurry = !!f.attack && (f.attack.skill.count ?? 0) > 1 && f.attack.skill.type !== 'projectile';
       const factor = !f.attack ? 1 : f.attack.skill.air ? .6 : f.attack.skill.type === 'light' && !flurry ? .25 : 0;
-      f.x += move * f.data.speed * factor * dt;
+      const beatMove = f.data.trait === 'beat' ? 1 + f.beatStacks * .02 : 1;
+      f.x += move * f.data.speed * f.moveMul * beatMove * factor * dt;
       if (move && factor && grounded) f.walk += dt * 12; else f.walk = 0;
     }
 

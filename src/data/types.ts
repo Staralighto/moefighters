@@ -34,9 +34,11 @@ export interface Skill {
   breakout?: boolean;
   /** Per-skill hit knockback velocity; falls back to the type/fx default when unset. */
   knock?: number;
+  /** Unblocked hits cut this much energy from the victim (raw, no multipliers). */
+  drain?: number;
 }
 
-export type Trait = 'rush' | 'focus' | 'armor';
+export type Trait = 'rush' | 'focus' | 'armor' | 'beat';
 
 /** How a character is drawn. Swap the spec, not the code. PNG of the same grid replaces the SVG path. */
 export type ViewSpec =

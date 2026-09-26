@@ -1,8 +1,8 @@
 import type { Skill } from '../data/types.ts';
-import type { Attack, Fighter } from './fighter.ts';
+import { gainEnergy, type Attack, type Fighter } from './fighter.ts';
 import type { FightGame, Projectile } from './game.ts';
 import { CONTROLS, FLOOR, GRAVITY, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
-import { drumRow } from '../render/clips.ts';
+import { drumRow, vowBeatTime, VOW_BEATS } from '../render/clips.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
 
@@ -31,6 +31,13 @@ const BLACKHOLE_PULL = 200;
 /** 诗超绊: the first note clears this radius, so the one-second sing is not free to walk into. */
 const POEM_REPEL_RANGE = 220;
 const POEM_REPEL_PUSH = 420;
+/** 我要拉黑他: seconds of total lock, and the damage cut while it holds. Only the clock lifts it. */
+const BAN_TIME = 3;
+const BAN_DAMAGE = .5;
+/** 鼓点: beat stacks cap; each one speeds cooldowns 6% and walking 2%. */
+const BEAT_MAX = 8;
+/** 和灯在一起的话: the final double-kick throws the body this hard. Beats live on the clip schedule. */
+const VOW_LAUNCH = 700;
 
 /** 悲鸣: more cries as she breaks. Resolved once per cast so the shared skill stays put. */
 /** 不会再逃避了: every swing except the last stays in place. shots is the swing index before it increments. */
@@ -38,6 +45,13 @@ function spinFinale(skill: Skill, source: HitSource): boolean {
   if (skill.fx !== 'spin') return false;
   const shots = 'shots' in source ? Number((source as Attack).shots) : 0;
   return shots >= Math.max(0, (skill.count ?? 1) - 1);
+}
+
+/** 和灯在一起的话: the last beat is the launch; every earlier one keeps the victim pinned in front. */
+function vowFinale(skill: Skill, source: HitSource): boolean {
+  if (skill.fx !== 'vow') return false;
+  const shots = 'shots' in source ? Number((source as Attack).shots) : 0;
+  return shots >= VOW_BEATS - 1;
 }
 
 /** C和弦 keeps firing past the third note only while the attack key is still down. CPU taps. */
@@ -77,28 +91,33 @@ export interface HitSource { hit: Set<number> }
 export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: Skill, source: HitSource, originX = attacker.x): boolean {
   if (!g.isEnemy(attacker, defender) || defender.hp <= 0 || defender.invuln > 0 || source.hit.has(defender.id)) return false;
   source.hit.add(defender.id);
+  // 我会保护小睦: every hitstun this defender takes runs through the stack multiplier.
+  const hitStun = (v: number) => v * defender.stunMul;
   const wasRooted = defender.root > 0;
   let holdStill = wasRooted;
   const dir = defender.x >= originX ? 1 : -1;
   const inFront = defender.facing === -dir;
   const isGrab = skill.type === 'grab';
   const blocked = defender.blocking && inFront && defender.guard > 0 && !isGrab;
-  // Super armour: an endure move in wind-up eats one strike. 恐湖 keeps it through the hit. Grabs and supers still go through.
+  // Super armour: an endure move in wind-up eats one strike. 恐湖 and 哈？ keep it through the hit. Grabs and supers still go through.
   const armour = defender.attack;
-  const rippleLive = !!armour && armour.skill.fx === 'ripple' && armour.t < armour.skill.duration - .22;
+  const rippleLive = !!armour && (armour.skill.fx === 'ripple' || armour.skill.fx === 'huh') && armour.t < armour.skill.duration - .22;
   const endured = !blocked && !!armour && armour.endure > 0 && (rippleLive || armour.t < armour.skill.start) && !isGrab && !skill.super;
   // 绊创膏: the buffed fighter eats the damage without the flinch. Grabs and supers ignore the plaster.
   const braced = !blocked && defender.braced > 0 && !isGrab && !skill.super;
-  let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .9 : 1) * (braced ? BRACED_DAMAGE : 1);
+  let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .9 : 1) * (braced ? BRACED_DAMAGE : 1) * (defender.ban > 0 ? BAN_DAMAGE : 1) * attacker.baseDmgMul * attacker.dmgMul;
+  // 堕天: below half health the attacker swings harder; 这是最后通牒: a defender under a quarter takes more.
+  if (attacker.lowHpDmg > 0 && attacker.hp < attacker.data.hp * .5) damage *= 1 + attacker.lowHpDmg;
+  if (defender.executeDmg > 0 && defender.hp < defender.data.hp * .25) damage *= 1 + defender.executeDmg;
 
   if (blocked) {
     const fullHit = damage;
     damage *= skill.super ? .24 : .13;
     defender.guard -= skill.super ? 42 : skill.type === 'heavy' ? 26 : 15;
-    defender.stun = .075;
+    defender.stun = hitStun(.075);
     defender.blockTap = 1;
-    defender.energy = clamp(defender.energy + 5, 0, 100);
-    attacker.energy = clamp(attacker.energy + 4, 0, 100);
+    gainEnergy(defender, 5);
+    gainEnergy(attacker, 4);
     // 远程反制：挡下投掷物按其伤害削减对方的气，静默结算，不跳字。
     if (skill.type === 'projectile') attacker.energy = clamp(attacker.energy - fullHit * GUARD_DRAIN, 0, 100);
     g.effect('shield', defender.x - dir * 30, defender.y - 78, '#8df0ff', .22, { radius: 65 });
@@ -106,7 +125,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     g.text('格挡', defender.x, defender.y - 170, '#91eaff', .35, 16);
     if (defender.guard <= 0) {
       defender.guard = 0;
-      defender.stun = .9;
+      defender.stun = hitStun(.9);
       defender.guardBroken = 1.2;
       defender.blocking = false;
       defender.queue = [];
@@ -120,21 +139,27 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     }
   } else {
     attacker.combo = attacker.comboTime > 0 ? attacker.combo + 1 : 1;
-    attacker.comboTime = 1.3;
+    attacker.comboTime = 1.3 + attacker.comboTimeBonus;
     attacker.hitCount++;
     g.totalHits[attacker.id]++;
     g.maxCombo[attacker.id] = Math.max(g.maxCombo[attacker.id], attacker.combo);
-    damage *= Math.max(.4, 1 - (attacker.combo - 1) * .085);
+    damage *= Math.max(.4, 1 - (attacker.combo - 1) * attacker.comboDecay);
+    // 最喜欢闪闪发光的东西！: unblocked hits only, and the damage number prints one size up.
+    const crit = attacker.critChance > 0 && g.random() < attacker.critChance;
+    if (crit) damage *= 1.5;
+    // 鼓点: a clean hit adds a beat; taking one shakes two off.
+    if (attacker.data.trait === 'beat') attacker.beatStacks = Math.min(BEAT_MAX, attacker.beatStacks + 1);
+    if (defender.data.trait === 'beat') defender.beatStacks = Math.max(0, defender.beatStacks - 2);
     defender.hitFlash = .13;
     if (endured && armour) {
-      if (armour.skill.fx !== 'ripple') armour.endure--;
+      if (armour.skill.fx !== 'ripple' && armour.skill.fx !== 'huh') armour.endure--;
       g.text('霸体', defender.x, defender.y - 195, '#ffd27a', .5, 18);
     } else if (braced) {
-      // 绊创膏: the hit lands, nothing flinches. The 7-hit escape below still applies.
-      if (attacker.combo >= 7) {
+      // 绊创膏: the hit lands, nothing flinches. The combo escape below still applies.
+      if (attacker.combo >= defender.escapeCombo) {
         defender.invuln = .48;
         defender.vx = dir * 470;
-        defender.stun = .24;
+        defender.stun = hitStun(.24);
         g.text('脱离连段', defender.x, defender.y - 195, SIDE[1], .7, 16);
       }
     } else {
@@ -146,7 +171,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
           holdStill = false;
         }
       }
-      defender.stun = skill.fx === 'bag' ? .26 : skill.fx === 'ripple' ? .35 : skill.type === 'light' ? .28 : skill.super ? .42 : .37;
+      defender.stun = hitStun(skill.fx === 'bag' ? .26 : skill.fx === 'ripple' || skill.fx === 'huh' ? .35 : skill.type === 'light' ? .28 : skill.super ? .42 : .37);
       defender.attack = null;
       defender.hitBySuper = skill.super;
       // A super wipes the buffer except combo escapes (恐湖, 轮奏), so the escape can still come out between hits.
@@ -166,13 +191,13 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
         defender.dodge = 0;
         defender.vy = 0;
         defender.knocked = 0;
-        defender.stun = .25;
+        defender.stun = hitStun(.25);
         holdStill = true;
       } else if (skill.fx === 'shout' && !wasRooted) {
         // 为什么要演奏春日影: rooted for four seconds; the wave itself still shoves a little.
         defender.root = 4;
         defender.rootHits = 0;
-        defender.stun = .3;
+        defender.stun = hitStun(.3);
         g.text('定身!', defender.x, defender.y - 195, '#ffd27a', .6, 20);
       } else if (skill.fx === 'onegai') {
         // The headbutt hurls them out of the kneel: a real launch, and the grab shakes the root off.
@@ -182,14 +207,14 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
         defender.vy = -440;
         defender.knocked = .72;
         defender.downTime = 0;
-        defender.stun = .5;
+        defender.stun = hitStun(.5);
       } else if (skill.fx === 'spin' && !spinFinale(skill, source)) {
         defender.vy = 0;
         defender.knocked = 0;
-        defender.stun = .2;
+        defender.stun = hitStun(.2);
       } else if (skill.fx === 'shove') {
         // Hold them in front, turned to face the attacker. The lift and throw wait on the attack clock.
-        defender.stun = .5;
+        defender.stun = hitStun(.5);
         defender.knocked = 0;
         defender.vx = 0;
         defender.vy = 0;
@@ -206,10 +231,27 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
         defender.vy = 0;
         defender.knocked = 1;
         defender.downTime = 0;
-        defender.stun = .4;
+        defender.stun = hitStun(.4);
       } else if (skill.fx === 'ripple' || skill.fx === 'bag') {
         defender.vy = 0;
         defender.knocked = 0;
+      } else if (skill.fx === 'ban') {
+        // 我要拉黑他: frozen for three seconds, holding the hit pose. Nothing but the clock lifts it.
+        defender.ban = BAN_TIME;
+        defender.root = 0;
+        defender.rootHits = 0;
+        defender.vy = Math.min(defender.vy, 0);
+        defender.knocked = 0;
+        defender.dodge = 0;
+        defender.stun = hitStun(BAN_TIME);
+        holdStill = true;
+        g.text('拉黑!', defender.x, defender.y - 195, '#ff5a5a', .7, 22);
+      } else if (skill.fx === 'vow' && !vowFinale(skill, source)) {
+        // 和灯在一起的话: every beat but the last keeps the victim pinned in front of her.
+        defender.vy = 0;
+        defender.knocked = 0;
+        defender.stun = hitStun(.3);
+        holdStill = true;
       } else if (isGrab || skill.super || skill.type === 'upper' || skill.type === 'sweep') {
         defender.vy = skill.type === 'upper' ? -430 : skill.type === 'sweep' ? -140 : -240;
         defender.knocked = .72;
@@ -218,32 +260,57 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
         // Float, not knockdown: the defender stays hittable until they land.
         // High enough to meet with a jump attack; the fall itself is slowed in stepFighter.
         defender.vy = -600;
-        defender.stun = 1.1;
+        defender.stun = hitStun(1.1);
         g.text('浮空!', defender.x, defender.y - 200, '#ffd27a', .6, 20);
       }
       if (!blocked && skill.air && defender.y < FLOOR - .5) {
         // Juggle: an air normal pops a floating victim slightly upward and locks them briefly.
-        // Small enough that the attacker still has to land; combo escapes past 7 hits still break out.
+        // Small enough that the attacker still has to land; combo escapes past the threshold still break out.
         defender.vy = Math.min(defender.vy, -80);
-        defender.stun = Math.max(defender.stun, .4);
+        defender.stun = Math.max(defender.stun, hitStun(.4));
       }
-      if (attacker.combo >= 7) {
+      if (attacker.combo >= defender.escapeCombo) {
         defender.invuln = .48;
         defender.vx = dir * 470;
-        defender.stun = .24;
+        defender.stun = hitStun(.24);
         g.text('脱离连段', defender.x, defender.y - 195, SIDE[1], .7, 16);
       }
     }
     const rushBonus = attacker.data.trait === 'rush' && attacker.hitCount % 3 === 0 ? 14 : 0;
-    attacker.energy = clamp(attacker.energy + (skill.super ? 2 : 9) + rushBonus, 0, 100);
-    defender.energy = clamp(defender.energy + 7, 0, 100);
+    gainEnergy(attacker, (skill.super ? 2 : 9) + rushBonus);
+    gainEnergy(defender, 7);
+    if (skill.drain) {
+      // 离灯远点: the abuse strips the victim's meter raw — no multipliers, and it says so out loud.
+      defender.energy = clamp(defender.energy - skill.drain, 0, 100);
+      g.text(`-${skill.drain} 气`, defender.x, defender.y - 135, '#ffd27a', .6, 16);
+    }
     g.audio.play('hit');
-    g.text('-' + Math.round(damage), defender.x + dir * 15, defender.y - 160, skill.super ? SIDE[attacker.team] : '#fff', .65, skill.super ? 30 : 23);
+    g.text('-' + Math.round(damage), defender.x + dir * 15, defender.y - 160, skill.super ? SIDE[attacker.team] : '#fff', .65, (skill.super ? 30 : 23) + (crit ? 6 : 0));
     g.sparks(defender.x - dir * 23, defender.y - 85, attacker.data.color, skill.super ? 36 : 18, skill.super ? 1.6 : 1);
     g.effect('hit', defender.x - dir * 23, defender.y - 85, attacker.data.color, .25, { radius: skill.super ? 90 : 48 });
   }
 
   defender.hp = clamp(defender.hp - damage, 0, defender.data.hp);
+  if (defender.hp <= 0 && defender.deathSave > 0) {
+    // 想成为人类: lethal damage stops at 1 hp, spends a charge, and clears the hit's locks. One sparks, no text.
+    defender.deathSave--;
+    defender.hp = 1;
+    defender.invuln = 1.5;
+    defender.stun = 0;
+    defender.knocked = 0;
+    defender.downTime = 0;
+    g.sparks(defender.x, defender.y - 80, defender.data.color);
+  } else if (defender.hp <= 0 && attacker.vainDmg > 0) {
+    // 因为我爱慕虚荣: the first kill of the round arms the bonus until resetRound rebuilds the fighters.
+    attacker.dmgMul *= 1 + attacker.vainDmg;
+    attacker.energyMul *= 1 + attacker.vainEnergy;
+    attacker.vainDmg = 0;
+    attacker.vainEnergy = 0;
+  }
+  // 潜在表明: a quiet cut of the damage dealt comes back as healing, capped at max health.
+  if (attacker.lifesteal > 0 && damage > 0) attacker.hp = Math.min(attacker.data.hp, attacker.hp + damage * attacker.lifesteal);
+  // 竟敢无视灯: melee hits pain the attacker back — pure hp loss, no stagger, no fx, it can kill.
+  if (defender.thorns > 0 && skill.type !== 'projectile' && damage > 0) attacker.hp = Math.max(0, attacker.hp - damage * defender.thorns);
   const knock = skill.fx === 'bag' || skill.fx === 'heart' ? 0
     : skill.fx === 'chord' ? 160
     : skill.fx === 'onegai' ? 360 : skill.fx === 'shout' ? 110
@@ -264,7 +331,7 @@ export function applyMelee(g: FightGame, f: Fighter, a: Attack): void {
   for (const o of targets) {
     const dist = Math.abs(o.x - f.x);
     const dy = Math.abs(o.y - f.y);
-    const ripple = s.fx === 'ripple';
+    const ripple = s.fx === 'ripple' || s.fx === 'huh';
     const radial = ripple || s.fx === 'spin' || (s.type === 'grab' && s.fx !== 'shove' && s.fx !== 'slam');
     const front = (o.x - f.x) * f.facing >= -20;
     // Sweeps only touch grounded targets; air normals and uppers reach further vertically.
@@ -571,6 +638,72 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
     }
   }
   if (s.fx === 'onegai' && a.hold < 0 && a.t >= s.start + .42) a.t = s.duration;
+  // 和灯在一起的话: a short lunge, she catches a wrist, says the line, then plays the foe like a kit —
+  // beats start slow and accelerate, and the last one double-kicks them across the stage.
+  if (s.fx === 'vow') {
+    if (a.hold < 0 && a.t >= s.start && a.t < s.start + .45) {
+      f.x += f.facing * (s.speed ?? 500) * dt;
+      if (Math.floor(a.t * 16) !== Math.floor((a.t - dt) * 16)) {
+        g.effect('ghost', f.x - f.facing * 24, f.y, f.data.color, .3, { fighter: f.id, alpha: .35 });
+      }
+      for (const o of g.opponents(f)) {
+        if (o.hp <= 0 || o.invuln > 0) continue;
+        const front = (o.x - f.x) * f.facing >= -20;
+        if (Math.abs(o.x - f.x) < s.range && front && Math.abs(o.y - f.y) < 112) {
+          a.hold = o.id;
+          a.tossAt = a.t;
+          // The catch lands with a freeze-frame, so the vow reads before the first beat.
+          g.hitstop = Math.max(g.hitstop, .09);
+          g.effect('grab', o.x, o.y - 80, f.data.color, .3, { radius: 55 });
+          const line = f.hp < f.data.hp * .3 ? '反正我就是做不到像祥子那样好啊！' : '我发誓，和灯在一起的话，一辈子也可以。';
+          g.text(line, o.x, o.y - 235, '#a9d3f5', 1.1, 15);
+          o.stun = Math.max(o.stun, .35);
+          o.vx = 0;
+          o.vy = 0;
+          o.knocked = 0;
+          o.attack = null;
+          o.queue = [];
+          break;
+        }
+      }
+    }
+    // Whiff: nothing was ever caught, so the last clip frame is already up when the lunge ends.
+    if (a.hold < 0 && a.tossAt === 0 && a.t >= s.start + .45) a.t = s.duration;
+    if (a.hold >= 0) {
+      const o = g.fighters.find(p => p.id === a.hold);
+      if (!o || o.hp <= 0) {
+        a.t = s.duration;
+      } else {
+        // Held by the wrist in front of her, pinned to the floor and turned to face her.
+        o.x = f.x + f.facing * 58;
+        o.y = FLOOR;
+        o.vx = 0;
+        o.vy = 0;
+        o.knocked = 0;
+        o.stun = Math.max(o.stun, .3);
+        o.facing = (-f.facing) as 1 | -1;
+        if (a.shots < VOW_BEATS && a.t >= a.tossAt + vowBeatTime(a.shots)) {
+          a.hit = new Set();
+          hit(g, f, o, s, a);
+          g.effect('drum-wave', o.x, o.y - 90, '#f4ecff', .32, { radius: 22 + a.shots * 9 });
+          g.text(String(120 + a.shots * 30), f.x, f.y - 255, f.data.color, .45, 14 + a.shots * 2);
+          a.shots++;
+          if (a.shots >= VOW_BEATS) {
+            const dir = Math.sign(o.x - f.x) || f.facing;
+            o.vx = dir * VOW_LAUNCH;
+            o.vy = -520;
+            o.knocked = .9;
+            o.downTime = 0;
+            o.stun = Math.max(o.stun, .5);
+            g.flash = .2;
+            // Release the wrist: the body flies free and a short recover plays out the clock.
+            a.hold = -1;
+            a.t = Math.max(a.t, s.duration - .35);
+          }
+        }
+      }
+    }
+  }
   // The rising fist stays live for a while so it catches jumpers at any height.
   if (s.type === 'upper' && a.t >= s.start && a.t < s.start + .25) applyMelee(g, f, a);
 
@@ -646,9 +779,10 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
       g.summonAlly(f);
     } else if (s.type === 'projectile') {
       spawnShot(g, f, a);
-    } else if (s.type !== 'dash' && s.fx !== 'slam' && s.fx !== 'onegai') {
+    } else if (s.type !== 'dash' && s.fx !== 'slam' && s.fx !== 'onegai' && s.fx !== 'vow') {
       if (s.type !== 'upper') applyMelee(g, f, a);
       if (s.fx === 'ripple') g.effect('ripple', f.x, FLOOR, f.data.color, .45, { radius: s.range });
+      else if (s.fx === 'huh') g.effect('huh', f.x, FLOOR, f.data.color, .5, { radius: s.range });
       else g.effect(s.fx, f.x + f.facing * 65, f.y - (s.type === 'sweep' ? 22 : 83), f.data.color, .22, { dir: f.facing, radius: s.range * .5 });
     }
     if (a.index >= 2 && !s.super) g.text(s.name, f.x, f.y - 190, f.data.color, .65, 17);
@@ -724,7 +858,7 @@ export function stepProjectiles(g: FightGame, dt: number): void {
     const trailCap = p.fx === 'mutsumi-note' || p.fx === 'chord' || p.fx === 'sob' ? 14 : 7;
     if (p.trail.length > trailCap) p.trail.shift();
     if (p.settled && p.fx === 'milk' && owner && owner.hp > 0 && Math.abs(owner.x - p.x) < 40 && owner.y >= FLOOR - 1) {
-      owner.energy = clamp(owner.energy + 26, 0, 100);
+      gainEnergy(owner, 26);
       p.life = 0;
       g.text('+26', owner.x, owner.y - 170, owner.data.color, .6, 18);
     }

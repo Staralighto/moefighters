@@ -1,4 +1,5 @@
 import type { Effect, FightGame, FloatingText, Particle, Projectile } from '../game/game.ts';
+import type { Fighter } from '../game/fighter.ts';
 import { SIDE } from '../game/constants.ts';
 import type { ImageCache } from '../assets/loader.ts';
 import { CELL } from './clips.ts';
@@ -216,6 +217,40 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.strokeStyle = '#c45a6a';
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.ellipse(0, 0, (e.radius ?? 300) * p * .72, 10, 0, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
+    case 'huh': {
+      // 哈？: a jagged speech bubble bursts out of the shout while rings chase it along the floor.
+      const r = e.radius ?? 280;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= 1 - p;
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.ellipse(0, 0, r * p, 16 + p * 10, 0, 0, Math.PI * 2); ctx.stroke();
+      const grow = Math.min(1, p * 2.2);
+      const bx = (e.dir ?? 1) * r * .38 * grow;
+      const by = -52 - grow * 24;
+      const s = 28 + grow * 26;
+      ctx.save();
+      ctx.translate(bx, by);
+      ctx.rotate((e.dir ?? 1) * -.06);
+      ctx.globalAlpha *= Math.min(1, (1 - p) * 1.6);
+      ctx.fillStyle = '#fffaf0';
+      ctx.strokeStyle = e.color;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      for (let i = 0; i <= 12; i++) {
+        const ang = (i / 12) * Math.PI * 2;
+        const rad = s * (i % 2 ? 1.16 : .94);
+        const px = Math.cos(ang) * rad, py = Math.sin(ang) * rad * .82;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-6, s * .74); ctx.lineTo(2, s * 1.08); ctx.lineTo(10, s * .7); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#171120';
+      ctx.font = `900 ${Math.round(s * .78)}px ${UI_FONT}`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('哈？', 0, 2);
+      ctx.restore();
       break;
     }
     case 'resolve': {
@@ -505,6 +540,27 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
       note(r * .3);
       break;
     }
+    case 'abuse': {
+      // 离灯远点: a jagged speech bubble, three cold dots inside, wobbling as it flies.
+      ctx.rotate(p.age * 2 * Math.sign(p.vx || 1));
+      const r = Math.max(14, p.radius);
+      ctx.fillStyle = '#171120';
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      for (let i = 0; i <= 11; i++) {
+        const ang = (i / 11) * Math.PI * 2;
+        const rad = r * (i % 2 ? 1.22 : .95);
+        const px = Math.cos(ang) * rad, py = Math.sin(ang) * rad;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = p.color;
+      for (const dx of [-r * .38, 0, r * .38]) {
+        ctx.beginPath(); ctx.arc(dx, 0, r * .13, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
     case 'heart': {
       ctx.rotate(p.age * 2);
       if (!prop(ctx, images, HEART_SRC, p.size)) {
@@ -602,6 +658,29 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
       ctx.fillRect(-p.radius * .4, -p.radius * .4, p.radius * .8, p.radius * .8);
     }
   }
+  ctx.restore();
+}
+
+/** 我要拉黑他: the prohibition sign over a banned fighter — pulsing, blinking out its last second. */
+export function drawBanSign(ctx: CanvasRenderingContext2D, f: Fighter): void {
+  const left = f.ban;
+  if (left < 1 && Math.floor(left * 8) % 2 === 0) return;
+  const pulse = 1 + Math.sin(left * 9) * .06;
+  const r = 20 * pulse;
+  const x = f.x, y = f.y - 218;
+  ctx.save();
+  ctx.globalAlpha = .92;
+  ctx.strokeStyle = '#ff5a5a';
+  ctx.lineWidth = 5;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x - r * .68, y + r * .68);
+  ctx.lineTo(x + r * .68, y - r * .68);
+  ctx.stroke();
+  ctx.globalAlpha = .3;
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.ellipse(f.x, f.y, 44, 10, 0, 0, Math.PI * 2); ctx.stroke();
   ctx.restore();
 }
 

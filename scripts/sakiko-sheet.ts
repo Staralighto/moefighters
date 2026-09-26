@@ -1,5 +1,5 @@
 import { CELL, COMMON_COLS, COMMON_LABELS, COMMON_ROWS, PHASES, SPECIAL_COLS, SPECIAL_KEYS, SPECIAL_ROWS } from '../src/render/clips.ts';
-import { DIMS, NECK, torsoPoints, torsoRadii, type Pt } from '../src/render/proportions.ts';
+import { DIMS, NECK, torsoPoints, torsoRadii, type Pt, SHEET_SCALE } from '../src/render/proportions.ts';
 
 /* Colour-block Togawa Sakiko, unarmed. Same CELL grid as the other casts; a PNG replaces the file.
    U 忘却步, I 轮舞, O 月牙踢, L 忘却奏鸣.
@@ -13,7 +13,6 @@ interface Pose {
   hold?: 'keys'; notes?: boolean;
 }
 
-const SCALE = 0.56;
 const FOOT = 12;
 const BG = '#1a1528';
 const GRID = '#ff36c8';
@@ -122,7 +121,7 @@ function bone(a: Pt, b: Pt, w: number, color: string): string {
 
 function figure(pose: Pose): { svg: string; marks: Mark[] } {
   const d = DIMS.slim;
-  const s = SCALE;
+  const s = SHEET_SCALE;
   const legLen = (d.thigh + d.shin) * s;
   const hip: Pt = { x: 0, y: -legLen + pose.crouch * s };
   const torsoH = d.torsoH * s;

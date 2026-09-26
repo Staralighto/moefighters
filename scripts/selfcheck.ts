@@ -1,13 +1,16 @@
 /* Headless rule check: runs the fixed-step engine without DOM or canvas. `npm run check`. */
 import { FightGame } from '../src/game/game.ts';
 import { drumShotTime, hit } from '../src/game/combat.ts';
+import { vowBeatTime, VOW_BEATS } from '../src/render/clips.ts';
+import { SHEET_SCALE } from '../src/render/proportions.ts';
 import { ROSTER } from '../src/data/characters.ts';
 import { STAGES } from '../src/data/stages.ts';
-import { FLOOR, STEP } from '../src/game/constants.ts';
+import { FLOOR, COMBO_DECAY, STEP } from '../src/game/constants.ts';
 import { clipFor, drumRow } from '../src/render/clips.ts';
 import { mortisAfterimage } from '../src/render/fx.ts';
 import { previewFighter } from '../src/game/fighter.ts';
 import { guideIndex, skillHTML } from '../src/ui/select.ts';
+import { POOL, aggregatePicks, bestLabel, drawThree, readBest, rollEnemies, stageSetup } from '../src/ui/challenge.ts';
 import { checkSpriteGuard } from './sprite-guard.ts';
 
 checkSpriteGuard();
@@ -195,6 +198,206 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   run(g, STEP);
   assert.equal(g.phase, 'roundend');
   assert.deepEqual(g.wins, [1, 0]);
+}
+
+// challenge: solo human vs a master CPU pair on the right, single round decides, buffs arm
+{
+  const g = new FightGame([ROSTER[0], ROSTER[1], ROSTER[2]], {
+    mode: 'challenge', difficulty: 2, stage: STAGES[0], audio: silent, random: rng(7),
+    controllers: [0, null, null], roundsToWin: 1,
+    mods: [{ baseDamage: 2, damage: 2.2, regen: .03 }, {}, {}],
+  });
+  const [p1, e1, e2] = g.fighters;
+  e1.controller = 1; // dummy both CPUs so the stage stays scripted
+  e2.controller = 1;
+  assert.equal(p1.team, 0, 'the challenge solo is team 0');
+  assert.equal(e1.team, 1, 'the challenge pair shares team 1');
+  assert.equal(e2.team, 1);
+  assert.equal(p1.controller, 0, 'the solo slot is the human');
+  assert.ok(p1.x < e1.x && e1.x < e2.x, 'solo spawns left, CPU pair right');
+  assert.equal(g.roundsToWin, 1, 'challenge is single round');
+  assert.equal(p1.dmgMul, 2.2, 'damage buff armed');
+  assert.equal(p1.baseDmgMul, 2, 'the mode base damage boost armed');
+  assert.equal(p1.regen, .03, 'regen buff armed');
+  assert.equal(e1.dmgMul, 1, 'enemies stay neutral');
+  assert.equal(e1.baseDmgMul, 1, 'enemies stay neutral');
+  assert.equal(e1.regen, 0, 'enemies stay neutral');
+  run(g, 2.3);
+  assert.equal(g.phase, 'fight', 'challenge intro ends in fight');
+
+  p1.hp = 500;
+  run(g, 1);
+  assert.ok(Math.abs(p1.hp - 530) < .5, `regen heals 3% of max per second, hp ${p1.hp}`);
+  p1.hp = 999;
+  run(g, 1);
+  assert.equal(p1.hp, 1000, 'regen stops at max health');
+
+  const skill = p1.data.skills[0];
+  p1.combo = 0; p1.comboTime = 0; p1.dmgMul = 1; p1.baseDmgMul = 1;
+  const baseBefore = e2.hp;
+  assert.equal(hit(g, p1, e2, skill, { hit: new Set() }), true, 'the hit connects');
+  const base = baseBefore - e2.hp;
+  p1.combo = 0; p1.comboTime = 0; p1.dmgMul = 2.2;
+  const boostedBefore = e2.hp;
+  hit(g, p1, e2, skill, { hit: new Set() });
+  const boosted = boostedBefore - e2.hp;
+  assert.ok(Math.abs(boosted - base * 2.2) < 1, `dmgMul multiplies final damage, ${base} -> ${boosted}`);
+  // the mode's base boost is its own factor: (1+1) * (1+.2) = 2.4, not 1+1+.2 = 2.2
+  p1.combo = 0; p1.comboTime = 0; p1.baseDmgMul = 2; p1.dmgMul = 1.2;
+  const stackedBefore = e2.hp;
+  hit(g, p1, e2, skill, { hit: new Set() });
+  const stacked = stackedBefore - e2.hp;
+  assert.ok(Math.abs(stacked - base * 2.4) < 1, `baseDamage multiplies deck buffs, ${base} -> ${stacked}`);
+  run(g, .1); // drain the hit hitstop so the next step can actually reach the round check
+
+  e1.hp = 0;
+  run(g, STEP);
+  assert.equal(g.phase, 'fight', 'one CPU down does not end the stage');
+  e2.hp = 0;
+  run(g, STEP);
+  assert.equal(g.phase, 'roundend', 'wiping the pair ends the stage');
+  let ended = 0;
+  g.options.onEnd = () => ended++;
+  run(g, 2.5);
+  assert.equal(g.phase, 'finished', 'a single round finishes the challenge stage');
+  assert.equal(g.winnerTeam, 0);
+  assert.equal(ended, 1);
+}
+
+// challenge module: the shown foes join the stage, per-kind setup shape, growth, 99+ label
+{
+  const [a, b] = rollEnemies(2);
+  assert.ok(a !== b, 'the two rolled enemies are distinct');
+  assert.equal(rollEnemies(1).length, 1, '闯关 rolls a single foe');
+  const setup = stageSetup('brawl', ROSTER[0], [], 1, [ROSTER[1], ROSTER[2]]);
+  assert.equal(setup.characters.length, 3, 'a brawl stage fields the player plus two enemies');
+  assert.equal(setup.characters[0].hp, ROSTER[0].hp * 2, 'brawl doubles base health');
+  assert.equal(setup.characters[1].id, ROSTER[1].id, 'the pair shown before the fight joins the stage');
+  assert.equal(setup.characters[2].id, ROSTER[2].id, 'the pair shown before the fight joins the stage');
+  assert.equal(setup.characters[1].hp, ROSTER[1].hp, 'stage 1 enemies are ungrown');
+  assert.equal(setup.difficulty, 2, 'challenge locks master');
+  assert.deepEqual(setup.controllers, [0, null, null], 'solo human, CPU pair');
+  assert.deepEqual(setup.mods, [{ baseDamage: 2 }, {}, {}], 'no picks keeps the pair neutral, the player carries only the mode base boost');
+  assert.equal(setup.stageNumber, 1, 'the first stage is stage 1');
+  const grown2 = stageSetup('brawl', ROSTER[0], [], 2, [ROSTER[1], ROSTER[2]]);
+  assert.equal(grown2.characters[1].hp, Math.round(ROSTER[1].hp * 1.05), 'stage 2 enemies gain one step of health');
+  assert.ok(Math.abs(grown2.mods![1].damage! - 1.03) < 1e-9, 'stage 2 enemies gain one step of damage');
+  const grown3 = stageSetup('brawl', ROSTER[0], [], 3, [ROSTER[1], ROSTER[2]]);
+  assert.equal(grown3.characters[1].hp, Math.round(ROSTER[1].hp * 1.1), 'enemy growth stacks linearly per stage');
+  assert.ok(Math.abs(grown3.mods![2].damage! - 1.06) < 1e-9, 'enemy damage growth stacks linearly per stage');
+  const lifebuoy = stageSetup('brawl', ROSTER[0], ['lifebuoy', 'lifebuoy'], 2, [ROSTER[1], ROSTER[2]]);
+  assert.equal(lifebuoy.characters[0].hp, Math.round(ROSTER[0].hp * 2 * 1.4), 'lifebuoy stacks onto the doubled health');
+  assert.equal(stageSetup('brawl', ROSTER[0], [], 2, [ROSTER[1], ROSTER[2]]).stageNumber, 2);
+  const solo = stageSetup('climb', ROSTER[0], ['burn', 'lifebuoy'], 2, [ROSTER[1]]);
+  assert.equal(solo.characters.length, 2, 'a climb stage fields the player plus one enemy');
+  assert.deepEqual(solo.controllers, [0, null], 'climb is a plain 1v1');
+  assert.equal(solo.characters[0].hp, Math.round(ROSTER[0].hp * 1.2), 'climb skips the doubled anchor, lifebuoy still stacks');
+  assert.deepEqual(solo.mods![0], { damage: 1.2 }, 'climb arms no base damage boost, only the deck');
+  assert.equal(solo.characters[1].hp, Math.round(ROSTER[1].hp * 1.05), 'climb enemies grow per stage too');
+  assert.ok(Math.abs(solo.mods![1].damage! - 1.03) < 1e-9, 'climb enemy growth rides the same mods slot');
+  const solo1 = stageSetup('climb', ROSTER[0], [], 1, [ROSTER[1]]);
+  assert.equal(solo1.characters[0].hp, ROSTER[0].hp, 'climb stage 1 is raw values both ways');
+  assert.deepEqual(solo1.mods, [{}, {}], 'climb stage 1 is raw values both ways');
+  assert.equal(bestLabel(0), '0');
+  assert.equal(bestLabel(99), '99');
+  assert.equal(bestLabel(100), '99+');
+  assert.equal(readBest('brawl'), 0, 'headless reads no cookie');
+  assert.equal(readBest('climb'), 0, 'headless reads no cookie');
+}
+
+// card pool: fifteen unique ids, three-card draws, and the documented layer caps
+{
+  assert.equal(POOL.length, 15, 'the pool fields fifteen cards');
+  assert.equal(new Set(POOL.map(c => c.id)).size, POOL.length, 'pool ids are unique');
+  for (let i = 0; i < 40; i++) {
+    const three = drawThree();
+    assert.equal(new Set(three).size, 3, 'a draw deals three distinct cards');
+    assert.ok(three.every(id => POOL.some(c => c.id === id)), 'draws come from the pool');
+  }
+  const m = aggregatePicks([
+    'okay', 'okay', 'okay', 'okay', 'okay', 'okay',
+    'sparkle', 'sparkle', 'sparkle',
+    'band', 'band', 'band',
+    'again', 'again', 'again', 'again',
+    'latent', 'latent', 'latent',
+    'dare', 'dare', 'dare',
+    'fall', 'fall', 'fall',
+    'ultimatum', 'ultimatum', 'ultimatum',
+    'protect', 'protect', 'protect',
+    'vain', 'vain', 'vain', 'vain',
+    'human', 'human',
+  ]);
+  assert.equal(m.regen, .05, 'regen caps at 5%/s');
+  assert.equal(m.crit, .5, 'crit caps at 50%');
+  assert.equal(m.energyMul, 1.8, 'energy gain caps at +80%');
+  assert.equal(m.cdMul, .6, 'cooldowns cap at -40%');
+  assert.equal(m.lifesteal, .16, 'lifesteal caps at 16%');
+  assert.equal(m.thorns, .3, 'thorns cap at 30%');
+  assert.equal(m.lowHpDmg, .6, '堕天 caps at +60%');
+  assert.equal(m.executeDmg, 1, '通牒 caps at +100%');
+  assert.equal(m.stunMul, .6, 'hitstun caps at -40%');
+  assert.equal(m.escapeCombo, 4, 'the escape threshold drops one per stack');
+  assert.equal(m.vainDamage, .45, 'vain damage caps at +45%');
+  assert.equal(m.vainEnergy, .75, 'vain energy caps at +75%');
+  assert.equal(m.deathSave, 2, 'cheat-death charges stack one per copy');
+  const echo = aggregatePicks(['echo', 'echo', 'echo', 'echo', 'echo']);
+  assert.equal(echo.comboTimeBonus, 1, 'the combo window caps at +1s');
+  assert.equal(echo.comboDecay, COMBO_DECAY / 32, 'combo decay halves per stack');
+  const walk = aggregatePicks(['walk', 'walk', 'walk', 'walk', 'walk', 'walk', 'walk']);
+  assert.equal(walk.moveMul, 1.2, 'move speed caps at +20%');
+  assert.equal(walk.dodgeCdMul, .5, 'the dodge cooldown caps at -50%');
+  assert.deepEqual(aggregatePicks([]), {}, 'no picks stays neutral');
+}
+
+// dare reflects melee damage silently
+{
+  const g = newGame(); const [p1, p2] = g.fighters; dummy(g);
+  p2.thorns = .3; p2.x = p1.x + 60; p2.facing = -1;
+  const before = p1.hp;
+  g.keyDown('KeyJ'); run(g, .3);
+  assert.ok(p1.hp < before, 'dare reflects melee damage back at the attacker');
+  assert.ok(g.texts.every(t => !/反伤/.test(t.text)), 'the reflection shows no text');
+}
+
+// latent heals the attacker by a cut of the damage dealt
+{
+  const g = newGame(); const [p1, p2] = g.fighters; dummy(g);
+  p1.lifesteal = .16; p1.hp = 500; p2.x = p1.x + 60; p2.facing = -1;
+  g.keyDown('KeyJ'); run(g, .3);
+  assert.ok(p1.hp > 500, `latent heals the attacker, hp ${p1.hp}`);
+}
+
+// human: lethal damage stops at 1 hp and spends the charge
+{
+  const g = newGame(); const [p1, p2] = g.fighters; dummy(g);
+  p2.deathSave = 1; p2.hp = 5;
+  hit(g, p1, p2, p1.data.skills[0], { hit: new Set() });
+  assert.equal(p2.hp, 1, 'lethal damage stops at 1 hp');
+  assert.equal(p2.deathSave, 0, 'the charge is spent');
+  assert.ok(p2.invuln >= 1.5, 'the save grants invulnerability');
+  assert.equal(p2.stun, 0, 'the save clears hitstun');
+}
+
+// vain: a kill arms the damage and energy bonus once for the rest of the round
+{
+  const g = newGame(); const [p1, p2] = g.fighters; dummy(g);
+  p1.vainDmg = .15; p1.vainEnergy = .25; p2.hp = 1;
+  hit(g, p1, p2, p1.data.skills[0], { hit: new Set() });
+  assert.ok(Math.abs(p1.dmgMul - 1.15) < 1e-9, `a kill arms the vain damage bonus, saw ${p1.dmgMul}`);
+  assert.ok(Math.abs(p1.energyMul - 1.25) < 1e-9, `a kill arms the vain energy bonus, saw ${p1.energyMul}`);
+  p2.hp = 1;
+  hit(g, p1, p2, p1.data.skills[0], { hit: new Set() });
+  assert.ok(Math.abs(p1.dmgMul - 1.15) < 1e-9, 'the bonus does not re-arm within the round');
+}
+
+// protect: the combo escape fires at the lowered threshold
+{
+  const g = newGame(); const [p1, p2] = g.fighters; dummy(g);
+  p2.escapeCombo = 5; p2.x = p1.x + 60; p2.facing = -1;
+  p1.combo = 4; p1.comboTime = 1;
+  hit(g, p1, p2, p1.data.skills[0], { hit: new Set() });
+  assert.equal(p1.combo, 5, 'the combo counts to the threshold');
+  assert.ok(p2.invuln > 0 && Math.abs(p2.stun - .24) < 1e-9, `the escape fires at combo 5, stun ${p2.stun}`);
 }
 
 // training: no clock, energy pinned, target heals
@@ -1229,5 +1432,119 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   run(ult, .5);
   assert.equal(u.attack?.index, 5, 'a super does not cancel into block');
 }
+
+// taki: the abuse drains meter, 哈？breaks out and shoves behind, the ban freezes solid, the vow plays seven beats
+{
+  const taki = ROSTER.findIndex(c => c.id === 'taki');
+  assert.ok(taki >= 0, 'taki is on the roster');
+  const data = ROSTER[taki];
+  assert.equal(data.trait, 'beat', 'taki keeps the beat');
+  assert.equal(data.skills[2].fx, 'abuse', 'U is the abuse bubble');
+  assert.equal(data.skills[2].drain, 20, 'the abuse drains 20');
+  assert.equal(data.skills[3].fx, 'huh', 'I is 哈？');
+  assert.equal(data.skills[3].breakout, true, '哈？ is a breakout');
+  assert.equal(data.skills[4].fx, 'ban', 'O is the ban dash');
+  assert.equal(data.skills[5].fx, 'vow', 'the super is the vow');
+  assert.ok(.3 + .45 + vowBeatTime(VOW_BEATS - 1) <= data.skills[5].duration, 'the seven beats fit inside the vow');
+
+  // beat: a clean jab stacks one, taking a hit shakes two
+  {
+    const g = newGame(taki, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 60; p2.facing = -1;
+    g.keyDown('KeyJ'); run(g, .3);
+    assert.equal(p1.beatStacks, 1, 'a clean hit adds a beat');
+    hit(g, p2, p1, p2.data.skills[0], { hit: new Set() });
+    assert.equal(p1.beatStacks, 0, 'taking a hit shakes two off');
+  }
+
+  // U: the bubble pops, drains meter and says so out loud
+  {
+    const g = newGame(taki, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 260; p2.facing = -1;
+    p2.energy = 50;
+    g.keyDown('KeyU'); run(g, 1);
+    assert.ok(p2.hp < p2.data.hp, 'the bubble connects');
+    assert.ok(p2.energy < 50, `the abuse drains meter, left ${p2.energy}`);
+    assert.ok(g.texts.some(t => t.text.includes('气')), 'the drain announces itself');
+  }
+
+  // I: 哈？shoves a fighter standing behind her, and breaks out of a super
+  {
+    const g = newGame(taki, 2); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 400; p2.x = p1.x - 180;
+    const hp = p2.hp, bx = p2.x;
+    g.keyDown('KeyI'); run(g, .5);
+    assert.ok(p2.hp < hp, '哈？hits behind her');
+    assert.ok(p2.x < bx - 40, `哈？knocks back, moved ${bx - p2.x}`);
+
+    const escape = newGame(taki, 2); const [e1, e2] = escape.fighters; dummy(escape);
+    e1.queue.push({ index: 3, ttl: .18 });
+    hit(escape, e2, e1, e2.data.skills[5], { hit: new Set() });
+    assert.equal(e1.hitBySuper, true, 'a super marks the combo');
+    assert.equal(e1.queue[0]?.index, 3, '哈？stays buffered through a super');
+    let escaped = false;
+    for (let i = 0; i < Math.round(.2 / STEP); i++) {
+      escape.step(STEP);
+      if (e1.attack?.skill.fx === 'huh') escaped = true;
+    }
+    assert.ok(escaped, '哈？comes out during the super');
+  }
+
+  // O: the ban dash freezes the body — no action, no knockback, half damage, and only time lifts it
+  {
+    const g = newGame(taki, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 90; p2.facing = -1;
+    g.keyDown('KeyO'); run(g, .5);
+    assert.ok(p2.ban > 2.5, `the ban applied, left ${p2.ban}`);
+    assert.equal(g.attack(p2, 0), false, 'the banned fighter cannot act');
+    const hp = p2.hp;
+    hit(g, p1, p2, p1.data.skills[0], { hit: new Set() });
+    const taken = hp - p2.hp;
+    assert.ok(taken > 9 && taken < 14, `banned damage halves, took ${taken}`);
+    const x = p2.x;
+    g.keys.add('ArrowRight'); run(g, .4); g.keys.delete('ArrowRight');
+    assert.equal(p2.x, x, 'the banned body does not move');
+    run(g, 2.6);
+    assert.equal(p2.ban, 0, 'the ban expires');
+    assert.equal(g.attack(p2, 0), true, 'the banned fighter acts again');
+  }
+
+  // L: the vow catches a wrist, says the line, beats seven times and launches
+  {
+    const g = newGame(taki, 2); const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = 100;
+    p2.x = p1.x + 70; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyL');
+    run(g, .5);
+    assert.equal(p1.attack?.hold, p2.id, 'the vow caught the wrist');
+    assert.ok(g.texts.some(t => t.text.includes('一辈子')), 'the vow line reads');
+    // Hitstop freezes the sim on every beat, so the move needs wall time beyond its 2.05s clock.
+    run(g, 2.3);
+    assert.equal(p1.combo, 7, 'the vow beats seven times');
+    assert.ok(p2.knocked > 0, 'the last beat launches');
+    assert.ok(hp - p2.hp > 120, `the solo dealt damage, ${hp - p2.hp}`);
+    assert.equal(p1.attack, null, 'the vow plays out');
+
+    const low = newGame(taki, 2); const [l1, l2] = low.fighters; dummy(low);
+    l1.energy = 100;
+    l1.hp = l1.data.hp * .2;
+    l2.x = l1.x + 70; l2.facing = -1;
+    low.keyDown('KeyL');
+    run(low, .5);
+    assert.ok(low.texts.some(t => t.text.includes('祥子')), 'low health swaps the line');
+
+    const miss = newGame(taki, 2); const [m1, m2] = miss.fighters; dummy(miss);
+    m1.energy = 100;
+    m2.x = m1.x + 900;
+    miss.keyDown('KeyL');
+    run(miss, 1);
+    assert.equal(m1.attack, null, 'a whiffed vow ends early');
+    assert.equal(m2.hp, m2.data.hp, 'the whiff deals nothing');
+  }
+}
+
+// the figure scale has one home; the 128-era 0.58 must never come back (file scan lives in checkSheetScale)
+assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 
 console.log('selfcheck ok');

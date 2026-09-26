@@ -25,6 +25,9 @@ export const DIMS: Record<Build, Dims> = {
   bulky: { torsoW: 26, torsoH: 42, headR: 11, limb: 8, upperArm: 22, foreArm: 20, thigh: 46, shin: 44 },
 };
 
+/** The only scale a sheet script may use: 1.16 fills a 256 cell. Never copy a literal from an old script. */
+export const SHEET_SCALE = 1.16;
+
 /** Gap from shoulder to the head centre, in the same units as DIMS. */
 export const NECK = 4;
 

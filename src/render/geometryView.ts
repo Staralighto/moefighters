@@ -1,6 +1,7 @@
 import type { FighterView } from './view.ts';
 import type { Fighter, Attack } from '../game/fighter.ts';
 import { attackPhase, stateFor } from '../game/animState.ts';
+import { vowBeatTime, VOW_BEATS } from '../render/clips.ts';
 import { DIMS, NECK, torsoPoints, torsoRadii, type Build, type Dims } from './proportions.ts';
 
 /* Colour-block bishoujo. Same poses a sprite sheet uses; proportions live in proportions.ts. */
@@ -34,8 +35,12 @@ const ENDURE_HIT: Pose = { lean: .3, crouch: 4, armF: [1.57, 0], armB: [-.5, -1.
 const LAUNCH_WIND: Pose = { lean: .15, crouch: 10, armF: [.3, .9], armB: [.6, -1.3], legF: [.4, 0], legB: [-.3, 0] };
 const LAUNCH_HIT: Pose = { lean: -.1, crouch: 0, armF: [2.6, .2], armB: [-.4, -1.0], legF: [.5, 0], legB: [-.3, 0] };
 const AIR_KICK_WIND: Pose = { ...JUMP, armF: [1.8, -.6], legF: [-.3, -1.2] };
-const AIR_KICK_HIT: Pose = { lean: -.15, crouch: 0, armF: [-.8, -.6], armB: [2.2, -.4], legF: [1.2, .5], legB: [.3, -.9] };
+const AIR_KICK_HIT: Pose = { lean: -.15, crouch: 0, look: .5, armF: [-.8, -.6], armB: [2.2, -.4], legF: [1.2, .5], legB: [.3, -.9] };
 const DODGE: Pose = { lean: -.35, crouch: 8, look: -.12, armF: [-.6, -.6], armB: [-.9, -.4], legF: [.9, -.4], legB: [-.7, .2] };
+/* 和灯在一起的话: reach for the wrist, coil both arms back with the whole body, then slam down hard. */
+const VOW_REACH: Pose = { lean: .4, crouch: 6, armF: [1.45, .1], armB: [1.3, .25], legF: [.6, -.2], legB: [-.5, .35] };
+const VOW_RAISE: Pose = { lean: -.3, crouch: 4, armF: [-2.35, -.25], armB: [-2.55, -.2], legF: [.45, -.15], legB: [-.45, .25] };
+const VOW_SLAM: Pose = { lean: .5, crouch: 12, armF: [1.35, .35], armB: [1.25, .3], legF: [.75, -.25], legB: [-.55, .4] };
 
 const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 const ease = (k: number) => k * k * (3 - 2 * k);
@@ -46,6 +51,7 @@ function mix(a: Pose, b: Pose, k: number): Pose {
 
 function attackPose(a: Attack): Pose {
   const s = a.skill;
+  if (s.fx === 'vow') return vowPose(a);
   const { phase, k } = attackPhase(a);
   if (s.type === 'dash') {
     if (a.t < s.start) return mix(IDLE, DASH_WIND, ease(a.t / Math.max(.03, s.start)));
@@ -73,6 +79,26 @@ function runPose(walk: number): Pose {
     armF: [-w * .85, w >= 0 ? -1.15 : 1.15], armB: [w * .85, w >= 0 ? 1.15 : -1.15],
     legF: [w * .55, -w * .4], legB: [-w * .55, w * .45],
   };
+}
+
+/** 和灯在一起的话: the wrist is held forward; the free arm raises through most of each gap and snaps down on the beat. */
+function vowPose(a: Attack): Pose {
+  const s = a.skill;
+  if (a.tossAt === 0) {
+    if (a.t < s.start) return mix(IDLE, GRAB_WIND, ease(a.t / Math.max(.03, s.start)));
+    return mix(GRAB_WIND, VOW_REACH, ease(Math.min(1, (a.t - s.start) / .15)));
+  }
+  if (a.hold < 0) {
+    // The wrist is released: a short recover out of the final slam.
+    return mix(VOW_SLAM, IDLE, ease(Math.max(0, Math.min(1, (a.t - (s.duration - .35)) / .35))));
+  }
+  const t = a.t - a.tossAt;
+  let j = 0;
+  while (j + 1 < VOW_BEATS && vowBeatTime(j + 1) <= t) j++;
+  if (j + 1 >= VOW_BEATS) return VOW_SLAM;
+  const span = vowBeatTime(j + 1) - vowBeatTime(j);
+  const p = Math.max(0, Math.min(1, (t - vowBeatTime(j)) / span));
+  return p < .62 ? mix(VOW_SLAM, VOW_RAISE, ease(p / .62)) : mix(VOW_RAISE, VOW_SLAM, ease((p - .62) / .38));
 }
 
 function poseFor(f: Fighter): Pose {
@@ -116,12 +142,6 @@ export class GeometryView implements FighterView {
       ctx.translate(Math.round(x), Math.round(y));
       ctx.scale(f.facing, 1);
       ctx.globalAlpha = alpha;
-      const parts: string[] = [];
-      if (outline) parts.push([1, 2, 3].flatMap(d => [[d, 0], [-d, 0], [0, d], [0, -d]])
-        .map(([x, y]) => `drop-shadow(${x}px ${y}px 0 ${outline})`).join(' '));
-      if (f.hitFlash > 0) parts.push('brightness(2.1)');
-      else if (f.invuln > .1) parts.push('brightness(1.25)');
-      if (parts.length) ctx.filter = parts.join(' ');
       if (pose.lying) { ctx.translate(-10, -d.torsoW / 2 - 4); ctx.rotate(-Math.PI / 2); }
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
@@ -132,6 +152,12 @@ export class GeometryView implements FighterView {
       // ponytail: crouch drops the hip without inverse kinematics; feet sink a few px, invisible at arcade scale.
       const bend = pose.crouch * .03;
 
+      if (outline) this.glowBody(ctx, pose, hip, shoulder, bend, outline);
+      const parts: string[] = [];
+      if (f.hitFlash > 0) parts.push('brightness(2.1)');
+      else if (f.invuln > .1) parts.push('brightness(1.25)');
+      if (parts.length) ctx.filter = parts.join(' ');
+
       this.limb(ctx, hip, [pose.legB[0] + bend, pose.legB[1] - bend * 2], d.thigh, d.shin, this.dark);
       this.limb(ctx, shoulder, pose.armB, d.upperArm, d.foreArm, this.dark);
       this.torso(ctx, hip, shoulder);
@@ -141,6 +167,38 @@ export class GeometryView implements FighterView {
     } finally {
       ctx.restore();
     }
+  }
+
+  /** Team rim: one dilated silhouette pass under the body. A dozen strokes, no per-frame filters. */
+  private glowBody(
+    ctx: CanvasRenderingContext2D,
+    pose: Pose,
+    hip: { x: number; y: number },
+    shoulder: { x: number; y: number },
+    bend: number,
+    color: string,
+  ): void {
+    const d = this.dims;
+    const width = d.limb + 10;
+    const limbs: [{ x: number; y: number }, Limb, number, number][] = [
+      [hip, [pose.legB[0] + bend, pose.legB[1] - bend * 2], d.thigh, d.shin],
+      [shoulder, pose.armB, d.upperArm, d.foreArm],
+      [hip, [pose.legF[0] + bend, pose.legF[1] - bend * 2], d.thigh, d.shin],
+      [shoulder, pose.armF, d.upperArm, d.foreArm],
+    ];
+    for (const [from, [a1, a2], l1, l2] of limbs) {
+      this.strokeLimb(ctx, from, [a1, a2], l1, l2, width, color);
+    }
+    const pts = torsoPoints(hip, shoulder, torsoRadii(d.torsoW), 5);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (const p of pts.slice(1)) ctx.lineTo(p.x, p.y);
+    ctx.closePath();
+    ctx.fill();
+    const r = d.headR;
+    const cx = shoulder.x + Math.sin(pose.lean) * (r + NECK), cy = shoulder.y - Math.cos(pose.lean) * (r + NECK);
+    ctx.beginPath(); ctx.arc(cx, cy, r + 5, 0, Math.PI * 2); ctx.fill();
   }
 
   private torso(ctx: CanvasRenderingContext2D, hip: { x: number; y: number }, shoulder: { x: number; y: number }): void {
@@ -168,11 +226,23 @@ export class GeometryView implements FighterView {
   }
 
   private limb(ctx: CanvasRenderingContext2D, from: { x: number; y: number }, [a1, a2]: Limb, l1: number, l2: number, color: string): void {
+    const d = this.dims;
+    this.strokeLimb(ctx, from, [a1, a2], l1, l2, d.limb + 4, OUTLINE);
+    this.strokeLimb(ctx, from, [a1, a2], l1, l2, d.limb, color);
+  }
+
+  private strokeLimb(
+    ctx: CanvasRenderingContext2D,
+    from: { x: number; y: number },
+    [a1, a2]: Limb,
+    l1: number,
+    l2: number,
+    width: number,
+    color: string,
+  ): void {
     const mid = { x: from.x + Math.sin(a1) * l1, y: from.y + Math.cos(a1) * l1 };
     const end = { x: mid.x + Math.sin(a1 + a2) * l2, y: mid.y + Math.cos(a1 + a2) * l2 };
-    for (const [w, c] of [[this.dims.limb + 4, OUTLINE], [this.dims.limb, color]] as [number, string][]) {
-      ctx.strokeStyle = c; ctx.lineWidth = w;
-      ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(mid.x, mid.y); ctx.lineTo(end.x, end.y); ctx.stroke();
-    }
+    ctx.strokeStyle = color; ctx.lineWidth = width;
+    ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(mid.x, mid.y); ctx.lineTo(end.x, end.y); ctx.stroke();
   }
 }

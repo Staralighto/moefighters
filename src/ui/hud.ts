@@ -7,12 +7,22 @@ import { CONTROLS, SIDE } from '../game/constants.ts';
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
 let guideFighter = 0;
+/** Challenge stages swap the ROUND counter for the stage number; empty keeps the round. */
+let roundLabel = '';
+
+export function setRoundLabel(text: string): void {
+  roundLabel = text;
+}
 
 export function updateHUD(g: FightGame): void {
   const team = g.mode === 'team';
+  const challenge = g.mode === 'challenge';
+  // 无尽激战 only: a 1v1 闯关 keeps the standard duo HUD even when a summon pads the roster.
+  const pair = challenge && g.fighters.filter(f => !f.minion).length > 2;
   document.querySelector('.hud')?.classList.toggle('team', team);
+  document.querySelector('.hud')?.classList.toggle('challenge', pair);
   $('hud-ally').hidden = !team;
-  $('hud-enemy2').hidden = !team;
+  $('hud-enemy2').hidden = !(team || pair);
   const bars: { f: Fighter; n: number; score: boolean }[] = team
     ? [
         { f: g.fighters[0], n: 1, score: true },
@@ -20,10 +30,21 @@ export function updateHUD(g: FightGame): void {
         { f: g.fighters[2], n: 2, score: true },
         { f: g.fighters[3], n: 4, score: false },
       ]
-    : [
-        { f: g.fighters[0], n: 1, score: true },
-        { f: g.fighters[1], n: 2, score: true },
-      ];
+    : pair
+      ? [
+          { f: g.fighters[0], n: 1, score: false },
+          { f: g.fighters[1], n: 2, score: false },
+          { f: g.fighters[2], n: 4, score: false },
+        ]
+      : challenge
+        ? [
+            { f: g.fighters[0], n: 1, score: false },
+            { f: g.fighters[1], n: 2, score: false },
+          ]
+        : [
+            { f: g.fighters[0], n: 1, score: true },
+            { f: g.fighters[1], n: 2, score: true },
+          ];
   for (const { f, n, score } of bars) {
     $('hud-name' + n).textContent = f.data.name;
     $('hp' + n).style.width = (f.hp / f.data.hp * 100) + '%';
@@ -32,8 +53,10 @@ export function updateHUD(g: FightGame): void {
     $('mp' + n).style.background = f.energy >= 100 ? SIDE[f.team] : '#76e7ff';
     if (score) $('score' + n).textContent = g.mode === 'training' ? '' : '●'.repeat(g.wins[f.team]) + '○'.repeat(2 - g.wins[f.team]);
   }
+  // A challenge run has no round score; stale dots from a previous match must not linger.
+  if (challenge) { $('score1').textContent = ''; $('score2').textContent = ''; }
   $('timer').textContent = g.mode === 'training' ? '∞' : String(Math.max(0, Math.ceil(g.time)));
-  $('round').textContent = 'ROUND ' + g.round;
+  $('round').textContent = roundLabel || 'ROUND ' + g.round;
   const me = g.fighters[guideFighter] ?? g.fighters[0];
   const cdMsg = (i: number) => {
     const cd = me.cooldowns[i];

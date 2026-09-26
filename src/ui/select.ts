@@ -1,12 +1,37 @@
 import type { CharacterData, StageData } from '../data/types.ts';
-import type { Mode } from '../game/game.ts';
+import type { ChallengeMods, Mode } from '../game/game.ts';
 import type { FighterView } from '../render/view.ts';
 import { previewFighter } from '../game/fighter.ts';
 import { FLOOR, H, W } from '../game/constants.ts';
+import { bestLabel, challengeName, foeCount, readBest, readRun, rollEnemies, type ChallengeKind } from './challenge.ts';
 
-export interface MatchSetup { characters: CharacterData[]; mode: Mode; difficulty: number; controllers: (number | null)[] }
+export interface MatchSetup {
+  characters: CharacterData[];
+  mode: Mode;
+  difficulty: number;
+  controllers: (number | null)[];
+  /** Challenge only: the player's aggregated deck in slot 0; the other slots stay neutral. */
+  mods?: ChallengeMods[];
+  /** Challenge only: 1-based stage number for the HUD and the battle title. */
+  stageNumber?: number;
+  /** Challenge only: which sub-mode the match belongs to. */
+  challengeKind?: ChallengeKind;
+}
 
 const RULES_KEY = 'moe-rules-seen';
+const STATE_KEY = 'mf-select-state';
+const MODES: Mode[] = ['cpu', 'training', 'team', 'challenge'];
+
+/** What carries over between visits: the select screen exactly as it was left. */
+interface SavedSelect {
+  mode: Mode;
+  difficulty: number;
+  /** Challenge sub-mode last looked at; absent in pre-split saves, which read as 无尽激战. */
+  challengeKind?: ChallengeKind;
+  selected: number[];
+  who: ('player' | 'cpu')[];
+  side: number;
+}
 const KEYS_1P = 'A D 移动 · W / 空格 跳跃 · 长按 S 格挡 · 点按 S 后闪 · J K 轻 / 重击（跳中为空击） · U I O 技能 · L 必杀';
 const KEYS_2P = '玩家二：方向键移动 · 上跳 · 下格挡 · 小键盘 1 / 2 轻重击 · 4 / 5 / 6 技能 · 3 必杀';
 const KEYS_TOUCH = '横屏开打 · 左下摇杆只左右移动 · 技能3上方跳跃 · 短按轻击、长按重击 · 点防也是格挡 · 手机只能一名玩家';
@@ -30,6 +55,7 @@ export function guideIndex(controllers: (number | null)[]): number {
 export function matchName(setup: MatchSetup): string {
   const humans = setup.controllers.filter(c => c !== null).length;
   if (setup.mode === 'training') return '训练场';
+  if (setup.mode === 'challenge') return challengeName(setup.challengeKind ?? 'brawl');
   if (humans === 0) return '人机对打';
   if (setup.mode === 'team') return '人机 2V2';
   if (humans === 2) return '本地对打';
@@ -57,6 +83,8 @@ export function skillHTML(c: CharacterData, pad = 0, touch = isTouch()): string 
 export class SelectScreen {
   mode: Mode = 'cpu';
   difficulty = 1;
+  /** Which challenge sub-mode the challenge UI currently points at; its run and record are read per kind. */
+  challengeKind: ChallengeKind = 'brawl';
   private readonly roster: CharacterData[];
   private readonly views: Map<string, FighterView>;
   private readonly stage: StageData;
@@ -65,6 +93,8 @@ export class SelectScreen {
   private selected: number[] = [0, 1];
   /** Per slot, earlier player slots take the first key set. */
   private who: ('player' | 'cpu')[] = ['player', 'cpu'];
+  /** Stage-1 opponents, rolled on entering challenge mode and shown in the two enemy slots. */
+  private challengeEnemies: CharacterData[] = rollEnemies();
   private side = 0;
   private rulesSeen = false;
   private lastFrame = 0;
@@ -77,6 +107,7 @@ export class SelectScreen {
     this.onStart = onStart;
     this.onPick = onPick;
     try { this.rulesSeen = localStorage.getItem(RULES_KEY) === '1'; } catch { /* private mode */ }
+    this.restore();
   }
 
   mount(): void {
@@ -103,6 +134,7 @@ export class SelectScreen {
     $('rules-summary').onclick = () => this.toggleRules();
     document.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach(b => b.onclick = () => this.setMode(b.dataset.mode as Mode));
     document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach(b => b.onclick = () => { this.difficulty = Number(b.dataset.difficulty); this.refresh(); });
+    document.querySelectorAll<HTMLButtonElement>('[data-challenge-kind]').forEach(b => b.onclick = () => this.setChallengeKind(b.dataset.challengeKind as ChallengeKind));
     document.addEventListener('pointerdown', e => {
       const panel = $('rules-panel');
       if (panel.hidden) return;
@@ -121,12 +153,26 @@ export class SelectScreen {
   }
 
   setup(): MatchSetup {
-    return { characters: this.selected.map(i => this.roster[i]), mode: this.mode, difficulty: this.difficulty, controllers: this.controllers() };
+    // Challenge fields the foe(s) shown in the enemy slots; the buff is armed later, per stage.
+    const characters = this.mode === 'challenge'
+      ? [this.roster[this.selected[0]], ...this.challengeEnemies]
+      : this.selected.map(i => this.roster[i]);
+    return {
+      characters,
+      mode: this.mode,
+      difficulty: this.mode === 'challenge' ? 2 : this.difficulty,
+      controllers: this.controllers(),
+      challengeKind: this.mode === 'challenge' ? this.challengeKind : undefined,
+    };
   }
 
   startLabel(): string {
-    const watch = this.mode !== 'training' && this.controllers().every(c => c === null);
-    const label = watch ? '开始观战' : this.mode === 'training' ? '进入训练场' : '准备好了，开打！';
+    const watch = this.mode !== 'training' && this.mode !== 'challenge' && this.controllers().every(c => c === null);
+    const run = this.mode === 'challenge' ? readRun(this.challengeKind) : null;
+    const label = watch ? '开始观战'
+      : this.mode === 'training' ? '进入训练场'
+      : this.mode === 'challenge' ? (run ? `继续挑战 · 第 ${run.stage} 关` : '开始挑战')
+      : '准备好了，开打！';
     return `${label} <span>↗</span>`;
   }
 
@@ -144,6 +190,7 @@ export class SelectScreen {
   }
 
   private focus(side: number): void {
+    if (this.mode === 'challenge') return; // the enemy pair is never focusable
     if (side === this.side) return;
     this.side = side;
     this.onPick();
@@ -161,10 +208,54 @@ export class SelectScreen {
     }
   }
 
+  /** The last session's mode, picks, controllers and difficulty, so a revisit opens where it left off. */
+  private restore(): void {
+    let saved: SavedSelect | null = null;
+    try {
+      const raw = localStorage.getItem(STATE_KEY);
+      if (raw) saved = JSON.parse(raw) as SavedSelect;
+    } catch { /* private mode or junk */ }
+    if (!saved) return;
+    // Slots grow to four in team mode; challenge keeps one controller per fielded fighter.
+    const need = saved.mode === 'team' ? 4 : 2;
+    const isWho = (w: unknown): w is 'player' | 'cpu' => w === 'player' || w === 'cpu';
+    // Absent kind (pre-split save) reads as 无尽激战; a parked 闯关 run pulls the default there too.
+    const kind: ChallengeKind = saved.challengeKind === 'climb' || saved.challengeKind === 'brawl'
+      ? saved.challengeKind
+      : readRun('brawl') ? 'brawl' : readRun('climb') ? 'climb' : 'brawl';
+    if (
+      !MODES.includes(saved.mode)
+      || !Number.isInteger(saved.difficulty) || saved.difficulty < 0 || saved.difficulty > 2
+      || !Array.isArray(saved.selected) || saved.selected.length !== need
+      || !saved.selected.every(i => Number.isInteger(i) && i >= 0 && i < this.roster.length)
+      || !Array.isArray(saved.who) || saved.who.length !== (saved.mode === 'challenge' ? foeCount(kind) + 1 : need)
+      || !saved.who.every(isWho)
+    ) return;
+    this.mode = saved.mode;
+    this.difficulty = saved.difficulty;
+    this.challengeKind = kind;
+    this.selected = [...saved.selected];
+    this.who = saved.mode === 'challenge'
+      ? ['player', ...Array.from({ length: foeCount(kind) }, () => 'cpu' as const)]
+      : [...saved.who];
+    this.side = Number.isInteger(saved.side) && saved.side >= 0 && saved.side < need ? saved.side : 0;
+    if (this.mode === 'challenge') this.side = 0;
+  }
+
+  private save(): void {
+    const saved: SavedSelect = { mode: this.mode, difficulty: this.difficulty, challengeKind: this.challengeKind, selected: this.selected, who: this.who, side: this.side };
+    try { localStorage.setItem(STATE_KEY, JSON.stringify(saved)); } catch { /* private mode */ }
+  }
+
   private setMode(mode: Mode): void {
     if (mode === this.mode) return;
-    if (mode === 'team' && this.who.length === 2) this.who = [this.who[0], 'cpu', this.who[1], 'cpu'];
-    else if (mode !== 'team' && this.who.length === 4) this.who = [this.who[0], this.who[2]];
+    if (mode === 'challenge') {
+      // A fresh look at the stage-1 foe(s) every time the mode is entered — unless a run is
+      // waiting, then the locked pair comes back exactly as it was.
+      if (!readRun(this.challengeKind)) this.challengeEnemies = rollEnemies(foeCount(this.challengeKind));
+      this.who = ['player', ...Array.from({ length: foeCount(this.challengeKind) }, () => 'cpu' as const)];
+    } else if (mode === 'team') this.who = this.who.length === 2 ? [this.who[0], 'cpu', this.who[1], 'cpu'] : [this.who[0], 'cpu', 'cpu', 'cpu'];
+    else this.who = this.who.length === 4 ? [this.who[0], this.who[2]] : [this.who[0], this.who[1]];
     if (mode === 'team' && this.selected.length === 2) {
       const used = new Set(this.selected);
       const extra: number[] = [];
@@ -178,11 +269,25 @@ export class SelectScreen {
       if (this.side > 1) this.side = 0;
     }
     this.mode = mode;
+    // Challenge locks the focus to the player slot; the enemy pair is never picked.
+    if (this.mode === 'challenge') this.side = 0;
     if (this.side >= this.selected.length) this.side = 0;
     this.refresh();
   }
 
+  /** Switch challenge sub-mode. Each kind keeps its own run, so picking one never blocks the other. */
+  private setChallengeKind(kind: ChallengeKind): void {
+    if (kind === this.challengeKind || this.mode !== 'challenge') return;
+    this.challengeKind = kind;
+    if (!readRun(kind)) this.challengeEnemies = rollEnemies(foeCount(kind));
+    this.who = ['player', ...Array.from({ length: foeCount(kind) }, () => 'cpu' as const)];
+    this.side = 0;
+    this.refresh();
+  }
+
   private pick(index: number): void {
+    // A waiting run locks the cast: the stage keeps its character until it is fought or abandoned.
+    if (this.mode === 'challenge' && readRun(this.challengeKind)) return;
     this.selected[this.side] = index;
     this.onPick();
     this.refresh();
@@ -190,11 +295,13 @@ export class SelectScreen {
 
   private slotMark(p: number): string {
     if (this.mode === 'team') return ['1P', '2P', '3P', '4P'][p] ?? '人机';
+    if (this.mode === 'challenge') return p === 0 ? '1P' : '人机';
     return p === 0 ? '1P' : '2P';
   }
 
   private rosterTag(p: number): string {
     if (this.mode === 'team') return this.who[p] === 'player' ? this.slotMark(p) : '人机';
+    if (this.mode === 'challenge') return p === 0 ? '1P' : '人机';
     if (this.who[p] === 'cpu') return '人机';
     return this.who.filter(w => w === 'player').length > 1 ? (p === 0 ? '1P' : '2P') : '1P';
   }
@@ -202,6 +309,14 @@ export class SelectScreen {
   private summary(): string {
     const diff = ['轻松', '标准', '大师'][this.difficulty] ?? '标准';
     if (this.mode === 'training') return '训练场 · 不计胜负';
+    if (this.mode === 'challenge') {
+      const name = challengeName(this.challengeKind);
+      const best = readBest(this.challengeKind);
+      const run = readRun(this.challengeKind);
+      return run
+        ? `${name} · 第 ${run.stage} 关待续 · 对手已锁定 · 最高通关 ${bestLabel(best)} 关`
+        : best > 0 ? `${name} · 大师人机 · 最高通关 ${bestLabel(best)} 关` : `${name} · 大师人机 · 尚未通关`;
+    }
     if (this.mode === 'team') return this.teamSummary(diff);
     const [l, r] = this.who;
     if (l === 'player' && r === 'cpu') return `1V1 · 你打人机 · ${diff}`;
@@ -222,6 +337,19 @@ export class SelectScreen {
   }
 
   private shown(): SlotView[] {
+    if (this.mode === 'challenge') {
+      if (this.challengeKind === 'climb') {
+        return [
+          { slot: 0, name: 'name1', tag: 'p1tag', portrait: 'portrait1', facing: 1 },
+          { slot: 1, name: 'name2', tag: 'p2tag', portrait: 'portrait2', facing: -1 },
+        ];
+      }
+      return [
+        { slot: 0, name: 'name1', tag: 'p1tag', portrait: 'portrait1', facing: 1 },
+        { slot: 1, name: 'name2', tag: 'p2tag', portrait: 'portrait2', facing: -1 },
+        { slot: 2, name: 'nameE', tag: 'pEtag', portrait: 'portraitE', facing: -1 },
+      ];
+    }
     const right: SlotView = { slot: this.mode === 'team' ? 2 : 1, name: 'name2', tag: 'p2tag', portrait: 'portrait2', facing: -1 };
     const slots: SlotView[] = [
       { slot: 0, name: 'name1', tag: 'p1tag', portrait: 'portrait1', facing: 1 },
@@ -236,16 +364,34 @@ export class SelectScreen {
 
   refresh(): void {
     const team = this.mode === 'team';
+    const challenge = this.mode === 'challenge';
+    const run = challenge ? readRun(this.challengeKind) : null;
+    if (run) {
+      // A waiting run owns the foe(s) and the cast: show them locked, not the last thing browsed.
+      this.challengeEnemies = run.enemies;
+      const lead = this.roster.findIndex(c => c.id === run.char.id);
+      if (lead >= 0) this.selected[0] = lead;
+    } else if (challenge && this.challengeEnemies.length !== foeCount(this.challengeKind)) {
+      // Landing on a kind with no run: field the right number of foes for its preview.
+      this.challengeEnemies = rollEnemies(foeCount(this.challengeKind));
+    }
     const open = !$('rules-panel').hidden;
     $('select-stage').classList.toggle('team', team);
+    $('select-stage').classList.toggle('challenge', challenge);
+    $('select-stage').classList.toggle('solo', challenge && this.challengeKind === 'climb');
     $('preview-ally').hidden = !team;
-    $('preview-enemy2').hidden = !team;
+    $('preview-enemy2').hidden = !(team || (challenge && this.challengeKind === 'brawl'));
+    $('preview-enemy2').dataset.slot = String(team ? 3 : 2);
     $('preview-right').dataset.slot = String(team ? 2 : 1);
     $('control-right').dataset.lead = String(team ? 2 : 1);
+    // Challenge fixes the sides: solo player left, the CPU(s) right, nobody toggles a slot.
+    document.querySelectorAll<HTMLElement>('.slot-control').forEach(el => { el.hidden = challenge; });
+    (document.getElementById('difficulty-row') as HTMLElement).hidden = challenge;
+    (document.getElementById('challenge-kind-row') as HTMLElement).hidden = !challenge;
     $('rules-panel').hidden = !open;
     $('rules-text').textContent = this.summary() + ' ›';
     $('rules-summary').classList.toggle('fresh', !this.rulesSeen);
-    const aiFights = this.mode !== 'training' && (team || this.who.includes('cpu'));
+    const aiFights = this.mode !== 'training' && (team || challenge || this.who.includes('cpu'));
     $('rules-panel').classList.toggle('dim-diff', !aiFights);
     document.querySelectorAll<HTMLElement>('.fighter-preview').forEach(el => {
       el.classList.toggle('active', !el.hidden && Number(el.dataset.slot) === this.side);
@@ -264,14 +410,17 @@ export class SelectScreen {
       b.title = capped && b.dataset.who === 'player' && !on ? (max === 1 ? '手机上只能一名玩家' : '玩家最多两名') : '';
     });
     for (const v of this.shown()) {
-      const c = this.roster[this.selected[v.slot]];
+      const c = this.slotChar(v);
       $(v.name).textContent = c.name;
-      $(v.tag).textContent = this.slotMark(v.slot);
+      $(v.tag).textContent = this.mode === 'challenge' && v.slot > 0 ? '人机' : this.slotMark(v.slot);
     }
     document.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === this.mode));
     document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach(b => b.classList.toggle('active', Number(b.dataset.difficulty) === this.difficulty));
+    document.querySelectorAll<HTMLButtonElement>('[data-challenge-kind]').forEach(b => b.classList.toggle('active', b.dataset.challengeKind === this.challengeKind));
     $('roster').querySelectorAll<HTMLButtonElement>('button').forEach((b, i) => {
-      const chosen = this.selected.flatMap((pick, p) => pick === i ? [p] : []);
+      const chosen = challenge
+        ? (this.selected[0] === i ? [0] : [])
+        : this.selected.flatMap((pick, p) => pick === i ? [p] : []);
       b.classList.toggle('p1', chosen.includes(0));
       b.classList.toggle('ally', team && chosen.includes(1));
       b.classList.toggle('p2', chosen.some(p => team ? p >= 2 : p === 1));
@@ -288,15 +437,21 @@ export class SelectScreen {
     $('skills').innerHTML = skillHTML(c, scheme);
     $('round-rules').textContent = this.mode === 'training'
       ? '训练场 · 不计时 · 不计胜负 · 能量常满'
-      : this.mode === 'team'
-        ? '两胜制 · 一方全灭或超时比血量 · 60 秒 / 回合'
-        : '两胜制 · 60 秒 / 回合';
+      : this.mode === 'challenge'
+        ? run
+          ? `继续第 ${run.stage} 关 · 对手已锁定 · 单回合决胜 · 通关即下一关`
+          : `每关随机${foeCount(this.challengeKind) === 1 ? '一' : '两'}名大师人机 · 单回合决胜 · 通关即下一关`
+        : this.mode === 'team'
+          ? '两胜制 · 一方全灭或超时比血量 · 60 秒 / 回合'
+          : '两胜制 · 60 秒 / 回合';
+    $('abandon').hidden = !(challenge && run);
     $('stage-caption').textContent = '练武场';
     $('start').innerHTML = this.startLabel();
     const humans = this.controllers().filter(x => x !== null).length;
     $('select-keys').textContent = humans === 0
       ? '两边都是人机，开始后只看不打 · ESC 暂停'
       : isTouch() ? KEYS_TOUCH : humans === 2 ? KEYS_1P + ' · ' + KEYS_2P : KEYS_1P;
+    this.save();
   }
 
   /** Call from requestAnimationFrame while the select screen is visible. */
@@ -306,9 +461,14 @@ export class SelectScreen {
     this.time += dt;
     this.placeStage();
     for (const v of this.shown()) {
-      this.portrait($(v.portrait) as HTMLCanvasElement, this.roster[this.selected[v.slot]], v.facing, PORTRAIT_SCALE, PORTRAIT_FOOT);
+      this.portrait($(v.portrait) as HTMLCanvasElement, this.slotChar(v), v.facing, PORTRAIT_SCALE, PORTRAIT_FOOT);
     }
     $('roster').querySelectorAll<HTMLCanvasElement>('canvas').forEach((canvas, i) => this.portrait(canvas, this.roster[i], 1, .46, 93));
+  }
+
+  /** Challenge enemy slots read the rolled pair; every other slot reads the roster selection. */
+  private slotChar(v: SlotView): CharacterData {
+    return this.mode === 'challenge' && v.slot > 0 ? this.challengeEnemies[v.slot - 1] : this.roster[this.selected[v.slot]];
   }
 
   private portrait(canvas: HTMLCanvasElement, c: CharacterData, facing: 1 | -1, scale: number, baseY: number): void {

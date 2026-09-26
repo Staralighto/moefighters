@@ -2,7 +2,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertAllWritable, rasterSheet } from './sprite-guard.ts';
 import { CELL, COMMON_COLS, COMMON_LABELS, COMMON_ROWS, SPECIAL_COLS, SPECIAL_ROWS } from '../src/render/clips.ts';
-import { DIMS, NECK, torsoPoints, torsoRadii, type Pt } from '../src/render/proportions.ts';
+import { DIMS, NECK, torsoPoints, torsoRadii, type Pt, SHEET_SCALE } from '../src/render/proportions.ts';
 
 /* Colour-block Umiri only. Do not import write-sheets.ts — that script redraws the whole cast.
    ponytail: the bass is one polygon on the fear column. Ceiling = CELL. */
@@ -64,7 +64,6 @@ const LOCO: Record<string, Pose> = {
 const BG = '#1a1528';
 const GRID = '#ff36c8';
 const OUTLINE = '#151222';
-const SCALE = 0.58;
 const FOOT = 12;
 const COLOR = '#335566';
 const BODY = '#241c28';
@@ -113,7 +112,7 @@ function bassOf(shoulder: Pt): { svg: string; marks: Mark[] } {
 
 function figure(pose: Pose): { svg: string; marks: Mark[] } {
   const d = DIMS.slim;
-  const s = SCALE;
+  const s = SHEET_SCALE;
   const dark = shade(COLOR, .6);
   const light = shade(COLOR, 1.35);
   const legLen = (d.thigh + d.shin) * s;

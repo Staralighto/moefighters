@@ -7,6 +7,7 @@ const passives: Record<Trait, [string, string]> = {
   rush: ['追击节奏', '每第 3 次命中额外获得 14 气'],
   armor: ['硬派身躯', '受到的伤害降低 10%'],
   focus: ['远距专注', '飞行道具速度提高 15%'],
+  beat: ['鼓点', '命中叠节拍（至多 8 层），每层冷却加快 6%、移速提高 2%；被击中掉 2 层'],
 };
 
 const stats = (trait: Trait) => ({
@@ -243,9 +244,34 @@ export const ROSTER: CharacterData[] = [
       }),
     ],
   },
+  {
+    id: 'taki', name: '椎名立希', title: '鼓手 / 护灯', quote: '我发誓，和灯在一起的话，一辈子也可以。', color: '#7777AA',
+    ...stats('beat'),
+    view: { kind: 'sprite', common: '/sprites/taki/common.png', special: '/sprites/taki/special.png', height: 181 },
+    skills: [
+      skill(0, 'light', '点打'),
+      skill(1, 'heavy', '怪力横扫'),
+      skill(2, 'projectile', '离灯远点', {
+        damage: 14, speed: 520, size: 44, life: .5, start: .2, duration: .5, cd: 4, knock: 120, drain: 20, fx: 'abuse',
+        desc: '毒舌气泡；命中削去对方 20 气',
+      }),
+      skill(3, 'endure', '哈？', {
+        damage: 34, range: 280, start: .26, duration: .85, cd: 8, knock: 620, breakout: true, fx: 'huh',
+        desc: '解控；一声「哈？」把周围的人震开',
+      }),
+      skill(4, 'dash', '我要拉黑他', {
+        damage: 30, speed: 820, start: .1, duration: .45, range: 115, cd: 9, fx: 'ban',
+        desc: '冲刺拉黑：对方完全禁足 3 秒，期间受伤减半',
+      }),
+      skill(5, 'grab', '和灯在一起的话，一辈子也可以', {
+        damage: 28, range: 200, start: .3, duration: 2.05, speed: 500, fx: 'vow',
+        desc: '抓住手腕，把对方当鼓由慢到快连打七击；残血时换台词',
+      }),
+    ],
+  },
 ];
 
 /** Select screen. gale, ember and boulder stay on ROSTER for the headless checks. */
-export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori');
+export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki');
 
 export const ROSTER_BY_ID = new Map(ROSTER.map(c => [c.id, c]));

@@ -88,6 +88,32 @@ export function poemRow(t: number, start: number): number {
   return 2;
 }
 
+/** 和灯在一起的话: seven accelerating beats after the catch — first gap, then shrink per beat.
+ *  Lives here so the hit scheduler (combat), the geometry poses and the row mapper share one schedule. */
+export const VOW_BEATS = 7;
+const VOW_GAP = .32;
+const VOW_SHRINK = .8;
+
+/** Catch-to-beat k, shared by the hit scheduler and the animators so they never drift. */
+export function vowBeatTime(k: number): number {
+  let t = 0;
+  for (let i = 0; i < k; i++) t += VOW_GAP * Math.pow(VOW_SHRINK, i);
+  return t;
+}
+
+/** 一辈子: cell 0 is the lunge and the catch; after the catch the loop coils (1) through most of
+ *  each gap and slams (2) on the beat, faster every beat. Row 2 holds through the recover. */
+export function vowRow(t: number, tossAt: number): number {
+  if (tossAt <= 0 || t < tossAt) return 0;
+  const bt = t - tossAt;
+  if (bt >= vowBeatTime(VOW_BEATS - 1)) return 2;
+  let j = 0;
+  while (j + 1 < VOW_BEATS && vowBeatTime(j + 1) <= bt) j++;
+  const span = vowBeatTime(j + 1) - vowBeatTime(j);
+  const p = Math.max(0, Math.min(1, (bt - vowBeatTime(j)) / span));
+  return p < .62 ? 1 : 2;
+}
+
 /** 狂化 J/K on the frenzy sheet. Row 0 is the light flurry, row 1 the kicks.
  *  Cells: 0 windup, 1 and 2 the two flurry beats, 3 the follow-through. */
 export function soyoFrenzyFrame(kind: 'light' | 'heavy', t: number, s: { start: number; duration: number }): [number, number] {
@@ -111,6 +137,7 @@ export function clipFor(f: Fighter): Clip {
     if (f.attack.skill.fx === 'chord') return at('special', f.attack.index - 2, chordRow(f.attack.t, f.attack.skill.duration));
     if (f.attack.skill.fx === 'heart') return at('special', f.attack.index - 2, heartRow(f.attack.t, f.attack.skill.start));
     if (f.attack.skill.fx === 'poem') return at('special', f.attack.index - 2, poemRow(f.attack.t, f.attack.skill.start));
+    if (f.attack.skill.fx === 'vow') return at('special', f.attack.index - 2, vowRow(f.attack.t, f.attack.tossAt));
     if (f.attack.skill.fx === 'spin') {
       const t = f.attack.t, s = f.attack.skill;
       const row = t < s.start ? 0 : t >= s.duration - .26 ? 2 : 1;

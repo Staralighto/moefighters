@@ -10,6 +10,10 @@ export const X_MAX = W - 44;
 
 export const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
 
+/** Damage decay per extra hit of a combo, and the combo count at which the victim breaks free. */
+export const COMBO_DECAY = .085;
+export const COMBO_ESCAPE = 7;
+
 /** 1P yellow, 2P green. */
 export const SIDE = ['#FDE979', '#C8F181'] as const;
 

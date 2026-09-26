@@ -4,19 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#111119">
-<meta name="description" content="在浏览器里玩的同屏街机格斗。可选《BanG Dream!》同人角色，支持 1V1、2V2、同键盘双人、人机和训练场。免费，禁止商用。">
+<meta name="description" content="在浏览器里玩的同屏街机格斗。可选《BanG Dream!》同人角色，支持 1V1、2V2、挑战模式、同键盘双人、人机和训练场。免费，禁止商用。">
 <meta name="robots" content="index,follow">
 <link rel="canonical" href="https://moefighters.com/">
 <meta property="og:type" content="website">
 <meta property="og:locale" content="zh_CN">
 <meta property="og:site_name" content="萌趣格斗">
 <meta property="og:title" content="萌趣格斗">
-<meta property="og:description" content="在浏览器里玩的同屏街机格斗。可选《BanG Dream!》同人角色，支持 1V1、2V2、同键盘双人、人机和训练场。">
+<meta property="og:description" content="在浏览器里玩的同屏街机格斗。可选《BanG Dream!》同人角色，支持 1V1、2V2、挑战模式、同键盘双人、人机和训练场。">
 <meta property="og:url" content="https://moefighters.com/">
 <meta property="og:image" content="https://moefighters.com/apple-touch-icon.png">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="萌趣格斗">
-<meta name="twitter:description" content="在浏览器里玩的同屏街机格斗。可选《BanG Dream!》同人角色，支持 1V1、2V2、同键盘双人、人机和训练场。">
+<meta name="twitter:description" content="在浏览器里玩的同屏街机格斗。可选《BanG Dream!》同人角色，支持 1V1、2V2、挑战模式、同键盘双人、人机和训练场。">
 <meta name="twitter:image" content="https://moefighters.com/apple-touch-icon.png">
 <title>萌趣格斗 · MOE FIGHTERS</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -31,7 +31,7 @@
   "url": "https://moefighters.com/",
   "image": "https://moefighters.com/apple-touch-icon.png",
   "inLanguage": "zh-CN",
-  "description": "在浏览器里玩的同屏街机格斗。可选《BanG Dream!》同人角色，支持 1V1、2V2、同键盘双人、人机和训练场。非官方同人游戏，免费，禁止商用。",
+  "description": "在浏览器里玩的同屏街机格斗。可选《BanG Dream!》同人角色，支持 1V1、2V2、挑战模式、同键盘双人、人机和训练场。非官方同人游戏，免费，禁止商用。",
   "genre": "Fighting",
   "playMode": ["SinglePlayer", "MultiPlayer"],
   "gamePlatform": "Web browser",
@@ -108,9 +108,11 @@
       <div class="modes" aria-label="规则">
         <button type="button" data-mode="cpu">1V1</button>
         <button type="button" data-mode="team">2V2</button>
+        <button type="button" data-mode="challenge">挑战</button>
         <button type="button" data-mode="training">训练场</button>
       </div>
-      <div class="difficulty"><span>人机强度</span><button type="button" data-difficulty="0">轻松</button><button type="button" class="active" data-difficulty="1">标准</button><button type="button" data-difficulty="2">大师</button></div>
+      <div class="difficulty" id="difficulty-row"><span>人机强度</span><button type="button" data-difficulty="0">轻松</button><button type="button" class="active" data-difficulty="1">标准</button><button type="button" data-difficulty="2">大师</button></div>
+      <div class="difficulty" id="challenge-kind-row" hidden><span>挑战类型</span><button type="button" data-challenge-kind="climb">无尽闯关</button><button type="button" data-challenge-kind="brawl">无尽激战</button></div>
     </div>
   </div>
 
@@ -124,6 +126,7 @@
     </section>
     <section class="start-box">
       <button class="start" id="start">准备好了，开打！ <span>↗</span></button>
+      <button id="abandon" type="button" hidden>放弃本次挑战</button>
       <p id="round-rules">两胜制 · 60 秒 / 回合</p>
     </section>
   </div>
@@ -171,6 +174,7 @@
     </div>
     <div class="game-banner" id="banner">
       <small id="banner-sub"></small><strong id="banner-text"></strong>
+      <small id="deck-label" class="deck-label" hidden></small>
       <button id="resume" type="button" hidden>继续战斗 ▶</button>
       <button id="pause-quit" type="button" hidden>返回选人 ◀</button>
     </div>
@@ -200,6 +204,24 @@
   <footer><span>J → J → K 轻击起手 · 长按 S 格挡 · 点按 S 后闪躲抓投 · 跳中 J / K 空击 · L 满气必杀</span><span>按 ESC 暂停</span></footer>
 </main>
 
+<div class="buff-picker" id="buff-picker" hidden>
+  <small>CHALLENGE</small>
+  <h2 id="buff-title"></h2>
+  <small class="buff-foe-label">本关对手</small>
+  <div class="buff-foes" id="buff-foes"></div>
+  <p>选中的卡保留到本局结束，同名卡叠加；每关开始前再选一张</p>
+  <div class="buff-cards" id="buff-cards"></div>
+</div>
+
+<dialog id="quit-dialog">
+  <div class="dialog-head"><h2 id="quit-title">结束本次挑战？</h2><button id="quit-close" aria-label="关闭">×</button></div>
+  <p id="quit-text"></p>
+  <div class="quit-actions">
+    <button id="quit-cancel">继续战斗</button>
+    <button id="quit-yes">结束挑战并离开</button>
+  </div>
+</dialog>
+
 <dialog id="help-dialog">
   <div class="dialog-head"><h2>操作说明</h2><button id="close-help">×</button></div>
   <div class="key-table">
@@ -215,7 +237,7 @@
       <p>点按和按住防都是格挡 · 手机只能一名玩家，其余槽位是人机</p>
     </div>
   </div>
-  <p>命中、受击与格挡都能积攒能量，100 气释放必杀。轻击命中后可接轻击或重击；技能有独立冷却。贴身抓投可破防，点按 S 后闪能躲开抓投；远程弹幕可格挡或跳过，跳过去后可用空击追打，但会被升龙打下来。扫腿只打地面并击倒；上挑把对手挑到空中，落地前能再补一记；霸体招式蓄力期间硬吃一次打击，但抓投和必杀照样打断。防御槽耗尽会破防。每局先赢两回合者获胜，超时比较剩余生命比例。点槽位上的「玩家 / 人机」决定谁来操作，两边都是人机则只看不打。VS 下面那句是规则，可改成 2V2 或训练场，也能调人机强度。2V2 从左到右是 1P 到 4P，每格都能设玩家或人机，玩家最多两名；一方两人全倒才输本回合。训练场能量持续补满、对手自动恢复，不计胜负。按 1P 到 4P 的先后，先出现的玩家用左手键，后出现的用方向键移动、上跳、下格挡，小键盘 1 / 2 轻重击、4 / 5 / 6 技能、3 必杀。选中后出现的那位时，下方招式表改成这套小键盘；人机槽仍显示左手键。切换窗口会自动暂停。</p>
+  <p>命中、受击与格挡都能积攒能量，100 气释放必杀。轻击命中后可接轻击或重击；技能有独立冷却。贴身抓投可破防，点按 S 后闪能躲开抓投；远程弹幕可格挡或跳过，跳过去后可用空击追打，但会被升龙打下来。扫腿只打地面并击倒；上挑把对手挑到空中，落地前能再补一记；霸体招式蓄力期间硬吃一次打击，但抓投和必杀照样打断。防御槽耗尽会破防。每局先赢两回合者获胜，超时比较剩余生命比例。点槽位上的「玩家 / 人机」决定谁来操作，两边都是人机则只看不打。VS 下面那句是规则，可改成 2V2 或训练场，也能调人机强度。2V2 从左到右是 1P 到 4P，每格都能设玩家或人机，玩家最多两名；一方两人全倒才输本回合。训练场能量持续补满、对手自动恢复，不计胜负。按 1P 到 4P 的先后，先出现的玩家用左手键，后出现的用方向键移动、上跳、下格挡，小键盘 1 / 2 轻重击、4 / 5 / 6 技能、3 必杀。选中后出现的那位时，下方招式表改成这套小键盘；人机槽仍显示左手键。切换窗口会自动暂停。挑战分两个子模式，进度与最高纪录各自独立、随时切着玩互不影响：无尽闯关是 1 对 1，每关随机一名大师人机，玩家没有开场增益；无尽激战是 1 对 2，每关随机两名大师人机，玩家开场生命翻倍并获得 ×2 基础伤害。对手在选人界面和每关开打前都能看到；两种子模式都从第 2 关起敌人逐关增强，生命值每关 +5%、伤害每关 +3%，累加到挑战结束；单回合定胜负，超时仍比剩余生命比例。开打前从三张卡里选一张，选中的卡永久保留、同名卡叠加，每关开始前再选一张，失败或中途退出才清空。过关后可以马上下一关，也可以返回休息：休息后挑战停在这关，下一关对手已经锁定，切模式、玩别的或关掉页面都不会变，回到挑战模式点「继续挑战」接着打。战斗中退出会先确认，确认后本次挑战结束、进度清零。暂停菜单里会显示当前卡组。最高通关关数存在本浏览器里，到 100 关显示 99+。</p>
 </dialog>
 
 <script type="module" src="/src/main.ts"></script>

@@ -3,9 +3,9 @@ import type { FightGame } from '../game/game.ts';
 import type { FighterView } from './view.ts';
 import type { ImageCache } from '../assets/loader.ts';
 import { FLOOR, H, SIDE, W } from '../game/constants.ts';
-import { drawCombo, drawEffect, drawParticles, drawProjectile, drawTexts, UI_FONT } from './fx.ts';
+import { drawBanSign, drawCombo, drawEffect, drawParticles, drawProjectile, drawTexts, UI_FONT } from './fx.ts';
 
-/** Hard 1px rim, yellow for the left team and green for the right. Only used in 2v2. */
+/** Hard 1px rim, yellow for the left team and green for the right. Used in 2v2 and the 2-on-1 challenge. */
 const TEAM_GLOW = SIDE;
 
 /* Reads game state, writes pixels. Never mutates the game. */
@@ -40,9 +40,11 @@ export class Renderer {
       this.view(f.data.id).draw(c, f, e.x, e.y, (e.alpha ?? .3) * (e.life / e.max), e.tint);
     }
     const order = [...g.fighters].sort((a, b) => Number(a.hp > 0) - Number(b.hp > 0) || a.y - b.y);
+    // Team rims only where sides can be confused: 2v2 and the 2-on-1 激战, summons never tip it.
+    const teamRim = g.mode === 'team' || (g.mode === 'challenge' && g.fighters.filter(x => !x.minion).length > 2);
     for (const f of order) {
       const view = this.view(f.data.id);
-      const outline = g.mode === 'team' ? TEAM_GLOW[f.team] : undefined;
+      const outline = teamRim ? TEAM_GLOW[f.team] : undefined;
       view.draw(c, f, f.x, f.hp <= 0 ? FLOOR : f.y, f.hp <= 0 ? .3 : 1, undefined, outline);
       if (f.blocking) drawEffect(c, { type: 'shield', x: f.x + f.facing * 28, y: f.y - 80, color: '#a6eeff', life: .14, max: .22, radius: 58 });
       if (f.minion && f.hp > 0) {
@@ -54,6 +56,7 @@ export class Renderer {
       }
     }
     for (const p of g.projectiles) drawProjectile(c, p, this.images);
+    for (const f of g.fighters) if (f.ban > 0 && f.hp > 0) drawBanSign(c, f);
     for (const e of g.effects) if (e.type !== 'ghost') drawEffect(c, e, this.images);
     drawParticles(c, g.particles);
     drawTexts(c, g.texts);
