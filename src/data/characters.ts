@@ -312,7 +312,7 @@ export const ROSTER: CharacterData[] = [
       }),
       skill(3, 'projectile', '高音量！', {
         damage: 13, count: 3, interval: .5, speed: 300, size: 150, life: 2.7,
-        start: .25, duration: 1.5, cd: 4.5, knock: 120, fx: 'mega',
+        start: .25, duration: 1.5, cd: 7, knock: 120, fx: 'mega',
         desc: '慢速音波推进全场，把人推着走；跳起可躲',
       }),
       skill(4, 'endure', '高肌肉！', {
@@ -325,9 +325,40 @@ export const ROSTER: CharacterData[] = [
       }),
     ],
   },
+  {
+    id: 'miyako', name: '藤都子', title: '键盘 / 阴角', quote: '临！兵！斗！者！皆！阵！烈！在！前！', color: '#9977CC',
+    ...stats('focus'),
+    view: {
+      kind: 'sprite', common: '/sprites/miyako/common.png', special: '/sprites/miyako/special.png', height: 181,
+      extras: ['/sprites/miyako/seal.png'],
+    },
+    skills: [
+      skill(0, 'light', '轻点'),
+      skill(1, 'heavy', '横踢'),
+      skill(2, 'heavy', '巨羊羹砸击', {
+        damage: 20, range: 186, start: .24, duration: .58, cd: .7, knock: 120, fx: 'yokan',
+        frail: 2, frailBonus: .2,
+        desc: '从背后掏出羊羹下砸；打实后 2 秒内受伤增加 20%',
+      }),
+      skill(3, 'heavy', '秋叶原马拉松', {
+        damage: 0, range: 0, start: .28, duration: .65, cd: 9, fx: 'marathon',
+        desc: '摆出架势；完成后 4.5 秒内移速提高，普通攻击打不断',
+      }),
+      skill(4, 'heavy', '满月嚎叫', {
+        damage: 70, range: 87, start: .4, duration: .72, cd: 7, knock: 580, fx: 'howl',
+        desc: '贴身圆形音波，高伤强击退；放出时真霸体，跳到最高可出圈',
+      }),
+      skill(5, 'projectile', '九字真言', {
+        // focus multiplies shot speed by 1.15; 366 lands on about 421, and 0.7s of that is ~295px.
+        damage: 36, count: 1, speed: 366, size: 140, life: .7, interval: .07,
+        start: .55, duration: .9, knock: 0, fx: 'seal',
+        desc: '短距法阵穿透多段；打实后 3 秒不能格挡和后撤',
+      }),
+    ],
+  },
 ];
 
 /** Select screen. gale, ember and boulder stay on ROSTER for the headless checks. */
-export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki' || c.id === 'rana' || c.id === 'arale');
+export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki' || c.id === 'rana' || c.id === 'arale' || c.id === 'miyako');
 
 export const ROSTER_BY_ID = new Map(ROSTER.map(c => [c.id, c]));

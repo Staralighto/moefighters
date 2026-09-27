@@ -15,6 +15,13 @@ const FRENZY_TIME = 8;
 const FRENZY_RATE = 1.55;
 /** The brown of her hair, used for the frenzy afterimages. */
 const FRENZY_TINT = '#a5714f';
+/** 秋叶原马拉松: the pose has to finish. Then walking is faster and ordinary hits don't flinch her. */
+export const MARATHON_TIME = 4.5;
+export const MARATHON_SPEED = 1.45;
+/** 九字真言: a clean hit seals block and back-dodge for this long, refreshed by later clean hits. */
+const PURGE_TIME = 3;
+const SEAL_HITS = 6;
+const SEAL_FINALE_KNOCK = 280;
 /** 高肌肉！: seconds the flex holds, the damage bonus while it does, and the shove the pose gives the crowd. */
 const MUSCLE_TIME = 7;
 const MUSCLE_BONUS = .3;
@@ -143,11 +150,16 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   const endured = !blocked && !!armour && armour.endure > 0 && (rippleLive || armour.t < armour.skill.start) && !isGrab && !skill.super;
   // 绊创膏: the buffed fighter eats the damage without the flinch. Grabs and supers ignore the plaster.
   const braced = !blocked && defender.braced > 0 && !isGrab && !skill.super;
+  // 秋叶原马拉松: same no-flinch as the plaster, without the damage cut or the halved knockback.
+  const poised = !blocked && defender.poise > 0 && !isGrab && !skill.super;
   // 梦想即力量！: the frenzy brace is true super armour — only the control set (grabs, the
   // roots, the ban) staggers her. Supers lose their pierce and the combo escape never fires.
-  const superBrace = !blocked && defender.braced > 0 && defender.frenzy > 0 && !isGrab
-    && skill.fx !== 'heart' && skill.fx !== 'shout' && skill.fx !== 'ban';
-  let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .9 : 1) * ((braced || superBrace) ? BRACED_DAMAGE : 1) * (defender.ban > 0 ? BAN_DAMAGE : 1) * attacker.baseDmgMul * attacker.dmgMul * (attacker.muscle > 0 ? 1 + MUSCLE_BONUS : 1);
+  // 满月嚎叫 wears the same brace for the howl itself, and it ends when the howl does.
+  const howling = defender.attack?.skill.fx === 'howl';
+  const superBrace = !blocked && !isGrab
+    && skill.fx !== 'heart' && skill.fx !== 'shout' && skill.fx !== 'ban'
+    && ((defender.braced > 0 && defender.frenzy > 0) || howling);
+  let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .9 : 1) * ((braced || superBrace) ? BRACED_DAMAGE : 1) * (defender.ban > 0 ? BAN_DAMAGE : 1) * attacker.baseDmgMul * attacker.dmgMul * (attacker.muscle > 0 ? 1 + MUSCLE_BONUS : 1) * (defender.frail > 0 ? 1 + defender.frailBonus : 1);
   // 堕天: below half health the attacker swings harder; 这是最后通牒: a defender under a quarter takes more.
   if (attacker.lowHpDmg > 0 && attacker.hp < attacker.data.hp * .5) damage *= 1 + attacker.lowHpDmg;
   if (defender.executeDmg > 0 && defender.hp < defender.data.hp * .25) damage *= 1 + defender.executeDmg;
@@ -196,7 +208,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     if (endured && armour) {
       if (armour.skill.fx !== 'ripple' && armour.skill.fx !== 'huh') armour.endure--;
       g.text('霸体', defender.x, defender.y - 195, '#ffd27a', .5, 18);
-    } else if (braced || superBrace) {
+    } else if (braced || superBrace || poised) {
       // 绊创膏: the hit lands, nothing flinches, and the combo escape below still applies.
       // The dream brace is stronger: no escape either, just the throttled golden absorb.
       if (superBrace) {
@@ -286,6 +298,12 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       } else if (skill.fx === 'ripple' || skill.fx === 'bag') {
         defender.vy = 0;
         defender.knocked = 0;
+      } else if (skill.fx === 'seal') {
+        // 九字真言: the circle holds them on their feet. A clean hit seals block and the back-dodge.
+        defender.vy = 0;
+        defender.knocked = 0;
+        if (defender.purge <= 0) g.text('驱邪', defender.x, defender.y - 195, '#e6d4ff', .6, 20);
+        defender.purge = PURGE_TIME;
       } else if (skill.fx === 'ban') {
         // 我要拉黑他: frozen for three seconds, holding the hit pose. Nothing but the clock lifts it.
         defender.ban = BAN_TIME;
@@ -339,6 +357,13 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     g.text('-' + Math.round(damage), defender.x + dir * 15, defender.y - 160, skill.super ? SIDE[attacker.team] : '#fff', .65, (skill.super ? 30 : 23) + (crit ? 6 : 0));
     g.sparks(defender.x - dir * 23, defender.y - 85, attacker.data.color, skill.super ? 36 : 18, skill.super ? 1.6 : 1);
     g.effect('hit', defender.x - dir * 23, defender.y - 85, attacker.data.color, .25, { radius: skill.super ? 90 : 48 });
+    if (skill.frail) {
+      const fresh = defender.frail <= 0;
+      const bonus = skill.frailBonus ?? 0;
+      if (fresh || bonus >= defender.frailBonus) defender.frailBonus = bonus;
+      defender.frail = Math.max(defender.frail, skill.frail);
+      if (fresh) g.text('脆弱', defender.x, defender.y - 195, '#ffb4c8', .6, 18);
+    }
   }
 
   defender.hp = clamp(defender.hp - damage, 0, defender.data.hp);
@@ -374,7 +399,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   if (holdStill) { defender.vx = 0; defender.vy = 0; }
   g.shake = blocked ? 2 : skill.fx === 'slam' ? 14 : skill.fx === 'onegai' ? 10 : skill.super ? 12 : skill.type === 'heavy' ? 7 : 4;
   const juggleHit = !blocked && !!skill.air && defender.y < FLOOR - .5;
-  g.hitstop = blocked ? .018 : juggleHit ? .085 : skill.fx === 'slam' ? .09 : skill.fx === 'onegai' ? .08 : skill.super ? .065 : skill.type === 'heavy' ? .065 : .032;
+  g.hitstop = blocked ? .018 : juggleHit ? .085 : skill.fx === 'slam' ? .09 : skill.fx === 'onegai' ? .08 : skill.fx === 'seal' ? .09 : skill.super ? .065 : skill.type === 'heavy' ? .065 : .032;
   return true;
 }
 
@@ -386,7 +411,7 @@ export function applyMelee(g: FightGame, f: Fighter, a: Attack): void {
     const dist = Math.abs(o.x - f.x);
     const dy = Math.abs(o.y - f.y);
     const ripple = s.fx === 'ripple' || s.fx === 'huh';
-    if (s.fx === 'riff') {
+    if (s.fx === 'riff' || s.fx === 'howl') {
       // 吉他激奏: a screen-facing disc centred on her — every direction, any height. A jump no longer dodges it.
       if (Math.hypot(o.x - f.x, o.y - f.y) < s.range) {
         hit(g, f, o, s, a);
@@ -398,7 +423,7 @@ export function applyMelee(g: FightGame, f: Fighter, a: Attack): void {
     const front = (o.x - f.x) * f.facing >= -20;
     // Sweeps only touch grounded targets; air normals and uppers reach further vertically.
     // A crawl's hand only reaches a standing chest, so a real jump clears it.
-    const height = ripple || s.type === 'sweep' ? o.y > FLOOR - 40
+    const height = ripple || s.fx === 'yokan' || s.type === 'sweep' ? o.y > FLOOR - 40
       : s.fx === 'crawl' ? dy < 48
       : dy < (s.super ? 170 : s.air || s.type === 'upper' ? 150 : 112);
     if (dist < s.range && (radial || front) && height) {
@@ -933,19 +958,83 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
     } else if (s.fx === 'poem') {
       // 诗超绊: the sing lands, and a teammate takes the stage beside her.
       g.summonAlly(f);
+    } else if (s.fx === 'marathon') {
+      // 秋叶原马拉松: the pose itself does nothing. Speed and poise start only if it finishes.
     } else if (s.type === 'projectile') {
       spawnShot(g, f, a);
     } else if (s.type !== 'dash' && s.fx !== 'slam' && s.fx !== 'onegai' && s.fx !== 'vow') {
       if (s.type !== 'upper') applyMelee(g, f, a);
       if (s.fx === 'ripple') g.effect('ripple', f.x, FLOOR, f.data.color, .45, { radius: s.range });
       else if (s.fx === 'huh') g.effect('huh', f.x, FLOOR, f.data.color, .5, { radius: s.range });
+      else if (s.fx === 'howl') g.effect('howl', f.x, f.y - 80, f.data.color, .4, { radius: s.range });
+      else if (s.fx === 'yokan') g.effect('yokan', f.x + f.facing * 70, FLOOR, f.data.color, .28, { dir: f.facing, radius: 80 });
       else g.effect(s.fx, f.x + f.facing * 65, f.y - (s.type === 'sweep' ? 22 : 83), f.data.color, .22, { dir: f.facing, radius: s.range * .5 });
     }
     if (a.index >= 2 && !s.super) g.text(s.name, f.x, f.y - 190, f.data.color, .65, 17);
   }
 
   syncGuitar(g, f, a);
-  if (a.t >= s.duration) f.attack = null;
+  if (a.t >= s.duration) {
+    if (s.fx === 'marathon' && f.attack === a && f.hp > 0 && f.stun <= 0) {
+      f.sprint = MARATHON_TIME;
+      f.poise = MARATHON_TIME;
+      g.effect('marathon', f.x, f.y - 70, f.data.color, .55, { radius: 80 });
+    }
+    if (f.attack === a) f.attack = null;
+  }
+}
+
+/** 九字真言: the first overlap commits six hits. Later ticks ignore the body, so a wall or a short tail cannot drop them. */
+function stepSeal(g: FightGame, p: Projectile, owner: Fighter): void {
+  if (!p.marks) p.marks = new Map();
+  let touching = false;
+  for (const target of g.opponents(owner)) {
+    if (target.hp <= 0 || p.life <= 0) continue;
+    const near = Math.abs(p.x - target.x) < 38 + p.radius && Math.abs(p.y - (target.y - 83)) < 72;
+    if (near) touching = true;
+    if (p.marks.has(target.id) || !near) continue;
+    const dir = Math.sign(p.vx || 1);
+    const sk = { ...p.skill, knock: 0 };
+    if (!hit(g, owner, target, sk, { hit: new Set() }, p.x - dir * 40)) continue;
+    p.marks.set(target.id, { n: 1, next: 0 });
+    g.effect('burst', p.x, p.y, p.color, .2, { radius: p.size * .4 });
+    g.sealVolleys.push({
+      owner: owner.id, target: target.id, n: 1, wait: p.skill.interval ?? .07, dir, color: p.color, skill: p.skill,
+    });
+  }
+  p.swellTo = touching ? 1 : 0;
+}
+
+const SEAL_SWELL_TIME = .1;
+
+/** Linear approach. One add per circle; hitstop keeps ticking it so the grow reads on the frozen hit. */
+export function easeSealSwells(g: FightGame, dt: number): void {
+  const step = dt / SEAL_SWELL_TIME;
+  for (const p of g.projectiles) {
+    if (p.fx !== 'seal') continue;
+    const cur = p.swell ?? 0;
+    const to = p.swellTo ?? 0;
+    if (cur === to) continue;
+    p.swell = cur < to ? Math.min(to, cur + step) : Math.max(to, cur - step);
+  }
+}
+
+function stepSealVolleys(g: FightGame, dt: number): void {
+  for (const v of g.sealVolleys) {
+    if (v.n >= SEAL_HITS) continue;
+    v.wait -= dt;
+    if (v.wait > 0) continue;
+    const owner = g.fighterById(v.owner);
+    const target = g.fighterById(v.target);
+    v.n += 1;
+    v.wait = v.skill.interval ?? .07;
+    if (!owner || !target || target.hp <= 0) { v.n = SEAL_HITS; continue; }
+    const sk = { ...v.skill, knock: v.n >= SEAL_HITS ? SEAL_FINALE_KNOCK : 0 };
+    if (hit(g, owner, target, sk, { hit: new Set() }, target.x - v.dir * 40)) {
+      g.effect('burst', target.x, target.y - 80, v.color, .2, { radius: (v.skill.size ?? 140) * .4 });
+    }
+  }
+  g.sealVolleys = g.sealVolleys.filter(v => v.n < SEAL_HITS);
 }
 
 export function stepProjectiles(g: FightGame, dt: number): void {
@@ -1045,7 +1134,8 @@ export function stepProjectiles(g: FightGame, dt: number): void {
       p.life = 0;
       g.text('+26', owner.x, owner.y - 170, owner.data.color, .6, 18);
     }
-    if (owner) for (const target of g.opponents(owner)) {
+    if (owner && p.fx === 'seal') stepSeal(g, p, owner);
+    else if (owner) for (const target of g.opponents(owner)) {
       if (!p.settled && p.life > 0 && Math.abs(p.x - target.x) < 38 + p.radius && Math.abs(p.y - (target.y - 83)) < 72) {
         if (hit(g, owner, target, p.skill, { hit: p.hit }, p.x - Math.sign(p.vx) * 40)) {
           g.effect('burst', p.x, p.y, p.color, .3, { radius: p.size * .8 });
@@ -1062,11 +1152,13 @@ export function stepProjectiles(g: FightGame, dt: number): void {
     for (let j = i + 1; j < g.projectiles.length; j++) {
       const p = g.projectiles[i], q = g.projectiles[j];
       // Shots die on each other; the well is a zone, so shots pass through it.
-      if (!p.settled && !q.settled && p.fx !== 'blackhole' && q.fx !== 'blackhole' && p.fx !== 'parfait' && q.fx !== 'parfait' && g.isEnemy(g.fighterById(p.owner), g.fighterById(q.owner)) && p.life > 0 && q.life > 0 && Math.abs(p.x - q.x) < 25 && Math.abs(p.y - q.y) < 27) {
+      if (!p.settled && !q.settled && p.fx !== 'blackhole' && q.fx !== 'blackhole' && p.fx !== 'parfait' && q.fx !== 'parfait' && p.fx !== 'seal' && q.fx !== 'seal' && g.isEnemy(g.fighterById(p.owner), g.fighterById(q.owner)) && p.life > 0 && q.life > 0 && Math.abs(p.x - q.x) < 25 && Math.abs(p.y - q.y) < 27) {
         p.life = q.life = 0;
         g.sparks(p.x, p.y, '#fff', 12);
       }
     }
   }
   g.projectiles = g.projectiles.filter(p => p.life > 0 && p.x > -60 && p.x < W + 60 && p.y < FLOOR + 60);
+  stepSealVolleys(g, dt);
+  easeSealSwells(g, dt);
 }

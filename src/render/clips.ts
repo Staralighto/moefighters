@@ -1,5 +1,6 @@
 import type { Fighter } from '../game/fighter.ts';
 import { attackPhase, stateFor } from '../game/animState.ts';
+import { YOKAN_OX } from './miyakoSheet.ts';
 
 /** Square cell. Img2img replacements must keep this size and the grids below.
  *  Common is 8×3 so the sheet is 2048×768 (8:3), under the 3:1 upload limit.
@@ -51,6 +52,8 @@ export interface Clip {
   row: number;
   sx: number;
   sy: number;
+  /** Cell-space body offset baked into the art. SpriteView translates it back out. */
+  ox?: number;
 }
 
 function at(sheet: Clip['sheet'], col: number, row: number): Clip {
@@ -184,6 +187,8 @@ export function clipFor(f: Fighter): Clip {
       const base = f.attack.index === 0 ? NORMAL.light : NORMAL.heavy;
       return at('common', base.c + phase, base.r);
     }
+    // 巨羊羹砸击: the cell shifts the body aside to fit the block, so hand back the inverse.
+    if (f.attack.skill.fx === 'yokan') return { ...at('special', f.attack.index - 2, phase), ox: YOKAN_OX[phase] };
     return at('special', f.attack.index - 2, phase);
   }
   const state = stateFor(f);

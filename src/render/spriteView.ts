@@ -103,6 +103,8 @@ export class SpriteView implements FighterView {
     try {
       ctx.translate(Math.round(x), Math.round(y));
       ctx.scale(pose ? pose.facing : f.facing, 1);
+      // Undo the body offset baked into the cell so only the prop hangs off the fighter origin.
+      if (clip.ox) ctx.translate(-clip.ox * h / CELL, 0);
       ctx.globalAlpha = alpha;
       if (outline && typeof document !== 'undefined') {
         ctx.imageSmoothingEnabled = true;

@@ -4,7 +4,7 @@ import { DECAY_TIMERS, gainEnergy, makeFighter } from './fighter.ts';
 import { AIR_SKILLS } from '../data/skills.ts';
 import { ROSTER_BY_ID } from '../data/characters.ts';
 import { advanceAnim } from './animState.ts';
-import { effectSettled, stepProjectiles, updateAttack, wailShots } from './combat.ts';
+import { easeSealSwells, effectSettled, MARATHON_SPEED, stepProjectiles, updateAttack, wailShots } from './combat.ts';
 import { stepAI } from './ai.ts';
 import { COMBO_DECAY, COMBO_ESCAPE, CONTROLS, FLOOR, GRAVITY, INPUT_BUFFER, SIDE, STEP, X_MAX, X_MIN, clamp } from './constants.ts';
 import { clipFor } from '../render/clips.ts';
@@ -72,6 +72,23 @@ export interface Projectile {
   settled?: boolean;
   /** 奇独点: the last damage tick this well fired. */
   ticked?: number;
+  /** 九字真言: hits already landed on each fighter, and the age the next tick may land. */
+  marks?: Map<number, { n: number; next: number }>;
+  /** 九字真言: displayed grow, eased toward swellTo. 1 is fully grown along the flight. */
+  swell?: number;
+  /** 九字真言: 1 while the circle is on a body. */
+  swellTo?: number;
+}
+
+/** 九字真言: a committed six-hit string. It outlives the circle, so a late or wall hit still pays in full. */
+export interface SealVolley {
+  owner: number;
+  target: number;
+  n: number;
+  wait: number;
+  dir: number;
+  color: string;
+  skill: Skill;
 }
 
 export interface GameOptions {
@@ -142,6 +159,7 @@ export class FightGame {
 
   fighters: Fighter[] = [];
   projectiles: Projectile[] = [];
+  sealVolleys: SealVolley[] = [];
   effects: Effect[] = [];
   particles: Particle[] = [];
   texts: FloatingText[] = [];
@@ -234,6 +252,7 @@ export class FightGame {
       return f;
     });
     this.projectiles = [];
+    this.sealVolleys = [];
     this.effects = [];
     this.particles = [];
     this.texts = [];
@@ -440,7 +459,11 @@ export class FightGame {
   step(dt: number): void {
     if (this.paused) return;
     this.age += dt;
-    if (this.hitstop > 0) { this.hitstop = Math.max(0, this.hitstop - dt); return; }
+    if (this.hitstop > 0) {
+      this.hitstop = Math.max(0, this.hitstop - dt);
+      easeSealSwells(this, dt);
+      return;
+    }
     this.shake = Math.max(0, this.shake - dt * 22);
     this.flash = Math.max(0, this.flash - dt);
     if (this.bannerLeft > 0) { this.bannerLeft -= dt; if (this.bannerLeft <= 0) this.setBanner(''); }
@@ -504,6 +527,7 @@ export class FightGame {
     this.phase = 'roundend';
     this.phaseTime = 2.4;
     this.projectiles = [];
+    this.sealVolleys = [];
     for (const f of this.fighters) { f.queue = []; f.attack = null; }
     const title = draw ? 'DRAW' : this.time <= 0 ? 'TIME UP' : 'K.O.';
     this.setBanner(title, draw ? '平局 · 再战一回合' : this.teamNames(winner) + ' 赢下本回合');
@@ -590,6 +614,7 @@ export class FightGame {
   }
 
   private startDodge(f: Fighter): void {
+    if (f.purge > 0) return;
     f.dodge = DODGE_TIME;
     f.dodgeCd = DODGE_CD * f.dodgeCdMul;
     f.invuln = Math.max(f.invuln, DODGE_INVULN);
@@ -611,6 +636,9 @@ export class FightGame {
     // 高肌肉！: a slow pulse while the flex holds, so the buff state reads across the stage.
     if (f.muscle > 0 && Math.floor(f.muscle) !== Math.floor(f.muscle + dt)) {
       this.effect('burst', f.x, f.y - 95, f.data.color, .45, { radius: 55 });
+    }
+    if (f.sprint > 0 && Math.floor(f.sprint * 2) !== Math.floor((f.sprint + dt) * 2)) {
+      this.effect('dust', f.x - f.facing * 18, FLOOR, f.data.color, .22, { radius: 16 });
     }
     if (f.root > 0) {
       f.root = Math.max(0, f.root - dt);
@@ -639,8 +667,8 @@ export class FightGame {
     if (f.dodgeRequest) { f.dodgeBuffer = INPUT_BUFFER; f.dodgeRequest = false; }
     // Humans can cut recovery into a block or a dodge once the move has already hit. CPU stays committed.
     if (human && f.attack && effectSettled(f.attack)) {
-      const wantDodge = f.dodgeBuffer > 0 && grounded && f.dodgeCd <= 0 && f.root <= 0 && f.ban <= 0;
-      const wantBlock = (blockHeld || f.blockBuffer > 0) && grounded && f.guardBroken <= 0 && f.guard > 0;
+      const wantDodge = f.dodgeBuffer > 0 && grounded && f.dodgeCd <= 0 && f.root <= 0 && f.ban <= 0 && f.purge <= 0;
+      const wantBlock = (blockHeld || f.blockBuffer > 0) && grounded && f.guardBroken <= 0 && f.guard > 0 && f.purge <= 0;
       if (wantDodge) {
         f.attack = null;
         f.dodgeBuffer = 0;
@@ -654,12 +682,13 @@ export class FightGame {
     }
 
     let free = !f.attack && f.stun <= 0 && !f.knocked && f.dodge <= 0;
+    if (f.purge > 0) { f.dodgeBuffer = 0; f.dodgeRequest = false; f.blockBuffer = 0; f.blockLeft = 0; }
     if (f.dodgeBuffer > 0) {
-      if (grounded && free && f.dodgeCd <= 0 && f.root <= 0 && f.ban <= 0) { f.dodgeBuffer = 0; this.startDodge(f); free = false; }
+      if (grounded && free && f.dodgeCd <= 0 && f.root <= 0 && f.ban <= 0 && f.purge <= 0) { f.dodgeBuffer = 0; this.startDodge(f); free = false; }
       else if (grounded && !inputLocked(f)) f.dodgeBuffer = Math.max(0, f.dodgeBuffer - dt);
     }
 
-    const canGuard = grounded && free && f.guardBroken <= 0 && f.guard > 0;
+    const canGuard = grounded && free && f.guardBroken <= 0 && f.guard > 0 && f.purge <= 0;
     if (canGuard && (blockHeld || f.blockLeft > 0 || f.blockBuffer > 0)) {
       if (!blockHeld && f.blockBuffer > 0) f.blockLeft = Math.max(f.blockLeft, BLOCK_MIN);
       if (!blockHeld) f.blockBuffer = 0;
@@ -713,7 +742,8 @@ export class FightGame {
       const flurry = !!f.attack && (f.attack.skill.count ?? 0) > 1 && f.attack.skill.type !== 'projectile';
       const factor = !f.attack ? 1 : f.attack.skill.air ? .6 : f.attack.skill.type === 'light' && !flurry ? .25 : 0;
       const beatMove = f.data.trait === 'beat' ? 1 + f.beatStacks * .02 : 1;
-      f.x += move * f.data.speed * f.moveMul * beatMove * factor * dt;
+      const sprint = f.sprint > 0 ? MARATHON_SPEED : 1;
+      f.x += move * f.data.speed * f.moveMul * beatMove * sprint * factor * dt;
       if (move && factor && grounded) f.walk += dt * 12; else f.walk = 0;
     }
 

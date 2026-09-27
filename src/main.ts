@@ -5,7 +5,7 @@ import { FightGame } from './game/game.ts';
 import { KeyboardInput, TouchInput } from './game/input.ts';
 import { Renderer } from './render/renderer.ts';
 import { createViews } from './render/view.ts';
-import { assetsFor, preload, type ImageCache } from './assets/loader.ts';
+import { assetsFor, loadKujiFont, preload, type ImageCache } from './assets/loader.ts';
 import { Sfx } from './audio/sfx.ts';
 import { matchName, SelectScreen, type MatchSetup } from './ui/select.ts';
 import { bestLabel, challengeName, deckLabel, foeCount, hideBuffPicker, readBest, readRun, rollEnemies, showBuffPicker, stageSetup, writeBest, writeRun, type ChallengeKind, type ChallengeRun } from './ui/challenge.ts';
@@ -38,7 +38,7 @@ if (import.meta.env.DEV) {
 
 /* Sprite-backed characters need their image before the select screen can draw them. */
 {
-  const missing = await preload(images, assetsFor(PLAYABLE, stage));
+  const [missing] = await Promise.all([preload(images, assetsFor(PLAYABLE, stage)), loadKujiFont()]);
   if (missing.length) console.warn('缺图，已回退色块人形：' + missing.join(', '));
 }
 const previewViews = createViews(PLAYABLE, images);
@@ -105,7 +105,7 @@ function leaveBattleFullscreen(): void {
 
 async function startGame(setup: MatchSetup): Promise<void> {
   sfx.unlock();
-  const missing = await preload(images, assetsFor(setup.characters, stage));
+  const [missing] = await Promise.all([preload(images, assetsFor(setup.characters, stage)), loadKujiFont()]);
   if (missing.length) console.warn('缺图，已回退色块人形：' + missing.join(', '));
   lastSetup = setup;
 

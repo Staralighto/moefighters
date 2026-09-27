@@ -3,7 +3,7 @@ import type { FightGame } from '../game/game.ts';
 import type { FighterView } from './view.ts';
 import type { ImageCache } from '../assets/loader.ts';
 import { FLOOR, H, SIDE, W } from '../game/constants.ts';
-import { drawBanSign, drawCombo, drawEffect, drawParticles, drawProjectile, drawTexts, UI_FONT } from './fx.ts';
+import { drawBanSign, drawCombo, drawEffect, drawKuji, drawParticles, drawProjectile, drawTexts, UI_FONT } from './fx.ts';
 
 /** Hard 1px rim, yellow for the left team and green for the right. Used in 2v2 and the 2-on-1 challenge. */
 const TEAM_GLOW = SIDE;
@@ -62,6 +62,7 @@ export class Renderer {
     for (const e of g.effects) if (e.type !== 'ghost') drawEffect(c, e, this.images);
     drawParticles(c, g.particles);
     drawTexts(c, g.texts);
+    drawKuji(c, g);
     drawCombo(c, g);
     if (g.mode === 'training') {
       c.textAlign = 'center'; c.font = `14px ${UI_FONT}`; c.fillStyle = '#ddd9ee';

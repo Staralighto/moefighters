@@ -22,6 +22,7 @@ const STONE_SRC = '/sprites/tomori/stone.png';
 const PLASTER_SRC = '/sprites/tomori/plaster.png';
 const PARFAIT_SRC = '/sprites/rana/parfait.png';
 const MATCHA_SRC = '/sprites/rana/matcha.png';
+const SEAL_SRC = '/sprites/miyako/seal.png';
 const MORTIS_H = 181;
 
 /* Drop the pose-sheet chrome and the chroma key so a placeholder can sit in the fight. */
@@ -232,6 +233,38 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(0, 0, r * p, 0, Math.PI * 2); ctx.stroke();
       break;
+    case 'howl': {
+      // 满月嚎叫: a ring in the screen plane, centred on her chest, not a floor ellipse.
+      const radius = e.radius ?? 87;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= 1 - p;
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(0, 0, radius * Math.max(p, .15), 0, Math.PI * 2); ctx.stroke();
+      ctx.lineWidth = 2;
+      ctx.globalAlpha *= .55;
+      ctx.beginPath(); ctx.arc(0, 0, radius * Math.max(p, .15) * .62, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
+    case 'yokan': {
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= 1 - p;
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.ellipse(0, 0, (e.radius ?? 80) * (.35 + p * .65), 10 + p * 8, 0, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
+    case 'marathon': {
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= 1 - p;
+      ctx.lineWidth = 3;
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(side * 18, 10);
+        ctx.lineTo(side * (28 + p * 36), -8 - p * 20);
+        ctx.stroke();
+      }
+      ctx.beginPath(); ctx.ellipse(0, 28, 36 + p * 20, 8, 0, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
     case 'ripple': {
       ctx.translate(e.x, e.y);
       ctx.globalAlpha *= 1 - p;
@@ -850,6 +883,31 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
       ctx.stroke();
       break;
     }
+    case 'seal': {
+      // 九字真言: on a body the circle grows along its flight, trailing edge fixed.
+      const grown = sealSwell(p.size, p.vx, p.swell ?? 0);
+      ctx.translate(grown.shift, 0);
+      if (prop(ctx, images, SEAL_SRC, p.size * grown.scale)) break;
+      const rad = (p.radius + 6) * grown.scale;
+      ctx.strokeStyle = p.color;
+      ctx.fillStyle = p.color;
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, rad, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = .35;
+      ctx.beginPath(); ctx.arc(0, 0, rad * .72, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = .9;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < 5; i++) {
+        const ang = -Math.PI / 2 + (i * 4 * Math.PI) / 5;
+        const x = Math.cos(ang) * rad * .62;
+        const y = Math.sin(ang) * rad * .62;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.stroke();
+      break;
+    }
     case 'wail':
     case 'orb':
     default: {
@@ -895,6 +953,52 @@ export function drawParticles(ctx: CanvasRenderingContext2D, particles: Particle
     ctx.fillRect(Math.round(p.x), Math.round(p.y), p.size, p.size);
   }
   ctx.globalAlpha = 1;
+}
+
+/** Resting size is 1. On a body the circle is 70% larger, and only along its flight. */
+export function sealSwell(size: number, vx: number, swell = 0): { scale: number; shift: number } {
+  const scale = 1 + 0.7 * swell;
+  return { scale, shift: Math.sign(vx || 1) * size * (scale - 1) / 2 };
+}
+
+/** 九字真言, one brush character per beat. The blank tail is the gap before the next character. */
+export const KUJI = '临兵斗者皆阵烈在前';
+export const KUJI_STEP = 0.072;
+
+export function kujiFlash(t: number): { ch: string; alpha: number } | null {
+  if (t < 0) return null;
+  const i = Math.floor(t / KUJI_STEP);
+  if (i >= KUJI.length) return null;
+  const k = t / KUJI_STEP - i;
+  if (k >= 0.84) return null;
+  if (k < 0.18) return { ch: KUJI[i], alpha: k / 0.18 };
+  if (k < 0.62) return { ch: KUJI[i], alpha: 1 };
+  return { ch: KUJI[i], alpha: 1 - (k - 0.62) / 0.22 };
+}
+
+export function drawKuji(ctx: CanvasRenderingContext2D, g: FightGame): void {
+  for (const f of g.fighters) {
+    const a = f.attack;
+    if (!a || a.skill.fx !== 'seal' || f.hp <= 0) continue;
+    const flash = kujiFlash(a.t);
+    if (!flash) continue;
+    const h = f.data.view.kind === 'sprite' ? f.data.view.height : 176;
+    // Super windup hair starts 58px down the 256 cell. Baseline sits a few pixels above that.
+    const head = (CELL - 58) * h / CELL;
+    ctx.save();
+    ctx.translate(Math.round(f.x), Math.round(f.y - head - 6));
+    ctx.globalAlpha = flash.alpha;
+    ctx.font = '48px "Ma Shan Zheng", KaiTi, STKaiti, serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#241433';
+    ctx.strokeText(flash.ch, 0, 0);
+    ctx.fillStyle = '#e6d4ff';
+    ctx.fillText(flash.ch, 0, 0);
+    ctx.restore();
+  }
 }
 
 const LIME = new Set(['#b7ff6e']);

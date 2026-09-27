@@ -20,6 +20,16 @@ export function assetsFor(characters: CharacterData[], stage: StageData): string
   return [...new Set(srcs)];
 }
 
+/** 马善政毛笔楷书, subset to the nine kuji characters. OFL, see public/fonts/MaShanZheng-OFL.txt. */
+let kujiFont: Promise<void> | null = null;
+export function loadKujiFont(): Promise<void> {
+  if (kujiFont) return kujiFont;
+  if (typeof document === 'undefined' || !document.fonts) return Promise.resolve();
+  const face = new FontFace('Ma Shan Zheng', 'url(/fonts/ma-shan-zheng-kuji.woff2)');
+  kujiFont = face.load().then(loaded => { document.fonts.add(loaded); }).catch(() => {});
+  return kujiFont;
+}
+
 /** Loads independently so one missing file does not wipe the rest of the cache. */
 export async function preload(cache: ImageCache, srcs: string[]): Promise<string[]> {
   const missing: string[] = [];

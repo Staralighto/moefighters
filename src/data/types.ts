@@ -38,6 +38,10 @@ export interface Skill {
   drain?: number;
   /** Energy granted per unblocked hit; falls back to the 9 (2 for supers) arcade default. */
   gain?: number;
+  /** Seconds of 脆弱 on a clean hit. The amount is frailBonus. */
+  frail?: number;
+  /** Extra damage taken during 脆弱. 0.2 is +20%, and it multiplies with every other factor. */
+  frailBonus?: number;
 }
 
 export type Trait = 'rush' | 'focus' | 'armor' | 'beat';

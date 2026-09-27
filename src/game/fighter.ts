@@ -66,6 +66,16 @@ export interface Fighter {
   noGain: number;
   /** 高肌肉！: seconds of +30% damage left while the flex holds. */
   muscle: number;
+  /** 秋叶原马拉松: seconds of faster walking left. Stacks on top of moveMul. */
+  sprint: number;
+  /** 秋叶原马拉松: seconds of no-flinch. Damage and knockback stay full; grabs and supers ignore it. */
+  poise: number;
+  /** 九字真言: seconds the fighter cannot block or back-dodge. Walking and jumping stay open. */
+  purge: number;
+  /** 脆弱: seconds of extra damage taken. 0 is neutral. */
+  frail: number;
+  /** Added fraction of damage taken while frail is up. 0.2 is +20%. */
+  frailBonus: number;
   /** Remaining back-dodge time and its cooldown. */
   dodge: number; dodgeCd: number;
   dodgeRequest: boolean;
@@ -127,7 +137,7 @@ export interface Fighter {
   vainEnergy: number;
 }
 
-export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braced', 'braceFx', 'noGain', 'ban', 'muscle'] as const;
+export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braced', 'braceFx', 'noGain', 'ban', 'muscle', 'sprint', 'poise', 'purge', 'frail'] as const;
 
 export function makeFighter(
   data: CharacterData,
@@ -140,7 +150,7 @@ export function makeFighter(
     hp: data.hp, energy: init.energy, guard: 100, blocking: false,
     stun: 0, invuln: 0, comboTime: 0, hitFlash: 0, landing: 0, guardBroken: 0,
     knocked: 0, downTime: 0, hitBySuper: false, root: 0, rootHits: 0, ban: 0, beatStacks: 0, frenzy: 0,
-    jabChain: 0, jabChainClock: 0, braced: 0, braceFx: 0, noGain: 0, muscle: 0,
+    jabChain: 0, jabChainClock: 0, braced: 0, braceFx: 0, noGain: 0, muscle: 0, sprint: 0, poise: 0, purge: 0, frail: 0, frailBonus: 0,
     dodge: 0, dodgeCd: 0, dodgeRequest: false, dodgeBuffer: 0, blockTap: -1, blockBuffer: 0, blockLeft: 0,
     attack: null, attackSerial: 0, cooldowns: [0, 0, 0, 0, 0, 0], queue: [],
     jumpRequest: false, jumpBuffer: 0,

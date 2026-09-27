@@ -5,9 +5,9 @@ import { vowBeatTime, VOW_BEATS } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
 import { ROSTER } from '../src/data/characters.ts';
 import { STAGES } from '../src/data/stages.ts';
-import { FLOOR, COMBO_DECAY, STEP } from '../src/game/constants.ts';
+import { FLOOR, COMBO_DECAY, STEP, X_MAX } from '../src/game/constants.ts';
 import { clipFor, drumRow } from '../src/render/clips.ts';
-import { mortisAfterimage } from '../src/render/fx.ts';
+import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell } from '../src/render/fx.ts';
 import { previewFighter } from '../src/game/fighter.ts';
 import { guideIndex, skillHTML } from '../src/ui/select.ts';
 import { POOL, aggregatePicks, bestLabel, drawThree, readBest, rollEnemies, stageSetup } from '../src/ui/challenge.ts';
@@ -1655,6 +1655,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(data.skills[2].count, 7, '高能量 swings seven — an eighth hit can never land past the combo escape');
   assert.equal(data.skills[2].gain, 4, 'the flurry gains little meter per hit');
   assert.equal(data.skills[3].fx, 'mega', 'I is the mega wave');
+  assert.equal(data.skills[3].cd, 7, '高音量 cools down in 7 seconds');
   assert.equal(data.skills[4].fx, 'muscle', 'O is the flex');
   assert.equal(data.skills[5].fx, 'dream', 'the super is the dream');
   assert.ok(data.view.kind === 'sprite' && !!data.view.frenzy, 'arale preloads a frenzy sheet');
@@ -1758,6 +1759,246 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
       run(mash, .4);
     }
     assert.deepEqual(presses, [0, 0, 0, 0], 'no auto-heavy: the chain stays off');
+  }
+}
+
+// miyako: the yokan is a grounded poke, the marathon buffs only if the pose finishes,
+// the howl is a short disc, the seal pierces and seals block plus the back-dodge
+{
+  const miyako = ROSTER.findIndex(c => c.id === 'miyako');
+  assert.ok(miyako >= 0, 'miyako is on the roster');
+  const data = ROSTER[miyako];
+  assert.equal(data.trait, 'focus', 'miyako keeps the 225 walk speed');
+  assert.equal(data.skills[2].fx, 'yokan', 'U is the yokan');
+  assert.equal(data.skills[2].damage, 20, 'the yokan hits soft');
+  assert.equal(data.skills[2].range, 186, 'the yokan reaches');
+  assert.equal(data.skills[3].fx, 'marathon', 'I is the marathon');
+  assert.equal(data.skills[4].fx, 'howl', 'O is the howl');
+  assert.equal(data.skills[4].range, 87, 'the howl radius is a tenth of the playable stage');
+  assert.equal(data.skills[5].fx, 'seal', 'the super is the seal');
+  assert.equal(data.skills[5].count, 1, 'one circle, not the stock three-shot super');
+  assert.equal(data.skills[5].speed, 366, 'focus brings the circle to about 421');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/miyako/seal.png'), 'the seal circle is preloaded');
+  assert.equal(KUJI, '临兵斗者皆阵烈在前', 'the chant is the nine characters');
+  assert.equal(kujiFlash(0.02)?.ch, '临', 'the chant opens on 临');
+  assert.equal(kujiFlash(KUJI_STEP * 0.9), null, 'each character blanks before the next');
+  assert.equal(kujiFlash(KUJI_STEP + 0.02)?.ch, '兵', 'the next character is 兵');
+  assert.equal(kujiFlash(KUJI_STEP * 8 + 0.02)?.ch, '前', 'the chant ends on 前');
+  assert.equal(kujiFlash(KUJI_STEP * KUJI.length), null, 'the chant ends once the nine have flashed');
+  assert.ok(KUJI_STEP * KUJI.length < data.skills[5].duration, 'the nine flashes finish during the cast');
+
+  {
+    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 150; p2.y = FLOOR - 8; p2.vy = -500;
+    const hp = p2.hp;
+    g.keyDown('KeyU'); run(g, .5);
+    assert.equal(p2.hp, hp, 'the smash misses a jump');
+  }
+  {
+    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 150; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyU'); run(g, .5);
+    assert.ok(p2.hp < hp, 'the smash hits someone standing in its reach');
+    assert.equal(p2.knocked, 0, 'the smash does not knock down');
+    assert.ok(hp - p2.hp < 40, `the smash stays a poke, dealt ${hp - p2.hp}`);
+    assert.ok(p2.frail > 1.5, `a clean smash leaves them frail, left ${p2.frail}`);
+    assert.equal(p2.frailBonus, .2, 'the smash frail is +20%');
+  }
+  {
+    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 40; p2.facing = -1; p2.blocking = true;
+    hit(g, p1, p2, p1.data.skills[2], { hit: new Set() });
+    assert.equal(p2.frail, 0, 'a blocked smash does not leave them frail');
+    p2.blocking = false; p2.stun = 0; p2.invuln = 0;
+    const jab = p1.data.skills[0];
+    const hp0 = p2.hp;
+    hit(g, p1, p2, jab, { hit: new Set() });
+    const plain = hp0 - p2.hp;
+    const reset = () => {
+      p2.hp = hp0; p2.stun = 0; p2.invuln = 0; p2.frail = 0; p2.frailBonus = 0;
+      p1.combo = 0; p1.comboTime = 0;
+    };
+    reset();
+    p2.frail = 2; p2.frailBonus = .2;
+    hit(g, p1, p2, jab, { hit: new Set() });
+    const frail = hp0 - p2.hp;
+    assert.ok(Math.abs(frail / plain - 1.2) < .02, `frail is +20%, ${plain} -> ${frail}`);
+    reset();
+    p1.dmgMul = 2;
+    hit(g, p1, p2, jab, { hit: new Set() });
+    const buffed = hp0 - p2.hp;
+    reset();
+    p1.dmgMul = 2;
+    p2.frail = 2; p2.frailBonus = .2;
+    hit(g, p1, p2, jab, { hit: new Set() });
+    const both = hp0 - p2.hp;
+    assert.ok(Math.abs(both / buffed - 1.2) < .02, `frail multiplies with other damage, ${buffed} -> ${both}`);
+    p2.frail = 2;
+    run(g, 2.15);
+    assert.equal(p2.frail, 0, 'frail lasts 2 seconds');
+  }
+  {
+    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 50; p2.facing = -1;
+    g.keyDown('KeyI'); run(g, .15);
+    assert.ok(p1.attack, 'the pose is playing');
+    hit(g, p2, p1, p2.data.skills[1], { hit: new Set() });
+    run(g, .7);
+    assert.equal(p1.sprint, 0, 'an interrupted pose grants no speed');
+    assert.equal(p1.poise, 0, 'an interrupted pose grants no poise');
+  }
+  {
+    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    g.keyDown('KeyI'); run(g, .75);
+    assert.ok(p1.sprint > 4, `the marathon speeds her up, left ${p1.sprint}`);
+    assert.ok(p1.poise > 4, `the marathon keeps her from flinching, left ${p1.poise}`);
+    const x0 = p1.x;
+    g.keyDown('KeyD'); run(g, .4);
+    const fast = p1.x - x0;
+    p1.sprint = 0;
+    const x1 = p1.x;
+    run(g, .4);
+    const slow = p1.x - x1;
+    assert.ok(fast > slow * 1.3, `the buff is about 1.45× walk, ${slow} -> ${fast}`);
+    p2.x = p1.x + 50; p2.facing = -1;
+    g.keyDown('KeyJ'); run(g, .05);
+    const hp0 = p1.hp;
+    hit(g, p2, p1, p2.data.skills[0], { hit: new Set() });
+    const taken = hp0 - p1.hp;
+    assert.ok(p1.attack, 'poise does not drop the jab');
+    assert.equal(p1.stun, 0, 'poise does not flinch');
+    assert.ok(taken > 20, `poise does not cut damage, took ${taken}`);
+  }
+  {
+    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 60; p2.facing = -1;
+    const x0 = p2.x, hp = p2.hp;
+    g.keyDown('KeyO'); run(g, .6);
+    assert.ok(p2.hp < hp, 'the howl hits inside the circle');
+    assert.ok(p2.x - x0 > 40, `the howl shoves, moved ${p2.x - x0}`);
+    assert.equal(p2.knocked, 0, 'the howl does not knock down');
+  }
+  {
+    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 130; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyO'); run(g, .6);
+    assert.equal(p2.hp, hp, 'the howl misses past its radius');
+  }
+  {
+    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 40; p2.facing = -1;
+    const jab = p2.data.skills[0];
+    const hp0 = p1.hp;
+    hit(g, p2, p1, jab, { hit: new Set() });
+    const plain = hp0 - p1.hp;
+    p1.hp = hp0; p1.stun = 0; p1.invuln = 0; p2.combo = 0; p2.comboTime = 0;
+    g.keyDown('KeyO'); run(g, .05);
+    assert.equal(p1.attack?.skill.fx, 'howl', 'the howl is out');
+    hit(g, p2, p1, jab, { hit: new Set() });
+    const taken = hp0 - p1.hp;
+    assert.equal(p1.stun, 0, 'the howl brace does not flinch');
+    assert.equal(p1.attack?.skill.fx, 'howl', 'a jab does not drop the howl');
+    assert.ok(Math.abs(taken - plain * .67) < 1, `the howl brace cuts damage like the dream, ${plain} -> ${taken}`);
+    hit(g, p2, p1, { ...jab, super: true }, { hit: new Set() });
+    assert.equal(p1.stun, 0, 'a super does not drop the howl');
+    assert.equal(p1.attack?.skill.fx, 'howl', 'the howl is still playing');
+    assert.ok(g.texts.some(t => t.text === '霸体'), 'the howl pops the brace text');
+    p2.combo = 30; p2.comboTime = 1;
+    hit(g, p2, p1, jab, { hit: new Set() });
+    assert.equal(p1.invuln, 0, 'the combo escape does not fire through the howl');
+    hit(g, p2, p1, { ...jab, type: 'grab', fx: 'grab' }, { hit: new Set() });
+    assert.ok(p1.stun > 0 || p1.knocked > 0, 'a grab still breaks the howl');
+  }
+  {
+    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = 100;
+    p2.x = p1.x + 90; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyL'); run(g, 1.3);
+    assert.ok(hp - p2.hp > 100, `the circle ticks more than once, dealt ${hp - p2.hp}`);
+    assert.ok(p2.purge > 1, `a clean hit seals block and dodge, left ${p2.purge}`);
+    assert.equal(p2.knocked, 0, 'the circle does not knock down');
+    g.keyDown('ArrowDown'); run(g, .05); g.keyUp('ArrowDown'); run(g, .08);
+    assert.equal(p2.dodge, 0, 'purge eats the back-dodge');
+    assert.equal(p2.blocking, false, 'purge eats the block');
+  }
+  {
+    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.blocking = true; p2.facing = -1; p2.x = p1.x + 40;
+    hit(g, p1, p2, p1.data.skills[5], { hit: new Set() }, p1.x);
+    assert.equal(p2.purge, 0, 'a blocked circle does not seal');
+    p2.blocking = false; p2.invuln = 0; p2.stun = 0;
+    hit(g, p1, p2, { ...p1.data.skills[5], knock: 280 }, { hit: new Set() }, p1.x);
+    assert.ok(p2.purge > 2, 'a clean hit seals');
+    assert.equal(p2.knocked, 0, 'even the last tick stays on their feet');
+  }
+  {
+    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = 100;
+    p2.x = p1.x + 500;
+    g.keyDown('KeyL'); run(g, .7);
+    const seal = g.projectiles.find(p => p.fx === 'seal');
+    assert.ok(seal, 'the circle is in the air');
+    g.projectiles.push({ ...seal!, owner: p2.id, fx: 'orb', vx: -(seal!.vx || 1), hit: new Set(), trail: [] });
+    run(g, STEP);
+    assert.ok(g.projectiles.some(p => p.fx === 'seal' && p.life > 0), 'a shot does not break the circle');
+  }
+  {
+    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = 100;
+    p2.x = p1.x + 400;
+    g.keyDown('KeyL'); run(g, .7);
+    const seal = g.projectiles.find(p => p.fx === 'seal');
+    assert.ok(seal, 'the circle is in the air for the swell');
+    assert.equal(seal!.swell ?? 0, 0, 'a miss stays at the resting size');
+    p2.x = seal!.x; p2.y = FLOOR;
+    run(g, STEP);
+    assert.ok((seal!.swell ?? 0) > 0 && (seal!.swell ?? 0) < 1, 'the circle starts growing on contact');
+    run(g, .15);
+    assert.equal(seal!.swell, 1, 'the circle finishes growing while it is on a body');
+    p2.x = seal!.x + 400;
+    run(g, .15);
+    assert.equal(seal!.swell ?? 0, 0, 'the circle eases back once it is on nobody');
+    const size = 140;
+    const right = sealSwell(size, 400, 1);
+    assert.ok(Math.abs(right.scale - 1.7) < 1e-9, 'a hit grows the circle by about 70%');
+    assert.ok(Math.abs((right.shift - size * right.scale / 2) - (-size / 2)) < 1e-6, 'flying right, the left edge stays');
+    const left = sealSwell(size, -400, 1);
+    assert.ok(Math.abs((left.shift + size * left.scale / 2) - (size / 2)) < 1e-6, 'flying left, the right edge stays');
+    assert.equal(sealSwell(size, 400, 0).shift, 0, 'at rest the circle is centred');
+  }
+  {
+    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = 100;
+    p1.facing = 1;
+    p2.facing = -1;
+    p2.x = X_MAX;
+    const speed = 366 * 1.15;
+    // The circle dies while still on the wall body, which used to cut the later ticks.
+    p1.x = X_MAX - 53 - speed * 0.6;
+    const hp = p2.hp;
+    g.keyDown('KeyL');
+    let born = 0;
+    let far = 0;
+    let left = false;
+    for (let i = 0; i < Math.round(2.4 / STEP); i++) {
+      g.step(STEP);
+      const seal = g.projectiles.find(p => p.fx === 'seal');
+      if (seal) {
+        if (!born) born = seal.x;
+        far = Math.max(far, seal.x);
+      }
+      if (!left && p2.hp < hp) { p2.y = 80; left = true; }
+    }
+    const taken = hp - p2.hp;
+    const arm = p2.data.trait === 'armor' ? .9 : 1;
+    let expect = 0;
+    for (let n = 0; n < 6; n++) expect += 36 * arm * Math.max(.4, 1 - n * COMBO_DECAY);
+    assert.ok(left, 'the wall circle connects');
+    assert.ok(Math.abs(taken - expect) < .02, `a wall hit pays all six ticks, dealt ${taken}, wanted ${expect}`);
+    assert.ok(far > born + speed * 0.7 * 0.9, `the circle still flies its distance, moved ${far - born}`);
   }
 }
 
