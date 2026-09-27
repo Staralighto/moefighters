@@ -437,6 +437,55 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       }
       break;
     }
+    case 'muscle': {
+      // 高肌肉！: golden rings pop out of the stance while two power streaks climb past her arms.
+      const r = e.radius ?? 190;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= (1 - p) * .95;
+      for (let i = 0; i < 3; i++) {
+        const ring = Math.min(1, p * 1.5 - i * .18);
+        if (ring <= 0) continue;
+        ctx.strokeStyle = i === 2 ? '#fff7c2' : e.color;
+        ctx.lineWidth = (7 - i * 2) * (1 - p) + 1;
+        ctx.beginPath(); ctx.ellipse(0, 0, r * ring, r * .34 * ring, 0, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.strokeStyle = '#fff7c2';
+      ctx.lineWidth = 3 * (1 - p) + 1;
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(side * r * .3, 8);
+        ctx.lineTo(side * r * .3, -r * .55 * p - 8);
+        ctx.stroke();
+      }
+      break;
+    }
+    case 'dream': {
+      // 梦想即力量！: a golden starburst — rings swell while eight rays shoot out of the pose.
+      const r = e.radius ?? 220;
+      ctx.translate(e.x, e.y);
+      for (let i = 0; i < 3; i++) {
+        const ring = Math.min(1, p * 1.25 - i * .16);
+        if (ring <= 0) continue;
+        ctx.globalAlpha = (1 - p) * (.9 - i * .22);
+        ctx.strokeStyle = i === 0 ? e.color : '#fff7c2';
+        ctx.lineWidth = (6 - i * 2) * (1 - p) + 1;
+        ctx.beginPath(); ctx.ellipse(0, 0, r * ring, r * .36 * ring, 0, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.strokeStyle = e.color;
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 8; i++) {
+        const ang = (i / 8) * Math.PI * 2 + p * .6;
+        const a = Math.min(1, p * 1.6);
+        if (a <= 0) continue;
+        ctx.globalAlpha = (1 - p) * .8;
+        ctx.lineWidth = 4 * (1 - p) + 1;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(ang) * r * .3 * a, Math.sin(ang) * r * .15 * a - 20);
+        ctx.lineTo(Math.cos(ang) * r * .78 * a, Math.sin(ang) * r * .39 * a - 20);
+        ctx.stroke();
+      }
+      break;
+    }
     case 'slam':
       ctx.translate(e.x, e.y);
       ctx.globalAlpha *= 1 - p;
@@ -779,6 +828,26 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
         ctx.globalAlpha = base * (1 - t) * .9;
         ctx.beginPath(); ctx.arc(Math.cos(ang) * rad, Math.sin(ang) * rad, 2, 0, Math.PI * 2); ctx.fill();
       }
+      break;
+    }
+    case 'mega': {
+      // 高音量！: megaphone waves — three stacked crescents leaning into the travel, a hot leading edge.
+      const r = Math.max(40, p.size * .85);
+      ctx.scale(Math.sign(p.vx) || 1, 1);
+      ctx.strokeStyle = p.color;
+      for (let i = 0; i < 3; i++) {
+        ctx.globalAlpha = (1 - i * .28) * .95;
+        ctx.lineWidth = 9 - i * 2.5;
+        ctx.beginPath();
+        ctx.arc(-r * .3 - i * r * .22, 0, r - i * 12, -1.15, 1.15);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = '#fffbe0';
+      ctx.globalAlpha = .9;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(-r * .3, 0, r, -1.0, 1.0);
+      ctx.stroke();
       break;
     }
     case 'wail':

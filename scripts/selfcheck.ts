@@ -1646,6 +1646,121 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(clipFor(pf2).row, 2, 'the bow follows');
 }
 
+// arale: the flurry pins and the last punch shoves, the mega wave carries people, the flex buffs, the dream frenzies
+{
+  const arale = ROSTER.findIndex(c => c.id === 'arale');
+  assert.ok(arale >= 0, 'arale is on the roster');
+  const data = ROSTER[arale];
+  assert.equal(data.trait, 'focus', 'arale is focus');
+  assert.equal(data.skills[2].count, 7, '高能量 swings seven — an eighth hit can never land past the combo escape');
+  assert.equal(data.skills[2].gain, 4, 'the flurry gains little meter per hit');
+  assert.equal(data.skills[3].fx, 'mega', 'I is the mega wave');
+  assert.equal(data.skills[4].fx, 'muscle', 'O is the flex');
+  assert.equal(data.skills[5].fx, 'dream', 'the super is the dream');
+  assert.ok(data.view.kind === 'sprite' && !!data.view.frenzy, 'arale preloads a frenzy sheet');
+  assert.ok(data.frenzy && data.frenzy.chain === false && data.frenzy.time === 10, 'the dream has its own frenzy config');
+
+  // U: seven punches pin the victim, the eighth is the shove — and the meter barely moves
+  {
+    const g = newGame(arale, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 70; p2.facing = -1;
+    const hp = p2.hp, e0 = p1.energy, x0 = p2.x;
+    g.keyDown('KeyU'); run(g, 1.15);
+    assert.equal(p1.combo, 7, 'the escape fires on the final punch');
+    assert.ok(hp - p2.hp > 60, `the flurry dealt damage, ${hp - p2.hp}`);
+    assert.equal(p2.knocked, 0, 'the shove is a knockback, not a knockdown');
+    assert.ok(p2.x - x0 > 45, `the last punch shoves, moved ${p2.x - x0}`);
+    assert.ok(p1.energy - e0 < 45, `the flurry gains little meter, saw ${p1.energy - e0}`);
+  }
+
+  // I: the slow wave reaches far and carries the victim with it
+  {
+    const g = newGame(arale, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 400; p2.facing = -1;
+    const x0 = p2.x, hp = p2.hp;
+    g.keyDown('KeyI'); run(g, 2.2);
+    assert.ok(p2.hp < hp, 'the wave deals damage');
+    assert.ok(p2.x - x0 > 150, `the wave carries them, moved ${p2.x - x0}`);
+  }
+
+  // O: the flex shoves the crowd and boosts damage ×1.3 while it holds
+  {
+    const g = newGame(arale, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 90; p2.facing = -1;
+    const px = p2.x;
+    g.keyDown('KeyO'); run(g, .5);
+    assert.ok(p1.muscle > 6, `the flex arms the buff, left ${p1.muscle}`);
+    assert.ok(g.effects.some(e => e.type === 'muscle'), 'the flex plays its burst');
+    assert.ok(p2.x > px + 30, `the flex shoves, moved ${p2.x - px}`);
+    p1.combo = 0; p1.comboTime = 0;
+    const boosted0 = p2.hp;
+    hit(g, p1, p2, p1.data.skills[0], { hit: new Set() });
+    const boosted = boosted0 - p2.hp;
+    p1.combo = 0; p1.comboTime = 0; p1.muscle = 0;
+    const base0 = p2.hp;
+    hit(g, p1, p2, p1.data.skills[0], { hit: new Set() });
+    const base = base0 - p2.hp;
+    assert.ok(Math.abs(boosted - base * 1.3) < 1, `the flex boosts damage ×1.3, ${base} -> ${boosted}`);
+  }
+
+  // L: the dream frenzies — faster J/K with cloned reach, no cooldown cut, no auto-heavy, gold ghosts
+  {
+    const g = newGame(arale, 2); const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = 100;
+    g.keyDown('KeyL'); run(g, .8);
+    assert.ok(p1.frenzy > 9, `the dream grants frenzy, left ${p1.frenzy}`);
+    assert.ok(p1.braced > 9, 'the brace runs with the frenzy');
+    assert.ok(p1.noGain > 8, `the dream locks the meter for the window, left ${p1.noGain}`);
+    run(g, .2); // the transformation pose plays out before the next press can come out
+    g.keyDown('KeyJ'); run(g, STEP);
+    assert.ok(p1.attack, 'a light comes out');
+    assert.equal(p1.attack!.skill.range, Math.round(98 * 1.3), 'frenzy reach is cloned from the base skill');
+    assert.ok(p1.cooldowns[0] > .2 && p1.cooldowns[0] < .25, `frenzy leaves the light cooldown alone, got ${p1.cooldowns[0]}`);
+    assert.equal(clipFor(p1).sheet, 'frenzy', 'frenzy lights read the frenzy sheet');
+    g.keys.add('KeyD'); run(g, .2); g.keys.delete('KeyD');
+    assert.ok(g.effects.some(e => e.type === 'ghost' && e.tint === '#ffe98a'), 'walking trails the gold afterimage');
+
+    // the true brace: supers and jabs never stagger her, the escape never fires, grabs still bite
+    {
+      const foe = ROSTER.findIndex(c => c.skills.some(s => s.super && s.type !== 'grab' && !['heart', 'shout', 'ban'].includes(s.fx ?? '')));
+      assert.ok(foe >= 0, 'a non-control super exists to test the brace against');
+      const bg = newGame(arale, foe); const [b1, b2] = bg.fighters; dummy(bg);
+      b1.energy = 100;
+      bg.keyDown('KeyL'); run(bg, 1); // cast and the transformation pose
+      const superSkill = b2.data.skills.find(s => s.super)!;
+      const jab = b2.data.skills[0];
+      const grab = b2.data.skills.find(s => s.type === 'grab')!;
+      hit(bg, b2, b1, superSkill, { hit: new Set() });
+      assert.equal(b1.stun, 0, 'the brace eats a super without a flinch');
+      assert.equal(b1.knocked, 0, 'the brace eats a super without a knockdown');
+      assert.ok(bg.texts.some(t => t.text === '霸体'), 'the absorb pops the brace text');
+      b2.combo = 30; b2.comboTime = 1;
+      hit(bg, b2, b1, jab, { hit: new Set() });
+      assert.equal(b1.stun, 0, 'the combo escape never fires through the brace');
+      assert.equal(b1.invuln, 0, 'no escape invuln either');
+      b2.combo = 0; b2.comboTime = 0; b1.braceFx = 0;
+      hit(bg, b2, b1, grab, { hit: new Set() });
+      assert.ok(b1.stun > 0 || b1.knocked > 0, 'a grab still locks the braced fighter');
+      assert.ok(b1.energy < 2, `the gain lock holds the meter down while trading hits, got ${b1.energy}`);
+    }
+
+    const mash = newGame(arale, 2); const [j1] = mash.fighters; dummy(mash);
+    j1.energy = 100;
+    mash.keyDown('KeyL');
+    run(mash, 1.0);
+    // the chain is off: four mashes come out as four lights, never the auto-heavy
+    const presses: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      mash.keyDown('KeyJ');
+      run(mash, STEP);
+      presses.push(j1.attack?.index ?? -1);
+      mash.keyUp('KeyJ');
+      run(mash, .4);
+    }
+    assert.deepEqual(presses, [0, 0, 0, 0], 'no auto-heavy: the chain stays off');
+  }
+}
+
 // the figure scale has one home; the 128-era 0.58 must never come back (file scan lives in checkSheetScale)
 assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 

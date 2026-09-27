@@ -37,7 +37,9 @@ export class Renderer {
       // By id: a summoned teammate can leave mid-effect, so index lookups would alias or miss.
       const f = g.fighters.find(x => x.id === e.fighter);
       if (!f) continue;
-      this.view(f.data.id).draw(c, f, e.x, e.y, (e.alpha ?? .3) * (e.life / e.max), e.tint);
+      // 梦想即力量！: ghosts stamped with a cell draw that frozen pose; the rest mirror the live one.
+      const pose = e.sheet ? { sheet: e.sheet, col: e.col ?? 0, row: e.row ?? 0, facing: e.facing ?? f.facing } : undefined;
+      this.view(f.data.id).draw(c, f, e.x, e.y, (e.alpha ?? .3) * (e.life / e.max), e.tint, undefined, pose);
     }
     const order = [...g.fighters].sort((a, b) => Number(a.hp > 0) - Number(b.hp > 0) || a.y - b.y);
     // Team rims only where sides can be confused: 2v2 and the 2-on-1 激战, summons never tip it.

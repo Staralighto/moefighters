@@ -294,9 +294,40 @@ export const ROSTER: CharacterData[] = [
       }),
     ],
   },
+  {
+    id: 'arale', name: '仲町阿拉蕾', title: '主唱 / 梦想', quote: '夢はパワー！', color: '#FFEE55',
+    ...stats('focus'),
+    frenzy: { rate: 1.18, rangeMul: 1.3, cdMul: 1, chain: false, time: 10, tint: '#ffe98a' },
+    view: {
+      kind: 'sprite', common: '/sprites/arale/common.png', special: '/sprites/arale/special.png', height: 181,
+      frenzy: '/sprites/arale/frenzy.png',
+    },
+    skills: [
+      skill(0, 'light', '拍拍'),
+      skill(1, 'heavy', '横踢'),
+      skill(2, 'light', '高能量！', {
+        damage: 14, count: 7, interval: .1, range: 160, start: .15, duration: 1.2, cd: 5,
+        gain: 4, knock: 560, fx: 'flurry',
+        desc: '七连快拳钉住对手；末拳强击退',
+      }),
+      skill(3, 'projectile', '高音量！', {
+        damage: 13, count: 3, interval: .5, speed: 300, size: 150, life: 2.7,
+        start: .25, duration: 1.5, cd: 4.5, knock: 120, fx: 'mega',
+        desc: '慢速音波推进全场，把人推着走；跳起可躲',
+      }),
+      skill(4, 'endure', '高肌肉！', {
+        damage: 0, range: 190, start: .35, duration: .9, cd: 10, fx: 'muscle',
+        desc: '震开周围；7 秒内伤害提高 30%',
+      }),
+      skill(5, 'endure', '梦想即力量！', {
+        damage: 0, range: 220, start: .5, duration: .9, fx: 'dream',
+        desc: '狂化 10 秒：J/K 更快更长，真霸体，期间无法获得气',
+      }),
+    ],
+  },
 ];
 
 /** Select screen. gale, ember and boulder stay on ROSTER for the headless checks. */
-export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki' || c.id === 'rana');
+export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki' || c.id === 'rana' || c.id === 'arale');
 
 export const ROSTER_BY_ID = new Map(ROSTER.map(c => [c.id, c]));

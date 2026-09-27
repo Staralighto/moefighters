@@ -1,7 +1,7 @@
-import type { FighterView } from './view.ts';
+import type { FighterView, FrozenPose } from './view.ts';
 import type { Fighter } from '../game/fighter.ts';
 import type { ImageCache } from '../assets/loader.ts';
-import { CELL, clipFor } from './clips.ts';
+import { CELL, clipFor, type Clip } from './clips.ts';
 
 let tintBuf: HTMLCanvasElement | undefined;
 const rimCache = new Map<string, HTMLCanvasElement>();
@@ -91,8 +91,10 @@ export class SpriteView implements FighterView {
     private readonly frenzy?: string,
   ) {}
 
-  draw(ctx: CanvasRenderingContext2D, f: Fighter, x: number, y: number, alpha: number, tint?: string, outline?: string): void {
-    const clip = clipFor(f);
+  draw(ctx: CanvasRenderingContext2D, f: Fighter, x: number, y: number, alpha: number, tint?: string, outline?: string, pose?: FrozenPose): void {
+    const clip = pose
+      ? { sheet: pose.sheet as Clip['sheet'], col: pose.col, row: pose.row, sx: pose.col * CELL, sy: pose.row * CELL }
+      : clipFor(f);
     const src = clip.sheet === 'common' ? this.common : clip.sheet === 'special' ? this.special : this.frenzy;
     const im = src ? this.images.get(src) : undefined;
     if (!im || !im.naturalWidth) { this.fallback.draw(ctx, f, x, y, alpha, undefined, outline); return; }
@@ -100,7 +102,7 @@ export class SpriteView implements FighterView {
     ctx.save();
     try {
       ctx.translate(Math.round(x), Math.round(y));
-      ctx.scale(f.facing, 1);
+      ctx.scale(pose ? pose.facing : f.facing, 1);
       ctx.globalAlpha = alpha;
       if (outline && typeof document !== 'undefined') {
         ctx.imageSmoothingEnabled = true;

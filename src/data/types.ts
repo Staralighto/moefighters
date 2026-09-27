@@ -36,6 +36,8 @@ export interface Skill {
   knock?: number;
   /** Unblocked hits cut this much energy from the victim (raw, no multipliers). */
   drain?: number;
+  /** Energy granted per unblocked hit; falls back to the 9 (2 for supers) arcade default. */
+  gain?: number;
 }
 
 export type Trait = 'rush' | 'focus' | 'armor' | 'beat';
@@ -59,6 +61,22 @@ export interface CharacterData {
   /** Exactly six: J K U I O L. */
   skills: Skill[];
   view: ViewSpec;
+  /** 狂化 (夢はパワー！): how this character's frenzy behaves. Soyo stays on the arcade defaults
+   *  (rate 1.55, J/K cooldowns ×.6, the jab-chain auto-heavy) by leaving this unset. */
+  frenzy?: {
+    /** Multiplier on the ground J/K attack clock. */
+    rate?: number;
+    /** Multiplier on ground J/K reach. */
+    rangeMul?: number;
+    /** Multiplier on ground J/K cooldowns. */
+    cdMul?: number;
+    /** Three ground jabs arm the next press as the heavy. */
+    chain?: boolean;
+    /** Seconds the frenzy lasts. */
+    time?: number;
+    /** Afterimage silhouette colour; falls back to Soyo's brown. */
+    tint?: string;
+  };
 }
 
 export interface StageData {

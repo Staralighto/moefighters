@@ -2,18 +2,27 @@ import type { Skill } from '../data/types.ts';
 import { gainEnergy, type Attack, type Fighter } from './fighter.ts';
 import type { FightGame, Projectile } from './game.ts';
 import { CONTROLS, FLOOR, GRAVITY, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
-import { drumRow, vowBeatTime, VOW_BEATS } from '../render/clips.ts';
+import { clipFor, drumRow, vowBeatTime, VOW_BEATS } from '../render/clips.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
 
 /** Blocking a projectile siphons the attacker's energy, proportional to the shot's full damage. */
 const GUARD_DRAIN = .3;
 
-/** 就由我来结束一切: seconds the frenzy lasts and how much faster her ground J/K clock runs. */
+/** 就由我来结束一切: the arcade frenzy. Rate, J/K cooldown cut and the jab-chain live in
+ *  CharacterData.frenzy now; these stay as the defaults when a character leaves it unset. */
 const FRENZY_TIME = 8;
 const FRENZY_RATE = 1.55;
 /** The brown of her hair, used for the frenzy afterimages. */
 const FRENZY_TINT = '#a5714f';
+/** 高肌肉！: seconds the flex holds, the damage bonus while it does, and the shove the pose gives the crowd. */
+const MUSCLE_TIME = 7;
+const MUSCLE_BONUS = .3;
+const MUSCLE_REPEL_PUSH = 500;
+/** 梦想即力量！: the transformation shoves like the sing, then the frenzy and the brace run together. */
+const DREAM_REPEL_PUSH = 420;
+/** 高音量！: anyone inside a wave gets carried along at this speed until it passes them. */
+const MEGA_PUSH = 300;
 /** 就由我来结束一切: the cast shoves everyone inside this radius away, no damage. */
 const RESOLVE_REPEL_RANGE = 190;
 const RESOLVE_REPEL_PUSH = 540;
@@ -62,6 +71,13 @@ function vowFinale(skill: Skill, source: HitSource): boolean {
   if (skill.fx !== 'vow') return false;
   const shots = 'shots' in source ? Number((source as Attack).shots) : 0;
   return shots >= VOW_BEATS - 1;
+}
+
+/** 高能量！: the last punch is the shove; every earlier one keeps the victim inside the flurry. */
+function flurryFinale(skill: Skill, source: HitSource): boolean {
+  if (skill.fx !== 'flurry') return false;
+  const shots = 'shots' in source ? Number((source as Attack).shots) : 0;
+  return shots >= Math.max(0, (skill.count ?? 1) - 1);
 }
 
 /** C和弦 and 吉他激奏 keep firing past the first shots only while the attack key is still down. CPU taps. */
@@ -127,7 +143,11 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   const endured = !blocked && !!armour && armour.endure > 0 && (rippleLive || armour.t < armour.skill.start) && !isGrab && !skill.super;
   // 绊创膏: the buffed fighter eats the damage without the flinch. Grabs and supers ignore the plaster.
   const braced = !blocked && defender.braced > 0 && !isGrab && !skill.super;
-  let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .9 : 1) * (braced ? BRACED_DAMAGE : 1) * (defender.ban > 0 ? BAN_DAMAGE : 1) * attacker.baseDmgMul * attacker.dmgMul;
+  // 梦想即力量！: the frenzy brace is true super armour — only the control set (grabs, the
+  // roots, the ban) staggers her. Supers lose their pierce and the combo escape never fires.
+  const superBrace = !blocked && defender.braced > 0 && defender.frenzy > 0 && !isGrab
+    && skill.fx !== 'heart' && skill.fx !== 'shout' && skill.fx !== 'ban';
+  let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .9 : 1) * ((braced || superBrace) ? BRACED_DAMAGE : 1) * (defender.ban > 0 ? BAN_DAMAGE : 1) * attacker.baseDmgMul * attacker.dmgMul * (attacker.muscle > 0 ? 1 + MUSCLE_BONUS : 1);
   // 堕天: below half health the attacker swings harder; 这是最后通牒: a defender under a quarter takes more.
   if (attacker.lowHpDmg > 0 && attacker.hp < attacker.data.hp * .5) damage *= 1 + attacker.lowHpDmg;
   if (defender.executeDmg > 0 && defender.hp < defender.data.hp * .25) damage *= 1 + defender.executeDmg;
@@ -176,9 +196,13 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     if (endured && armour) {
       if (armour.skill.fx !== 'ripple' && armour.skill.fx !== 'huh') armour.endure--;
       g.text('霸体', defender.x, defender.y - 195, '#ffd27a', .5, 18);
-    } else if (braced) {
-      // 绊创膏: the hit lands, nothing flinches. The combo escape below still applies.
-      if (attacker.combo >= defender.escapeCombo) {
+    } else if (braced || superBrace) {
+      // 绊创膏: the hit lands, nothing flinches, and the combo escape below still applies.
+      // The dream brace is stronger: no escape either, just the throttled golden absorb.
+      if (superBrace) {
+        if (defender.braceFx <= 0) g.text('霸体', defender.x, defender.y - 195, '#ffd27a', .5, 18);
+        defender.braceFx = .3;
+      } else if (attacker.combo >= defender.escapeCombo) {
         defender.invuln = .48;
         defender.vx = dir * 470;
         defender.stun = hitStun(.24);
@@ -231,6 +255,11 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
         defender.downTime = 0;
         defender.stun = hitStun(.5);
       } else if (skill.fx === 'spin' && !spinFinale(skill, source)) {
+        defender.vy = 0;
+        defender.knocked = 0;
+        defender.stun = hitStun(.2);
+      } else if (skill.fx === 'flurry' && !flurryFinale(skill, source)) {
+        // 高能量！: every punch but the last keeps the victim standing inside the flurry.
         defender.vy = 0;
         defender.knocked = 0;
         defender.stun = hitStun(.2);
@@ -299,7 +328,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       }
     }
     const rushBonus = attacker.data.trait === 'rush' && attacker.hitCount % 3 === 0 ? 14 : 0;
-    gainEnergy(attacker, (skill.super ? 2 : 9) + rushBonus);
+    gainEnergy(attacker, (skill.gain ?? (skill.super ? 2 : 9)) + rushBonus);
     gainEnergy(defender, 7);
     if (skill.drain) {
       // 离灯远点: the abuse strips the victim's meter raw — no multipliers, and it says so out loud.
@@ -337,8 +366,11 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     : skill.fx === 'chord' ? 160
     : skill.fx === 'onegai' ? 360 : skill.fx === 'shout' ? 110
     : skill.fx === 'spin' && !spinFinale(skill, source) ? 0
+    : skill.fx === 'flurry' && !flurryFinale(skill, source) ? 0
     : skill.fx === 'ripple' ? 620 : skill.fx === 'slam' ? 120 : blocked ? 75 : skill.knock ?? (skill.type === 'light' ? 95 : skill.super ? 340 : 235);
-  if (skill.fx !== 'shove' && defender.invuln <= 0 && !endured) defender.vx = dir * knock * (braced ? .5 : 1);
+  if (skill.fx !== 'shove' && defender.invuln <= 0 && !endured) defender.vx = dir * knock * (braced || superBrace ? .5 : 1);
+  // 高能量！: the finale shove outruns the combo-escape push, so the last punch always reads as the finisher.
+  else if (skill.fx === 'flurry' && flurryFinale(skill, source)) defender.vx = dir * knock;
   if (holdStill) { defender.vx = 0; defender.vy = 0; }
   g.shake = blocked ? 2 : skill.fx === 'slam' ? 14 : skill.fx === 'onegai' ? 10 : skill.super ? 12 : skill.type === 'heavy' ? 7 : 4;
   const juggleHit = !blocked && !!skill.air && defender.y < FLOOR - .5;
@@ -504,11 +536,12 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
   if (!a) return;
   const s = a.skill;
   // Frenzy only hurries the ground jab and kick; specials and air normals keep their own clock.
-  const rate = f.frenzy > 0 && a.index <= 1 && !s.air ? FRENZY_RATE : 1;
+  const rate = f.frenzy > 0 && a.index <= 1 && !s.air ? (f.data.frenzy?.rate ?? FRENZY_RATE) : 1;
   a.t += dt * rate;
-  // 狂化: every attack trails a brown afterimage of whatever pose she is in right now.
+  // 狂化: every attack trails an afterimage frozen on the frame it stamped, one behind her live pose.
   if (f.frenzy > 0 && Math.floor(a.t * 16) !== Math.floor((a.t - dt * rate) * 16)) {
-    g.effect('ghost', f.x - f.facing * 20, f.y, f.data.color, .28, { fighter: f.id, alpha: .5, tint: FRENZY_TINT });
+    const clip = clipFor(f);
+    g.effect('ghost', f.x - f.facing * 20, f.y, f.data.color, .28, { fighter: f.id, alpha: .5, tint: f.data.frenzy?.tint ?? FRENZY_TINT, sheet: clip.sheet, col: clip.col, row: clip.row, facing: f.facing });
   }
 
   // 推落: a short hold, a small lift, then the throw. Facing stays toward the attacker.
@@ -829,7 +862,12 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
         g.effect('riff', f.x, f.y - 85, f.data.color, .4, { radius: a.skill.range });
       } else {
         applyMelee(g, f, a);
-        if (s.fx !== 'mortis' && s.fx !== 'spin') g.effect(s.fx, f.x + f.facing * swing.x, f.y + swing.y, f.data.color, .18, { dir: f.facing * swing.dir, radius: s.range * .34 });
+        if (s.fx === 'flurry') {
+          // 高能量！: every punch stamps an afterimage of the pose she just threw.
+          g.effect('ghost', f.x - f.facing * 14, f.y, f.data.color, .22, { fighter: f.id, alpha: .4 });
+        } else if (s.fx !== 'mortis' && s.fx !== 'spin') {
+          g.effect(s.fx, f.x + f.facing * swing.x, f.y + swing.y, f.data.color, .18, { dir: f.facing * swing.dir, radius: s.range * .34 });
+        }
       }
       a.shots++;
       if (s.fx === 'riff' && a.shots > 1) {
@@ -842,7 +880,7 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
     a.emitted = true;
     if (s.fx === 'resolve') {
       // 就由我来结束一切: no strike, just the mask dropping. The ripple shoves everyone away; the frenzy clock starts here.
-      f.frenzy = FRENZY_TIME;
+      f.frenzy = f.data.frenzy?.time ?? FRENZY_TIME;
       g.effect('resolve', f.x, f.y - 80, f.data.color, .75, { radius: RESOLVE_REPEL_RANGE });
       for (const o of g.opponents(f)) {
         if (o.hp <= 0 || o.invuln > 0) continue;
@@ -850,6 +888,34 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
         if (Math.abs(dx) < RESOLVE_REPEL_RANGE) {
           o.vx = (Math.sign(dx) || f.facing) * RESOLVE_REPEL_PUSH;
           o.stun = Math.max(o.stun, .22);
+        }
+      }
+    } else if (s.fx === 'muscle') {
+      // 高肌肉！: no strike either — the double-biceps flex shoves the crowd and arms the damage buff.
+      f.muscle = MUSCLE_TIME;
+      g.effect('muscle', f.x, f.y - 80, f.data.color, .75, { radius: s.range });
+      for (const o of g.opponents(f)) {
+        if (o.hp <= 0 || o.invuln > 0) continue;
+        const dx = o.x - f.x;
+        if (Math.abs(dx) < s.range) {
+          o.vx = (Math.sign(dx) || f.facing) * MUSCLE_REPEL_PUSH;
+          o.stun = Math.max(o.stun, .2);
+        }
+      }
+    } else if (s.fx === 'dream') {
+      // 梦想即力量！: the golden burst shoves like the sing, then the frenzy and the brace run
+      // together — and the meter locks (禁回) for the whole window, the pay-off can't fund itself.
+      const time = f.data.frenzy?.time ?? FRENZY_TIME;
+      f.frenzy = time;
+      f.braced = Math.max(f.braced, time);
+      f.noGain = time;
+      g.effect('dream', f.x, f.y - 80, f.data.color, .9, { radius: s.range });
+      for (const o of g.opponents(f)) {
+        if (o.hp <= 0 || o.invuln > 0) continue;
+        const dx = o.x - f.x;
+        if (Math.abs(dx) < s.range) {
+          o.vx = (Math.sign(dx) || f.facing) * DREAM_REPEL_PUSH;
+          o.stun = Math.max(o.stun, .2);
         }
       }
     } else if (s.fx === 'plaster') {
@@ -920,6 +986,18 @@ export function stepProjectiles(g: FightGame, dt: number): void {
       }
       continue;
     }
+    if (p.fx === 'mega') {
+      // 高音量！: a travelling wall of sound. Anyone inside is carried along at its push speed
+      // until the wave passes them — blockers brace against it, jumpers clear it like the hit.
+      const owner = g.fighterById(p.owner);
+      if (!owner) continue;
+      for (const o of g.opponents(owner)) {
+        if (o.hp <= 0 || o.invuln > 0 || o.blocking) continue;
+        if (Math.abs(o.x - p.x) < 38 + p.radius && Math.abs(p.y - (o.y - 83)) < 72) {
+          o.vx = Math.sign(p.vx || 1) * MEGA_PUSH;
+        }
+      }
+    }
     // Outbound half, then one turn. The hit list clears so the way back can connect again.
     if (p.fx === 'cucumber' && !p.returned && p.age >= (p.skill.life ?? 2.4) / 2) {
       p.vx = -p.vx;
@@ -971,8 +1049,9 @@ export function stepProjectiles(g: FightGame, dt: number): void {
       if (!p.settled && p.life > 0 && Math.abs(p.x - target.x) < 38 + p.radius && Math.abs(p.y - (target.y - 83)) < 72) {
         if (hit(g, owner, target, p.skill, { hit: p.hit }, p.x - Math.sign(p.vx) * 40)) {
           g.effect('burst', p.x, p.y, p.color, .3, { radius: p.size * .8 });
-          // The cucumber stays up on the way out and only pops on the return hit.
-          if (p.fx !== 'cucumber' || p.returned) p.life = 0;
+          // The cucumber stays up on the way out and only pops on the return hit; the mega wave
+          // washes through and keeps carrying whoever it caught.
+          if (!(p.fx === 'cucumber' && !p.returned) && p.fx !== 'mega') p.life = 0;
           break;
         }
       }

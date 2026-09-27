@@ -59,6 +59,13 @@ export interface Fighter {
   jabChainClock: number;
   /** 绊创膏: seconds of no-flinch left. Hits still land, but nothing stops the move in progress. */
   braced: number;
+  /** 梦想即力量！: throttle on the golden absorb feedback so a volley pops one ring, not seven. */
+  braceFx: number;
+  /** 禁回: seconds of energy-gain lock. Every gain funnels through gainEnergy, so one check
+   *  here blocks hit gains, defender gains, block taps and idle regen; drains stay raw. */
+  noGain: number;
+  /** 高肌肉！: seconds of +30% damage left while the flex holds. */
+  muscle: number;
   /** Remaining back-dodge time and its cooldown. */
   dodge: number; dodgeCd: number;
   dodgeRequest: boolean;
@@ -120,7 +127,7 @@ export interface Fighter {
   vainEnergy: number;
 }
 
-export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braced', 'ban'] as const;
+export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braced', 'braceFx', 'noGain', 'ban', 'muscle'] as const;
 
 export function makeFighter(
   data: CharacterData,
@@ -133,7 +140,7 @@ export function makeFighter(
     hp: data.hp, energy: init.energy, guard: 100, blocking: false,
     stun: 0, invuln: 0, comboTime: 0, hitFlash: 0, landing: 0, guardBroken: 0,
     knocked: 0, downTime: 0, hitBySuper: false, root: 0, rootHits: 0, ban: 0, beatStacks: 0, frenzy: 0,
-    jabChain: 0, jabChainClock: 0, braced: 0,
+    jabChain: 0, jabChainClock: 0, braced: 0, braceFx: 0, noGain: 0, muscle: 0,
     dodge: 0, dodgeCd: 0, dodgeRequest: false, dodgeBuffer: 0, blockTap: -1, blockBuffer: 0, blockLeft: 0,
     attack: null, attackSerial: 0, cooldowns: [0, 0, 0, 0, 0, 0], queue: [],
     jumpRequest: false, jumpBuffer: 0,
@@ -148,8 +155,10 @@ export function makeFighter(
   };
 }
 
-/** Every energy gain funnels through here so card multipliers apply once; drains stay raw. */
+/** Every energy gain funnels through here so card multipliers apply once; drains stay raw.
+ *  禁回: while the lock holds the fighter cannot gain energy at all. */
 export function gainEnergy(f: Fighter, amount: number): void {
+  if (f.noGain > 0) return;
   f.energy = clamp(f.energy + amount * f.energyMul, 0, 100);
 }
 

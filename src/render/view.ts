@@ -5,8 +5,13 @@ import { GeometryView } from './geometryView.ts';
 import { SpriteView } from './spriteView.ts';
 
 /* A view turns a Fighter's combat state into pixels. The game never sees this interface. */
+
+/** A frozen afterimage pose: the exact cell (and facing) a ghost was stamped with, drawn
+ *  instead of the fighter's live state so the silhouette trails a past frame. */
+export interface FrozenPose { sheet: string; col: number; row: number; facing: number }
+
 export interface FighterView {
-  draw(ctx: CanvasRenderingContext2D, f: Fighter, x: number, y: number, alpha: number, tint?: string, outline?: string): void;
+  draw(ctx: CanvasRenderingContext2D, f: Fighter, x: number, y: number, alpha: number, tint?: string, outline?: string, pose?: FrozenPose): void;
 }
 
 function buildFor(data: CharacterData): 'slim' | 'bulky' | 'tall' {

@@ -74,6 +74,20 @@ export function chordRow(t: number, duration: number): number {
   return Math.floor(Math.max(0, t) / .14) % 3;
 }
 
+/** 高能量！／高音量！: one column of the special sheet is a single cycle — punch or shout — and
+ *  the three cells repeat once per shot at the hit interval, each shot landing as the middle
+ *  cell comes up. After the last one the recover cell holds out the tail. */
+export function volleyRow(t: number, s: { start: number; duration: number; count?: number; interval?: number }): number {
+  const count = s.count ?? 1;
+  const interval = s.interval ?? Math.max(.05, (s.duration - s.start) / count);
+  const first = s.start - interval / 3;
+  if (t < first) return 0;
+  const k = Math.floor((t - first) / interval);
+  if (k >= count) return 2;
+  const p = (t - first) / interval - k;
+  return p < 1 / 3 ? 0 : p < 2 / 3 ? 1 : 2;
+}
+
 /** 吉他激奏: the strum loop repeats for as long as the key is held — one 0.42s cycle per wave.
  *  The release fast-forward in combat lands in the 0.3s recover tail. */
 export function riffRow(t: number, duration: number): number {
@@ -147,6 +161,8 @@ export function clipFor(f: Fighter): Clip {
       const [col, row] = soyoFrenzyFrame(f.attack.index === 0 ? 'light' : 'heavy', f.attack.t, f.attack.skill);
       return { sheet: 'frenzy', col, row, sx: col * CELL, sy: row * CELL };
     }
+    if (f.attack.skill.fx === 'flurry' || f.attack.skill.fx === 'mega')
+      return at('special', f.attack.index - 2, volleyRow(f.attack.t, f.attack.skill));
     if (f.attack.skill.fx === 'drums') return at('special', f.attack.index - 2, drumRow(f.attack.t, f.attack.skill.duration));
     if (f.attack.skill.fx === 'chord') return at('special', f.attack.index - 2, chordRow(f.attack.t, f.attack.skill.duration));
     if (f.attack.skill.fx === 'riff') return at('special', f.attack.index - 2, riffRow(f.attack.t, f.attack.skill.duration));

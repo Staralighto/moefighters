@@ -7,6 +7,7 @@ import { advanceAnim } from './animState.ts';
 import { effectSettled, stepProjectiles, updateAttack, wailShots } from './combat.ts';
 import { stepAI } from './ai.ts';
 import { COMBO_DECAY, COMBO_ESCAPE, CONTROLS, FLOOR, GRAVITY, INPUT_BUFFER, SIDE, STEP, X_MAX, X_MIN, clamp } from './constants.ts';
+import { clipFor } from '../render/clips.ts';
 
 /* Fixed-step arcade simulation. This module never touches the DOM or a canvas; it emits effects as data. */
 
@@ -56,6 +57,8 @@ export interface Effect {
   radius?: number; dir?: number; fighter?: number; alpha?: number; tint?: string;
   /** Attack clock for a guitar that has to stay glued to the move. */
   age?: number;
+  /** 梦想即力量！: the cell a frenzy ghost was stamped with; ghosts carrying these draw frozen instead of live. */
+  sheet?: string; col?: number; row?: number; facing?: number;
 }
 export interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string; size: number }
 export interface FloatingText { text: string; x: number; y: number; color: string; life: number; max: number; size: number }
@@ -344,9 +347,10 @@ export class FightGame {
     return true;
   }
 
-  /** 狂化连招: while the chain is warm, the ground press after the third jab resolves as the kick. */
+  /** 狂化连招: while the chain is warm, the ground press after the third jab resolves as the kick.
+   *  Characters can turn the auto-heavy off in data; the rest of the frenzy still applies. */
   private frenzyChain(f: Fighter, index: number): number {
-    if (index !== 0 || f.frenzy <= 0 || this.airborne(f)) return index;
+    if (index !== 0 || f.frenzy <= 0 || this.airborne(f) || !(f.data.frenzy?.chain ?? true)) return index;
     if (f.jabChainClock <= 0) f.jabChain = 0;
     return f.jabChain >= FRENZY_CHAIN_JABS ? 1 : 0;
   }
@@ -363,6 +367,9 @@ export class FightGame {
       tossAt: 0,
       hold: -1,
     };
+    // 梦想即力量！: the frenzy reaches further. The clone keeps the shared skill data untouched.
+    const rangeMul = f.frenzy > 0 && slot <= 1 && !skill.air ? f.data.frenzy?.rangeMul ?? 1 : 1;
+    if (rangeMul !== 1) f.attack.skill = { ...skill, range: Math.round(skill.range * rangeMul) };
     if (skill.breakout && f.hitBySuper) {
       f.stun = 0;
       f.knocked = 0;
@@ -376,7 +383,7 @@ export class FightGame {
       f.invuln = Math.max(f.invuln, skill.invuln);
     }
     // Frenzy shortens the recast wait of the ground jab and kick to match the faster clock.
-    f.cooldowns[slot] = skill.cd * f.cdMul * (f.frenzy > 0 && slot <= 1 && !skill.air ? .6 : 1);
+    f.cooldowns[slot] = skill.cd * f.cdMul * (f.frenzy > 0 && slot <= 1 && !skill.air ? f.data.frenzy?.cdMul ?? .6 : 1);
     if (slot === 5) {
       f.energy = 0;
       f.invuln = .64;
@@ -393,7 +400,7 @@ export class FightGame {
     // A rising jump keeps its upward speed. The dive kick only adds to a fall.
     if (skill.air && skill.type === 'heavy' && f.vy >= 0) f.vy = Math.max(f.vy, 180);
     // 狂化连招: ground jabs stack the chain; any heavy out of it spends the chain.
-    if (f.frenzy > 0 && slot <= 1 && !this.airborne(f)) {
+    if (f.frenzy > 0 && slot <= 1 && !this.airborne(f) && (f.data.frenzy?.chain ?? true)) {
       if (slot === 0) { f.jabChain++; f.jabChainClock = FRENZY_CHAIN_WINDOW; }
       else f.jabChain = 0;
     }
@@ -601,6 +608,10 @@ export class FightGame {
 
     f.cooldowns = f.cooldowns.map(n => Math.max(0, n - dt * (f.data.trait === 'beat' ? 1 + f.beatStacks * .06 : 1)));
     for (const key of DECAY_TIMERS) f[key] = Math.max(0, f[key] - dt);
+    // 高肌肉！: a slow pulse while the flex holds, so the buff state reads across the stage.
+    if (f.muscle > 0 && Math.floor(f.muscle) !== Math.floor(f.muscle + dt)) {
+      this.effect('burst', f.x, f.y - 95, f.data.color, .45, { radius: 55 });
+    }
     if (f.root > 0) {
       f.root = Math.max(0, f.root - dt);
       if (f.root === 0) f.rootHits = 0;
@@ -704,6 +715,13 @@ export class FightGame {
       const beatMove = f.data.trait === 'beat' ? 1 + f.beatStacks * .02 : 1;
       f.x += move * f.data.speed * f.moveMul * beatMove * factor * dt;
       if (move && factor && grounded) f.walk += dt * 12; else f.walk = 0;
+    }
+
+    // 梦想即力量！: walking and airborne movement trail the tinted afterimage too — attacks
+    // already ghost in updateAttack, dashes stamp their own, so this covers the rest.
+    if (f.frenzy > 0 && (f.walk > 0 || f.y < FLOOR - .5) && Math.floor(f.frenzy * 16) !== Math.floor((f.frenzy + dt) * 16)) {
+      const clip = clipFor(f);
+      this.effect('ghost', f.x, f.y, f.data.color, .28, { fighter: f.id, alpha: .5, tint: f.data.frenzy?.tint ?? '#a5714f', sheet: clip.sheet, col: clip.col, row: clip.row, facing: f.facing });
     }
 
     f.x += f.vx * dt;
