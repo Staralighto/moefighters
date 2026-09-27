@@ -74,6 +74,20 @@ export function chordRow(t: number, duration: number): number {
   return Math.floor(Math.max(0, t) / .14) % 3;
 }
 
+/** 吉他激奏: the strum loop repeats for as long as the key is held — one 0.42s cycle per wave.
+ *  The release fast-forward in combat lands in the 0.3s recover tail. */
+export function riffRow(t: number, duration: number): number {
+  if (t >= duration - .3) return 2;
+  return Math.floor(Math.max(0, t) / .14) % 3;
+}
+
+/** 抹茶大芭菲: the arms-wide beat holds 0.25s — well past the default 0.1s active — then the bow. */
+export function parfaitRow(t: number, start: number, duration: number): number {
+  if (t < start) return 0;
+  if (t < duration - .15) return 1;
+  return 2;
+}
+
 /** Wink, heart hands, then back to standing. */
 export function heartRow(t: number, start: number): number {
   if (t < start) return 0;
@@ -135,6 +149,8 @@ export function clipFor(f: Fighter): Clip {
     }
     if (f.attack.skill.fx === 'drums') return at('special', f.attack.index - 2, drumRow(f.attack.t, f.attack.skill.duration));
     if (f.attack.skill.fx === 'chord') return at('special', f.attack.index - 2, chordRow(f.attack.t, f.attack.skill.duration));
+    if (f.attack.skill.fx === 'riff') return at('special', f.attack.index - 2, riffRow(f.attack.t, f.attack.skill.duration));
+    if (f.attack.skill.fx === 'parfait') return at('special', f.attack.index - 2, parfaitRow(f.attack.t, f.attack.skill.start, f.attack.skill.duration));
     if (f.attack.skill.fx === 'heart') return at('special', f.attack.index - 2, heartRow(f.attack.t, f.attack.skill.start));
     if (f.attack.skill.fx === 'poem') return at('special', f.attack.index - 2, poemRow(f.attack.t, f.attack.skill.start));
     if (f.attack.skill.fx === 'vow') return at('special', f.attack.index - 2, vowRow(f.attack.t, f.attack.tossAt));

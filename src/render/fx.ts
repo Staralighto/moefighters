@@ -20,6 +20,8 @@ const SOYO_NOTE_SRC = '/sprites/soyo/note.png';
 const HEART_SRC = '/sprites/anon/heart.png';
 const STONE_SRC = '/sprites/tomori/stone.png';
 const PLASTER_SRC = '/sprites/tomori/plaster.png';
+const PARFAIT_SRC = '/sprites/rana/parfait.png';
+const MATCHA_SRC = '/sprites/rana/matcha.png';
 const MORTIS_H = 181;
 
 /* Drop the pose-sheet chrome and the chroma key so a placeholder can sit in the fight. */
@@ -80,6 +82,27 @@ export function mortisAfterimage(p: number): [number, number] | null {
 }
 
 let ghostBuf: HTMLCanvasElement | undefined;
+let tintBuf: HTMLCanvasElement | undefined;
+
+/** A flat single-colour silhouette of any image, source-atop like the mortis ghost. */
+function tintedSilhouette(src: CanvasImageSource, w: number, h: number, color: string): CanvasImageSource | null {
+  if (typeof document === 'undefined') return null;
+  if (!tintBuf) tintBuf = document.createElement('canvas');
+  if (tintBuf.width !== Math.round(w) || tintBuf.height !== Math.round(h)) {
+    tintBuf.width = Math.round(w);
+    tintBuf.height = Math.round(h);
+  }
+  const g = tintBuf.getContext('2d');
+  if (!g) return null;
+  g.globalCompositeOperation = 'source-over';
+  g.clearRect(0, 0, tintBuf.width, tintBuf.height);
+  g.drawImage(src, 0, 0, tintBuf.width, tintBuf.height);
+  g.globalCompositeOperation = 'source-atop';
+  g.fillStyle = color;
+  g.fillRect(0, 0, tintBuf.width, tintBuf.height);
+  g.globalCompositeOperation = 'source-over';
+  return tintBuf;
+}
 
 function drawMortisGhost(ctx: CanvasRenderingContext2D, im: HTMLImageElement, col: number, row: number, alpha: number): void {
   if (typeof document === 'undefined') return;
@@ -251,6 +274,96 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('哈？', 0, 2);
       ctx.restore();
+      break;
+    }
+    case 'riff': {
+      // 吉他激奏: screen-facing sound rings race out from her chest and fade as they widen.
+      const r = e.radius ?? 240;
+      ctx.translate(e.x, e.y);
+      for (let i = 0; i < 3; i++) {
+        const ring = Math.min(1, p * 1.5 - i * .18);
+        if (ring <= 0) continue;
+        ctx.globalAlpha = Math.min(1, e.life * 6) * (1 - ring * .8) * .9;
+        ctx.strokeStyle = i === 0 ? e.color : '#d8f7e2';
+        ctx.lineWidth = (5 - i) * (1 - p) + 1;
+        ctx.beginPath(); ctx.arc(0, 0, Math.max(6, r * ring), 0, Math.PI * 2); ctx.stroke();
+      }
+      break;
+    }
+    case 'wind': {
+      // 来去如风: a coil of wind bursts at the spot; a few leaves ride it out.
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= 1 - p;
+      ctx.strokeStyle = e.color;
+      ctx.lineCap = 'round';
+      const spin = p * 6 * (e.dir ?? 1);
+      for (let i = 0; i < 3; i++) {
+        const a0 = spin + i * 2.1;
+        ctx.lineWidth = 4 - i;
+        ctx.beginPath(); ctx.arc(0, -i * 13, 30 + i * 9, a0, a0 + 2); ctx.stroke();
+      }
+      ctx.fillStyle = '#d9f4e3';
+      for (let i = 0; i < 3; i++) {
+        const t = p * 1.5 - i * .2;
+        if (t <= 0 || t >= 1) continue;
+        const lx = (e.dir ?? 1) * t * 74;
+        const ly = -i * 16 - t * 40 + Math.sin(t * 8 + i * 2) * 10;
+        ctx.save();
+        ctx.translate(lx, ly);
+        ctx.rotate(t * 10 * (e.dir ?? 1));
+        ctx.fillRect(-4, -2, 8, 4);
+        ctx.restore();
+      }
+      break;
+    }
+    case 'parfait': {
+      // 抹茶大芭菲: the parfait stands on the floor; a green glow pulses under the eruption.
+      // Silhouette flash (残影 without the travel): same-size flat tinted copies appear at once and
+      // fade, staggered, behind the parfait as it lands and again as it leaves — no scaling at all.
+      const t = e.max - e.life;
+      const PULSE = .55;
+      ctx.translate(e.x, e.y);
+      const im = images?.get(PARFAIT_SRC);
+      const has = !!im?.naturalWidth;
+      const w = 200, h = 200;
+      const sil = has ? tintedSilhouette(keyed(im), im.naturalWidth, im.naturalHeight, e.color) : null;
+      const shapes = (fill: string) => {
+        ctx.fillStyle = fill;
+        square(-46, -176, 92, 36);
+        square(-56, -144, 112, 36);
+        square(-42, -108, 84, 102);
+      };
+      const flash = (k: number) => {
+        if (k <= 0 || k >= 1) return;
+        for (let i = 2; i >= 0; i--) {
+          const tt = k * 1.5 - i * .14;
+          if (tt <= 0 || tt >= 1) continue;
+          ctx.save();
+          ctx.globalAlpha = (tt < .3 ? 1 : 1 - (tt - .3) / .7) * .34;
+          if (sil) ctx.drawImage(sil, -w / 2, -h + 10, w, h);
+          else shapes(e.color);
+          ctx.restore();
+        }
+      };
+      flash(t / PULSE);
+      flash((PULSE - e.life) / PULSE);
+      const glow = .5 + Math.sin(t * 9) * .2;
+      ctx.globalAlpha = glow * .55;
+      ctx.fillStyle = e.color;
+      ctx.beginPath(); ctx.ellipse(0, -4, 76, 15, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = Math.min(1, t * 4, e.life * 3);
+      if (has) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(keyed(im), -w / 2, -h + 10, w, h);
+      } else {
+        shapes('#f6f2e8');
+        ctx.fillStyle = e.color;
+        square(-56, -144, 112, 36);
+        square(-42, -108, 84, 102);
+        ctx.fillStyle = '#e05a7a';
+        ctx.beginPath(); ctx.arc(0, -182, 12, 0, Math.PI * 2); ctx.fill();
+      }
       break;
     }
     case 'resolve': {
@@ -433,6 +546,8 @@ function noteRibbon(ctx: CanvasRenderingContext2D, p: Projectile, outer = '#e7a0
 }
 
 export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, images?: ImageCache): void {
+  // 抹茶大芭菲: the standing parfait is drawn by its effect, never as a shot.
+  if (p.fx === 'parfait') return;
   ctx.save();
   if (p.fx === 'mutsumi-note' || p.fx === 'chord') noteRibbon(ctx, p);
   else if (p.fx === 'sob') noteRibbon(ctx, p, '#f4e7b4', '#e8c96a');
@@ -572,6 +687,26 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
         ctx.bezierCurveTo(s * .5, -s * 1.1, s * 1.3, -s * .2, 0, s * .7);
         ctx.fill();
       }
+      break;
+    }
+    case 'matcha': {
+      // 抹茶熔岩: the dollop image spins gently as it flies; the circles are the missing-file stand-in.
+      ctx.rotate(p.age * 4 * Math.sign(p.vx || 1));
+      if (prop(ctx, images, MATCHA_SRC, p.size)) break;
+      const r = Math.max(10, p.radius);
+      ctx.fillStyle = '#3e7d46';
+      ctx.beginPath();
+      for (let i = 0; i <= 10; i++) {
+        const ang = (i / 10) * Math.PI * 2;
+        const rad = r * (1.06 + Math.sin(ang * 3 + p.age * 9) * .12);
+        const px = Math.cos(ang) * rad, py = Math.sin(ang) * rad;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#77DD77';
+      ctx.beginPath(); ctx.arc(-r * .25, -r * .3, r * .38, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#f4f9ee';
+      ctx.beginPath(); ctx.arc(r * .3, -r * .15, r * .16, 0, Math.PI * 2); ctx.fill();
       break;
     }
     case 'note': {

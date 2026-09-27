@@ -38,6 +38,16 @@ const BAN_DAMAGE = .5;
 const BEAT_MAX = 8;
 /** 和灯在一起的话: the final double-kick throws the body this hard. Beats live on the clip schedule. */
 const VOW_LAUNCH = 700;
+/** 吉他激奏: ten waves while the key stays down; each one reaches further, hits harder, shoves harder. */
+const RIFF_WAVES = 10;
+const RIFF_R0 = 144, RIFF_R1 = 240;
+const RIFF_D0 = 12, RIFF_D1 = 22;
+const RIFF_K0 = 240, RIFF_K1 = 380;
+/** 吉他激奏: the tap cools from 2s; every extra wave adds its share of the rest, so a full
+ *  10-wave channel sits at 7s from cast — about 2.5s left once the strum plays out. */
+const RIFF_CD_TAP = 2, RIFF_CD_MAX = 7;
+/** 抹茶大芭菲: the parfait stands this far ahead and lobs blobs on its own clock. */
+const PARFAIT_DIST = 120;
 
 /** 悲鸣: more cries as she breaks. Resolved once per cast so the shared skill stays put. */
 /** 不会再逃避了: every swing except the last stays in place. shots is the swing index before it increments. */
@@ -54,8 +64,8 @@ function vowFinale(skill: Skill, source: HitSource): boolean {
   return shots >= VOW_BEATS - 1;
 }
 
-/** C和弦 keeps firing past the third note only while the attack key is still down. CPU taps. */
-function chordHeld(g: FightGame, f: Fighter): boolean {
+/** C和弦 and 吉他激奏 keep firing past the first shots only while the attack key is still down. CPU taps. */
+function attackHeld(g: FightGame, f: Fighter): boolean {
   if (f.controller === null || !f.attack) return false;
   const code = CONTROLS[f.controller]?.attacks[f.attack.index];
   return !!code && g.keys.has(code);
@@ -84,6 +94,18 @@ export function wailShots(hp: number, max: number): number {
   if (ratio > .5) return 2;
   if (ratio > .25) return 3;
   return 4;
+}
+
+/** 吉他激奏: the wave fired at index i, with its own reach, damage and shove. */
+export function riffShot(s: Skill, i: number): Skill {
+  const k = i / (RIFF_WAVES - 1);
+  const lerp = (a: number, b: number) => a + (b - a) * k;
+  return {
+    ...s,
+    range: Math.round(lerp(RIFF_R0, RIFF_R1)),
+    damage: Math.round(lerp(RIFF_D0, RIFF_D1)),
+    knock: Math.round(lerp(RIFF_K0, RIFF_K1)),
+  };
 }
 
 export interface HitSource { hit: Set<number> }
@@ -171,7 +193,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
           holdStill = false;
         }
       }
-      defender.stun = hitStun(skill.fx === 'bag' ? .26 : skill.fx === 'ripple' || skill.fx === 'huh' ? .35 : skill.type === 'light' ? .28 : skill.super ? .42 : .37);
+      defender.stun = hitStun(skill.fx === 'bag' ? .26 : skill.fx === 'matcha' ? .18 : skill.fx === 'ripple' || skill.fx === 'huh' ? .35 : skill.type === 'light' ? .28 : skill.super ? .42 : .37);
       defender.attack = null;
       defender.hitBySuper = skill.super;
       // A super wipes the buffer except combo escapes (恐湖, 轮奏), so the escape can still come out between hits.
@@ -332,6 +354,14 @@ export function applyMelee(g: FightGame, f: Fighter, a: Attack): void {
     const dist = Math.abs(o.x - f.x);
     const dy = Math.abs(o.y - f.y);
     const ripple = s.fx === 'ripple' || s.fx === 'huh';
+    if (s.fx === 'riff') {
+      // 吉他激奏: a screen-facing disc centred on her — every direction, any height. A jump no longer dodges it.
+      if (Math.hypot(o.x - f.x, o.y - f.y) < s.range) {
+        hit(g, f, o, s, a);
+        if (f.hp <= 0) break;
+      }
+      continue;
+    }
     const radial = ripple || s.fx === 'spin' || (s.type === 'grab' && s.fx !== 'shove' && s.fx !== 'slam');
     const front = (o.x - f.x) * f.facing >= -20;
     // Sweeps only touch grounded targets; air normals and uppers reach further vertically.
@@ -363,14 +393,15 @@ export function spawnShot(g: FightGame, f: Fighter, a: Attack, offsetY = 0, arc 
   const s = a.skill;
   const lob = s.fx === 'milk' ? MILK_ARC : s.fx === 'bag' ? BAG_ARCS[arc % BAG_ARCS.length] : null;
   if (s.fx === 'milk') g.projectiles = g.projectiles.filter(p => !(p.fx === 'milk' && p.owner === f.id));
-  // 奇独点: the well takes a fixed spot ahead and never travels.
+  // 奇独点: the well takes a fixed spot ahead and never travels. 抹茶大芭菲 stands on the floor the same way.
   const hole = s.fx === 'blackhole';
+  const parfait = s.fx === 'parfait';
   const speed = lob ? lob.vx : (s.speed ?? (s.super ? 650 : 480)) * (f.data.trait === 'focus' ? 1.15 : 1);
   const p: Projectile = {
     owner: f.id,
-    x: hole ? clamp(f.x + f.facing * BLACKHOLE_DIST, X_MIN, X_MAX) : f.x + f.facing * 53,
-    y: hole ? FLOOR - 95 : f.y - 85 + offsetY,
-    vx: hole ? 0 : f.facing * speed,
+    x: parfait ? clamp(f.x + f.facing * PARFAIT_DIST, X_MIN, X_MAX) : hole ? clamp(f.x + f.facing * BLACKHOLE_DIST, X_MIN, X_MAX) : f.x + f.facing * 53,
+    y: parfait ? FLOOR : hole ? FLOOR - 95 : f.y - 85 + offsetY,
+    vx: hole || parfait ? 0 : f.facing * speed,
     vy: lob ? lob.vy : 0,
     life: s.life ?? 2.7,
     skill: s,
@@ -426,6 +457,37 @@ function spawnRain(g: FightGame, f: Fighter, a: Attack, index: number): void {
   g.projectiles.push(p);
 }
 
+/** 抹茶大芭菲: fixed lob table, sides alternate through near-to-far pairs. Retune the pairs if the spread drifts. */
+const PARFAIT_ARCS = [
+  { vx: 90, vy: -720 },
+  { vx: 160, vy: -660 },
+  { vx: 230, vy: -700 },
+  { vx: 300, vy: -620 },
+  { vx: 330, vy: -680 },
+];
+
+function spawnMatchaBlob(g: FightGame, owner: Fighter, zone: Projectile, index: number): void {
+  const arc = PARFAIT_ARCS[index % PARFAIT_ARCS.length];
+  const s = zone.skill;
+  g.projectiles.push({
+    owner: owner.id,
+    x: zone.x,
+    y: FLOOR - 175,
+    vx: (index % 2 ? 1 : -1) * arc.vx,
+    vy: arc.vy,
+    life: 2.4,
+    skill: s,
+    color: owner.data.color,
+    radius: 13,
+    size: s.size ?? 56,
+    fx: 'matcha',
+    attack: zone.attack,
+    hit: new Set(),
+    trail: [],
+    age: 0,
+  });
+}
+
 /** True once this move will not produce more hits. Supers and the throw cinematics stay committed. */
 export function effectSettled(a: Attack): boolean {
   const s = a.skill;
@@ -433,7 +495,7 @@ export function effectSettled(a: Attack): boolean {
   if (s.type === 'dash') return a.t >= s.duration - .08;
   if (s.type === 'upper') return a.t >= s.start + .25;
   const volley = a.burst || s.count || 1;
-  if (volley > 1) return a.shots >= volley || (s.fx === 'chord' && a.t >= s.duration - .22);
+  if (volley > 1) return a.shots >= volley || (s.fx === 'chord' && a.t >= s.duration - .22) || (s.fx === 'riff' && a.t >= s.duration - .3);
   return a.emitted;
 }
 
@@ -535,7 +597,15 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
     g.effect('poem', f.x, f.y - 80, f.data.color, s.start, { radius: POEM_REPEL_RANGE });
   }
 
-  if (s.type === 'dash' && a.t >= s.start && a.t < s.duration - .08) {
+  // 来去如风: no travel at all — the wind coil bursts where she stood and she steps out ahead.
+  if (s.fx === 'wind' && !a.emitted && a.t >= s.start) {
+    a.emitted = true;
+    g.effect('wind', f.x, f.y - 85, f.data.color, .45, { dir: f.facing });
+    f.x = clamp(f.x + f.facing * s.range, X_MIN, X_MAX);
+    g.effect('wind', f.x, f.y - 85, f.data.color, .45, { dir: -f.facing });
+    g.effect('dust', f.x, FLOOR, '#afa1c1', .3, { radius: 25 });
+  }
+  if (s.type === 'dash' && s.fx !== 'wind' && a.t >= s.start && a.t < s.duration - .08) {
     f.x += f.facing * (s.speed ?? (s.super ? 820 : 580)) * dt;
     applyMelee(g, f, a);
     if (Math.floor(a.t * 30) % 3 === 0) g.effect('ghost', f.x - f.facing * 18, f.y, f.data.color, .18, { fighter: f.id, alpha: .3 });
@@ -723,14 +793,21 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
         spawnRain(g, f, a, a.shots);
         a.shots++;
       }
+    } else if (s.fx === 'parfait') {
+      // 抹茶大芭菲: one standing zone; the blobs erupt from it on the zone's own clock in stepProjectiles.
+      if (!a.emitted && a.t >= s.start) {
+        a.emitted = true;
+        spawnShot(g, f, a);
+        g.effect('parfait', clamp(f.x + f.facing * PARFAIT_DIST, X_MIN, X_MAX), FLOOR, f.data.color, s.life ?? 6.5);
+      }
     } else while (a.shots < volley && a.t >= s.start + a.shots * (s.interval ?? .14)) {
-      if (s.fx === 'chord' && a.shots >= 3 && !chordHeld(g, f)) break;
+      if (s.fx === 'chord' && a.shots >= 3 && !attackHeld(g, f)) break;
       // 不甘的演奏: two notes leave the bass at the floor, the second a shade lower than the first.
       const off = s.fx === 'sob' ? (a.shots === 0 ? 45 : 70) : (a.shots % 3 - 1) * 15;
       spawnShot(g, f, a, off, a.shots);
       a.shots++;
     }
-    if (s.fx === 'chord' && a.shots >= 3 && !chordHeld(g, f) && a.t < s.duration - .22) a.t = s.duration - .22;
+    if (s.fx === 'chord' && a.shots >= 3 && !attackHeld(g, f) && a.t < s.duration - .22) a.t = s.duration - .22;
     // 为什么要演奏春日影: the last wave carries the whole super, so the moment it leaves she is free to act.
     if (s.fx === 'shout' && a.shots >= volley) a.t = s.duration;
   } else if ((s.count ?? 1) > 1) {
@@ -741,13 +818,26 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
       { x: -42, y: -76, dir: -1 },
     ];
     while (a.shots < (s.count ?? 1) && a.t >= s.start + a.shots * (s.interval ?? .11)) {
+      // 吉他激奏: past the first wave the key has to stay down, and every wave is a bigger clone.
+      if (s.fx === 'riff' && a.shots >= 1 && !attackHeld(g, f)) break;
       const swing = ring[a.shots % ring.length];
       if (a.shots === 0 && a.index >= 2) g.text(s.name, f.x, f.y - 190, f.data.color, .65, 17);
       a.hit = new Set();
-      applyMelee(g, f, a);
-      if (s.fx !== 'mortis' && s.fx !== 'spin') g.effect(s.fx, f.x + f.facing * swing.x, f.y + swing.y, f.data.color, .18, { dir: f.facing * swing.dir, radius: s.range * .34 });
+      if (s.fx === 'riff') {
+        a.skill = riffShot(s, a.shots);
+        applyMelee(g, f, a);
+        g.effect('riff', f.x, f.y - 85, f.data.color, .4, { radius: a.skill.range });
+      } else {
+        applyMelee(g, f, a);
+        if (s.fx !== 'mortis' && s.fx !== 'spin') g.effect(s.fx, f.x + f.facing * swing.x, f.y + swing.y, f.data.color, .18, { dir: f.facing * swing.dir, radius: s.range * .34 });
+      }
       a.shots++;
+      if (s.fx === 'riff' && a.shots > 1) {
+        // The first wave is the tap at base cooldown; every wave past it lengthens the cooldown clock.
+        f.cooldowns[a.index] = Math.min(RIFF_CD_MAX, f.cooldowns[a.index] + f.cdMul * (RIFF_CD_MAX - RIFF_CD_TAP) / (RIFF_WAVES - 1));
+      }
     }
+    if (s.fx === 'riff' && a.shots >= 1 && !attackHeld(g, f) && a.t < s.duration - .3) a.t = s.duration - .3;
   } else if (!a.emitted && a.t >= s.start) {
     a.emitted = true;
     if (s.fx === 'resolve') {
@@ -796,6 +886,17 @@ export function stepProjectiles(g: FightGame, dt: number): void {
   for (const p of g.projectiles) {
     p.life -= dt;
     p.age += dt;
+    if (p.fx === 'parfait') {
+      // 抹茶大芭菲: the parfait lobs one blob per interval, sides alternating, until the volley runs out.
+      const owner = g.fighterById(p.owner);
+      if (!owner) continue;
+      const tick = Math.floor(p.age / (p.skill.interval ?? .28));
+      if (tick !== p.ticked && tick < (p.skill.count ?? 22)) {
+        p.ticked = tick;
+        spawnMatchaBlob(g, owner, p, tick);
+      }
+      continue;
+    }
     if (p.fx === 'blackhole') {
       // 奇独点: a standing well. It drags bodies toward the centre and ticks the skill's damage on its interval.
       const owner = g.fighterById(p.owner);
@@ -825,7 +926,7 @@ export function stepProjectiles(g: FightGame, dt: number): void {
       p.hit.clear();
       p.returned = true;
     }
-    if ((p.fx === 'milk' || p.fx === 'bag') && !p.settled) p.vy += GRAVITY * dt;
+    if ((p.fx === 'milk' || p.fx === 'bag' || p.fx === 'matcha') && !p.settled) p.vy += GRAVITY * dt;
     const owner = g.fighterById(p.owner);
     if (p.fx === 'chord' && owner && owner.hp > 0) {
       const foe = g.opponents(owner).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
@@ -843,9 +944,13 @@ export function stepProjectiles(g: FightGame, dt: number): void {
     }
     p.x += p.vx * dt;
     p.y += p.vy * dt;
-    if ((p.fx === 'milk' || p.fx === 'bag') && !p.settled && p.y >= FLOOR) {
+    if ((p.fx === 'milk' || p.fx === 'bag' || p.fx === 'matcha') && !p.settled && p.y >= FLOOR) {
       p.y = FLOOR;
-      if (p.fx === 'bag') p.life = 0;
+      if (p.fx === 'matcha') {
+        // 抹茶熔岩 pops where it lands; direct hits only, so the splash is just paint.
+        p.life = 0;
+        g.effect('burst', p.x, FLOOR - 8, p.color, .3, { radius: 44 });
+      } else if (p.fx === 'bag') p.life = 0;
       else {
         p.vx = 0;
         p.vy = 0;
@@ -878,7 +983,7 @@ export function stepProjectiles(g: FightGame, dt: number): void {
     for (let j = i + 1; j < g.projectiles.length; j++) {
       const p = g.projectiles[i], q = g.projectiles[j];
       // Shots die on each other; the well is a zone, so shots pass through it.
-      if (!p.settled && !q.settled && p.fx !== 'blackhole' && q.fx !== 'blackhole' && g.isEnemy(g.fighterById(p.owner), g.fighterById(q.owner)) && p.life > 0 && q.life > 0 && Math.abs(p.x - q.x) < 25 && Math.abs(p.y - q.y) < 27) {
+      if (!p.settled && !q.settled && p.fx !== 'blackhole' && q.fx !== 'blackhole' && p.fx !== 'parfait' && q.fx !== 'parfait' && g.isEnemy(g.fighterById(p.owner), g.fighterById(q.owner)) && p.life > 0 && q.life > 0 && Math.abs(p.x - q.x) < 25 && Math.abs(p.y - q.y) < 27) {
         p.life = q.life = 0;
         g.sparks(p.x, p.y, '#fff', 12);
       }

@@ -117,14 +117,10 @@ export function encodePng(img: Image): Buffer {
   ]);
 }
 
-/** Character pixel. Green, the magenta grid, and the dark sheet fill are empty. */
+/** Character pixel. The finished art carries a transparent background, so emptiness is alpha alone —
+    no colour rules: they ate green-blended edge pixels and green clothing when shifting. */
 export function ink(rgba: Buffer, i: number): boolean {
-  const r = rgba[i], g = rgba[i + 1], b = rgba[i + 2], a = rgba[i + 3];
-  if (a <= 24) return false;
-  if (g > 240 && r < 20 && b < 20) return false;
-  if (Math.abs(r - 255) <= 8 && Math.abs(g - 54) <= 12 && Math.abs(b - 200) <= 12) return false;
-  if (Math.abs(r - 26) <= 3 && Math.abs(g - 21) <= 3 && Math.abs(b - 40) <= 3) return false;
-  return true;
+  return rgba[i + 3] > 24;
 }
 
 export interface Shift {

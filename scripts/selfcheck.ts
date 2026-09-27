@@ -1544,6 +1544,108 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
 }
 
+// rana: the riff grows per wave and stops when the key lifts, the blink passes through untouched, the parfait erupts blobs
+{
+  const rana = ROSTER.findIndex(c => c.id === 'rana');
+  assert.ok(rana >= 0, 'rana is on the roster');
+  const data = ROSTER[rana];
+  assert.equal(data.trait, 'rush', 'rana is rush');
+  assert.equal(data.skills[2].fx, 'riff', 'U is the riff');
+  assert.equal(data.skills[2].count, 10, 'the riff caps at ten waves');
+  assert.equal(data.skills[3].fx, 'wind', 'I is the blink');
+  assert.equal(data.skills[3].damage, 0, 'the blink deals nothing');
+  assert.equal(data.skills[4].type, 'launch', 'O is the high kick');
+  assert.equal(data.skills[5].fx, 'parfait', 'the super is the parfait');
+
+  // U: a tap strums one wave; holding the key keeps them coming
+  const tap = newGame(rana, 2); const [t1, t2] = tap.fighters; dummy(tap);
+  t2.invuln = 5; t2.x = t1.x + 120; t2.facing = -1;
+  tap.keyDown('KeyU'); tap.keyUp('KeyU');
+  let tapped = 0;
+  for (let i = 0; i < Math.round(1 / STEP); i++) { tap.step(STEP); tapped = Math.max(tapped, t1.attack?.shots ?? 0); }
+  assert.equal(tapped, 1, 'a tap strums one wave');
+  assert.ok(Math.abs(t1.cooldowns[2] - 1) < .05, `a tap cools from 2s, saw ${t1.cooldowns[2].toFixed(2)}`);
+
+  const held = newGame(rana, 2); const [h1, h2] = held.fighters; dummy(held);
+  h2.invuln = 5; h2.x = h1.x + 120; h2.facing = -1;
+  held.keyDown('KeyU');
+  run(held, 4.5);
+  held.keyUp('KeyU');
+  assert.equal(h1.attack?.shots, 10, 'holding the key strums ten waves');
+  assert.ok(Math.abs(h1.cooldowns[2] - 2.5) < .05, `a full channel cools from 7s — about 2.5s left, saw ${h1.cooldowns[2].toFixed(2)}`);
+
+  // later waves reach past the first radius
+  const far = newGame(rana, 2); const [f1, f2] = far.fighters; dummy(far);
+  f2.x = f1.x + 210; f2.facing = -1;
+  const fhp = f2.hp;
+  far.keyDown('KeyU');
+  run(far, 4.5);
+  far.keyUp('KeyU');
+  assert.ok(f2.hp < fhp, 'later waves reach past the first radius');
+
+  // I: she vanishes and steps out ahead, through a body, touching nothing
+  const blink = newGame(rana, 2); const [b1, b2] = blink.fighters; dummy(blink);
+  b2.x = b1.x + 90; b2.facing = -1;
+  const bx = b1.x, bhp = b2.hp;
+  blink.keyDown('KeyI');
+  run(blink, .5);
+  assert.ok(b1.x - bx > 150 && b1.x - bx < 200, `the blink moves her about 192px, moved ${b1.x - bx}`);
+  assert.ok(b1.x > b2.x, 'the blink passes through the body');
+  assert.equal(b2.hp, bhp, 'the blink deals nothing');
+
+  // the disc hits a jumper — the wave is a screen-facing circle, not a ground ring
+  const air = newGame(rana, 2); const [a1, a2] = air.fighters; dummy(air);
+  a2.x = a1.x + 100; a2.facing = -1;
+  const ahp = a2.hp;
+  air.keyDown('KeyU');
+  for (let i = 0; i < Math.round(.8 / STEP); i++) {
+    a2.y = FLOOR - 80; a2.vy = 0;
+    air.step(STEP);
+  }
+  air.keyUp('KeyU');
+  assert.ok(a2.hp < ahp, 'the wave disc hits a jumper');
+
+  // L: the parfait stands, she is free right after, and the blobs erupt both ways
+  const supe = newGame(rana, 2); const [s1, s2] = supe.fighters; dummy(supe);
+  s1.energy = 100;
+  s2.x = s1.x + 260; s2.facing = -1;
+  supe.keyDown('KeyL');
+  run(supe, 1);
+  assert.equal(s1.attack, null, 'she is free after placing the parfait');
+  assert.ok(supe.projectiles.some(p => p.fx === 'parfait'), 'the parfait stands');
+  run(supe, 2);
+  const blobs = supe.projectiles.filter(p => p.fx === 'matcha');
+  assert.ok(blobs.length >= 2, `the parfait erupts, ${blobs.length} blobs in flight`);
+  assert.ok(blobs.some(p => p.vx > 0) && blobs.some(p => p.vx < 0), 'blobs fly both ways');
+  const shp = s2.hp;
+  run(supe, 4);
+  assert.ok(s2.hp < shp, 'the blobs rain on a nearby foe');
+
+  // clip routing: the strum loops while held, the parfait holds the arms-wide beat
+  const pf = previewFighter(data, 0);
+  pf.attack = { skill: data.skills[2], index: 2, serial: 1, t: 0, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1 };
+  assert.deepEqual([clipFor(pf).col, clipFor(pf).row], [0, 0], 'the riff reads column U');
+  pf.attack.t = .14;
+  assert.equal(clipFor(pf).row, 1, 'strum cell one');
+  pf.attack.t = .28;
+  assert.equal(clipFor(pf).row, 2, 'strum cell two');
+  pf.attack.t = .43;
+  assert.equal(clipFor(pf).row, 0, 'the strum loops back to the reach');
+  pf.attack.t = data.skills[2].duration - .3;
+  assert.equal(clipFor(pf).row, 2, 'the release tail plays the recover');
+
+  const pf2 = previewFighter(data, 0);
+  pf2.attack = { skill: data.skills[5], index: 5, serial: 1, t: 0, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1 };
+  pf2.attack.t = data.skills[5].start - .01;
+  assert.equal(clipFor(pf2).row, 0, 'the parfait starts on the present');
+  pf2.attack.t = data.skills[5].start + .05;
+  assert.equal(clipFor(pf2).row, 1, 'arms wide');
+  pf2.attack.t = data.skills[5].duration - .16;
+  assert.equal(clipFor(pf2).row, 1, 'arms wide holds past 0.2s');
+  pf2.attack.t = data.skills[5].duration - .1;
+  assert.equal(clipFor(pf2).row, 2, 'the bow follows');
+}
+
 // the figure scale has one home; the 128-era 0.58 must never come back (file scan lives in checkSheetScale)
 assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 

@@ -245,6 +245,31 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'rana', name: '要乐奈', title: '吉他 / 野良猫', quote: '有趣的女人。', color: '#77DD77',
+    ...stats('rush'),
+    view: {
+      kind: 'sprite', common: '/sprites/rana/common.png', special: '/sprites/rana/special.png', height: 181,
+      extras: ['/sprites/rana/parfait.png', '/sprites/rana/matcha.png'],
+    },
+    skills: [
+      skill(0, 'light', '轻挠'),
+      skill(1, 'heavy', '横踢'),
+      skill(2, 'light', '吉他激奏', {
+        damage: 12, count: 10, interval: .42, range: 240, start: .35, duration: 4.6, cd: 2, knock: 240, fx: 'riff',
+        desc: '以自身为中心的圆形音波；按住一直弹，越弹越广也越疼；点按更省冷却',
+      }),
+      skill(3, 'dash', '来去如风', {
+        damage: 0, range: 192, start: .1, duration: .34, cd: 2.4, invuln: .1, fx: 'wind',
+        desc: '原地消失，再从别处出现；穿过一切',
+      }),
+      skill(4, 'launch', '高踢腿', { damage: 24, range: 180, cd: 4.5, desc: '兴致上来的高踢，把人踢上天' }),
+      skill(5, 'projectile', '抹茶大芭菲', {
+        damage: 14, count: 22, interval: .28, start: .45, duration: .85, life: 6.5, size: 56, knock: 90, fx: 'parfait',
+        desc: '放下大芭菲，像火山一样喷发抹茶熔岩',
+      }),
+    ],
+  },
+  {
     id: 'taki', name: '椎名立希', title: '鼓手 / 护灯', quote: '我发誓，和灯在一起的话，一辈子也可以。', color: '#7777AA',
     ...stats('beat'),
     view: { kind: 'sprite', common: '/sprites/taki/common.png', special: '/sprites/taki/special.png', height: 181 },
@@ -272,6 +297,6 @@ export const ROSTER: CharacterData[] = [
 ];
 
 /** Select screen. gale, ember and boulder stay on ROSTER for the headless checks. */
-export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki');
+export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki' || c.id === 'rana');
 
 export const ROSTER_BY_ID = new Map(ROSTER.map(c => [c.id, c]));
