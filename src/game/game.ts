@@ -4,7 +4,7 @@ import { DECAY_TIMERS, gainEnergy, makeFighter } from './fighter.ts';
 import { AIR_SKILLS } from '../data/skills.ts';
 import { ROSTER_BY_ID } from '../data/characters.ts';
 import { advanceAnim } from './animState.ts';
-import { easeSealSwells, effectSettled, MARATHON_SPEED, stepProjectiles, updateAttack, wailShots } from './combat.ts';
+import { easeSealSwells, effectSettled, FEAST_REGEN, MARATHON_SPEED, stepProjectiles, updateAttack, wailShots } from './combat.ts';
 import { stepAI } from './ai.ts';
 import { COMBO_DECAY, COMBO_ESCAPE, CONTROLS, FLOOR, GRAVITY, INPUT_BUFFER, SIDE, STEP, X_MAX, X_MIN, clamp } from './constants.ts';
 import { clipFor } from '../render/clips.ts';
@@ -351,12 +351,15 @@ export class FightGame {
   canAttack(f: Fighter, index: number): boolean {
     if (this.paused || this.phase !== 'fight') return false;
     if (f.hp <= 0 || f.blocking || f.dodge > 0 || f.cooldowns[index] > 0) return false;
+    if (f.feast > 0 && index <= 1) return false;
     const breakout = !!f.data.skills[index]?.breakout;
     const downed = f.y >= FLOOR - .1 && f.knocked > 0 && f.vy >= 0;
     const escape = breakout && f.hitBySuper && !downed;
     if (f.ban > 0 || (!escape && (f.stun > 0 || f.knocked > 0))) return false;
     if (index >= 2 && this.airborne(f) && !escape) return false;
     if ((f.root > 0 || f.ban > 0) && this.skillFor(f, index).type === 'dash') return false;
+    if (f.basic && index >= 2) return false;
+    if (f.king && index >= 2) return false;
     if (index === 5 && f.energy < 100) return false;
     const a = f.attack;
     // Grounded light attacks that connected can cancel into light or heavy.
@@ -386,9 +389,19 @@ export class FightGame {
       tossAt: 0,
       hold: -1,
     };
-    // 梦想即力量！: the frenzy reaches further. The clone keeps the shared skill data untouched.
-    const rangeMul = f.frenzy > 0 && slot <= 1 && !skill.air ? f.data.frenzy?.rangeMul ?? 1 : 1;
-    if (rangeMul !== 1) f.attack.skill = { ...skill, range: Math.round(skill.range * rangeMul) };
+    // 狂化 J/K. Soyo and Arale stay on the ground; a form with frenzy.air (国王) covers the air normals too.
+    // The clone keeps the shared skill data untouched.
+    const cfg = f.data.frenzy;
+    const boosted = f.frenzy > 0 && slot <= 1 && (!skill.air || !!cfg?.air);
+    const rangeMul = boosted ? (cfg?.rangeMul ?? 1) : 1;
+    const damageMul = boosted ? (cfg?.damageMul ?? 1) : 1;
+    if (rangeMul !== 1 || damageMul !== 1) {
+      f.attack.skill = {
+        ...skill,
+        range: Math.round(skill.range * rangeMul),
+        damage: Math.round(skill.damage * damageMul),
+      };
+    }
     if (skill.breakout && f.hitBySuper) {
       f.stun = 0;
       f.knocked = 0;
@@ -402,7 +415,8 @@ export class FightGame {
       f.invuln = Math.max(f.invuln, skill.invuln);
     }
     // Frenzy shortens the recast wait of the ground jab and kick to match the faster clock.
-    f.cooldowns[slot] = skill.cd * f.cdMul * (f.frenzy > 0 && slot <= 1 && !skill.air ? f.data.frenzy?.cdMul ?? .6 : 1);
+    const cdBoost = boosted ? (cfg?.cdMul ?? .6) : 1;
+    f.cooldowns[slot] = skill.cd * f.cdMul * cdBoost;
     if (slot === 5) {
       f.energy = 0;
       f.invuln = .64;
@@ -582,6 +596,33 @@ export class FightGame {
     this.text(m.data.name + '！', m.x, m.y - 210, m.data.color, .8, 20);
   }
 
+  /** 对半分: another Nonoka steps out just behind the foe. Short life, soft hits, normals only. */
+  summonHalf(owner: Fighter): void {
+    const old = this.fighters.find(f => f.minion && f.team === owner.team);
+    if (old) this.dismissMinion(old, false);
+    const foe = this.targetFor(owner);
+    const face = foe ? foe.facing : owner.facing;
+    const anchor = foe ? foe.x : owner.x;
+    const m = makeFighter({ ...owner.data, hp: Math.round(owner.data.hp * MINION_HP_RATIO) }, this.minionSeq++, {
+      x: clamp(anchor - face * 80, X_MIN, X_MAX),
+      facing: face,
+      controller: null,
+      energy: 0,
+      team: owner.team,
+    });
+    m.hp = m.data.hp;
+    m.minion = true;
+    m.basic = true;
+    m.dmgMul = .3;
+    m.life = 6;
+    m.noGain = 6;
+    while (this.totalHits.length <= m.id) { this.totalHits.push(0); this.maxCombo.push(0); }
+    this.fighters.push(m);
+    this.sparks(m.x, m.y - 80, m.data.color, 14);
+    this.effect('half', m.x, m.y - 80, m.data.color, .45, { radius: 56 });
+    this.text('对半分！', m.x, m.y - 210, m.data.color, .8, 20);
+  }
+
   private dismissMinion(m: Fighter, expired: boolean): void {
     const i = this.fighters.indexOf(m);
     if (i < 0) return;
@@ -633,6 +674,12 @@ export class FightGame {
 
     f.cooldowns = f.cooldowns.map(n => Math.max(0, n - dt * (f.data.trait === 'beat' ? 1 + f.beatStacks * .06 : 1)));
     for (const key of DECAY_TIMERS) f[key] = Math.max(0, f[key] - dt);
+    // ponytail: the 7s timer can die mid-swing. Hold a sliver so the king sheet lasts that one staff hit, then drop it.
+    if (f.king && f.frenzy <= 0) {
+      const swinging = !!f.attack && f.attack.index <= 1;
+      if (swinging) f.frenzy = .05;
+      else f.king = false;
+    }
     // 高肌肉！: a slow pulse while the flex holds, so the buff state reads across the stage.
     if (f.muscle > 0 && Math.floor(f.muscle) !== Math.floor(f.muscle + dt)) {
       this.effect('burst', f.x, f.y - 95, f.data.color, .45, { radius: 55 });
@@ -652,6 +699,7 @@ export class FightGame {
     if (!f.comboTime) f.combo = 0;
     gainEnergy(f, dt * 2);
     if (f.regen > 0) f.hp = Math.min(f.data.hp, f.hp + f.data.hp * f.regen * dt);
+    if (f.feast > 0) f.hp = Math.min(f.data.hp, f.hp + FEAST_REGEN * dt);
     if (this.mode === 'training') {
       f.energy = 100;
       if (f.id === 1 && f.stun === 0 && !this.fighters[0].comboTime) f.hp = Math.min(f.data.hp, f.hp + dt * 350);
@@ -749,7 +797,8 @@ export class FightGame {
 
     // 梦想即力量！: walking and airborne movement trail the tinted afterimage too — attacks
     // already ghost in updateAttack, dashes stamp their own, so this covers the rest.
-    if (f.frenzy > 0 && (f.walk > 0 || f.y < FLOOR - .5) && Math.floor(f.frenzy * 16) !== Math.floor((f.frenzy + dt) * 16)) {
+    // Nono国王 uses the same clock and does not trail.
+    if (f.frenzy > 0 && !f.king && (f.walk > 0 || f.y < FLOOR - .5) && Math.floor(f.frenzy * 16) !== Math.floor((f.frenzy + dt) * 16)) {
       const clip = clipFor(f);
       this.effect('ghost', f.x, f.y, f.data.color, .28, { fighter: f.id, alpha: .5, tint: f.data.frenzy?.tint ?? '#a5714f', sheet: clip.sheet, col: clip.col, row: clip.row, facing: f.facing });
     }

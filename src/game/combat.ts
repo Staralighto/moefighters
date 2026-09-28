@@ -35,6 +35,12 @@ const RESOLVE_REPEL_RANGE = 190;
 const RESOLVE_REPEL_PUSH = 540;
 /** 求你了: the kneel holds this long after the catch, so the pause reads before the headbutt. */
 const ONEGAI_PAUSE = .5;
+/** 大份牛排: one bite, then the same brace as the plaster. A hit before the bite cancels both. */
+const STEAK_HEAL = 60;
+const STEAK_BRACE = 4;
+/** 超恢复: the brace, this much hp each second, and J/K stay locked. The three end together. */
+export const FEAST_TIME = 6;
+export const FEAST_REGEN = 36;
 /** 绊创膏: seconds of no-flinch, the damage cut while it holds, and the shove the plaster gives the people around her. */
 const BRACED_TIME = 6;
 const BRACED_DAMAGE = .67;
@@ -85,6 +91,13 @@ function flurryFinale(skill: Skill, source: HitSource): boolean {
   if (skill.fx !== 'flurry') return false;
   const shots = 'shots' in source ? Number((source as Attack).shots) : 0;
   return shots >= Math.max(0, (skill.count ?? 1) - 1);
+}
+
+/** 抱抱还是亲亲: the fifth kiss is the knockdown. shots is the index before it increments. */
+function kissFinale(skill: Skill, source: HitSource): boolean {
+  if (skill.fx !== 'kiss') return false;
+  const shots = 'shots' in source ? Number((source as Attack).shots) : 0;
+  return shots >= 4;
 }
 
 /** C和弦 and 吉他激奏 keep firing past the first shots only while the attack key is still down. CPU taps. */
@@ -275,6 +288,22 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
         defender.vy = 0;
         defender.knocked = 0;
         defender.stun = hitStun(.2);
+      } else if (skill.fx === 'rabbit') {
+        // 食兔者: three bites, pinned, still standing when the last one lets go.
+        defender.vy = 0;
+        defender.knocked = 0;
+        defender.stun = hitStun(.25);
+        holdStill = true;
+      } else if (skill.fx === 'kiss' && !kissFinale(skill, source)) {
+        defender.vy = 0;
+        defender.knocked = 0;
+        defender.stun = hitStun(.28);
+        holdStill = true;
+      } else if (skill.fx === 'kiss') {
+        defender.vy = -120;
+        defender.knocked = .9;
+        defender.downTime = 0;
+        defender.stun = hitStun(.45);
       } else if (skill.fx === 'shove') {
         // Hold them in front, turned to face the attacker. The lift and throw wait on the attack clock.
         defender.stun = hitStun(.5);
@@ -423,7 +452,7 @@ export function applyMelee(g: FightGame, f: Fighter, a: Attack): void {
     const front = (o.x - f.x) * f.facing >= -20;
     // Sweeps only touch grounded targets; air normals and uppers reach further vertically.
     // A crawl's hand only reaches a standing chest, so a real jump clears it.
-    const height = ripple || s.fx === 'yokan' || s.type === 'sweep' ? o.y > FLOOR - 40
+    const height = ripple || s.fx === 'yokan' || s.fx === 'skewer' || s.type === 'sweep' ? o.y > FLOOR - 40
       : s.fx === 'crawl' ? dy < 48
       : dy < (s.super ? 170 : s.air || s.type === 'upper' ? 150 : 112);
     if (dist < s.range && (radial || front) && height) {
@@ -548,7 +577,7 @@ function spawnMatchaBlob(g: FightGame, owner: Fighter, zone: Projectile, index: 
 /** True once this move will not produce more hits. Supers and the throw cinematics stay committed. */
 export function effectSettled(a: Attack): boolean {
   const s = a.skill;
-  if (s.super || s.fx === 'shove' || s.fx === 'slam') return false;
+  if (s.super || s.fx === 'shove' || s.fx === 'slam' || s.fx === 'rabbit' || s.fx === 'kiss') return false;
   if (s.type === 'dash') return a.t >= s.duration - .08;
   if (s.type === 'upper') return a.t >= s.start + .25;
   const volley = a.burst || s.count || 1;
@@ -564,7 +593,8 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
   const rate = f.frenzy > 0 && a.index <= 1 && !s.air ? (f.data.frenzy?.rate ?? FRENZY_RATE) : 1;
   a.t += dt * rate;
   // 狂化: every attack trails an afterimage frozen on the frame it stamped, one behind her live pose.
-  if (f.frenzy > 0 && Math.floor(a.t * 16) !== Math.floor((a.t - dt * rate) * 16)) {
+  // Nono国王 keeps the frenzy clock for the staff buffs, but the cape form has no ghosts.
+  if (f.frenzy > 0 && !f.king && Math.floor(a.t * 16) !== Math.floor((a.t - dt * rate) * 16)) {
     const clip = clipFor(f);
     g.effect('ghost', f.x - f.facing * 20, f.y, f.data.color, .28, { fighter: f.id, alpha: .5, tint: f.data.frenzy?.tint ?? FRENZY_TINT, sheet: clip.sheet, col: clip.col, row: clip.row, facing: f.facing });
   }
@@ -766,6 +796,66 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
     }
   }
   if (s.fx === 'onegai' && a.hold < 0 && a.t >= s.start + .42) a.t = s.duration;
+  // 食兔者 / 抱抱还是亲亲: a short lunge, then a pin. Bites let go standing; the fifth kiss knocks down.
+  if (s.fx === 'rabbit' || s.fx === 'kiss') {
+    if (!a.emitted) a.emitted = true;
+    const kiss = s.fx === 'kiss';
+    const lunge = kiss ? .24 : .3;
+    const gap = kiss ? .3 : .2;
+    const bites = kiss ? 5 : 3;
+    const reach = kiss ? 48 : 52;
+    if (a.hold < 0 && a.t >= s.start && a.t < s.start + lunge) {
+      let caught: Fighter | undefined;
+      for (const o of g.opponents(f)) {
+        if (o.hp <= 0 || o.invuln > 0) continue;
+        const front = (o.x - f.x) * f.facing >= -20;
+        if (!front || Math.abs(o.y - f.y) >= 112) continue;
+        if ((o.x - f.x) * f.facing < 70) { caught = o; break; }
+      }
+      if (caught) {
+        a.hold = caught.id;
+        a.tossAt = a.t;
+        f.x = clamp(caught.x - f.facing * reach, X_MIN, X_MAX);
+        g.hitstop = Math.max(g.hitstop, .06);
+        g.effect('grab', caught.x, caught.y - 80, f.data.color, .25, { radius: 48 });
+        caught.stun = Math.max(caught.stun, .35);
+        caught.vx = 0;
+        caught.vy = 0;
+        caught.knocked = 0;
+        caught.attack = null;
+        caught.queue = [];
+      } else {
+        f.x = clamp(f.x + f.facing * (s.speed ?? (kiss ? 420 : 580)) * dt, X_MIN, X_MAX);
+        if (f.x === X_MIN || f.x === X_MAX) a.t = Math.max(a.t, s.duration - .2);
+      }
+    }
+    // Whiff only. A finished pin has tossAt set; pulling t backward here froze her in the recover pose forever.
+    if (a.hold < 0 && a.tossAt === 0 && a.t >= s.start + lunge && a.t < s.duration - .2) a.t = s.duration - .2;
+    if (a.hold >= 0) {
+      const o = g.fighters.find(p => p.id === a.hold);
+      if (!o || o.hp <= 0) {
+        a.t = s.duration;
+      } else {
+        o.x = clamp(f.x + f.facing * reach, X_MIN, X_MAX);
+        o.y = FLOOR;
+        o.vx = 0;
+        o.vy = 0;
+        o.knocked = 0;
+        o.stun = Math.max(o.stun, .3);
+        o.facing = (-f.facing) as 1 | -1;
+        if (a.shots < bites && a.t >= a.tossAt + a.shots * gap) {
+          a.hit = new Set();
+          hit(g, f, o, s, a);
+          g.effect(kiss ? 'kiss' : 'rabbit', o.x, o.y - (kiss ? 110 : 64), f.data.color, kiss ? .4 : .2, { radius: kiss ? 28 : 34 });
+          a.shots++;
+          if (a.shots >= bites) {
+            a.hold = -1;
+            a.t = Math.max(a.t, s.duration - .22);
+          }
+        }
+      }
+    }
+  }
   // 和灯在一起的话: a short lunge, she catches a wrist, says the line, then plays the foe like a kit —
   // beats start slow and accelerate, and the last one double-kicks them across the stage.
   if (s.fx === 'vow') {
@@ -958,8 +1048,38 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
     } else if (s.fx === 'poem') {
       // 诗超绊: the sing lands, and a teammate takes the stage beside her.
       g.summonAlly(f);
+    } else if (s.fx === 'half') {
+      // 对半分: a softer copy steps out behind the foe.
+      g.summonHalf(f);
+    } else if (s.fx === 'king') {
+      // Nono国王: glow, cape, then the staff form. No armour — the push only makes room for the first swing.
+      const time = f.data.frenzy?.time ?? 7;
+      f.frenzy = time;
+      f.noGain = time;
+      f.king = true;
+      g.effect('king', f.x, f.y - 80, f.data.color, .7, { radius: s.range });
+      for (const o of g.opponents(f)) {
+        if (o.hp <= 0 || o.invuln > 0) continue;
+        const dx = o.x - f.x;
+        if (Math.abs(dx) < s.range) {
+          o.vx = (Math.sign(dx) || f.facing) * 380;
+          o.stun = Math.max(o.stun, .2);
+        }
+      }
     } else if (s.fx === 'marathon') {
       // 秋叶原马拉松: the pose itself does nothing. Speed and poise start only if it finishes.
+    } else if (s.fx === 'steak') {
+      // 大份牛排: the bite is the active frame. Wind-up that gets hit never reaches here.
+      f.hp = Math.min(f.data.hp, f.hp + STEAK_HEAL);
+      f.braced = Math.max(f.braced, STEAK_BRACE);
+      g.text(`+${STEAK_HEAL}`, f.x, f.y - 160, '#ffd0d8', .6, 18);
+      g.effect('steak', f.x, f.y - 118, '#6eb6ff', .55, { dir: f.facing });
+    } else if (s.fx === 'feast') {
+      // 超恢复: brace, regen and the J/K lock share one window. A later steak must not shorten it.
+      // The side arcs are drawn while feast > 0, so they leave with the buff.
+      f.braced = Math.max(f.braced, FEAST_TIME);
+      f.feast = FEAST_TIME;
+      g.effect('burst', f.x, f.y - 80, '#9ad4ff', .4, { radius: 80 });
     } else if (s.type === 'projectile') {
       spawnShot(g, f, a);
     } else if (s.type !== 'dash' && s.fx !== 'slam' && s.fx !== 'onegai' && s.fx !== 'vow') {
@@ -968,6 +1088,7 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
       else if (s.fx === 'huh') g.effect('huh', f.x, FLOOR, f.data.color, .5, { radius: s.range });
       else if (s.fx === 'howl') g.effect('howl', f.x, f.y - 80, f.data.color, .4, { radius: s.range });
       else if (s.fx === 'yokan') g.effect('yokan', f.x + f.facing * 70, FLOOR, f.data.color, .28, { dir: f.facing, radius: 80 });
+      else if (s.fx === 'rib') g.effect('slash', f.x + f.facing * 65, f.y - 83, f.data.color, .22, { dir: f.facing, radius: s.range * .5 });
       else g.effect(s.fx, f.x + f.facing * 65, f.y - (s.type === 'sweep' ? 22 : 83), f.data.color, .22, { dir: f.facing, radius: s.range * .5 });
     }
     if (a.index >= 2 && !s.super) g.text(s.name, f.x, f.y - 190, f.data.color, .65, 17);

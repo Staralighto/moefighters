@@ -1,6 +1,7 @@
 import type { Fighter } from '../game/fighter.ts';
 import { attackPhase, stateFor } from '../game/animState.ts';
 import { YOKAN_OX } from './miyakoSheet.ts';
+import { RIB_OX, SKEWER_OX, STEAK_OX } from './ritsuSheet.ts';
 
 /** Square cell. Img2img replacements must keep this size and the grids below.
  *  Common is 8×3 so the sheet is 2048×768 (8:3), under the 3:1 upload limit.
@@ -159,8 +160,9 @@ export function soyoFrenzyFrame(kind: 'light' | 'heavy', t: number, s: { start: 
 /** Which cell a fighter occupies this frame. Missing sheets still fall back in SpriteView. */
 export function clipFor(f: Fighter): Clip {
   if (f.attack) {
-    // 狂化: ground J/K read the frenzy sheet, everything else keeps its own cells.
-    if (f.frenzy > 0 && f.attack.index <= 1 && !f.attack.skill.air) {
+    // 狂化: ground J/K read the frenzy sheet. A king reskin keeps the common cells and swaps the image.
+    const crowned = f.data.view.kind === 'sprite' && !!f.data.view.king;
+    if (f.frenzy > 0 && !crowned && f.attack.index <= 1 && !f.attack.skill.air) {
       const [col, row] = soyoFrenzyFrame(f.attack.index === 0 ? 'light' : 'heavy', f.attack.t, f.attack.skill);
       return { sheet: 'frenzy', col, row, sx: col * CELL, sy: row * CELL };
     }
@@ -172,6 +174,11 @@ export function clipFor(f: Fighter): Clip {
     if (f.attack.skill.fx === 'parfait') return at('special', f.attack.index - 2, parfaitRow(f.attack.t, f.attack.skill.start, f.attack.skill.duration));
     if (f.attack.skill.fx === 'heart') return at('special', f.attack.index - 2, heartRow(f.attack.t, f.attack.skill.start));
     if (f.attack.skill.fx === 'poem') return at('special', f.attack.index - 2, poemRow(f.attack.t, f.attack.skill.start));
+    if (f.attack.skill.fx === 'rabbit' || f.attack.skill.fx === 'kiss' || f.attack.skill.fx === 'half' || f.attack.skill.fx === 'king') {
+      const t = f.attack.t, s = f.attack.skill;
+      const row = t < s.start ? 0 : t >= s.duration - .22 ? 2 : 1;
+      return at('special', f.attack.index - 2, row);
+    }
     if (f.attack.skill.fx === 'vow') return at('special', f.attack.index - 2, vowRow(f.attack.t, f.attack.tossAt));
     if (f.attack.skill.fx === 'spin') {
       const t = f.attack.t, s = f.attack.skill;
@@ -189,11 +196,16 @@ export function clipFor(f: Fighter): Clip {
     }
     // 巨羊羹砸击: the cell shifts the body aside to fit the block, so hand back the inverse.
     if (f.attack.skill.fx === 'yokan') return { ...at('special', f.attack.index - 2, phase), ox: YOKAN_OX[phase] };
+    // 峰月律: the same shift, one table per food column.
+    if (f.attack.skill.fx === 'rib') return { ...at('special', f.attack.index - 2, phase), ox: RIB_OX[phase] };
+    if (f.attack.skill.fx === 'skewer') return { ...at('special', f.attack.index - 2, phase), ox: SKEWER_OX[phase] };
+    if (f.attack.skill.fx === 'steak') return { ...at('special', f.attack.index - 2, phase), ox: STEAK_OX[phase] };
     return at('special', f.attack.index - 2, phase);
   }
   const state = stateFor(f);
-  // 狂化 stance while she is otherwise just standing around.
-  if (f.frenzy > 0 && state === 'idle') return at('frenzy', 0, 2);
+  // 狂化 stance while she is otherwise just standing around. The king sheet uses the common idle cell.
+  const crowned = f.data.view.kind === 'sprite' && !!f.data.view.king;
+  if (f.frenzy > 0 && !crowned && state === 'idle') return at('frenzy', 0, 2);
   // 4 frames at 8 Hz: one stride is 0.5s.
   if (state === 'run') return loco(RUN_FRAMES[Math.floor(f.animTime * 8) % 4]);
   if (state === 'ko' || state === 'down' || state === 'hurt' || state === 'dodge' || state === 'block' || state === 'jump') return loco(state);

@@ -89,16 +89,20 @@ export class SpriteView implements FighterView {
     private readonly height: number,
     private readonly fallback: FighterView,
     private readonly frenzy?: string,
+    private readonly king?: string,
+    private readonly kingScale = 1,
   ) {}
 
   draw(ctx: CanvasRenderingContext2D, f: Fighter, x: number, y: number, alpha: number, tint?: string, outline?: string, pose?: FrozenPose): void {
     const clip = pose
       ? { sheet: pose.sheet as Clip['sheet'], col: pose.col, row: pose.row, sx: pose.col * CELL, sy: pose.row * CELL }
       : clipFor(f);
-    const src = clip.sheet === 'common' ? this.common : clip.sheet === 'special' ? this.special : this.frenzy;
+    const src = f.king && clip.sheet === 'common' && this.king
+      ? this.king
+      : clip.sheet === 'common' ? this.common : clip.sheet === 'special' ? this.special : this.frenzy;
     const im = src ? this.images.get(src) : undefined;
     if (!im || !im.naturalWidth) { this.fallback.draw(ctx, f, x, y, alpha, undefined, outline); return; }
-    const h = this.height;
+    const h = src === this.king ? this.height * this.kingScale : this.height;
     ctx.save();
     try {
       ctx.translate(Math.round(x), Math.round(y));

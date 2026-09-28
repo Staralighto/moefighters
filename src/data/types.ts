@@ -49,7 +49,7 @@ export type Trait = 'rush' | 'focus' | 'armor' | 'beat';
 /** How a character is drawn. Swap the spec, not the code. PNG of the same grid replaces the SVG path. */
 export type ViewSpec =
   | { kind: 'geometry'; build: 'slim' | 'bulky' | 'tall' }
-  | { kind: 'sprite'; common: string; special: string; height: number; frenzy?: string; extras?: string[] };
+  | { kind: 'sprite'; common: string; special: string; height: number; frenzy?: string; king?: string; kingScale?: number; extras?: string[] };
 
 export interface CharacterData {
   id: string;
@@ -80,6 +80,12 @@ export interface CharacterData {
     time?: number;
     /** Afterimage silhouette colour; falls back to Soyo's brown. */
     tint?: string;
+    /** Ground (and air, when `air` is set) J/K damage. */
+    damageMul?: number;
+    /** The range, cooldown and damage multipliers also cover air J/K. */
+    air?: boolean;
+    /** U I O L stay locked for the form. The fighter's `king` flag is what the move sets. */
+    lock?: boolean;
   };
 }
 

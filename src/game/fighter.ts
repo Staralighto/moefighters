@@ -44,6 +44,8 @@ export interface Fighter {
   knocked: number; downTime: number;
   /** The last hit that connected was a super. Lets 恐湖 break that combo. */
   hitBySuper: boolean;
+  /** 超恢复: seconds of hp regen and a lock on J/K. The brace timer is separate. */
+  feast: number;
   /** Seconds 爱音之光 keeps the fighter from walking, jumping, dodging, or dashing. */
   root: number;
   /** Clean hits taken during root. The second one clears it. */
@@ -101,6 +103,10 @@ export interface Fighter {
   minion?: boolean;
   /** Seconds before a summoned teammate bows out. Only minions carry it; kept out of DECAY_TIMERS on purpose. */
   life?: number;
+  /** 对半分: J/K only. ponytail: also the translucent veil — a second basic fighter would fade too. */
+  basic?: boolean;
+  /** Nono国王: the king common sheet stays up through the last staff swing after the timer. */
+  king?: boolean;
   /** Challenge buff: multiplier on this fighter's final damage. 1 is neutral. */
   dmgMul: number;
   /** Challenge mode's own base damage boost, its own factor so deck buffs multiply on top of it. 1 is neutral. */
@@ -137,7 +143,7 @@ export interface Fighter {
   vainEnergy: number;
 }
 
-export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braced', 'braceFx', 'noGain', 'ban', 'muscle', 'sprint', 'poise', 'purge', 'frail'] as const;
+export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braced', 'braceFx', 'noGain', 'ban', 'muscle', 'sprint', 'poise', 'purge', 'frail', 'feast'] as const;
 
 export function makeFighter(
   data: CharacterData,
@@ -150,7 +156,7 @@ export function makeFighter(
     hp: data.hp, energy: init.energy, guard: 100, blocking: false,
     stun: 0, invuln: 0, comboTime: 0, hitFlash: 0, landing: 0, guardBroken: 0,
     knocked: 0, downTime: 0, hitBySuper: false, root: 0, rootHits: 0, ban: 0, beatStacks: 0, frenzy: 0,
-    jabChain: 0, jabChainClock: 0, braced: 0, braceFx: 0, noGain: 0, muscle: 0, sprint: 0, poise: 0, purge: 0, frail: 0, frailBonus: 0,
+    jabChain: 0, jabChainClock: 0, braced: 0, braceFx: 0, noGain: 0, muscle: 0, sprint: 0, poise: 0, purge: 0, frail: 0, frailBonus: 0, feast: 0,
     dodge: 0, dodgeCd: 0, dodgeRequest: false, dodgeBuffer: 0, blockTap: -1, blockBuffer: 0, blockLeft: 0,
     attack: null, attackSerial: 0, cooldowns: [0, 0, 0, 0, 0, 0], queue: [],
     jumpRequest: false, jumpBuffer: 0,

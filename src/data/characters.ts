@@ -356,9 +356,69 @@ export const ROSTER: CharacterData[] = [
       }),
     ],
   },
+  {
+    id: 'ritsu', name: '峰月律', title: '节奏吉他 / 肉盾', quote: '10磅！七分熟！其中5磅配蒜香酱！剩下的配和风夏里亚宾酱！', color: '#4477CC',
+    ...stats('armor'),
+    view: {
+      kind: 'sprite', common: '/sprites/ritsu/common.png', special: '/sprites/ritsu/special.png', height: 181,
+    },
+    skills: [
+      skill(0, 'light', '轻拍'),
+      skill(1, 'heavy', '横踢'),
+      skill(2, 'sweep', '超级带骨肉', {
+        // Three sheet frames. A long hold on each one reads as a freeze, so the swing is short.
+        damage: 64, range: 176, start: .2, duration: .5, cd: 8, knock: 520, fx: 'rib',
+        desc: '朝地面砸下带骨肉，击倒；跳起可躲',
+      }),
+      skill(3, 'dash', '肉串刺击', {
+        // 69 active frames at 668 px/s is 384px, four tenths of the 960-wide stage.
+        damage: 36, range: 100, start: .12, duration: .78, cd: 6, speed: 668, knock: 160, fx: 'skewer',
+        desc: '持肉串前冲约四成画面，穿过敌人；跳起可躲',
+      }),
+      skill(4, 'heavy', '大份牛排', {
+        damage: 0, range: 0, start: .36, duration: .8, cd: 8, fx: 'steak',
+        desc: '啃一口回复 60，霸体 4 秒；前摇被打中则作废',
+      }),
+      skill(5, 'endure', '超恢复', {
+        damage: 0, range: 0, start: .45, duration: .9, fx: 'feast',
+        desc: '6 秒内霸体、每秒回复 36，期间不能使用 J/K',
+      }),
+    ],
+  },
+  {
+    id: 'nonoka', name: '宫永野乃花', title: '吉他 / 国王', quote: '对半分！', color: '#FFBBCC',
+    ...stats('rush'),
+    frenzy: { rate: 1, rangeMul: 1.65, cdMul: 2, damageMul: 1.55, chain: false, air: true, lock: true, time: 7, tint: '#ffd0dc' },
+    view: {
+      kind: 'sprite', common: '/sprites/nonoka/common.png', special: '/sprites/nonoka/special.png', height: 181,
+      king: '/sprites/nonoka/king.png',
+      // Staff fills the cell, so the body reads short. Playback only; feet stay on the cell bottom.
+      kingScale: 1.1,
+    },
+    skills: [
+      skill(0, 'light', '轻拍'),
+      skill(1, 'heavy', '横踢'),
+      skill(2, 'grab', '食兔者', {
+        damage: 18, range: 175, start: .18, duration: 1.4, cd: 7, speed: 580, knock: 0, fx: 'rabbit',
+        desc: '前冲约两成场地，贴脸停住连咬三口并锁住；不击倒',
+      }),
+      skill(3, 'grab', '抱抱还是亲亲', {
+        damage: 10, range: 90, start: .16, duration: 2.05, cd: 9, speed: 420, knock: 110, fx: 'kiss',
+        desc: '短冲抱住，1.5 秒内亲 5 下，最后一下击倒',
+      }),
+      skill(4, 'endure', '对半分', {
+        damage: 0, range: 0, start: .35, duration: .85, cd: 10, fx: 'half',
+        desc: '敌人身后召出半透明的自己：只普攻，伤害三成，血量两成，6 秒',
+      }),
+      skill(5, 'endure', 'Nono国王', {
+        damage: 0, range: 160, start: .4, duration: .85, fx: 'king',
+        desc: '发光后披风王冠权杖 7 秒：只剩普攻，范围和伤害提高，冷却加倍，无法获得气',
+      }),
+    ],
+  },
 ];
 
 /** Select screen. gale, ember and boulder stay on ROSTER for the headless checks. */
-export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki' || c.id === 'rana' || c.id === 'arale' || c.id === 'miyako');
+export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki' || c.id === 'rana' || c.id === 'arale' || c.id === 'miyako' || c.id === 'ritsu' || c.id === 'nonoka');
 
 export const ROSTER_BY_ID = new Map(ROSTER.map(c => [c.id, c]));

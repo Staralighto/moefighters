@@ -7,6 +7,7 @@ import { ROSTER } from '../src/data/characters.ts';
 import { STAGES } from '../src/data/stages.ts';
 import { FLOOR, COMBO_DECAY, STEP, X_MAX } from '../src/game/constants.ts';
 import { clipFor, drumRow } from '../src/render/clips.ts';
+import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
 import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell } from '../src/render/fx.ts';
 import { previewFighter } from '../src/game/fighter.ts';
 import { guideIndex, skillHTML } from '../src/ui/select.ts';
@@ -1999,6 +2000,243 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(left, 'the wall circle connects');
     assert.ok(Math.abs(taken - expect) < .02, `a wall hit pays all six ticks, dealt ${taken}, wanted ${expect}`);
     assert.ok(far > born + speed * 0.7 * 0.9, `the circle still flies its distance, moved ${far - born}`);
+  }
+}
+
+// 峰月律: the slam knocks down, the skewer passes through, the steak braces, the feast locks J/K and heals
+{
+  const ritsu = ROSTER.findIndex(c => c.id === 'ritsu');
+  assert.ok(ritsu >= 0, 'ritsu is on the roster');
+  const data = ROSTER[ritsu];
+  assert.equal(data.trait, 'armor', 'ritsu is the armor tank');
+  assert.equal(data.hp, 1080, 'armor hp');
+  assert.equal(data.skills[2].fx, 'rib', 'U is the bone-in slam');
+  assert.equal(data.skills[2].type, 'sweep', 'the slam only hits the ground');
+  assert.equal(data.skills[3].fx, 'skewer', 'I is the skewer dash');
+  assert.equal(data.skills[3].speed, 668, 'the dash speed is the four-tenths travel');
+  assert.equal(data.skills[4].fx, 'steak', 'O is the steak');
+  assert.equal(data.skills[5].fx, 'feast', 'the super is the feast');
+  assert.equal(data.skills[5].super, true, 'L is the super');
+
+  {
+    const g = newGame(ritsu, 0); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = 80;
+    g.keyDown('KeyU'); run(g, .1);
+    assert.equal(clipFor(p1).ox, RIB_OX[0], 'the slam windup shifts back out');
+    run(g, .15);
+    assert.equal(clipFor(p1).ox, RIB_OX[1], 'the slam hit shifts back out');
+    g.keyUp('KeyU');
+    run(g, 1);
+    g.keyDown('KeyI'); run(g, .05);
+    assert.equal(clipFor(p1).ox, SKEWER_OX[0], 'the skewer windup shifts back out');
+    g.keyUp('KeyI');
+    run(g, 1);
+    g.keyDown('KeyO'); run(g, .1);
+    assert.equal(clipFor(p1).ox, STEAK_OX[0], 'the steak windup shifts back out');
+  }
+
+  {
+    const g = newGame(ritsu, 0); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 80; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyU'); run(g, .7);
+    assert.ok(hp - p2.hp > 60, `the slam hurts, dealt ${hp - p2.hp}`);
+    assert.ok(p2.knocked > 0, 'the slam knocks down');
+  }
+  {
+    const g = newGame(ritsu, 0); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 70; p2.facing = -1;
+    p2.y = FLOOR - 1; p2.vy = -600;
+    const hp = p2.hp;
+    g.keyDown('KeyU'); run(g, .6);
+    assert.equal(p2.hp, hp, 'a jump clears the slam');
+  }
+  {
+    const g = newGame(ritsu, 0); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = 80;
+    const x0 = p1.x;
+    g.keyDown('KeyI'); run(g, .9);
+    const moved = p1.x - x0;
+    assert.ok(moved > 370 && moved < 400, `the skewer travels about 384px, moved ${moved}`);
+  }
+  {
+    const g = newGame(ritsu, 0); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 70; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyI'); run(g, .9);
+    assert.ok(p2.hp < hp, 'the skewer hits someone on the path');
+    assert.equal(p1.combo, 1, 'each body is hit once');
+    assert.equal(p2.knocked, 0, 'the skewer does not knock down');
+    assert.ok(p1.x > p2.x, 'the dash keeps going after the hit');
+  }
+  {
+    const g = newGame(ritsu, 0); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 50; p2.facing = -1;
+    p2.y = FLOOR - 1; p2.vy = -600;
+    const hp = p2.hp;
+    g.keyDown('KeyI'); run(g, .9);
+    assert.equal(p2.hp, hp, 'a jump clears the skewer');
+  }
+  {
+    const g = newGame(ritsu, 0); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 50; p2.facing = -1;
+    p1.hp = 400;
+    g.keyDown('KeyO'); run(g, .15);
+    hit(g, p2, p1, p2.data.skills[0], { hit: new Set() });
+    assert.ok(p1.hp < 400, 'the wind-up can be hit');
+    assert.ok(p1.hp < 460, 'an interrupted bite does not heal');
+    assert.equal(p1.braced, 0, 'an interrupted bite does not brace');
+    assert.equal(p1.attack, null, 'the hit cancels the bite');
+  }
+  {
+    const g = newGame(ritsu, 0); const [p1] = g.fighters; dummy(g);
+    p1.hp = 400;
+    g.keyDown('KeyO'); run(g, .5);
+    assert.equal(p1.hp, 460, 'the bite heals 60');
+    assert.ok(p1.braced > 3.4 && p1.braced <= 4, `the steak braces for 4 seconds, left ${p1.braced}`);
+    const foe = g.fighters[1];
+    foe.x = p1.x + 50; foe.facing = -1;
+    hit(g, foe, p1, foe.data.skills[0], { hit: new Set() });
+    assert.equal(p1.stun, 0, 'the steak brace does not flinch');
+  }
+  {
+    const g = newGame(ritsu, 0); const [p1] = g.fighters; dummy(g);
+    p1.energy = 100;
+    p1.hp = 400;
+    g.keyDown('KeyL'); run(g, 1);
+    assert.equal(p1.attack, null, 'the feast pose has finished');
+    assert.ok(p1.feast > 5, `the feast lasts 6 seconds, left ${p1.feast}`);
+    assert.ok(p1.braced > 5, `the feast braces for 6 seconds, left ${p1.braced}`);
+    assert.ok(p1.hp > 400, 'the feast has started healing');
+    const hp = p1.hp;
+    g.keyDown('KeyJ'); run(g, .3);
+    assert.equal(p1.attack, null, 'J does nothing during the feast');
+    g.keyUp('KeyJ');
+    assert.ok(p1.hp > hp + 8, `the feast heals about 36 a second, gained ${p1.hp - hp}`);
+    g.keyDown('KeyU'); run(g, .1);
+    assert.equal(p1.attack?.skill.fx, 'rib', 'U still comes out during the feast');
+  }
+}
+
+// nonoka: the bite pins without a knockdown, the fifth kiss knocks down,
+// the copy stands behind the foe, and the king form is staff normals only
+{
+  const nonoka = ROSTER.findIndex(c => c.id === 'nonoka');
+  assert.ok(nonoka >= 0, 'nonoka is on the roster');
+  const data = ROSTER[nonoka];
+  assert.equal(data.skills[2].fx, 'rabbit', 'U is the bite');
+  assert.equal(data.skills[3].fx, 'kiss', 'I is the kiss');
+  assert.equal(data.skills[4].fx, 'half', 'O is the copy');
+  assert.equal(data.skills[5].fx, 'king', 'L is the king');
+  assert.equal(data.frenzy?.time, 7, 'the king lasts 7 seconds');
+  assert.equal(data.frenzy?.lock, true, 'the king locks the other skills');
+  assert.ok(data.view.kind === 'sprite' && !!data.view.king, 'nonoka preloads the king common sheet');
+  assert.equal(data.view.kind === 'sprite' && data.view.kingScale, 1.1, 'the king sheet is drawn 1.1× so the body matches');
+
+  {
+    const g = newGame(nonoka, 0); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 120; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyU');
+    run(g, 1.6);
+    assert.ok(hp - p2.hp > 45 && hp - p2.hp < 55, `three bites land, dealt ${hp - p2.hp}`);
+    assert.equal(p2.knocked, 0, 'the bite does not knock down');
+    assert.equal(p1.attack, null, 'the bite lets go');
+    const x = p1.x;
+    g.keyDown('KeyD'); run(g, .3);
+    assert.ok(p1.x > x + 20, `she can walk after the bite, moved ${p1.x - x}`);
+  }
+  {
+    const g = newGame(nonoka, 0); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 50; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyI');
+    let hearts = 0;
+    let fresh = 0;
+    for (let i = 0; i < Math.round(1.7 / STEP); i++) {
+      g.step(STEP);
+      const born = g.effects.filter(e => e.type === 'kiss' && e.life === e.max).length;
+      if (born > fresh) hearts += born - fresh;
+      fresh = born;
+    }
+    assert.equal(hearts, 5, `five heart pulses on the kisses, saw ${hearts}`);
+    assert.ok(hp - p2.hp > 38 && hp - p2.hp < 48, `the kisses land, dealt ${hp - p2.hp}`);
+    assert.ok(p2.knocked > 0, 'the fifth kiss knocks down');
+    run(g, .6);
+    assert.equal(p1.attack, null, 'the kiss lets go');
+    const x = p1.x;
+    g.keyDown('KeyD'); run(g, .3);
+    assert.ok(p1.x > x + 20, `she can walk after the kiss, moved ${p1.x - x}`);
+  }
+  {
+    const g = newGame(nonoka, 0); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 280; p2.facing = -1;
+    g.keyDown('KeyO');
+    run(g, .6);
+    const copy = g.fighters.find(f => f.minion);
+    assert.ok(copy, 'a copy takes the stage');
+    assert.equal(copy!.data.hp, 200, 'the copy has a fifth of her health');
+    assert.equal(copy!.hp, 200, 'the copy starts full');
+    assert.equal(copy!.dmgMul, .3, 'the copy hits for three tenths');
+    assert.equal(copy!.basic, true, 'the copy only has normals');
+    assert.ok((copy!.life ?? 0) > 5, 'the copy lasts about 6 seconds');
+    assert.ok(copy!.x > p2.x, `the copy stands behind a left-facing foe, at ${copy!.x} vs ${p2.x}`);
+    assert.equal(g.attack(copy!, 2), false, 'the copy cannot bite');
+    assert.equal(g.attack(copy!, 0), true, 'the copy can jab');
+    copy!.attack = null;
+    const hp = p2.hp;
+    hit(g, copy!, p2, copy!.data.skills[0], { hit: new Set() });
+    assert.ok(p2.hp < hp && hp - p2.hp < 14, `the jab is soft, dealt ${hp - p2.hp}`);
+    run(g, .5);
+    assert.equal(p1.attack, null, 'the summon lets go');
+    const x = p1.x;
+    g.keyDown('KeyD'); run(g, .3);
+    assert.ok(p1.x > x + 20, `she can walk after the summon, moved ${p1.x - x}`);
+  }
+  {
+    const g = newGame(nonoka, 0); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 100; p2.facing = -1;
+    const px = p2.x;
+    p1.energy = 100;
+    g.keyDown('KeyL');
+    run(g, 1.05);
+    assert.ok(p1.frenzy > 6, `the king lasts 7 seconds, left ${p1.frenzy}`);
+    assert.ok(p1.noGain > 6, 'the king cannot gain meter');
+    assert.equal(p1.king, true, 'the king sheet is on');
+    assert.equal(p1.braced, 0, 'the king is not armoured');
+    assert.ok(p2.x > px + 20, `the cape pushes, moved ${p2.x - px}`);
+    assert.equal(g.attack(p1, 2), false, 'specials are locked');
+    p1.cooldowns[0] = 0;
+    assert.equal(g.attack(p1, 0), true, 'the staff jab comes out');
+    assert.equal(p1.attack!.skill.range, Math.round(98 * 1.65), 'staff reach');
+    assert.equal(p1.attack!.skill.damage, Math.round(26 * 1.55), 'staff damage');
+    assert.ok(p1.cooldowns[0] > .4 && p1.cooldowns[0] < .55, `staff light cooldown is doubled, got ${p1.cooldowns[0]}`);
+    assert.equal(clipFor(p1).sheet, 'common', 'the king swing stays on the common grid');
+    run(g, .12);
+    assert.ok(!g.effects.some(e => e.type === 'ghost'), 'the staff swing leaves no afterimage');
+    p1.attack = null;
+    p1.cooldowns[0] = 0;
+    p1.y = FLOOR - 80;
+    p1.vy = -40;
+    assert.equal(g.attack(p1, 0), true, 'the air staff comes out');
+    assert.equal(p1.attack!.skill.air, true, 'the air jab is the shared air normal');
+    assert.equal(p1.attack!.skill.range, Math.round(100 * 1.65), 'air staff reach');
+    assert.equal(p1.attack!.skill.damage, Math.round(24 * 1.55), 'air staff damage');
+    p1.attack = null;
+    p1.y = FLOOR;
+    p1.vy = 0;
+    const x = p1.x;
+    g.keyDown('KeyD'); run(g, .3);
+    assert.ok(p1.x > x + 20, `she can walk in the king form, moved ${p1.x - x}`);
+    assert.ok(!g.effects.some(e => e.type === 'ghost'), 'walking in the king form leaves no afterimage');
+  }
+  {
+    const g = newGame(nonoka, 0); const [p1] = g.fighters; dummy(g);
+    g.keyDown('KeyJ'); run(g, .5);
+    assert.equal(p1.attack, null, 'the jab lets go');
+    const x = p1.x;
+    g.keyDown('KeyD'); run(g, .3);
+    assert.ok(p1.x > x + 20, `she can walk after the jab, moved ${p1.x - x}`);
   }
 }
 

@@ -252,6 +252,30 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.beginPath(); ctx.ellipse(0, 0, (e.radius ?? 80) * (.35 + p * .65), 10 + p * 8, 0, 0, Math.PI * 2); ctx.stroke();
       break;
     }
+    case 'steak': {
+      // 大份牛排: blue pluses above her when the bite lands.
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= 1 - p;
+      ctx.strokeStyle = '#6eb6ff';
+      ctx.lineWidth = 3;
+      for (const [x, y] of [[-26, 8], [0, -16], [24, 2], [-10, -34], [16, -30]] as const) {
+        const yy = y - p * 18;
+        ctx.beginPath();
+        ctx.moveTo(x - 6, yy); ctx.lineTo(x + 6, yy);
+        ctx.moveTo(x, yy - 6); ctx.lineTo(x, yy + 6);
+        ctx.stroke();
+      }
+      break;
+    }
+    case 'feast': {
+      // 超恢复: a parenthesis on each side. Drawn while the buff holds, gone the frame it ends.
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = .9;
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(-32, 8, 36, Math.PI * .62, Math.PI * 1.38); ctx.stroke();
+      ctx.beginPath(); ctx.arc(32, 8, 36, -Math.PI * .38, Math.PI * .38); ctx.stroke();
+      break;
+    }
     case 'marathon': {
       ctx.translate(e.x, e.y);
       ctx.globalAlpha *= 1 - p;
@@ -593,6 +617,52 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
         ctx.restore();
       }
       stamp(im?.naturalWidth ? keyed(im) : null, angle);
+      break;
+    }
+    case 'rabbit': {
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = 1 - p;
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(-6, 0, 8 + p * 6, .2, Math.PI - .2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(8, 2, 7 + p * 5, .3, Math.PI - .1); ctx.stroke();
+      break;
+    }
+    case 'kiss': {
+      // 抱抱还是亲亲: one light-pink heart blooms on the body and fades. Five kisses, five pulses.
+      ctx.translate(e.x, e.y);
+      const s = 16 + p * 36;
+      ctx.globalAlpha = (1 - p) * .8;
+      ctx.fillStyle = '#ffd0e4';
+      ctx.beginPath();
+      ctx.moveTo(0, s * .3);
+      ctx.bezierCurveTo(s * .2, s * .1, s * .5, -s * .3, s * .5, -s * .5);
+      ctx.bezierCurveTo(s * .5, -s * .85, s * .1, -s * .85, 0, -s * .5);
+      ctx.bezierCurveTo(-s * .1, -s * .85, -s * .5, -s * .85, -s * .5, -s * .5);
+      ctx.bezierCurveTo(-s * .5, -s * .3, -s * .2, s * .1, 0, s * .3);
+      ctx.fill();
+      break;
+    }
+    case 'half': {
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = (1 - p) * .8;
+      ctx.strokeStyle = e.color;
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.ellipse(0, 0, r * (.3 + p * .7), r * .4 * (.3 + p), 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = (1 - p) * .35;
+      ctx.beginPath(); ctx.ellipse(-12, 0, r * .25, r * .35, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(12, 0, r * .25, r * .35, 0, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
+    case 'king': {
+      const rad = e.radius ?? 160;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = (1 - p) * .85;
+      ctx.fillStyle = '#fff6fb';
+      ctx.beginPath(); ctx.ellipse(0, -10, 28 + p * 40, 46 + p * 20, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#ffd0dc';
+      ctx.lineWidth = 4 * (1 - p) + 1;
+      ctx.beginPath(); ctx.ellipse(0, 0, rad * (.2 + p * .8), rad * .28 * (.2 + p), 0, 0, Math.PI * 2); ctx.stroke();
       break;
     }
     case 'super':
