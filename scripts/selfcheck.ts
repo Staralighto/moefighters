@@ -1,6 +1,6 @@
 /* Headless rule check: runs the fixed-step engine without DOM or canvas. `npm run check`. */
 import { FightGame } from '../src/game/game.ts';
-import { drumShotTime, hit } from '../src/game/combat.ts';
+import { drumShotTime, hit, violetHidden } from '../src/game/combat.ts';
 import { vowBeatTime, VOW_BEATS } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
 import { ROSTER } from '../src/data/characters.ts';
@@ -554,7 +554,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     if (!p1.attack) p1.attack = {
       skill: ROSTER[0].skills[0], index: 0, serial: ++p1.attackSerial,
       t: 0, emitted: false, shots: 0, hit: new Set(), burst: 0,
-      endure: 0, liftAt: 0, tossAt: 0, hold: -1,
+      endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0,
     };
     g.step(STEP);
     if (cpu.dodge > 0 || cpu.dodgeCd > 0 || cpu.y < FLOOR - 1) { escaped = true; break; }
@@ -1128,7 +1128,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(waveGone && waveMax < 260, `the shout dies of range, flew ${waveMax}`);
 
   const pf = previewFighter(data, 0);
-  pf.attack = { skill: data.skills[0], index: 0, serial: 1, t: .12, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1 };
+  pf.attack = { skill: data.skills[0], index: 0, serial: 1, t: .12, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 };
   pf.frenzy = 5;
   assert.equal(clipFor(pf).sheet, 'frenzy', 'frenzy lights read the frenzy sheet');
   pf.attack = null;
@@ -1298,7 +1298,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const tomoriData = ROSTER[ROSTER.findIndex(c => c.id === 'tomori')];
   // L: the sung note holds for 0.6s before the summon, then the bow
   const pf = previewFighter(tomoriData, 0);
-  pf.attack = { skill: tomoriData.skills[5], index: 5, serial: 1, t: 0, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1 };
+  pf.attack = { skill: tomoriData.skills[5], index: 5, serial: 1, t: 0, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 };
   assert.deepEqual([clipFor(pf).col, clipFor(pf).row], [3, 0], 'the sing starts on the breath');
   pf.attack.t = tomoriData.skills[5].start - .6;
   assert.equal(clipFor(pf).row, 1, 'the sung note takes over 0.6s before the summon');
@@ -1308,7 +1308,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(clipFor(pf).row, 2, 'the bow follows the summon');
 
   const pf2 = previewFighter(tomoriData, 0);
-  pf2.attack = { skill: tomoriData.skills[2], index: 2, serial: 1, t: 0, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1 };
+  pf2.attack = { skill: tomoriData.skills[2], index: 2, serial: 1, t: 0, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 };
   assert.deepEqual([clipFor(pf2).col, clipFor(pf2).row], [0, 0], 'the stone reads the U column');
 }
 
@@ -1624,7 +1624,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
   // clip routing: the strum loops while held, the parfait holds the arms-wide beat
   const pf = previewFighter(data, 0);
-  pf.attack = { skill: data.skills[2], index: 2, serial: 1, t: 0, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1 };
+  pf.attack = { skill: data.skills[2], index: 2, serial: 1, t: 0, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 };
   assert.deepEqual([clipFor(pf).col, clipFor(pf).row], [0, 0], 'the riff reads column U');
   pf.attack.t = .14;
   assert.equal(clipFor(pf).row, 1, 'strum cell one');
@@ -1636,7 +1636,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(clipFor(pf).row, 2, 'the release tail plays the recover');
 
   const pf2 = previewFighter(data, 0);
-  pf2.attack = { skill: data.skills[5], index: 5, serial: 1, t: 0, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1 };
+  pf2.attack = { skill: data.skills[5], index: 5, serial: 1, t: 0, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 };
   pf2.attack.t = data.skills[5].start - .01;
   assert.equal(clipFor(pf2).row, 0, 'the parfait starts on the present');
   pf2.attack.t = data.skills[5].start + .05;
@@ -2237,6 +2237,276 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const x = p1.x;
     g.keyDown('KeyD'); run(g, .3);
     assert.ok(p1.x > x + 20, `she can walk after the jab, moved ${p1.x - x}`);
+  }
+}
+
+// yuno: tap ring, held notes, piercing meat, a lane that does not stun, and a billed super that cannot regen
+{
+  const yuno = ROSTER.findIndex(c => c.id === 'yuno');
+  assert.ok(yuno >= 0, 'yuno is on the roster');
+  const data = ROSTER[yuno];
+  assert.equal(data.skills[2].count, 6, '韵律直觉 caps at six pulses');
+  assert.equal(data.skills[2].fx, 'groove', '韵律直觉 is the groove');
+  assert.equal(data.skills[3].fx, 'meat', '带骨肉 is the meat');
+  assert.equal(data.skills[3].gain, 4, 'meat does not feed the super');
+  assert.equal(data.skills[4].count, 18, '作曲 rains eighteen ticks');
+  assert.equal(data.skills[5].fx, 'infinite', '直接无限大 is the bill');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/yuno/meat.png'), 'the meat is preloaded');
+
+  const tap = newGame(yuno, 2); const [t1] = tap.fighters; dummy(tap);
+  tap.fighters[1].x = 80;
+  tap.keyDown('KeyU');
+  run(tap, .05);
+  tap.keyUp('KeyU');
+  run(tap, 1.2);
+  assert.equal(tap.projectiles.filter(p => p.fx === 'groove-note').length, 0, 'a tap throws no notes');
+  assert.ok(t1.cooldowns[2] > 1 && t1.cooldowns[2] < 3, `tap cooldown stays near 3s, left ${t1.cooldowns[2]}`);
+
+  const held = newGame(yuno, 2); dummy(held);
+  held.fighters[1].invuln = 9;
+  held.fighters[1].x = 80;
+  held.keyDown('KeyU');
+  run(held, 2.4);
+  const notes = held.projectiles.filter(p => p.fx === 'groove-note').length;
+  assert.ok(notes >= 4, `holding the groove fires notes, saw ${notes}`);
+
+  const g = newGame(yuno, 2); const [p1, p2] = g.fighters; dummy(g);
+  const hp = p2.hp;
+  g.keyDown('KeyI');
+  run(g, .4);
+  const shot = g.projectiles.find(p => p.fx === 'meat');
+  if (!shot) throw Error('FAIL: 带骨肉 spawns');
+  const outbound = shot.vx;
+  run(g, 1.6);
+  assert.ok(shot.life > 0, 'meat stays up after a hit');
+  assert.ok(p2.hp < hp, 'meat still hurts on the way through');
+  assert.ok(outbound > 0 && shot.vx < 0, `meat bounces off the far side, vx ${shot.vx}`);
+  // Stand behind the returning chunk so it cannot pick itself up before the cooldown ends.
+  p1.x = X_MAX;
+  run(g, 1.5);
+  g.keyDown('KeyI');
+  run(g, .3);
+  assert.equal(g.projectiles.filter(p => p.fx === 'meat').length, 1, 'a second throw does not stack');
+  p1.x = shot.x;
+  p1.y = FLOOR;
+  run(g, .05);
+  assert.equal(g.projectiles.filter(p => p.fx === 'meat' && p.life > 0).length, 0, 'touching the meat picks it up');
+
+  const rain = newGame(yuno, 2); const [r1, r2] = rain.fighters; dummy(rain);
+  r2.x = r1.x + 140;
+  r2.facing = -1;
+  const before = r2.hp;
+  const energy = r1.energy;
+  rain.keyDown('KeyO');
+  run(rain, 1);
+  assert.ok(r2.hp < before - 100, `standing in the lane hurts, lost ${before - r2.hp}`);
+  assert.equal(r2.stun, 0, 'the lane does not stun');
+  assert.ok(r1.energy - energy < 4, `the lane grants no hit energy, gained ${r1.energy - energy}`);
+
+  const supe = newGame(yuno, 2); const [s1, s2] = supe.fighters; dummy(supe);
+  s1.energy = 100;
+  s2.x = 80;
+  supe.keyDown('KeyL');
+  run(supe, .75);
+  assert.equal(s1.energy, 0, 'the super spends the bar');
+  assert.ok(s1.noGain > 3, `gains are locked, left ${s1.noGain}`);
+  assert.ok(s1.debt > 3, `the bill window is open, left ${s1.debt}`);
+  const full = s1.hp;
+  hit(supe, s2, s1, s2.data.skills[1], { hit: new Set() });
+  assert.equal(s1.hp, full, 'a hit during the window does not spend hp');
+  assert.ok(s1.debtDmg > 40, `the hit is billed, saw ${s1.debtDmg}`);
+  assert.equal(s1.energy, 0, 'the window does not refund energy');
+  const owed = Math.round(s1.debtDmg * 1.5);
+  run(supe, s1.debt + .05);
+  assert.equal(s1.debt, 0, 'the window ends');
+  assert.equal(s1.hp, full - owed, `the bill is 150%, wanted ${full - owed} got ${s1.hp}`);
+}
+
+// viola: the snip pins four cuts, a blocked snip does not siphon, the violet warps to the far edge,
+// the echo replays the tape unhittable, and the arrow detonates a quarter of the stage
+{
+  const viola = ROSTER.findIndex(c => c.id === 'viola');
+  assert.ok(viola >= 0, 'viola is on the roster');
+  const data = ROSTER[viola];
+  assert.equal(data.trait, 'armor', 'viola is armor');
+  assert.equal(data.skills[2].fx, 'snip', 'U is the snip');
+  assert.equal(data.skills[2].count, 4, 'the snip lands four cuts');
+  assert.equal(data.skills[3].fx, 'violet', 'I is the violet');
+  assert.equal(data.skills[4].fx, 'record', 'O is the record');
+  assert.equal(data.skills[5].fx, 'fuga', 'the super is the fuga');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/viola/fuga-burst.png'), 'the blast sheet is preloaded');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/viola/fuga-arrow.png'), 'the arrow is preloaded');
+
+  // U: standing in the marked spot pays the whole string; the finale shoves without a knockdown
+  {
+    const g = newGame(viola, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 200; p2.facing = -1;
+    const hp = p2.hp, x0 = p2.x;
+    g.keyDown('KeyU'); run(g, 1.5);
+    assert.equal(p1.combo, 4, 'the snip lands four cuts');
+    assert.ok(hp - p2.hp > 50, `the volley dealt damage, ${hp - p2.hp}`);
+    assert.equal(p2.knocked, 0, 'the cuts pin, the finale only shoves');
+    assert.ok(Math.abs(p2.x - x0) > 20, `the finale shoves, moved ${Math.abs(p2.x - x0)}`);
+  }
+  // U: leave the marked spot during the wind-up — the field plants on the frozen spot and misses
+  {
+    const g = newGame(viola, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 200; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyU');
+    run(g, .2);
+    g.keyDown('ArrowDown'); run(g, .05); g.keyUp('ArrowDown');
+    run(g, .6);
+    const field = g.projectiles.find(p => p.fx === 'snip');
+    assert.ok(field, 'the field still plants where she read them');
+    assert.ok(Math.abs(field!.x - (p1.x + 200)) < 2, `the field froze on the marked spot, at ${field!.x}`);
+    run(g, .7);
+    assert.equal(p2.hp, hp, 'leaving the marked spot dodges the cuts');
+  }
+  // U: the lock reaches across the whole stage
+  {
+    const g = newGame(viola, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = X_MAX; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyU'); run(g, 1.5);
+    assert.equal(p1.combo, 4, 'the cut reaches across the stage');
+    assert.ok(hp - p2.hp > 50, `the far cut dealt damage, ${hp - p2.hp}`);
+  }
+  // U: blocking the cuts chips and grinds the guard, but her meter stays put
+  {
+    const g = newGame(viola, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 200; p2.facing = -1;
+    g.keyDown('ArrowDown'); run(g, .1);
+    assert.ok(p2.blocking, 'holding block');
+    p1.energy = 50;
+    const before = p1.energy, hp = p2.hp;
+    g.keyDown('KeyU'); run(g, 1.5);
+    assert.ok(hp - p2.hp < 20, `blocking the snip chips, took ${hp - p2.hp}`);
+    assert.ok(p1.energy >= before, `a blocked snip does not siphon meter, saw ${p1.energy - before}`);
+    assert.ok(p2.guard < 100, 'the cuts grind the guard');
+  }
+  // I: the departure burst catches a close foe and she reappears on the far edge
+  {
+    const g = newGame(viola, 2); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = p1.x + 90; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyI'); run(g, .35);
+    assert.ok(p2.hp < hp, 'the departure burst caught the foe');
+    assert.ok(g.effects.some(e => e.type === 'violet'), 'the petals played');
+    run(g, .45);
+    assert.ok(p1.x > 900, `she reappeared on the far edge, x=${p1.x}`);
+    assert.ok(!violetHidden(p1), 'she is visible again');
+  }
+  {
+    const g = newGame(viola, 2); const [p1] = g.fighters; dummy(g);
+    g.keyDown('KeyI'); run(g, .4);
+    assert.ok(violetHidden(p1), 'she is gone mid-warp');
+  }
+  // O: cast, walk, jab — the echo replays the walk and the jab, and nothing can touch it
+  {
+    const g = newGame(viola, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 220; p2.facing = -1;
+    p2.invuln = 99;
+    g.keyDown('KeyO'); run(g, .5);
+    const echo = g.fighters.find(f => f.echo);
+    assert.ok(echo, 'the stand-in is on stage');
+    assert.ok(echo!.master === p1.id, 'the echo answers to her');
+    g.keys.add('KeyD'); run(g, 1.0); g.keys.delete('KeyD');
+    g.keyDown('KeyJ'); run(g, .3); g.keyUp('KeyJ');
+    assert.ok(p1.recLeft > 0 && p1.recLeft < 3.5, 'the tape is rolling');
+    assert.ok(p2.hp === p2.data.hp, 'the recorded jab whiffs on the untouchable dummy');
+    p2.invuln = 0;
+    run(g, 2.6);
+    assert.ok(echo!.tape?.playing, 'the playback started');
+    const hp = p2.hp;
+    run(g, 2.5);
+    assert.ok(p2.hp < hp, `the echo replayed the jab, dealt ${hp - p2.hp}`);
+    assert.equal(hit(g, p2, echo!, p2.data.skills[0], { hit: new Set() }), false, 'the echo cannot be hit');
+  }
+  // O: a recorded hop and jab replay exactly once — the tape never loops back on itself
+  {
+    const g = newGame(viola, 2); const [p1] = g.fighters; dummy(g);
+    g.fighters[1].invuln = 99;
+    g.keyDown('KeyO'); run(g, .6);
+    g.keyDown('KeyW'); run(g, .15); g.keyUp('KeyW');
+    g.keyDown('KeyJ'); run(g, .3); g.keyUp('KeyJ');
+    run(g, 3.0);
+    const echo = g.fighters.find(f => f.echo)!;
+    assert.ok(echo.tape?.playing, 'the playback started');
+    let jumps = 0, wasAir = false, casts = 0;
+    for (let i = 0; i < Math.round(4 / STEP); i++) {
+      const serial = echo.attackSerial;
+      g.step(STEP);
+      if (echo.attackSerial > serial) casts++;
+      const air = echo.y < FLOOR - .5;
+      if (air && !wasAir) jumps++;
+      wasAir = air;
+    }
+    assert.equal(jumps, 1, `one recorded hop replays once, saw ${jumps}`);
+    assert.equal(casts, 1, `one recorded jab replays once, saw ${casts}`);
+  }
+  // L: the arrow flies level, she is free at once, and the blast eats a quarter of the stage
+  {
+    const g = newGame(viola, 2); const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = 100;
+    p1.x = 200; p2.x = 700; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyL'); run(g, .9);
+    assert.equal(p1.attack, null, 'she is free the moment the arrow leaves');
+    const arrow = g.projectiles.find(p => p.fx === 'fuga');
+    assert.ok(arrow, 'the arrow is in the air');
+    assert.equal(arrow!.vx, 300, `the arrow flies at its own speed, vx ${arrow!.vx}`);
+    // 300 px/s makes contact about 1.8s in; sample inside the blast's 0.6s effect window.
+    run(g, 1.2);
+    assert.ok(hp - p2.hp > 120, `the blast caught the standing foe, dealt ${hp - p2.hp}`);
+    assert.ok(g.projectiles.every(p => p.fx !== 'fuga'), 'the arrow is gone');
+    assert.ok(g.effects.some(e => e.type === 'fuga-burst'), 'the blast played');
+  }
+  // L: a full jump clears the arrow and stands outside the edge blast
+  {
+    const g = newGame(viola, 2); const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = 100;
+    p1.x = 200; p2.x = 640; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyL'); run(g, .9);
+    for (let i = 0; i < Math.round(3 / STEP); i++) {
+      p2.y = FLOOR - 105; p2.vy = 0;
+      g.step(STEP);
+    }
+    assert.equal(p2.hp, hp, 'a full jump clears the arrow and the blast');
+  }
+  // L: the blast reads friends too — a mid-range catch blows her up along with the foe
+  {
+    const g = newGame(viola, 2); const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = 100;
+    p1.x = 200; p2.x = 400; p2.facing = -1;
+    const hp1 = p1.hp, hp2 = p2.hp;
+    g.keyDown('KeyL'); run(g, 1.3);
+    assert.ok(hp2 - p2.hp > 100, `the blast caught the foe, dealt ${hp2 - p2.hp}`);
+    assert.ok(hp1 - p1.hp > 100, `the blast catches her too, took ${hp1 - p1.hp}`);
+  }
+  // L: point-blank burns her as well — the fuse outlives the cast invuln
+  {
+    const g = newGame(viola, 2); const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = 100;
+    p2.x = p1.x + 60; p2.facing = -1;
+    const hp1 = p1.hp, hp2 = p2.hp;
+    g.keyDown('KeyL'); run(g, 1.2);
+    assert.ok(hp2 - p2.hp > 100, `the point-blank blast caught the foe, dealt ${hp2 - p2.hp}`);
+    assert.ok(hp1 - p1.hp > 100, `hugging the foe burns her too, took ${hp1 - p1.hp}`);
+  }
+  // clips: U/I/O/L columns, and the vanish hides mid-warp
+  {
+    const pf = previewFighter(data, 0);
+    pf.attack = { skill: data.skills[2], index: 2, serial: 1, t: .2, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 };
+    assert.equal(clipFor(pf).col, 0, 'the snip reads column U');
+    pf.attack = { skill: data.skills[3], index: 3, serial: 2, t: data.skills[3].start + .1, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 };
+    assert.ok(violetHidden(pf), 'she is hidden mid-warp');
+    assert.equal(clipFor(pf).col, 1, 'the violet reads column I');
+    pf.attack = { skill: data.skills[4], index: 4, serial: 3, t: .3, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 };
+    assert.equal(clipFor(pf).col, 2, 'the record reads column O');
+    pf.attack = { skill: data.skills[5], index: 5, serial: 4, t: .3, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 };
+    assert.equal(clipFor(pf).col, 3, 'the fuga reads column L');
   }
 }
 

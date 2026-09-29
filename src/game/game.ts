@@ -50,7 +50,11 @@ const MINION_HP_RATIO = .2;
 const MINION_LIFE = 12;
 /** Who can answer the call. ponytail: roster ids only, so a teammate is always a finished character. */
 const MINION_POOL = ['anon', 'soyo'] as const;
-export type SfxKind = 'light' | 'heavy' | 'hit' | 'block' | 'super' | 'select' | 'jump' | 'ko' | 'cast';
+/** 录音: the window the master's actions are captured for, how hard the echo hits, and the fade after the replay. */
+export const RECORD_TIME = 3.5;
+const ECHO_DMG = .5;
+const ECHO_FADE = .4;
+export type SfxKind = 'light' | 'heavy' | 'hit' | 'block' | 'super' | 'select' | 'jump' | 'ko' | 'cast' | 'key';
 
 export interface Effect {
   type: string; x: number; y: number; color: string; life: number; max: number;
@@ -203,15 +207,16 @@ export class FightGame {
   isEnemy(a: Fighter | undefined, b: Fighter | undefined): boolean { return !!a && !!b && a.team !== b.team; }
   /** By id, never by array slot: a summoned teammate's id has nothing to do with its position. */
   fighterById(id: number): Fighter | undefined { return this.fighters.find(f => f.id === id); }
-  opponents(f: Fighter): Fighter[] { return this.fighters.filter(o => this.isEnemy(f, o) && o.hp > 0); }
+  /** Echoes are nobody's target: not melee, not shots, not the AI, not a well's pull. */
+  opponents(f: Fighter): Fighter[] { return this.fighters.filter(o => this.isEnemy(f, o) && o.hp > 0 && !o.echo); }
   targetFor(f: Fighter): Fighter | undefined {
     return this.opponents(f).sort((a, b) => Math.abs(a.x - f.x) - Math.abs(b.x - f.x))[0];
   }
   teamHealth(team: number): number {
-    const members = this.fighters.filter(f => f.team === team && !f.minion);
+    const members = this.fighters.filter(f => f.team === team && !f.minion && !f.echo);
     return members.reduce((n, f) => n + f.hp, 0) / members.reduce((n, f) => n + f.data.hp, 0);
   }
-  teamAlive(team: number): boolean { return this.fighters.some(f => f.team === team && f.hp > 0 && !f.minion); }
+  teamAlive(team: number): boolean { return this.fighters.some(f => f.team === team && f.hp > 0 && !f.minion && !f.echo); }
   isControl(code: string): boolean {
     return code === 'Escape' || CONTROLS.some(c => c.left === code || c.right === code || c.block === code || c.jump.includes(code) || c.attacks.includes(code));
   }
@@ -361,6 +366,8 @@ export class FightGame {
     if (f.basic && index >= 2) return false;
     if (f.king && index >= 2) return false;
     if (index === 5 && f.energy < 100) return false;
+    // 带骨肉之人: one chunk on the field. A second press does nothing until she touches it.
+    if (this.skillFor(f, index).fx === 'meat' && this.projectiles.some(p => p.fx === 'meat' && p.owner === f.id && p.life > 0)) return false;
     const a = f.attack;
     // Grounded light attacks that connected can cancel into light or heavy.
     // A counted melee flurry is not a chainable jab; it plays out.
@@ -388,6 +395,7 @@ export class FightGame {
       liftAt: 0,
       tossAt: 0,
       hold: -1,
+      anchor: f.x,
     };
     // 狂化 J/K. Soyo and Arale stay on the ground; a form with frenzy.air (国王) covers the air normals too.
     // The clone keeps the shared skill data untouched.
@@ -420,6 +428,9 @@ export class FightGame {
     if (slot === 5) {
       f.energy = 0;
       f.invuln = .64;
+      // 直接无限大: the cast already spent the bar. Lock gains through the windup and the bill window
+      // so a hit-string cannot pay for a second cast. 4.4s covers the 0.4s pose plus 4s of debt.
+      if (skill.fx === 'infinite') f.noGain = 4.4;
       this.flash = .15;
       this.shake = 5;
       this.audio.play('super');
@@ -437,6 +448,8 @@ export class FightGame {
       if (slot === 0) { f.jabChain++; f.jabChainClock = FRENZY_CHAIN_WINDOW; }
       else f.jabChain = 0;
     }
+    // 录音: the tape captures what actually came out, wherever it started from; the super stays off the record.
+    if (f.recLeft > 0 && slot < 5) f.recTape.push({ t: RECORD_TIME - f.recLeft, kind: 'atk', v: slot });
     return true;
   }
 
@@ -515,6 +528,7 @@ export class FightGame {
 
     if (this.mode !== 'training') this.time -= dt;
     stepAI(this, dt);
+    this.stepEchos(dt);
     for (const f of this.fighters) this.stepFighter(f, dt);
     this.stepMinions(dt);
     if (this.mode === 'team' || this.mode === 'challenge') this.separate();
@@ -556,7 +570,7 @@ export class FightGame {
   /** ponytail: 36px gap only between teams. Teammates have no body and pass through. */
   private separate(): void {
     const GAP = 36;
-    const live = this.fighters.filter(f => f.hp > 0);
+    const live = this.fighters.filter(f => f.hp > 0 && !f.echo);
     for (let i = 0; i < live.length; i++) {
       for (let j = i + 1; j < live.length; j++) {
         const a = live[i], b = live[j];
@@ -644,6 +658,75 @@ export class FightGame {
     for (const m of gone) this.dismissMinion(m, m.hp > 0);
   }
 
+  /** 录音: the master's double. It spawns where she stood, holds the tape by reference, and waits
+   *  out the recording as a translucent stand-in. Unhittable by the opponents() filter, and hit()
+   *  turns it away as a second lock. */
+  spawnEcho(owner: Fighter): void {
+    const old = this.fighters.find(f => f.echo && f.master === owner.id);
+    if (old) this.dismissMinion(old, false);
+    const m = makeFighter({ ...owner.data }, this.minionSeq++, {
+      x: owner.x,
+      facing: owner.facing,
+      controller: null,
+      energy: 0,
+      team: owner.team,
+    });
+    m.hp = m.data.hp;
+    m.echo = true;
+    m.master = owner.id;
+    m.dmgMul = ECHO_DMG;
+    m.noGain = RECORD_TIME * 2 + ECHO_FADE + 1;
+    m.tape = { events: owner.recTape, t: 0, total: RECORD_TIME, playing: false, cursor: 0 };
+    owner.recLeft = RECORD_TIME;
+    owner.recMove = 0;
+    while (this.totalHits.length <= m.id) { this.totalHits.push(0); this.maxCombo.push(0); }
+    this.fighters.push(m);
+    this.sparks(m.x, m.y - 80, m.data.color, 12);
+    this.text('REC', owner.x, owner.y - 230, m.data.color, .9, 16);
+  }
+
+  /** 录音: the tape ends and the stand-in comes alive. A short grace covers a cast started on the last beat. */
+  private startEchoPlayback(master: Fighter): void {
+    const m = this.fighters.find(f => f.echo && f.master === master.id);
+    if (!m || !m.tape) return;
+    m.tape.playing = true;
+    m.tape.t = 0;
+    m.tape.cursor = 0;
+    this.effect('burst', m.x, m.y - 80, m.data.color, .4, { radius: 70 });
+  }
+
+  /** 录音: the echo's brain is its tape. Runs before stepFighter so a replayed input lands the same step
+   *  the master's did: move sets the stick, jump leaves the ground, atk goes through the normal attack(). */
+  private stepEchos(dt: number): void {
+    if (!this.fighters.some(f => f.echo)) return;
+    const gone: Fighter[] = [];
+    for (const m of this.fighters) {
+      if (!m.echo) continue;
+      const master = this.fighterById(m.master ?? -1);
+      if (!master || master.hp <= 0) { gone.push(m); continue; }
+      const tape = m.tape;
+      if (!tape?.playing) continue;
+      tape.t += dt;
+      // The cursor lives on the tape: each event performs exactly once, never re-fires on a later step.
+      while (tape.cursor < tape.events.length && tape.events[tape.cursor].t <= tape.t) {
+        const ev = tape.events[tape.cursor++];
+        if (ev.kind === 'move') m.ai.move = ev.v ?? 0;
+        else if (ev.kind === 'jump') {
+          if (m.y >= FLOOR - .1) {
+            m.vy = -600;
+            this.audio.play('jump');
+            this.effect('dust', m.x, FLOOR, '#afa1c1', .3, { radius: 25 });
+          }
+        } else if (ev.kind === 'atk') this.attack(m, ev.v ?? 0);
+      }
+      if (tape.t >= tape.total + ECHO_FADE) gone.push(m);
+    }
+    for (const m of gone) {
+      this.effect('violet', m.x, m.y - 85, m.data.color, .5, { radius: 60 });
+      this.dismissMinion(m, false);
+    }
+  }
+
   private fall(f: Fighter, dt: number): void {
     f.vy += GRAVITY * dt;
     f.y = Math.min(FLOOR, f.y + f.vy * dt);
@@ -673,7 +756,19 @@ export class FightGame {
     const human = f.controller !== null;
 
     f.cooldowns = f.cooldowns.map(n => Math.max(0, n - dt * (f.data.trait === 'beat' ? 1 + f.beatStacks * .06 : 1)));
+    const debtWas = f.debt;
+    const recWas = f.recLeft;
     for (const key of DECAY_TIMERS) f[key] = Math.max(0, f[key] - dt);
+    if (debtWas > 0 && f.debt === 0 && f.debtDmg > 0) {
+      const bill = Math.round(f.debtDmg * 1.5);
+      f.debtDmg = 0;
+      f.hp = Math.max(0, f.hp - bill);
+      f.stun = Math.max(f.stun, .35);
+      this.text('-' + bill, f.x, f.y - 170, '#ff4d6a', .8, 28);
+      this.shake = 10;
+    }
+    if (recWas > 0 && f.recLeft === 0) this.startEchoPlayback(f);
+    if (f.hp <= 0) { this.retire(f); this.fall(f, dt); return; }
     // ponytail: the 7s timer can die mid-swing. Hold a sliver so the king sheet lasts that one staff hit, then drop it.
     if (f.king && f.frenzy <= 0) {
       const swinging = !!f.attack && f.attack.index <= 1;
@@ -709,7 +804,12 @@ export class FightGame {
     if (f.blockTap >= 0) f.blockTap += dt;
     const move = human
       ? (c && this.keys.has(c.right) ? 1 : 0) - (c && this.keys.has(c.left) ? 1 : 0)
-      : this.mode !== 'training' ? f.ai.move : 0;
+      : this.mode !== 'training' || f.echo ? f.ai.move : 0;
+    // 录音: the tape records the stick, not the body — changes only, so the echo reads a clean script.
+    if (f.recLeft > 0 && move !== f.recMove) {
+      f.recTape.push({ t: RECORD_TIME - f.recLeft, kind: 'move', v: move });
+      f.recMove = move;
+    }
     const blockHeld = human ? !!c && this.keys.has(c.block) : this.mode !== 'training' && f.ai.block > 0;
 
     if (f.dodgeRequest) { f.dodgeBuffer = INPUT_BUFFER; f.dodgeRequest = false; }
@@ -736,7 +836,7 @@ export class FightGame {
       else if (grounded && !inputLocked(f)) f.dodgeBuffer = Math.max(0, f.dodgeBuffer - dt);
     }
 
-    const canGuard = grounded && free && f.guardBroken <= 0 && f.guard > 0 && f.purge <= 0;
+    const canGuard = grounded && free && f.guardBroken <= 0 && f.guard > 0 && f.purge <= 0 && f.debt <= 0;
     if (canGuard && (blockHeld || f.blockLeft > 0 || f.blockBuffer > 0)) {
       if (!blockHeld && f.blockBuffer > 0) f.blockLeft = Math.max(f.blockLeft, BLOCK_MIN);
       if (!blockHeld) f.blockBuffer = 0;
@@ -760,6 +860,7 @@ export class FightGame {
       if (convert >= 0) { f.cooldowns[convert] = 0; f.attack = null; }
       f.vy = -600;
       f.jumpBuffer = 0;
+      if (f.recLeft > 0) f.recTape.push({ t: RECORD_TIME - f.recLeft, kind: 'jump' });
       this.audio.play('jump');
       this.effect('dust', f.x, FLOOR, '#afa1c1', .3, { radius: 25 });
       if (convert >= 0) this.attack(f, convert);
@@ -770,6 +871,7 @@ export class FightGame {
       if (canHop && !f.attack) {
         f.jumpBuffer = 0;
         f.vy = -600;
+        if (f.recLeft > 0) f.recTape.push({ t: RECORD_TIME - f.recLeft, kind: 'jump' });
         this.audio.play('jump');
         this.effect('dust', f.x, FLOOR, '#afa1c1', .3, { radius: 25 });
       } else if (grounded && !inputLocked(f)) f.jumpBuffer = Math.max(0, f.jumpBuffer - dt);

@@ -416,9 +416,66 @@ export const ROSTER: CharacterData[] = [
       }),
     ],
   },
+  {
+    id: 'yuno', name: '千石由乃', title: 'DJ / 音控', quote: '已经结束的事情，和不想结束的心情是两码事吧？', color: '#EE5577',
+    ...stats('focus'),
+    view: {
+      kind: 'sprite', common: '/sprites/yuno/common.png', special: '/sprites/yuno/special.png', height: 181,
+      extras: ['/sprites/yuno/meat.png', '/sprites/yuno/note.png'],
+    },
+    skills: [
+      skill(0, 'light', '轻点'),
+      skill(1, 'heavy', '横踢'),
+      skill(2, 'light', '韵律直觉', {
+        damage: 18, count: 6, interval: .42, range: 130, start: .22, duration: 2.75, cd: 3, knock: 460, gain: 4, fx: 'groove',
+        desc: '点按一圈击退；按住持续推开，并从第二拍起射出慢速追踪音符，起跳可躲',
+      }),
+      skill(3, 'projectile', '带骨肉之人', {
+        damage: 30, speed: 340, size: 48, life: 999, start: .23, duration: .53, cd: 3.2, knock: 120, gain: 4, fx: 'meat',
+        desc: '旋转带骨肉在两侧来回穿透，直到由乃碰到才消失',
+      }),
+      skill(4, 'heavy', '高性能作曲AI', {
+        damage: 28, count: 18, interval: .12, range: 0, start: .45, duration: 2.6, cd: 8, knock: 0, gain: 0, fx: 'compose',
+        desc: '身前音符雨，不硬直；站满约半血，走开就停',
+      }),
+      skill(5, 'endure', '直接无限大', {
+        damage: 0, range: 0, start: .4, duration: .7, fx: 'infinite',
+        desc: '4 秒霸体记账且禁回气，结束时承受期间伤害的 150%',
+      }),
+    ],
+  },
+  {
+    id: 'viola', name: '薇欧拉', title: '队长 / 恶德', quote: '火种燃尽之后会怎么样呢？', color: '#8E5AC8',
+    ...stats('armor'),
+    view: {
+      kind: 'sprite', common: '/sprites/viola/common.png', special: '/sprites/viola/special.png', height: 181,
+      extras: ['/sprites/viola/fuga-arrow.png', '/sprites/viola/fuga-burst.png'],
+    },
+    skills: [
+      skill(0, 'light', '轻拍'),
+      skill(1, 'heavy', '横踢'),
+      skill(2, 'projectile', '剪', {
+        damage: 16, count: 4, interval: .15, range: 872, start: .5, duration: .95, cd: 7,
+        life: .8, size: 105, knock: 480, fx: 'snip',
+        desc: '锁定全战场敌人脚下，半秒后原地虚空连剪四段并钉住，末段击退；抬手期离开标记点、早跳或格挡可解，被挡不削气',
+      }),
+      skill(3, 'dash', '哭泣的紫罗兰', {
+        damage: 45, range: 175, start: .22, duration: .8, cd: 13, invuln: .5, knock: 280, fx: 'violet',
+        desc: '化作花瓣消失并爆开一次，于战场另一侧边缘重现再爆一次；消失期间无敌',
+      }),
+      skill(4, 'heavy', '录音', {
+        damage: 0, range: 0, start: .2, duration: .45, cd: 13, fx: 'record',
+        desc: '录下 3.5 秒行动，原地留下半透明的影子照剧本重演一遍；影子伤害减半、无法被击中，必杀不入带',
+      }),
+      skill(5, 'projectile', '火的故事', {
+        damage: 0, count: 1, speed: 300, size: 160, life: 6, start: .55, duration: .9, knock: 0, fx: 'fuga',
+        desc: '虚空巨弓射出缓慢火焰箭，命中或抵达边缘即引爆：四分之一战场范围 170 伤，敌我不分，离得太近会炸到自己；满跳可躲，格挡付半管破防值',
+      }),
+    ],
+  },
 ];
 
 /** Select screen. gale, ember and boulder stay on ROSTER for the headless checks. */
-export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki' || c.id === 'rana' || c.id === 'arale' || c.id === 'miyako' || c.id === 'ritsu' || c.id === 'nonoka');
+export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki' || c.id === 'rana' || c.id === 'arale' || c.id === 'miyako' || c.id === 'ritsu' || c.id === 'nonoka' || c.id === 'yuno' || c.id === 'viola');
 
 export const ROSTER_BY_ID = new Map(ROSTER.map(c => [c.id, c]));

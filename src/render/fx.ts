@@ -23,6 +23,10 @@ const PLASTER_SRC = '/sprites/tomori/plaster.png';
 const PARFAIT_SRC = '/sprites/rana/parfait.png';
 const MATCHA_SRC = '/sprites/rana/matcha.png';
 const SEAL_SRC = '/sprites/miyako/seal.png';
+const FUGA_ARROW_SRC = '/sprites/viola/fuga-arrow.png';
+const FUGA_BURST_SRC = '/sprites/viola/fuga-burst.png';
+const MEAT_SRC = '/sprites/yuno/meat.png';
+const YUNO_NOTE_SRC = '/sprites/yuno/note.png';
 const MORTIS_H = 181;
 
 /* Drop the pose-sheet chrome and the chroma key so a placeholder can sit in the fight. */
@@ -127,6 +131,21 @@ function drawMortisGhost(ctx: CanvasRenderingContext2D, im: HTMLImageElement, co
 }
 
 /* Effects are looked up by `type` (from the engine) and projectiles by `fx` (from skill data). Add a case, not an if-chain elsewhere. */
+
+/** 剪: one spindle slash — thick in the middle, tapering to points at both ends, thin dark edge.
+    Drawn centred at the origin along the local x axis; the caller positions and rotates it. */
+function slashSpindle(ctx: CanvasRenderingContext2D, len: number, wid: number, fill: string, edge: string): void {
+  ctx.beginPath();
+  ctx.moveTo(-len / 2, 0);
+  ctx.quadraticCurveTo(0, -wid, len / 2, 0);
+  ctx.quadraticCurveTo(0, wid, -len / 2, 0);
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.strokeStyle = edge;
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+}
 
 export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: ImageCache): void {
   const p = 1 - e.life / e.max, r = e.radius ?? 50;
@@ -233,6 +252,37 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(0, 0, r * p, 0, Math.PI * 2); ctx.stroke();
       break;
+    case 'debt': {
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = .8;
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.ellipse(0, 0, e.radius ?? 52, 16, 0, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
+    case 'compose': {
+      const half = e.radius ?? 100;
+      const elapsed = e.max - e.life;
+      ctx.translate(e.x, e.y);
+      ctx.fillStyle = '#EE5577';
+      ctx.strokeStyle = '#EE5577';
+      for (let i = 0; i < 7; i++) {
+        const u = (elapsed * 1.4 + i / 7) % 1;
+        const x = -half + 16 + (i * 27) % (half * 2 - 20);
+        const y = -240 + u * 250;
+        ctx.globalAlpha = .9;
+        ctx.fillRect(x, y, 3, 12);
+        ctx.beginPath(); ctx.ellipse(x - 4, y + 12, 6, 4, -.4, 0, Math.PI * 2); ctx.fill();
+        // Notes are pure paint, so each one rings from u itself: once at spawn,
+        // once as it crosses the floor line on the way down.
+        const k = u < .14 ? u / .14 : u > .86 ? (u - .86) / .14 : -1;
+        if (k >= 0) {
+          ctx.globalAlpha = (1 - k) * .8;
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(x, u < .14 ? y + 6 : 0, 5 + k * 13, 0, Math.PI * 2); ctx.stroke();
+        }
+      }
+      break;
+    }
     case 'howl': {
       // 满月嚎叫: a ring in the screen plane, centred on her chest, not a floor ellipse.
       const radius = e.radius ?? 87;
@@ -665,6 +715,135 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.beginPath(); ctx.ellipse(0, 0, rad * (.2 + p * .8), rad * .28 * (.2 + p), 0, 0, Math.PI * 2); ctx.stroke();
       break;
     }
+    case 'snip-mark': {
+      // 剪: a reticle rides the target through the wind-up — brackets turn inward as the window closes.
+      const spin = (e.max - e.life) * 5;
+      const k = 1 - e.life / e.max;
+      const r = (e.radius ?? 60) * (1 - k * .22);
+      ctx.translate(e.x, e.y);
+      ctx.rotate(spin);
+      ctx.globalAlpha *= .85;
+      ctx.lineWidth = 3;
+      for (let i = 0; i < 4; i++) {
+        ctx.rotate(Math.PI / 2);
+        ctx.beginPath(); ctx.arc(0, 0, r, .35, 1.2); ctx.stroke();
+      }
+      ctx.rotate(-spin);
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case 'snip': {
+      // 剪: a burst of spindle slashes across the spot — pale violet blades about her height.
+      ctx.translate(e.x, e.y);
+      const grow = .8 + p * .35;
+      const angles = [.5, 2.2, 3.9].map(a => a * (e.dir ?? 1) + p * .5);
+      const lens = [186, 150, 168];
+      for (let i = 0; i < 3; i++) {
+        ctx.save();
+        ctx.rotate(angles[i]);
+        ctx.globalAlpha *= (1 - p) * (1 - i * .12);
+        slashSpindle(ctx, lens[i] * grow, 13 - i * 2, i === 0 ? '#efe6ff' : '#d9c7f8', '#241433');
+        ctx.restore();
+      }
+      break;
+    }
+    case 'violet': {
+      // 哭泣的紫罗兰: the petal burst — a soft ring and eight petals tearing outward and fluttering down.
+      const r = e.radius ?? 175;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= (1 - p) * .9;
+      ctx.strokeStyle = e.color;
+      ctx.lineWidth = 3 * (1 - p) + 1;
+      ctx.beginPath(); ctx.arc(0, 0, r * Math.max(.15, p), 0, Math.PI * 2); ctx.stroke();
+      for (let i = 0; i < 8; i++) {
+        const ang = (i / 8) * Math.PI * 2 + .4;
+        const t = Math.min(1, p * 1.4 - i * .04);
+        if (t <= 0) continue;
+        const px = Math.cos(ang) * r * t;
+        const py = Math.sin(ang) * r * t - t * 26 + t * t * 44;
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(ang + t * 7);
+        ctx.globalAlpha = (1 - p) * .8;
+        ctx.fillStyle = i % 2 ? e.color : '#e6d4ff';
+        ctx.beginPath(); ctx.ellipse(0, 0, 9 * (1 - t * .3), 4, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+      break;
+    }
+    case 'record': {
+      // 录音: the tape rolls — a ring winds down around her with a blinking REC dot.
+      const k = 1 - e.life / e.max;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= .9;
+      ctx.strokeStyle = e.color;
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([7, 6]);
+      ctx.beginPath(); ctx.arc(0, 0, 44 + Math.sin(k * 12) * 2, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - k)); ctx.stroke();
+      ctx.setLineDash([]);
+      if (Math.floor(e.life * 6) % 2 === 0) {
+        ctx.fillStyle = '#ff5a5a';
+        ctx.beginPath(); ctx.arc(0, -58, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.font = `700 11px ${UI_FONT}`;
+        ctx.textAlign = 'center';
+        ctx.fillText('REC', 0, -66);
+      }
+      break;
+    }
+    case 'fuga-bow': {
+      // 火的故事: the void bow condenses — the limbs burn in from nothing while sparks fall inward.
+      const k = 1 - e.life / e.max;
+      const r = 60 + k * 38;
+      const a = Math.min(1, k * 2.2);
+      ctx.translate(e.x, e.y);
+      ctx.scale(e.dir ?? 1, 1);
+      ctx.globalAlpha *= a;
+      ctx.strokeStyle = e.color;
+      ctx.lineWidth = 5 * k + 1;
+      ctx.beginPath(); ctx.arc(46, 0, r, Math.PI * .62, Math.PI * 1.38); ctx.stroke();
+      ctx.strokeStyle = '#ffd9a8';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.globalAlpha *= .8;
+      ctx.strokeStyle = '#f3e8ff';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(46 + Math.cos(Math.PI * .62) * r, Math.sin(Math.PI * .62) * r);
+      ctx.lineTo(46 + Math.cos(Math.PI * 1.38) * r, Math.sin(Math.PI * 1.38) * r);
+      ctx.stroke();
+      ctx.fillStyle = '#ffb46a';
+      for (let i = 0; i < 6; i++) {
+        const t = (k * 2 + i / 6) % 1;
+        const px = 46 + Math.cos(1.1 + i) * r * (1 - t) * .8;
+        const py = Math.sin(1.1 + i * 2) * r * (1 - t) * .7;
+        ctx.globalAlpha = a * t;
+        ctx.fillRect(px - 1.5, py - 1.5, 3, 3);
+      }
+      break;
+    }
+    case 'fuga-burst': {
+      // 火的故事: the blast — a twelve-frame sheet played once, drawn at twice the cell.
+      const im = images?.get(FUGA_BURST_SRC);
+      const size = (e.radius ?? 240) * 2;
+      ctx.translate(e.x, e.y);
+      if (im?.naturalWidth) {
+        const frame = Math.min(11, Math.floor(p * 12));
+        const col = frame % 4, row = Math.floor(frame / 4);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.globalAlpha = Math.min(1, e.life * 8);
+        ctx.drawImage(keyed(im), col * CELL, row * CELL, CELL, CELL, -size / 2, -size / 2, size, size);
+      } else {
+        ctx.globalAlpha *= (1 - p) * .95;
+        ctx.fillStyle = '#ffb46a';
+        ctx.beginPath(); ctx.arc(0, 0, size * .18 * (1 - p * .5), 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = e.color;
+        ctx.lineWidth = 10 * (1 - p) + 1;
+        ctx.beginPath(); ctx.arc(0, 0, size * .5 * Math.max(.12, p), 0, Math.PI * 2); ctx.stroke();
+      }
+      break;
+    }
     case 'super':
     default:
       ctx.translate(e.x, e.y); ctx.rotate(p * 1.5);
@@ -701,9 +880,12 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   // 抹茶大芭菲: the standing parfait is drawn by its effect, never as a shot.
   if (p.fx === 'parfait') return;
   ctx.save();
+  // 火的故事: the arrow art rides ten pixels above its flight band so the flame head reads on the body.
+  if (p.fx === 'fuga') ctx.translate(0, -10);
   if (p.fx === 'mutsumi-note' || p.fx === 'chord') noteRibbon(ctx, p);
   else if (p.fx === 'sob') noteRibbon(ctx, p, '#f4e7b4', '#e8c96a');
-  else {
+  else if (p.fx !== 'fuga') {
+    // 火的故事 skips the stock dots — they read as purple balls; its case draws gold afterimages.
     ctx.fillStyle = p.color;
     for (let i = 0; i < p.trail.length; i++) {
       const t = p.trail[i], k = (i + 1) / p.trail.length;
@@ -739,6 +921,26 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
         ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(-p.radius * .25, -p.radius * .55, p.radius * .35, Math.PI, 0); ctx.stroke();
         ctx.beginPath(); ctx.arc(p.radius * .25, -p.radius * .55, p.radius * .35, Math.PI, 0); ctx.stroke();
+      }
+      break;
+    }
+    case 'meat': {
+      ctx.rotate(p.age * 7 * Math.sign(p.vx || 1));
+      if (!prop(ctx, images, MEAT_SRC, p.size)) {
+        ctx.fillStyle = '#c44858';
+        ctx.beginPath(); ctx.ellipse(0, 0, p.radius * 1.3, p.radius * .7, .4, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#f4ead8';
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(-p.radius * .2, p.radius * .2); ctx.lineTo(p.radius * .9, -p.radius * .5); ctx.stroke();
+      }
+      break;
+    }
+    case 'groove-note': {
+      if (!prop(ctx, images, YUNO_NOTE_SRC, p.size)) {
+        const s = Math.max(7, p.radius);
+        ctx.fillStyle = '#EE5577';
+        ctx.fillRect(s * .4, -s * 1.28, s * .18, s * 1.38);
+        ctx.beginPath(); ctx.ellipse(-s * .08, s * .18, s * .58, s * .36, -.5, 0, Math.PI * 2); ctx.fill();
       }
       break;
     }
@@ -978,6 +1180,66 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
       ctx.stroke();
       break;
     }
+    case 'snip': {
+      // 剪: the standing void field — a slow wheel of body-height spindle slashes over the spot.
+      const r = Math.max(46, p.size * .8);
+      const spin = p.age * .9;
+      const specs = [
+        { a: 0, d: r * .35, l: 172, w: 11 },
+        { a: 1.5, d: r * .18, l: 190, w: 13 },
+        { a: 2.7, d: r * .42, l: 156, w: 9 },
+        { a: 4.1, d: r * .12, l: 168, w: 10 },
+        { a: 5.3, d: r * .3, l: 180, w: 12 },
+      ];
+      for (const s of specs) {
+        const a = s.a + spin;
+        ctx.save();
+        ctx.translate(Math.cos(a) * s.d, Math.sin(a) * s.d * .55);
+        ctx.rotate(a + Math.PI / 2 + Math.sin(p.age * 2 + s.a) * .3);
+        ctx.globalAlpha = Math.min(1, p.life * 4) * (.5 + .3 * Math.sin(p.age * 5 + s.a * 3));
+        slashSpindle(ctx, s.l, s.w, '#d9c7f8', '#241433');
+        ctx.restore();
+      }
+      break;
+    }
+    case 'fuga': {
+      // 火的故事: the slow arrow — a burning bolt with a hot head, pointing the way it flies.
+      // Behind it, flat gold copies of the arrow fade along the flight history (the stock dot
+      // trail is skipped for fuga); local x is divided back out of the mirror so leftward
+      // flights keep their ghosts behind them.
+      const sx = Math.sign(p.vx) || 1;
+      ctx.scale(sx, 1);
+      const aim = images?.get(FUGA_ARROW_SRC);
+      const gold = aim?.naturalWidth ? tintedSilhouette(keyed(aim), aim.naturalWidth, aim.naturalHeight, '#ffd257') : null;
+      if (gold && p.trail.length > 2) {
+        for (let i = 0; i < 3; i++) {
+          const t = p.trail[Math.max(0, p.trail.length - 40 + i * 15)];
+          if (!t) continue;
+          ctx.save();
+          ctx.globalAlpha = .12 + i * .09;
+          ctx.drawImage(gold, (t.x - p.x) * sx - p.size / 2, (t.y - p.y) - p.size / 2, p.size, p.size);
+          ctx.restore();
+        }
+      }
+      if (!prop(ctx, images, FUGA_ARROW_SRC, p.size)) {
+        const len = p.size * .8;
+        ctx.globalAlpha = .8;
+        ctx.fillStyle = '#ff9a4d';
+        ctx.beginPath();
+        ctx.moveTo(-len * .5, -7);
+        ctx.quadraticCurveTo(-len * .1, -15, len * .32, -6);
+        ctx.lineTo(len * .32, 6);
+        ctx.quadraticCurveTo(-len * .1, 15, -len * .5, 7);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#ffd9a8';
+        ctx.beginPath();
+        ctx.moveTo(len * .58, 0);
+        ctx.lineTo(len * .26, -8);
+        ctx.lineTo(len * .26, 8);
+        ctx.closePath(); ctx.fill();
+      }
+      break;
+    }
     case 'wail':
     case 'orb':
     default: {
@@ -1091,7 +1353,7 @@ export function drawTexts(ctx: CanvasRenderingContext2D, texts: FloatingText[]):
 
 export function drawCombo(ctx: CanvasRenderingContext2D, g: FightGame): void {
   for (const f of g.fighters) {
-    if (f.minion || f.combo <= 1 || f.comboTime <= 0) continue;
+    if (f.minion || f.echo || f.combo <= 1 || f.comboTime <= 0) continue;
     const left = f.team === 0;
     const slot = g.fighters.filter(m => m.team === f.team).indexOf(f);
     const x = left ? 42 : 918, y = 205 + slot * 36;

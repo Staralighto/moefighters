@@ -22,7 +22,7 @@ const READ_CHANCE = [0, 0, .68];
 export function stepAI(g: FightGame, dt: number): void {
   if (g.mode === 'training') return;
   for (const f of g.fighters) {
-    if (f.controller !== null || f.hp <= 0) continue;
+    if (f.controller !== null || f.hp <= 0 || f.echo) continue;
     // 诗超绊 teammates always run the master brain, whatever the match difficulty is.
     const hard = f.minion ? 2 : g.difficulty;
     const o = aiTarget(g, f);

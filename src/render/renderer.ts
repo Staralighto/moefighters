@@ -3,6 +3,7 @@ import type { FightGame } from '../game/game.ts';
 import type { FighterView } from './view.ts';
 import type { ImageCache } from '../assets/loader.ts';
 import { FLOOR, H, SIDE, W } from '../game/constants.ts';
+import { violetHidden } from '../game/combat.ts';
 import { drawBanSign, drawCombo, drawEffect, drawKuji, drawParticles, drawProjectile, drawTexts, UI_FONT } from './fx.ts';
 
 /** Hard 1px rim, yellow for the left team and green for the right. Used in 2v2 and the 2-on-1 challenge. */
@@ -45,11 +46,24 @@ export class Renderer {
     // Team rims only where sides can be confused: 2v2 and the 2-on-1 激战, summons never tip it.
     const teamRim = g.mode === 'team' || (g.mode === 'challenge' && g.fighters.filter(x => !x.minion).length > 2);
     for (const f of order) {
+      // 哭泣的紫罗兰: between the vanish and the reappear she does not exist on screen.
+      if (violetHidden(f)) continue;
       const view = this.view(f.data.id);
       const outline = teamRim ? TEAM_GLOW[f.team] : undefined;
-      view.draw(c, f, f.x, f.hp <= 0 ? FLOOR : f.y, f.hp <= 0 ? .3 : f.basic ? .55 : 1, undefined, outline);
+      view.draw(c, f, f.x, f.hp <= 0 ? FLOOR : f.y, f.hp <= 0 ? .3 : f.basic ? .55 : f.echo ? .45 : 1, undefined, outline);
       if (f.blocking) drawEffect(c, { type: 'shield', x: f.x + f.facing * 28, y: f.y - 80, color: '#a6eeff', life: .14, max: .22, radius: 58 });
       if (f.feast > 0 && f.hp > 0) drawEffect(c, { type: 'feast', x: f.x, y: f.y - 92, color: '#9ad4ff', life: 1, max: 1, radius: 40 });
+      if (f.debt > 0 && f.hp > 0) {
+        drawEffect(c, { type: 'debt', x: f.x, y: FLOOR, color: f.data.color, life: 1, max: 1, radius: 52 });
+        if (f.debtDmg > 0) {
+          c.save();
+          c.font = `16px ${UI_FONT}`;
+          c.textAlign = 'center';
+          c.fillStyle = '#f4b4c8';
+          c.fillText(String(Math.round(f.debtDmg * 1.5)), Math.round(f.x), Math.round(f.y - 156));
+          c.restore();
+        }
+      }
       if (f.minion && f.hp > 0) {
         const bw = 44, bx = Math.round(f.x) - bw / 2, by = Math.round(f.y) - 196;
         c.fillStyle = '#171120aa';

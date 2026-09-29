@@ -1,6 +1,6 @@
 import type { Skill } from '../data/types.ts';
 import { gainEnergy, type Attack, type Fighter } from './fighter.ts';
-import type { FightGame, Projectile } from './game.ts';
+import type { FightGame, Projectile, SealVolley } from './game.ts';
 import { CONTROLS, FLOOR, GRAVITY, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
 import { clipFor, drumRow, vowBeatTime, VOW_BEATS } from '../render/clips.ts';
 
@@ -68,8 +68,32 @@ const RIFF_K0 = 240, RIFF_K1 = 380;
 /** 吉他激奏: the tap cools from 2s; every extra wave adds its share of the rest, so a full
  *  10-wave channel sits at 7s from cast — about 2.5s left once the strum plays out. */
 const RIFF_CD_TAP = 2, RIFF_CD_MAX = 7;
+/** 韵律直觉: tap is one ring at the base cooldown; a full six-pulse channel sits at 7.5s. */
+const GROOVE_WAVES = 6;
+const GROOVE_CD_TAP = 3, GROOVE_CD_MAX = 7.5;
+/** 韵律直觉 notes steer this many radians per second, and only on the horizontal. */
+const GROOVE_TURN = 1.4;
 /** 抹茶大芭菲: the parfait stands this far ahead and lobs blobs on its own clock. */
 const PARFAIT_DIST = 120;
+/** 剪: the locked field catches this wide and this tall around the marked spot. */
+const SNIP_BAND_X = 96;
+const SNIP_BAND_Y = 72;
+/** 哭泣的紫罗兰: the vanish holds this long between the two bursts; she is gone the whole way. */
+export const VIOLET_WARP = .5;
+/** 火的故事: the arrow is only the fuse — the blast is the one damage event. A quarter of the stage. */
+const FUGA_RADIUS = 240;
+const FUGA_DAMAGE = 170;
+const FUGA_KNOCK = 520;
+const FUGA_BURST_TIME = .6;
+/** Seconds of flight before the arrow may detonate: it visibly leaves the bow, and a
+    point-blank blast lands just after her cast invuln ends, so hugging the foe still burns her. */
+const FUGA_FUSE = .12;
+
+/** 哭泣的紫罗兰: she does not exist between the vanish and the reappear — no body is drawn. */
+export function violetHidden(f: Fighter): boolean {
+  const a = f.attack;
+  return !!a && a.skill.fx === 'violet' && a.t >= a.skill.start && a.t < a.skill.start + VIOLET_WARP;
+}
 
 /** 悲鸣: more cries as she breaks. Resolved once per cast so the shared skill stays put. */
 /** 不会再逃避了: every swing except the last stays in place. shots is the swing index before it increments. */
@@ -147,7 +171,9 @@ export function riffShot(s: Skill, i: number): Skill {
 export interface HitSource { hit: Set<number> }
 
 export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: Skill, source: HitSource, originX = attacker.x): boolean {
-  if (!g.isEnemy(attacker, defender) || defender.hp <= 0 || defender.invuln > 0 || source.hit.has(defender.id)) return false;
+  // 火的故事: the blast reads everyone on the field — its fuga skill is the one friendly-fire opt-in.
+  const blast = skill.fx === 'fuga';
+  if ((!g.isEnemy(attacker, defender) && !blast) || defender.echo || defender.hp <= 0 || defender.invuln > 0 || source.hit.has(defender.id)) return false;
   source.hit.add(defender.id);
   // 我会保护小睦: every hitstun this defender takes runs through the stack multiplier.
   const hitStun = (v: number) => v * defender.stunMul;
@@ -177,6 +203,26 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   if (attacker.lowHpDmg > 0 && attacker.hp < attacker.data.hp * .5) damage *= 1 + attacker.lowHpDmg;
   if (defender.executeDmg > 0 && defender.hp < defender.data.hp * .25) damage *= 1 + defender.executeDmg;
 
+  // 直接无限大: ordinary hits are written on the bill and do not flinch. Grabs and the
+  // control set (root, ban) still land now, so they are not also billed.
+  const control = isGrab || skill.fx === 'heart' || skill.fx === 'shout' || skill.fx === 'ban';
+  if (!blocked && defender.debt > 0 && !control) {
+    attacker.combo = attacker.comboTime > 0 ? attacker.combo + 1 : 1;
+    attacker.comboTime = 1.3 + attacker.comboTimeBonus;
+    attacker.hitCount++;
+    g.totalHits[attacker.id]++;
+    g.maxCombo[attacker.id] = Math.max(g.maxCombo[attacker.id], attacker.combo);
+    damage *= Math.max(.4, 1 - (attacker.combo - 1) * attacker.comboDecay);
+    const rounded = Math.round(damage);
+    defender.debtDmg += rounded;
+    defender.hitFlash = .08;
+    const rushBonus = attacker.data.trait === 'rush' && attacker.hitCount % 3 === 0 ? 14 : 0;
+    gainEnergy(attacker, (skill.gain ?? (skill.super ? 2 : 9)) + rushBonus);
+    g.audio.play('hit');
+    g.text('-' + rounded, defender.x, defender.y - 160, '#f4b4c8', .45, 18);
+    return true;
+  }
+
   if (blocked) {
     const fullHit = damage;
     damage *= skill.super ? .24 : .13;
@@ -186,7 +232,8 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     gainEnergy(defender, 5);
     gainEnergy(attacker, 4);
     // 远程反制：挡下投掷物按其伤害削减对方的气，静默结算，不跳字。
-    if (skill.type === 'projectile') attacker.energy = clamp(attacker.energy - fullHit * GUARD_DRAIN, 0, 100);
+    // 剪 is a trap and 火的故事 is her own blast: neither siphons meter for being blocked.
+    if (skill.type === 'projectile' && skill.fx !== 'snip' && skill.fx !== 'fuga') attacker.energy = clamp(attacker.energy - fullHit * GUARD_DRAIN, 0, 100);
     g.effect('shield', defender.x - dir * 30, defender.y - 78, '#8df0ff', .22, { radius: 65 });
     g.audio.play('block');
     g.text('格挡', defender.x, defender.y - 170, '#91eaff', .35, 16);
@@ -242,7 +289,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
           holdStill = false;
         }
       }
-      defender.stun = hitStun(skill.fx === 'bag' ? .26 : skill.fx === 'matcha' ? .18 : skill.fx === 'ripple' || skill.fx === 'huh' ? .35 : skill.type === 'light' ? .28 : skill.super ? .42 : .37);
+      defender.stun = hitStun(skill.fx === 'groove-note' ? .16 : skill.fx === 'bag' ? .26 : skill.fx === 'matcha' ? .18 : skill.fx === 'ripple' || skill.fx === 'huh' ? .35 : skill.type === 'light' ? .28 : skill.super ? .42 : .37);
       defender.attack = null;
       defender.hitBySuper = skill.super;
       // A super wipes the buffer except combo escapes (恐湖, 轮奏), so the escape can still come out between hits.
@@ -384,8 +431,11 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     }
     g.audio.play('hit');
     g.text('-' + Math.round(damage), defender.x + dir * 15, defender.y - 160, skill.super ? SIDE[attacker.team] : '#fff', .65, (skill.super ? 30 : 23) + (crit ? 6 : 0));
-    g.sparks(defender.x - dir * 23, defender.y - 85, attacker.data.color, skill.super ? 36 : 18, skill.super ? 1.6 : 1);
-    g.effect('hit', defender.x - dir * 23, defender.y - 85, attacker.data.color, .25, { radius: skill.super ? 90 : 48 });
+    // 剪 draws its own spindle burst — no sparks and no star on top, so the cut reads as blades only.
+    if (skill.fx !== 'snip') {
+      g.sparks(defender.x - dir * 23, defender.y - 85, attacker.data.color, skill.super ? 36 : 18, skill.super ? 1.6 : 1);
+      g.effect('hit', defender.x - dir * 23, defender.y - 85, attacker.data.color, .25, { radius: skill.super ? 90 : 48 });
+    }
     if (skill.frail) {
       const fresh = defender.frail <= 0;
       const bonus = skill.frailBonus ?? 0;
@@ -440,7 +490,7 @@ export function applyMelee(g: FightGame, f: Fighter, a: Attack): void {
     const dist = Math.abs(o.x - f.x);
     const dy = Math.abs(o.y - f.y);
     const ripple = s.fx === 'ripple' || s.fx === 'huh';
-    if (s.fx === 'riff' || s.fx === 'howl') {
+    if (s.fx === 'riff' || s.fx === 'howl' || s.fx === 'groove') {
       // 吉他激奏: a screen-facing disc centred on her — every direction, any height. A jump no longer dodges it.
       if (Math.hypot(o.x - f.x, o.y - f.y) < s.range) {
         hit(g, f, o, s, a);
@@ -502,6 +552,56 @@ export function spawnShot(g: FightGame, f: Fighter, a: Attack, offsetY = 0, arc 
   };
   g.projectiles.push(p);
   return p;
+}
+
+/** 韵律直觉: a slow note that only steers left and right, so a jump clears it. */
+function spawnGrooveNote(g: FightGame, f: Fighter, a: Attack): void {
+  const speed = 250 * (f.data.trait === 'focus' ? 1.15 : 1);
+  const skill: Skill = { ...a.skill, type: 'projectile', damage: 12, knock: 90, gain: 2, fx: 'groove-note', speed: 250, size: 32, life: 2 };
+  g.projectiles.push({
+    owner: f.id,
+    x: f.x + f.facing * 40,
+    y: f.y - 85,
+    vx: f.facing * speed,
+    vy: 0,
+    life: 2,
+    skill,
+    color: f.data.color,
+    radius: 8,
+    size: 32,
+    fx: 'groove-note',
+    attack: a,
+    hit: new Set(),
+    trail: [],
+    age: 0,
+  });
+}
+
+/** 高性能作曲AI: one tick of the lane. No stun, no combo, no hitstop — leaving is the way out. */
+function composeTick(g: FightGame, attacker: Fighter, defender: Fighter, skill: Skill): void {
+  if (!g.isEnemy(attacker, defender) || defender.hp <= 0 || defender.invuln > 0) return;
+  const dir = defender.x >= attacker.x ? 1 : -1;
+  const blocked = defender.blocking && defender.facing === -dir && defender.guard > 0;
+  let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .9 : 1)
+    * attacker.baseDmgMul * attacker.dmgMul * (attacker.muscle > 0 ? 1 + MUSCLE_BONUS : 1)
+    * (defender.frail > 0 ? 1 + defender.frailBonus : 1);
+  if (blocked) {
+    damage *= .13;
+    defender.guard -= 15;
+    if (defender.guard <= 0) {
+      defender.guard = 0;
+      defender.stun = Math.max(defender.stun, .9);
+      defender.guardBroken = 1.2;
+      defender.blocking = false;
+      defender.queue = [];
+      g.text('破防!', defender.x, defender.y - 200, SIDE[0], .8, 30);
+    }
+  }
+  const rounded = Math.round(damage);
+  if (rounded <= 0) return;
+  defender.hp = clamp(defender.hp - rounded, 0, defender.data.hp);
+  g.audio.play('key');
+  g.text('-' + rounded, defender.x + dir * 8, defender.y - 148, '#fff', .35, 16);
 }
 
 /** 满场: sixteen notes in two full-stage drops. Slots repeat every 8 so each wave spans the stage. */
@@ -578,11 +678,40 @@ function spawnMatchaBlob(g: FightGame, owner: Fighter, zone: Projectile, index: 
 export function effectSettled(a: Attack): boolean {
   const s = a.skill;
   if (s.super || s.fx === 'shove' || s.fx === 'slam' || s.fx === 'rabbit' || s.fx === 'kiss') return false;
+  // 剪 and 火的故事 hand their pay-off to a zone or an arrow; once that is away she may act.
+  if (s.fx === 'snip' || s.fx === 'fuga') return a.emitted;
   if (s.type === 'dash') return a.t >= s.duration - .08;
   if (s.type === 'upper') return a.t >= s.start + .25;
   const volley = a.burst || s.count || 1;
   if (volley > 1) return a.shots >= volley || (s.fx === 'chord' && a.t >= s.duration - .22) || (s.fx === 'riff' && a.t >= s.duration - .3);
   return a.emitted;
+}
+
+/** 哭泣的紫罗兰: one petal burst — mid damage in a wide ring, the vanish and the reappear each throw one. */
+function violetBurst(g: FightGame, f: Fighter, s: Skill): void {
+  g.effect('violet', f.x, f.y - 85, f.data.color, .55, { radius: s.range });
+  for (const o of g.opponents(f)) {
+    if (o.hp <= 0 || o.invuln > 0) continue;
+    if (Math.abs(o.x - f.x) < s.range && Math.abs((o.y - 83) - (f.y - 85)) < 90) {
+      hit(g, f, o, s, { hit: new Set() });
+    }
+  }
+}
+
+/** 火的故事: the blast is the one damage event, and it reads friend and foe alike —
+    she has to open the distance before firing. Super rules on guard, a quarter of the stage. */
+function fugaBurst(g: FightGame, p: Projectile, owner: Fighter | undefined): void {
+  g.effect('fuga-burst', p.x, p.y, p.color, FUGA_BURST_TIME, { radius: FUGA_RADIUS });
+  g.shake = 14;
+  g.flash = Math.max(g.flash, .22);
+  g.sparks(p.x, p.y, '#ffb46a', 40, 1.6);
+  if (!owner || owner.hp <= 0) return;
+  const sk = { ...p.skill, damage: FUGA_DAMAGE, knock: FUGA_KNOCK, gain: 0 };
+  const hitSet = new Set<number>();
+  for (const o of g.fighters) {
+    if (o.hp <= 0 || o.echo) continue;
+    if (Math.hypot(o.x - p.x, (o.y - 83) - p.y) < FUGA_RADIUS) hit(g, owner, o, sk, { hit: hitSet }, p.x);
+  }
 }
 
 export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
@@ -693,7 +822,53 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
     g.effect('wind', f.x, f.y - 85, f.data.color, .45, { dir: -f.facing });
     g.effect('dust', f.x, FLOOR, '#afa1c1', .3, { radius: 25 });
   }
-  if (s.type === 'dash' && s.fx !== 'wind' && a.t >= s.start && a.t < s.duration - .08) {
+  // 哭泣的紫罗兰: burst where she stood, ride the petals out, burst again on the far edge.
+  if (s.fx === 'violet' && !a.emitted && a.t >= s.start) {
+    a.emitted = true;
+    violetBurst(g, f, s);
+  }
+  if (s.fx === 'violet' && a.emitted && a.shots === 0 && a.t >= s.start + VIOLET_WARP) {
+    a.shots = 1;
+    f.x = f.x < W / 2 ? X_MAX : X_MIN;
+    const foe = g.targetFor(f);
+    if (foe) f.facing = foe.x >= f.x ? 1 : -1;
+    g.effect('dust', f.x, FLOOR, '#afa1c1', .3, { radius: 25 });
+    violetBurst(g, f, s);
+  }
+  // 剪: the spot is read once at cast — the mark freezes where the enemy stood and pinches shut.
+  // The wind-up is the window to leave it; nothing tracks them after that.
+  if (s.fx === 'snip' && a.t < s.start) {
+    if (a.shots === 0) {
+      a.shots = 1;
+      const mark = g.opponents(f)
+        .filter(o => Math.abs(o.x - f.x) <= s.range)
+        .sort((p, q) => Math.abs(p.x - f.x) - Math.abs(q.x - f.x))[0];
+      a.anchor = mark ? mark.x : f.x;
+    }
+    let live = g.effects.find(e => e.type === 'snip-mark' && e.fighter === f.id);
+    if (!live) {
+      g.effect('snip-mark', a.anchor, FLOOR - 85, f.data.color, s.start, { fighter: f.id });
+      live = g.effects[g.effects.length - 1];
+    }
+    live.x = a.anchor;
+    live.y = FLOOR - 85;
+    live.max = s.start;
+    live.life = Math.max(.04, s.start - a.t);
+  }
+  // 火的故事: the void bow condenses over the draw; its spread reads the time left on the tell.
+  if (s.fx === 'fuga' && a.t < s.start) {
+    let live = g.effects.find(e => e.type === 'fuga-bow' && e.fighter === f.id);
+    if (!live) {
+      g.effect('fuga-bow', f.x, f.y - 85, f.data.color, s.start, { fighter: f.id, dir: f.facing });
+      live = g.effects[g.effects.length - 1];
+    }
+    live.x = f.x;
+    live.y = f.y - 85;
+    live.dir = f.facing;
+    live.max = s.start;
+    live.life = Math.max(.04, s.start - a.t);
+  }
+  if (s.type === 'dash' && s.fx !== 'wind' && s.fx !== 'violet' && a.t >= s.start && a.t < s.duration - .08) {
     f.x += f.facing * (s.speed ?? (s.super ? 820 : 580)) * dt;
     applyMelee(g, f, a);
     if (Math.floor(a.t * 30) % 3 === 0) g.effect('ghost', f.x - f.facing * 18, f.y, f.data.color, .18, { fighter: f.id, alpha: .3 });
@@ -934,8 +1109,26 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
     }
   }
 
+  // 高性能作曲AI: a fixed lane. The falling notes are paint; the damage is this clock.
+  if (s.fx === 'compose' && a.t >= s.start) {
+    if (!a.emitted) {
+      a.emitted = true;
+      g.effect('compose', a.anchor + f.facing * 148, FLOOR, f.data.color, Math.max(.2, s.duration - s.start), { dir: f.facing, radius: 100, fighter: f.id });
+      g.text(s.name, f.x, f.y - 190, f.data.color, .65, 17);
+    }
+    const near = a.anchor + f.facing * 48;
+    const far = a.anchor + f.facing * 248;
+    const lo = Math.min(near, far), hi = Math.max(near, far);
+    while (a.shots < (s.count ?? 1) && a.t >= s.start + a.shots * (s.interval ?? .12)) {
+      for (const o of g.opponents(f)) {
+        if (o.x >= lo && o.x <= hi) composeTick(g, f, o, s);
+      }
+      a.shots++;
+    }
+  }
+
   const volley = a.burst || s.count || 1;
-  if (s.type === 'projectile' && volley > 1) {
+  if (s.type === 'projectile' && volley > 1 && s.fx !== 'snip') {
     if (s.fx === 'drums') {
       while (a.shots < volley && a.t >= drumShotTime(s, a.shots)) {
         spawnRain(g, f, a, a.shots);
@@ -958,7 +1151,7 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
     if (s.fx === 'chord' && a.shots >= 3 && !attackHeld(g, f) && a.t < s.duration - .22) a.t = s.duration - .22;
     // 为什么要演奏春日影: the last wave carries the whole super, so the moment it leaves she is free to act.
     if (s.fx === 'shout' && a.shots >= volley) a.t = s.duration;
-  } else if ((s.count ?? 1) > 1) {
+  } else if ((s.count ?? 1) > 1 && s.fx !== 'compose' && s.fx !== 'snip') {
     // ponytail: N swings, one cooldown. Each swing gets a fresh hit set so the same target can be caught again.
     const ring = [
       { x: 76, y: -74, dir: 1 },
@@ -966,8 +1159,8 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
       { x: -42, y: -76, dir: -1 },
     ];
     while (a.shots < (s.count ?? 1) && a.t >= s.start + a.shots * (s.interval ?? .11)) {
-      // 吉他激奏: past the first wave the key has to stay down, and every wave is a bigger clone.
-      if (s.fx === 'riff' && a.shots >= 1 && !attackHeld(g, f)) break;
+      // 吉他激奏 / 韵律直觉: past the first wave the key has to stay down.
+      if ((s.fx === 'riff' || s.fx === 'groove') && a.shots >= 1 && !attackHeld(g, f)) break;
       const swing = ring[a.shots % ring.length];
       if (a.shots === 0 && a.index >= 2) g.text(s.name, f.x, f.y - 190, f.data.color, .65, 17);
       a.hit = new Set();
@@ -975,6 +1168,11 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
         a.skill = riffShot(s, a.shots);
         applyMelee(g, f, a);
         g.effect('riff', f.x, f.y - 85, f.data.color, .4, { radius: a.skill.range });
+      } else if (s.fx === 'groove') {
+        applyMelee(g, f, a);
+        g.effect('burst', f.x, f.y - 80, f.data.color, .22, { radius: s.range });
+        // The tap is the ring only. Notes start on the second pulse.
+        if (a.shots >= 1) spawnGrooveNote(g, f, a);
       } else {
         applyMelee(g, f, a);
         if (s.fx === 'flurry') {
@@ -989,8 +1187,11 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
         // The first wave is the tap at base cooldown; every wave past it lengthens the cooldown clock.
         f.cooldowns[a.index] = Math.min(RIFF_CD_MAX, f.cooldowns[a.index] + f.cdMul * (RIFF_CD_MAX - RIFF_CD_TAP) / (RIFF_WAVES - 1));
       }
+      if (s.fx === 'groove' && a.shots > 1) {
+        f.cooldowns[a.index] = Math.min(GROOVE_CD_MAX, f.cooldowns[a.index] + f.cdMul * (GROOVE_CD_MAX - GROOVE_CD_TAP) / (GROOVE_WAVES - 1));
+      }
     }
-    if (s.fx === 'riff' && a.shots >= 1 && !attackHeld(g, f) && a.t < s.duration - .3) a.t = s.duration - .3;
+    if ((s.fx === 'riff' || s.fx === 'groove') && a.shots >= 1 && !attackHeld(g, f) && a.t < s.duration - .3) a.t = s.duration - .3;
   } else if (!a.emitted && a.t >= s.start) {
     a.emitted = true;
     if (s.fx === 'resolve') {
@@ -1074,15 +1275,53 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
       f.braced = Math.max(f.braced, STEAK_BRACE);
       g.text(`+${STEAK_HEAL}`, f.x, f.y - 160, '#ffd0d8', .6, 18);
       g.effect('steak', f.x, f.y - 118, '#6eb6ff', .55, { dir: f.facing });
+    } else if (s.fx === 'infinite') {
+      // 直接无限大: the pose is the switch. The bill window and the gain lock run together from here.
+      f.debt = 4;
+      f.debtDmg = 0;
+      f.noGain = Math.max(f.noGain, 4);
+      g.effect('burst', f.x, f.y - 80, f.data.color, .7, { radius: 120 });
     } else if (s.fx === 'feast') {
       // 超恢复: brace, regen and the J/K lock share one window. A later steak must not shorten it.
       // The side arcs are drawn while feast > 0, so they leave with the buff.
       f.braced = Math.max(f.braced, FEAST_TIME);
       f.feast = FEAST_TIME;
       g.effect('burst', f.x, f.y - 80, '#9ad4ff', .4, { radius: 80 });
+    } else if (s.fx === 'snip') {
+      // 剪: the tell dies with the lock. The void field plants on the frozen spot, not on the runner.
+      const mark = g.effects.find(e => e.type === 'snip-mark' && e.fighter === f.id);
+      if (mark) mark.life = 0;
+      if (!a.shots) {
+        a.shots = 1;
+        const caught = g.opponents(f)
+          .filter(o => Math.abs(o.x - f.x) <= s.range)
+          .sort((p, q) => Math.abs(p.x - f.x) - Math.abs(q.x - f.x))[0];
+        a.anchor = caught ? caught.x : f.x;
+      }
+      g.projectiles.push({
+        owner: f.id, x: a.anchor, y: FLOOR - 85, vx: 0, vy: 0,
+        life: s.life ?? .8, skill: s, color: f.data.color,
+        radius: 24, size: s.size ?? 105, fx: 'snip',
+        attack: a, hit: new Set(), trail: [], age: 0,
+      });
+    } else if (s.fx === 'fuga') {
+      // 火的故事: the bow dissolves with the release. The arrow flies level until something ends it,
+      // and she is free the moment it leaves — the flight is the recover.
+      const bow = g.effects.find(e => e.type === 'fuga-bow' && e.fighter === f.id);
+      if (bow) bow.life = 0;
+      g.projectiles.push({
+        owner: f.id, x: f.x + f.facing * 53, y: FLOOR - 85,
+        vx: f.facing * (s.speed ?? 200), vy: 0,
+        life: s.life ?? 6, skill: s, color: f.data.color,
+        radius: 30, size: s.size ?? 160, fx: 'fuga',
+        attack: a, hit: new Set(), trail: [], age: 0,
+      });
+      // The draw is protected; the flight is not. Her own blast can catch her the moment it leaves.
+      f.invuln = Math.min(f.invuln, s.start);
+      a.t = Math.max(a.t, s.duration);
     } else if (s.type === 'projectile') {
       spawnShot(g, f, a);
-    } else if (s.type !== 'dash' && s.fx !== 'slam' && s.fx !== 'onegai' && s.fx !== 'vow') {
+    } else if (s.type !== 'dash' && s.fx !== 'slam' && s.fx !== 'onegai' && s.fx !== 'vow' && s.fx !== 'compose' && s.fx !== 'record') {
       if (s.type !== 'upper') applyMelee(g, f, a);
       if (s.fx === 'ripple') g.effect('ripple', f.x, FLOOR, f.data.color, .45, { radius: s.range });
       else if (s.fx === 'huh') g.effect('huh', f.x, FLOOR, f.data.color, .5, { radius: s.range });
@@ -1101,6 +1340,8 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
       f.poise = MARATHON_TIME;
       g.effect('marathon', f.x, f.y - 70, f.data.color, .55, { radius: 80 });
     }
+    // 录音: a finished pose starts the tape — the stand-in rises where she stands.
+    if (s.fx === 'record' && f.attack === a && f.hp > 0 && f.stun <= 0) g.spawnEcho(f);
     if (f.attack === a) f.attack = null;
   }
 }
@@ -1141,21 +1382,24 @@ export function easeSealSwells(g: FightGame, dt: number): void {
 }
 
 function stepSealVolleys(g: FightGame, dt: number): void {
+  // 剪: the field's string runs its own count with the skill's own finale knock; the seal stays six.
+  const cap = (v: SealVolley) => v.skill.fx === 'snip' ? (v.skill.count ?? 4) : SEAL_HITS;
   for (const v of g.sealVolleys) {
-    if (v.n >= SEAL_HITS) continue;
+    if (v.n >= cap(v)) continue;
     v.wait -= dt;
     if (v.wait > 0) continue;
     const owner = g.fighterById(v.owner);
     const target = g.fighterById(v.target);
     v.n += 1;
     v.wait = v.skill.interval ?? .07;
-    if (!owner || !target || target.hp <= 0) { v.n = SEAL_HITS; continue; }
-    const sk = { ...v.skill, knock: v.n >= SEAL_HITS ? SEAL_FINALE_KNOCK : 0 };
+    if (!owner || !target || target.hp <= 0) { v.n = cap(v); continue; }
+    const sk = { ...v.skill, knock: v.n >= cap(v) ? (v.skill.knock ?? SEAL_FINALE_KNOCK) : 0 };
     if (hit(g, owner, target, sk, { hit: new Set() }, target.x - v.dir * 40)) {
-      g.effect('burst', target.x, target.y - 80, v.color, .2, { radius: (v.skill.size ?? 140) * .4 });
+      if (v.skill.fx === 'snip') g.effect('snip', target.x, target.y - 85, v.color, .22, { dir: v.dir, radius: 56 });
+      else g.effect('burst', target.x, target.y - 80, v.color, .2, { radius: (v.skill.size ?? 140) * .4 });
     }
   }
-  g.sealVolleys = g.sealVolleys.filter(v => v.n < SEAL_HITS);
+  g.sealVolleys = g.sealVolleys.filter(v => v.n < cap(v));
 }
 
 export function stepProjectiles(g: FightGame, dt: number): void {
@@ -1208,6 +1452,49 @@ export function stepProjectiles(g: FightGame, dt: number): void {
         }
       }
     }
+    if (p.fx === 'snip') {
+      // 剪: a standing void field. The first body inside commits the whole multi-cut string;
+      // the field keeps waiting for anyone else who steps in before it fades.
+      const owner = g.fighterById(p.owner);
+      if (!owner) continue;
+      if (!p.marks) p.marks = new Map();
+      for (const o of g.opponents(owner)) {
+        if (o.hp <= 0 || p.life <= 0) continue;
+        if (p.marks.has(o.id)) continue;
+        if (Math.abs(p.x - o.x) >= SNIP_BAND_X || Math.abs(p.y - (o.y - 83)) >= SNIP_BAND_Y) continue;
+        const dir = Math.sign(o.x - p.x) || 1;
+        if (!hit(g, owner, o, { ...p.skill, knock: 0 }, { hit: new Set() }, p.x)) continue;
+        p.marks.set(o.id, { n: 1, next: 0 });
+        g.effect('snip', p.x, p.y, p.color, .22, { dir, radius: 56 });
+        g.sealVolleys.push({ owner: owner.id, target: o.id, n: 1, wait: p.skill.interval ?? .15, dir, color: p.color, skill: p.skill });
+      }
+      continue;
+    }
+    if (p.fx === 'fuga') {
+      // 火的故事: level flight, contact or the far edge ends it, and the blast does the talking.
+      p.x += p.vx * dt;
+      p.trail.push({ x: p.x, y: p.y });
+      // History long enough for the golden afterimages to reach a few body-lengths behind.
+      if (p.trail.length > 48) p.trail.shift();
+      const owner = g.fighterById(p.owner);
+      // The fuse: no detonation for the first stretch of flight, so the arrow visibly leaves
+      // the bow — and a point-blank blast lands just after her cast invuln is gone.
+      let boom = false;
+      if (p.age >= FUGA_FUSE) {
+        if (owner) {
+          for (const o of g.opponents(owner)) {
+            if (o.hp <= 0 || o.invuln > 0) continue;
+            if (Math.abs(p.x - o.x) < 38 + p.radius && Math.abs(p.y - (o.y - 83)) < 72) { boom = true; break; }
+          }
+        }
+        if (!boom && ((p.vx < 0 && p.x <= X_MIN + 6) || (p.vx > 0 && p.x >= X_MAX - 6))) boom = true;
+      }
+      if (boom) {
+        fugaBurst(g, p, owner);
+        p.life = 0;
+      }
+      continue;
+    }
     // Outbound half, then one turn. The hit list clears so the way back can connect again.
     if (p.fx === 'cucumber' && !p.returned && p.age >= (p.skill.life ?? 2.4) / 2) {
       p.vx = -p.vx;
@@ -1216,6 +1503,20 @@ export function stepProjectiles(g: FightGame, dt: number): void {
     }
     if ((p.fx === 'milk' || p.fx === 'bag' || p.fx === 'matcha') && !p.settled) p.vy += GRAVITY * dt;
     const owner = g.fighterById(p.owner);
+    if (p.fx === 'groove-note' && owner && owner.hp > 0) {
+      const foe = g.opponents(owner).filter(o => o.hp > 0).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
+      if (foe) {
+        const dx = foe.x - p.x;
+        const spd = Math.abs(p.vx) || 250;
+        const ang = Math.atan2(0, p.vx || 1);
+        let diff = Math.atan2(0, dx || 1) - ang;
+        if (diff > Math.PI) diff -= Math.PI * 2;
+        if (diff < -Math.PI) diff += Math.PI * 2;
+        const turn = Math.max(-GROOVE_TURN * dt, Math.min(GROOVE_TURN * dt, diff));
+        p.vx = Math.cos(ang + turn) * spd;
+        p.vy = 0;
+      }
+    }
     if (p.fx === 'chord' && owner && owner.hp > 0) {
       const foe = g.opponents(owner).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
       if (foe) {
@@ -1232,6 +1533,14 @@ export function stepProjectiles(g: FightGame, dt: number): void {
     }
     p.x += p.vx * dt;
     p.y += p.vy * dt;
+    if (p.fx === 'meat') {
+      // Lives until she touches it. The per-frame decay above is undone unless this pass ends it.
+      p.life += dt;
+      if (p.x <= X_MIN && p.vx < 0) { p.x = X_MIN; p.vx = -p.vx; p.hit.clear(); }
+      else if (p.x >= X_MAX && p.vx > 0) { p.x = X_MAX; p.vx = -p.vx; p.hit.clear(); }
+      if (!owner || owner.hp <= 0) p.life = 0;
+      else if (Math.abs(p.x - owner.x) < 38 + p.radius && Math.abs(p.y - (owner.y - 83)) < 72) p.life = 0;
+    }
     if ((p.fx === 'milk' || p.fx === 'bag' || p.fx === 'matcha') && !p.settled && p.y >= FLOOR) {
       p.y = FLOOR;
       if (p.fx === 'matcha') {
@@ -1262,7 +1571,7 @@ export function stepProjectiles(g: FightGame, dt: number): void {
           g.effect('burst', p.x, p.y, p.color, .3, { radius: p.size * .8 });
           // The cucumber stays up on the way out and only pops on the return hit; the mega wave
           // washes through and keeps carrying whoever it caught.
-          if (!(p.fx === 'cucumber' && !p.returned) && p.fx !== 'mega') p.life = 0;
+          if (!(p.fx === 'cucumber' && !p.returned) && p.fx !== 'mega' && p.fx !== 'meat') p.life = 0;
           break;
         }
       }
@@ -1273,7 +1582,8 @@ export function stepProjectiles(g: FightGame, dt: number): void {
     for (let j = i + 1; j < g.projectiles.length; j++) {
       const p = g.projectiles[i], q = g.projectiles[j];
       // Shots die on each other; the well is a zone, so shots pass through it.
-      if (!p.settled && !q.settled && p.fx !== 'blackhole' && q.fx !== 'blackhole' && p.fx !== 'parfait' && q.fx !== 'parfait' && p.fx !== 'seal' && q.fx !== 'seal' && g.isEnemy(g.fighterById(p.owner), g.fighterById(q.owner)) && p.life > 0 && q.life > 0 && Math.abs(p.x - q.x) < 25 && Math.abs(p.y - q.y) < 27) {
+      // 剪 is the same kind of zone, and the fuga arrow is a super nobody pecks down.
+      if (!p.settled && !q.settled && p.fx !== 'blackhole' && q.fx !== 'blackhole' && p.fx !== 'parfait' && q.fx !== 'parfait' && p.fx !== 'seal' && q.fx !== 'seal' && p.fx !== 'meat' && q.fx !== 'meat' && p.fx !== 'snip' && q.fx !== 'snip' && p.fx !== 'fuga' && q.fx !== 'fuga' && g.isEnemy(g.fighterById(p.owner), g.fighterById(q.owner)) && p.life > 0 && q.life > 0 && Math.abs(p.x - q.x) < 25 && Math.abs(p.y - q.y) < 27) {
         p.life = q.life = 0;
         g.sparks(p.x, p.y, '#fff', 12);
       }

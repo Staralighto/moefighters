@@ -3,7 +3,7 @@ import type { SfxKind } from '../game/game.ts';
 /* Synthesised arcade blips. No sample files to ship. */
 const TONES: Record<SfxKind, [number, number]> = {
   light: [380, .07], heavy: [140, .18], hit: [180, .1], block: [680, .055], super: [780, .55],
-  select: [650, .06], jump: [260, .12], ko: [105, .65], cast: [470, .17],
+  select: [650, .06], jump: [260, .12], ko: [105, .65], cast: [470, .17], key: [880, .05],
 };
 
 export class Sfx {

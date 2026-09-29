@@ -99,6 +99,19 @@ export function riffRow(t: number, duration: number): number {
   return Math.floor(Math.max(0, t) / .14) % 3;
 }
 
+/** 韵律直觉: wind and hit alternate once per pulse. Release lands on the recover cell. */
+export function grooveRow(t: number, duration: number): number {
+  if (t >= duration - .3) return 2;
+  return Math.floor(Math.max(0, t) / .42) % 2;
+}
+
+/** 高性能作曲AI: the mash alternates until the last quarter-second bows out. */
+export function composeRow(t: number, start: number, duration: number): number {
+  if (t < start) return 0;
+  if (t >= duration - .25) return 2;
+  return Math.floor((t - start) / .12) % 2;
+}
+
 /** 抹茶大芭菲: the arms-wide beat holds 0.25s — well past the default 0.1s active — then the bow. */
 export function parfaitRow(t: number, start: number, duration: number): number {
   if (t < start) return 0;
@@ -171,6 +184,8 @@ export function clipFor(f: Fighter): Clip {
     if (f.attack.skill.fx === 'drums') return at('special', f.attack.index - 2, drumRow(f.attack.t, f.attack.skill.duration));
     if (f.attack.skill.fx === 'chord') return at('special', f.attack.index - 2, chordRow(f.attack.t, f.attack.skill.duration));
     if (f.attack.skill.fx === 'riff') return at('special', f.attack.index - 2, riffRow(f.attack.t, f.attack.skill.duration));
+    if (f.attack.skill.fx === 'groove') return at('special', f.attack.index - 2, grooveRow(f.attack.t, f.attack.skill.duration));
+    if (f.attack.skill.fx === 'compose') return at('special', f.attack.index - 2, composeRow(f.attack.t, f.attack.skill.start, f.attack.skill.duration));
     if (f.attack.skill.fx === 'parfait') return at('special', f.attack.index - 2, parfaitRow(f.attack.t, f.attack.skill.start, f.attack.skill.duration));
     if (f.attack.skill.fx === 'heart') return at('special', f.attack.index - 2, heartRow(f.attack.t, f.attack.skill.start));
     if (f.attack.skill.fx === 'poem') return at('special', f.attack.index - 2, poemRow(f.attack.t, f.attack.skill.start));

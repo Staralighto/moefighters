@@ -26,9 +26,26 @@ export interface Attack {
   tossAt: number;
   /** Fighter id held by 信用 before the slam. -1 means nobody. */
   hold: number;
+  /** World x where 高性能作曲AI planted its lane. */
+  anchor: number;
 }
 
 export interface QueuedInput { index: number; ttl: number }
+
+/** 录音: one captured action. t is seconds since the tape started rolling. */
+export interface RecEvent { t: number; kind: 'move' | 'jump' | 'atk'; v?: number }
+
+/** The tape an echo performs: the master wrote into events while recording, then the echo plays it once. */
+export interface RecTape {
+  events: RecEvent[];
+  /** Playback clock, running only once playing is set. */
+  t: number;
+  /** Length of the recording window the events were captured in. */
+  total: number;
+  playing: boolean;
+  /** Events before this index are done; the driver resumes here so nothing replays twice. */
+  cursor: number;
+}
 
 export interface Fighter {
   data: CharacterData;
@@ -46,6 +63,9 @@ export interface Fighter {
   hitBySuper: boolean;
   /** 超恢复: seconds of hp regen and a lock on J/K. The brace timer is separate. */
   feast: number;
+  /** 直接无限大: seconds left on the bill window. Damage taken is stored in debtDmg, not subtracted yet. */
+  debt: number;
+  debtDmg: number;
   /** Seconds 爱音之光 keeps the fighter from walking, jumping, dodging, or dashing. */
   root: number;
   /** Clean hits taken during root. The second one clears it. */
@@ -141,9 +161,21 @@ export interface Fighter {
   /** 因为我爱慕虚荣: damage/energy bonus armed by the next kill; cleared once it fires. 0 is neutral. */
   vainDmg: number;
   vainEnergy: number;
+  /** 录音: seconds of tape left on the master. Drives the input capture; dies with DECAY_TIMERS. */
+  recLeft: number;
+  /** 录音: the events captured so far. The echo holds the same array by reference. */
+  recTape: RecEvent[];
+  /** 录音: the last move direction written to the tape, so only changes are recorded. */
+  recMove: number;
+  /** 录音: this fighter is a recorded echo — unhittable, bodyless, and it replays its tape once. */
+  echo?: boolean;
+  /** 录音: the master this echo answers to. Echoes only. */
+  master?: number;
+  /** 录音: the tape an echo performs. Echoes only. */
+  tape?: RecTape;
 }
 
-export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braced', 'braceFx', 'noGain', 'ban', 'muscle', 'sprint', 'poise', 'purge', 'frail', 'feast'] as const;
+export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braced', 'braceFx', 'noGain', 'ban', 'muscle', 'sprint', 'poise', 'purge', 'frail', 'feast', 'debt', 'recLeft'] as const;
 
 export function makeFighter(
   data: CharacterData,
@@ -158,6 +190,7 @@ export function makeFighter(
     knocked: 0, downTime: 0, hitBySuper: false, root: 0, rootHits: 0, ban: 0, beatStacks: 0, frenzy: 0,
     jabChain: 0, jabChainClock: 0, braced: 0, braceFx: 0, noGain: 0, muscle: 0, sprint: 0, poise: 0, purge: 0, frail: 0, frailBonus: 0, feast: 0,
     dodge: 0, dodgeCd: 0, dodgeRequest: false, dodgeBuffer: 0, blockTap: -1, blockBuffer: 0, blockLeft: 0,
+    debt: 0, debtDmg: 0,
     attack: null, attackSerial: 0, cooldowns: [0, 0, 0, 0, 0, 0], queue: [],
     jumpRequest: false, jumpBuffer: 0,
     combo: 0, hitCount: 0, walk: 0,
@@ -168,6 +201,7 @@ export function makeFighter(
     moveMul: 1, dodgeCdMul: 1, cdMul: 1,
     lowHpDmg: 0, executeDmg: 0, lifesteal: 0, thorns: 0,
     stunMul: 1, escapeCombo: COMBO_ESCAPE, deathSave: 0, vainDmg: 0, vainEnergy: 0,
+    recLeft: 0, recTape: [], recMove: 0,
   };
 }
 
