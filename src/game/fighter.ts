@@ -1,4 +1,4 @@
-import type { CharacterData, Skill } from '../data/types.ts';
+import type { CharacterData, RootLevel, Skill } from '../data/types.ts';
 import { COMBO_DECAY, COMBO_ESCAPE, FLOOR, clamp } from './constants.ts';
 
 export type AnimState =
@@ -68,8 +68,12 @@ export interface Fighter {
   debtDmg: number;
   /** Seconds 爱音之光 keeps the fighter from walking, jumping, dodging, or dashing. */
   root: number;
-  /** Clean hits taken during root. The second one clears it. */
+  /** Clean hits taken during the current root. Cleared when the root ends. */
   rootHits: number;
+  /** Clean hits the current root can absorb before it breaks early. 0 holds until the clock lifts it. */
+  rootBreak: number;
+  /** Tier of the current root. Only read while root > 0; 'move' is the arcade default. */
+  rootLevel: RootLevel;
   /** 我要拉黑他: seconds of total lock. Hits during it deal half damage and nothing shortens it. */
   ban: number;
   /** 鼓点: beat stacks from landing hits; spent on cooldown speed and walk speed, lost on taking hits. */
@@ -187,7 +191,7 @@ export function makeFighter(
     x: init.x, y: FLOOR, vx: 0, vy: 0, facing: init.facing,
     hp: data.hp, energy: init.energy, guard: 100, blocking: false,
     stun: 0, invuln: 0, comboTime: 0, hitFlash: 0, landing: 0, guardBroken: 0,
-    knocked: 0, downTime: 0, hitBySuper: false, root: 0, rootHits: 0, ban: 0, beatStacks: 0, frenzy: 0,
+    knocked: 0, downTime: 0, hitBySuper: false, root: 0, rootHits: 0, rootBreak: 0, rootLevel: 'move', ban: 0, beatStacks: 0, frenzy: 0,
     jabChain: 0, jabChainClock: 0, braced: 0, braceFx: 0, noGain: 0, muscle: 0, sprint: 0, poise: 0, purge: 0, frail: 0, frailBonus: 0, feast: 0,
     dodge: 0, dodgeCd: 0, dodgeRequest: false, dodgeBuffer: 0, blockTap: -1, blockBuffer: 0, blockLeft: 0,
     debt: 0, debtDmg: 0,

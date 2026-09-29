@@ -27,6 +27,9 @@ const FUGA_ARROW_SRC = '/sprites/viola/fuga-arrow.png';
 const FUGA_BURST_SRC = '/sprites/viola/fuga-burst.png';
 const MEAT_SRC = '/sprites/yuno/meat.png';
 const YUNO_NOTE_SRC = '/sprites/yuno/note.png';
+const DONUT_STRAW_SRC = '/sprites/mana/donut-straw.png';
+const DONUT_CHOC_SRC = '/sprites/mana/donut-choc.png';
+const MANA_HEART_SRC = '/sprites/mana/heart.png';
 const MORTIS_H = 181;
 
 /* Drop the pose-sheet chrome and the chroma key so a placeholder can sit in the fight. */
@@ -145,6 +148,43 @@ function slashSpindle(ctx: CanvasRenderingContext2D, len: number, wid: number, f
   ctx.strokeStyle = edge;
   ctx.lineWidth = 1.4;
   ctx.stroke();
+}
+
+/** The even-width heart: short blunt tip, full lower arcs — no long tapering point.
+    Traced centred at the origin, half-width s. Used by the ult pulse. */
+function heartPath(ctx: CanvasRenderingContext2D, s: number): void {
+  ctx.beginPath();
+  ctx.moveTo(0, s * .62);
+  ctx.bezierCurveTo(-s * .55, s * .38, -s, 0, -s, -s * .35);
+  ctx.bezierCurveTo(-s, -s * .72, -s * .62, -s * .95, -s * .3, -s * .95);
+  ctx.bezierCurveTo(-s * .12, -s * .95, 0, -s * .82, 0, -s * .68);
+  ctx.bezierCurveTo(0, -s * .82, s * .12, -s * .95, s * .3, -s * .95);
+  ctx.bezierCurveTo(s * .62, -s * .95, s, -s * .72, s, -s * .35);
+  ctx.bezierCurveTo(s, 0, s * .55, s * .38, 0, s * .62);
+  ctx.closePath();
+}
+
+/** The while-rooted status effect. Every root shows something at the torso; a character whose
+ *  control comes from somewhere else overrides it per data (rootFx, e.g. an ice crystal).
+ *  The default is the ult pulse's heart, scaled down — solid, gently breathing. */
+export function drawRootFx(ctx: CanvasRenderingContext2D, f: Fighter, time: number): void {
+  const bob = Math.sin(time * 4 + f.id * 1.7) * 3;
+  ctx.save();
+  ctx.translate(f.x, f.y - 105 + bob);
+  switch (f.data.rootFx) {
+    default: {
+      const pulse = 1 + Math.sin(time * 6 + f.id) * .06;
+      ctx.scale(pulse, pulse);
+      ctx.fillStyle = '#ff5f9e';
+      heartPath(ctx, 15);
+      ctx.fill();
+      ctx.strokeStyle = '#ffd9ec';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      break;
+    }
+  }
+  ctx.restore();
 }
 
 export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: ImageCache): void {
@@ -844,6 +884,43 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       }
       break;
     }
+    case 'crown': {
+      // 五冠王的威压: an expanding ring carrying five notes — the five crowns ride the wave out.
+      ctx.translate(e.x, e.y);
+      const rad = Math.max(30, r * (.55 + p * .6));
+      ctx.globalAlpha = (1 - p) * .9;
+      ctx.lineWidth = 6 - p * 3.5;
+      ctx.beginPath(); ctx.arc(0, 0, rad, 0, Math.PI * 2); ctx.stroke();
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2 + p * 1.2;
+        const nx = Math.cos(a) * rad, ny = Math.sin(a) * rad * .55;
+        ctx.fillRect(nx - 1.5, ny - 4.4, 3, 6.4);
+        ctx.beginPath(); ctx.ellipse(nx - 3, ny + 1, 4.5, 3, -.5, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+    case 'world-heart': {
+      // 此即世界: four hollow hearts pop one after another, each swelling and fading — a slow,
+      // readable multi-layer pulse. Young layers ride thick and small, old ones thin and wide.
+      ctx.translate(e.x, e.y);
+      const t = e.max - e.life;
+      const SPAWN = .3, LAYER = .7;
+      for (let i = 0; i < 4; i++) {
+        const q = (t - i * SPAWN) / LAYER;
+        if (q <= 0 || q >= 1) continue;
+        const s = 92 * (.35 + .85 * q);
+        const w = 6.5 - 3.5 * q;
+        ctx.globalAlpha = Math.min(1, q * 7) * (1 - q);
+        heartPath(ctx, s);
+        ctx.strokeStyle = '#ff5f9e';
+        ctx.lineWidth = w;
+        ctx.stroke();
+        ctx.strokeStyle = '#ffd9ec';
+        ctx.lineWidth = w * .45;
+        ctx.stroke();
+      }
+      break;
+    }
     case 'super':
     default:
       ctx.translate(e.x, e.y); ctx.rotate(p * 1.5);
@@ -1040,6 +1117,44 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
         ctx.bezierCurveTo(-s * 1.3, -s * .2, -s * .5, -s * 1.1, 0, -s * .45);
         ctx.bezierCurveTo(s * .5, -s * 1.1, s * 1.3, -s * .2, 0, s * .7);
         ctx.fill();
+      }
+      break;
+    }
+    case 'donut-straw':
+    case 'donut-choc': {
+      // 甜甜圈: the flavour image spins gently as it flies; the rings are the missing-file stand-in.
+      ctx.rotate(p.age * 3 * Math.sign(p.vx || 1));
+      const straw = p.fx === 'donut-straw';
+      if (prop(ctx, images, straw ? DONUT_STRAW_SRC : DONUT_CHOC_SRC, p.size)) break;
+      const r = Math.max(14, p.radius);
+      ctx.fillStyle = straw ? '#f2a2b8' : '#8a5230';
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#151222';
+      ctx.beginPath(); ctx.arc(0, 0, r * .36, 0, Math.PI * 2); ctx.fill();
+      if (straw) {
+        ctx.fillStyle = '#fff2f8';
+        for (let i = 0; i < 7; i++) {
+          const a = i * 2.4 + .5, rr = r * .66;
+          ctx.fillRect(Math.cos(a) * rr - 2.5, Math.sin(a) * rr - 1.2, 5, 2.4);
+        }
+      }
+      break;
+    }
+    case 'wink': {
+      // 偶像魅力: a huge heart that pulses as it drifts, slow enough to read the whole flight.
+      const pulse = 1 + Math.sin(p.age * 6) * .07;
+      ctx.scale(pulse * (Math.sign(p.vx) || 1), pulse);
+      if (!prop(ctx, images, MANA_HEART_SRC, p.size)) {
+        const s = Math.max(12, p.radius);
+        ctx.fillStyle = '#ff5f9e';
+        ctx.beginPath();
+        ctx.moveTo(0, s * .9);
+        ctx.bezierCurveTo(-s * 1.5, -s * .3, -s * .6, -s * 1.35, 0, -s * .55);
+        ctx.bezierCurveTo(s * .6, -s * 1.35, s * 1.5, -s * .3, 0, s * .9);
+        ctx.fill();
+        ctx.strokeStyle = '#ffd9ec';
+        ctx.lineWidth = 3;
+        ctx.stroke();
       }
       break;
     }

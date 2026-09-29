@@ -48,7 +48,7 @@ const NORMAL: Record<'light' | 'heavy' | 'airLight' | 'airHeavy', { c: number; r
 };
 
 export interface Clip {
-  sheet: 'common' | 'special' | 'frenzy';
+  sheet: 'common' | 'special' | 'frenzy' | 'world';
   col: number;
   row: number;
   sx: number;
@@ -133,6 +133,20 @@ export function poemRow(t: number, start: number): number {
   return 2;
 }
 
+/** 此即世界: the cast gesture rides the special L column, the chant plays the dedicated dance
+ *  sheet while the world stands still, and the pulse lands on the row-2 hold pose. Cell meaning
+ *  is fixed: row 0 dance beats, row 1 fancier beats, row 2 cell 0 the post-pulse pose. */
+export const WORLD_CAST = .4;
+export function manaWorldFrame(t: number, s: { start: number }): Clip {
+  if (t < WORLD_CAST) {
+    const row = t < WORLD_CAST / 3 ? 0 : t < (WORLD_CAST * 2) / 3 ? 1 : 2;
+    return at('special', 3, row);
+  }
+  if (t >= s.start) return at('world', 0, 2);
+  const beat = Math.floor((t - WORLD_CAST) / .2) % 8;
+  return at('world', beat % 4, beat < 4 ? 0 : 1);
+}
+
 /** 和灯在一起的话: seven accelerating beats after the catch — first gap, then shrink per beat.
  *  Lives here so the hit scheduler (combat), the geometry poses and the row mapper share one schedule. */
 export const VOW_BEATS = 7;
@@ -188,6 +202,9 @@ export function clipFor(f: Fighter): Clip {
     if (f.attack.skill.fx === 'compose') return at('special', f.attack.index - 2, composeRow(f.attack.t, f.attack.skill.start, f.attack.skill.duration));
     if (f.attack.skill.fx === 'parfait') return at('special', f.attack.index - 2, parfaitRow(f.attack.t, f.attack.skill.start, f.attack.skill.duration));
     if (f.attack.skill.fx === 'heart') return at('special', f.attack.index - 2, heartRow(f.attack.t, f.attack.skill.start));
+    if (f.attack.skill.fx === 'wink') return at('special', f.attack.index - 2, heartRow(f.attack.t, f.attack.skill.start));
+    if (f.attack.skill.fx === 'crown') return at('special', f.attack.index - 2, volleyRow(f.attack.t, f.attack.skill));
+    if (f.attack.skill.fx === 'world') return manaWorldFrame(f.attack.t, f.attack.skill);
     if (f.attack.skill.fx === 'poem') return at('special', f.attack.index - 2, poemRow(f.attack.t, f.attack.skill.start));
     if (f.attack.skill.fx === 'rabbit' || f.attack.skill.fx === 'kiss' || f.attack.skill.fx === 'half' || f.attack.skill.fx === 'king') {
       const t = f.attack.t, s = f.attack.skill;

@@ -179,6 +179,7 @@ export const ROSTER: CharacterData[] = [
       }),
       skill(4, 'projectile', '爱音之光', {
         damage: 28, speed: 460, size: 56, start: .35, duration: .9, cd: 7, life: 2.2, fx: 'heart',
+        root: 3, rootPin: true,
         desc: '命中定身 3 秒；再受击两次解除',
       }),
       skill(5, 'light', '不会再逃避了', {
@@ -211,7 +212,7 @@ export const ROSTER: CharacterData[] = [
         desc: '哭奏贝斯，两枚贴地音符；跳起可躲',
       }),
       skill(5, 'projectile', '为什么要演奏春日影', {
-        damage: 72, speed: 430, size: 150, start: .34, duration: 1.15, life: .56, fx: 'shout',
+        damage: 72, speed: 430, size: 150, start: .34, duration: 1.15, life: .56, fx: 'shout', root: 4,
         desc: '音波推进四分之一战场，出手即可行动；定身 4 秒，受击两次解除',
       }),
     ],
@@ -473,9 +474,40 @@ export const ROSTER: CharacterData[] = [
       }),
     ],
   },
+  {
+    id: 'mana', name: '纯田真奈', title: '主唱 / 甜甜圈', quote: '我是获得全国歌唱大赛五连冠的纯田真奈！', color: '#BB9955',
+    ...stats('focus'),
+    view: {
+      kind: 'sprite', common: '/sprites/mana/common.png', special: '/sprites/mana/special.png', height: 181,
+      world: '/sprites/mana/world.png',
+      extras: ['/sprites/mana/donut-straw.png', '/sprites/mana/donut-choc.png', '/sprites/mana/heart.png'],
+    },
+    skills: [
+      skill(0, 'light', '应援拍手'),
+      skill(1, 'heavy', '裙摆回旋'),
+      skill(2, 'projectile', '甜甜圈', {
+        damage: 20, speed: 420, size: 96, start: .22, duration: .7, cd: 5.5, life: 2.2, fx: 'donut',
+        desc: '随机投出一只大甜甜圈：草莓命中定身 2 秒（不受击解除），巧克力命中脆弱 3.5 秒（受伤 +25%）',
+      }),
+      skill(3, 'light', '五冠王的威压', {
+        damage: 14, count: 5, interval: .34, range: 230, start: .3, duration: 2.4, cd: 10, knock: 420, gain: 4, fx: 'crown',
+        desc: '原地唱跳，五波超大音波向四周扩散：越往后越广越疼，强击退',
+      }),
+      skill(4, 'projectile', '偶像魅力', {
+        damage: 62, speed: 250, size: 130, start: .45, duration: 1.1, cd: 12, gain: 4, life: 4.2, knock: 0, fx: 'wink',
+        root: 2.5, rootBreak: 0, rootPin: true,
+        desc: '勾腿摆出可爱姿态，射出超大爱心：飞得很慢，命中定身 2.5 秒，定身期间不受击解除',
+      }),
+      skill(5, 'endure', '此即世界', {
+        damage: 0, range: 0, start: 1.2, duration: 1.7, fx: 'world',
+        root: 3, rootBreak: 0, rootLevel: 'freeze',
+        desc: '时停唱跳 1.2 秒，随后爱心脉冲让全场定格 3 秒：无伤害、无法闪避、不受击解除，期间对手完全无法行动',
+      }),
+    ],
+  },
 ];
 
 /** Select screen. gale, ember and boulder stay on ROSTER for the headless checks. */
-export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki' || c.id === 'rana' || c.id === 'arale' || c.id === 'miyako' || c.id === 'ritsu' || c.id === 'nonoka' || c.id === 'yuno' || c.id === 'viola');
+export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki' || c.id === 'rana' || c.id === 'arale' || c.id === 'miyako' || c.id === 'ritsu' || c.id === 'nonoka' || c.id === 'yuno' || c.id === 'viola' || c.id === 'mana');
 
 export const ROSTER_BY_ID = new Map(ROSTER.map(c => [c.id, c]));

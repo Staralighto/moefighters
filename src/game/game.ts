@@ -177,6 +177,8 @@ export class FightGame {
   shake = 0;
   hitstop = 0;
   flash = 0;
+  /** 此即世界: the fighter id whose chant holds the world still. Null while time runs. */
+  timeStop: number | null = null;
   totalHits: number[];
   maxCombo: number[];
   winnerTeam = -1;
@@ -265,6 +267,7 @@ export class FightGame {
     this.phase = 'intro';
     this.phaseTime = 2.25;
     this.hitstop = 0;
+    this.timeStop = null;
     this.keys.clear();
     this.setBanner('ROUND ' + this.round, this.roundsToWin === 1 ? '单回合决胜 · READY' : '先赢两回合 · READY');
     this.options.onHUD?.(this);
@@ -362,7 +365,10 @@ export class FightGame {
     const escape = breakout && f.hitBySuper && !downed;
     if (f.ban > 0 || (!escape && (f.stun > 0 || f.knocked > 0))) return false;
     if (index >= 2 && this.airborne(f) && !escape) return false;
-    if ((f.root > 0 || f.ban > 0) && this.skillFor(f, index).type === 'dash') return false;
+    if (f.root > 0) {
+      // 'move' pins only the dash; the freeze tier pins everything.
+      if (f.rootLevel === 'freeze' || this.skillFor(f, index).type === 'dash') return false;
+    }
     if (f.basic && index >= 2) return false;
     if (f.king && index >= 2) return false;
     if (index === 5 && f.energy < 100) return false;
@@ -431,6 +437,8 @@ export class FightGame {
       // 直接无限大: the cast already spent the bar. Lock gains through the windup and the bill window
       // so a hit-string cannot pay for a second cast. 4.4s covers the 0.4s pose plus 4s of debt.
       if (skill.fx === 'infinite') f.noGain = 4.4;
+      // 此即世界: the chant freezes the world the moment the cast goes through.
+      if (skill.fx === 'world') this.timeStop = f.id;
       this.flash = .15;
       this.shake = 5;
       this.audio.play('super');
@@ -525,6 +533,15 @@ export class FightGame {
       return;
     }
     if (this.phase !== 'fight') return;
+
+    // 此即世界: the chant freezes the world. Only the caster steps; the round clock, the AI,
+    // other fighters, summons and projectiles all hold. Effects keep animating above.
+    if (this.timeStop !== null) {
+      const holder = this.fighterById(this.timeStop);
+      if (!holder || holder.hp <= 0 || !holder.attack || holder.attack.skill.fx !== 'world') this.timeStop = null;
+      else { this.stepFighter(holder, dt); advanceAnim(holder, dt); }
+      return;
+    }
 
     if (this.mode !== 'training') this.time -= dt;
     stepAI(this, dt);
@@ -784,8 +801,9 @@ export class FightGame {
     }
     if (f.root > 0) {
       f.root = Math.max(0, f.root - dt);
-      if (f.root === 0) f.rootHits = 0;
+      if (f.root === 0) { f.rootHits = 0; f.rootBreak = 0; f.rootLevel = 'move'; }
       f.vx = 0;
+      if (f.rootLevel === 'freeze') f.vy = 0;
     }
     // 我要拉黑他: frozen solid — knockback from follow-up hits never moves the body.
     if (f.ban > 0) f.vx = 0;
@@ -836,7 +854,8 @@ export class FightGame {
       else if (grounded && !inputLocked(f)) f.dodgeBuffer = Math.max(0, f.dodgeBuffer - dt);
     }
 
-    const canGuard = grounded && free && f.guardBroken <= 0 && f.guard > 0 && f.purge <= 0 && f.debt <= 0;
+    const canGuard = grounded && free && f.guardBroken <= 0 && f.guard > 0 && f.purge <= 0 && f.debt <= 0
+      && !(f.root > 0 && f.rootLevel === 'freeze');
     if (canGuard && (blockHeld || f.blockLeft > 0 || f.blockBuffer > 0)) {
       if (!blockHeld && f.blockBuffer > 0) f.blockLeft = Math.max(f.blockLeft, BLOCK_MIN);
       if (!blockHeld) f.blockBuffer = 0;
@@ -909,7 +928,8 @@ export class FightGame {
     f.vx *= Math.exp(-9 * dt);
     // A juggled float falls slower, so launch into a jump attack has time to connect.
     const juggled = !grounded && f.stun > 0 && f.knocked <= 0;
-    f.vy += GRAVITY * (juggled ? .6 : 1) * dt;
+    // 时停级定身: the body hangs where the pulse caught it, gravity included.
+    if (!(f.root > 0 && f.rootLevel === 'freeze')) f.vy += GRAVITY * (juggled ? .6 : 1) * dt;
     f.y += f.vy * dt;
     if (f.y > FLOOR) {
       if (f.vy > 350) { f.landing = .12; this.effect('dust', f.x, FLOOR, '#afa1c1', .3, { radius: 25 }); }

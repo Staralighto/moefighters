@@ -16,6 +16,8 @@ export function stateFor(f: Fighter): AnimState {
 }
 
 export function advanceAnim(f: Fighter, dt: number): void {
+  // 时停级定身: the pose holds frame-for-frame until the freeze lifts.
+  if (f.root > 0 && f.rootLevel === 'freeze') return;
   const next = stateFor(f);
   const serial = f.attack?.serial ?? 0;
   if (f.animState !== next || f.animSerial !== serial) {

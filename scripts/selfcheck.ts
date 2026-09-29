@@ -2513,4 +2513,131 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 // the figure scale has one home; the 128-era 0.58 must never come back (file scan lives in checkSheetScale)
 assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 
+// mana: the donut rolls two flavours (strawberry roots, chocolate frails), the crown sends five
+// growing waves, the wink roots slowly, and the world super freezes the clock then roots everyone
+{
+  const mana = ROSTER.findIndex(c => c.id === 'mana');
+  assert.ok(mana >= 0, 'mana is on the roster');
+  const data = ROSTER[mana];
+  assert.equal(data.trait, 'focus', 'mana is focus');
+  assert.equal(data.skills[2].fx, 'donut', 'U is the donut');
+  assert.equal(data.skills[3].fx, 'crown', 'I is the crown');
+  assert.equal(data.skills[3].count, 5, 'the crown sends five waves');
+  assert.equal(data.skills[4].fx, 'wink', 'O is the wink');
+  assert.equal(data.skills[4].root, 2.5, 'the wink roots 2.5s');
+  assert.equal(data.skills[4].rootBreak, 0, 'the wink root ignores clean hits');
+  assert.equal(data.skills[5].fx, 'world', 'the super is the world');
+  assert.equal(data.skills[5].root, 3, 'the pulse roots three seconds');
+  assert.equal(data.skills[5].rootLevel, 'freeze', 'the super is the time-stop tier');
+  assert.ok(data.view.kind === 'sprite' && data.view.world === '/sprites/mana/world.png', 'the dance sheet is preloaded');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/mana/heart.png'), 'the heart is preloaded');
+
+  // U: the rolled flavour decides the payoff — strawberry roots, chocolate frails
+  {
+    const g = newGame(mana, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 300; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyU'); run(g, 1.4);
+    assert.ok(g.projectiles.every(p => p.fx !== 'donut'), 'the donut flies with a rolled flavour');
+    assert.ok(hp - p2.hp > 10, `the donut connected, dealt ${hp - p2.hp}`);
+    if (p2.frail > 0) assert.ok(p2.frailBonus === .25 && p2.root === 0, 'the chocolate frail reads +25% and never roots');
+    else assert.ok(p2.root > 0, `the strawberry root holds, left ${p2.root}`);
+  }
+  // U: direct hits pin the exact control numbers (the variant copies the root fields at the cast)
+  {
+    const g = newGame(mana, 2); const [p1, p2] = g.fighters; dummy(g);
+    const straw = { ...data.skills[2], fx: 'donut-straw', knock: 0, root: 2, rootBreak: 0, rootPin: true };
+    hit(g, p1, p2, straw, { hit: new Set() });
+    assert.ok(p2.root > 1.9 && p2.root <= 2.01, `the strawberry roots two seconds, left ${p2.root}`);
+    assert.equal(p2.rootBreak, 0, 'the strawberry root has no hit counter');
+    assert.equal(p2.vx, 0, 'the strawberry does not knock back');
+    hit(g, p1, p2, straw, { hit: new Set() });
+    assert.ok(p2.root > 1.9, 'clean hits never break the strawberry root');
+  }
+  {
+    const g = newGame(mana, 2); const [p1, p2] = g.fighters; dummy(g);
+    hit(g, p1, p2, { ...data.skills[2], fx: 'donut-choc', frail: 3.5, frailBonus: .25, knock: 150 }, { hit: new Set() });
+    assert.equal(p2.root, 0, 'the chocolate never roots');
+    assert.ok(p2.frail > 3, `the chocolate frails 3.5s, left ${p2.frail}`);
+    assert.equal(p2.frailBonus, .25, 'the chocolate frail is +25%');
+  }
+  // the frail bonus really boosts damage by its fraction
+  {
+    const clean = newGame(2, 2); const [c1, c2] = clean.fighters; dummy(clean);
+    const hp = c2.hp;
+    hit(clean, c1, c2, c1.data.skills[0], { hit: new Set() });
+    const base = hp - c2.hp;
+    const frailed = newGame(2, 2); const [f1, f2] = frailed.fighters; dummy(frailed);
+    f2.frail = 3; f2.frailBonus = .25;
+    const hp2 = f2.hp;
+    hit(frailed, f1, f2, f1.data.skills[0], { hit: new Set() });
+    assert.ok(Math.abs(hp2 - f2.hp - base * 1.25) < 1.5, `frail adds 25% damage, ${base} -> ${hp2 - f2.hp}`);
+  }
+  // I: five waves connect point-blank for medium damage and shove the victim out
+  {
+    const g = newGame(mana, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 60; p2.facing = -1;
+    const hp = p2.hp, x0 = p2.x;
+    g.keyDown('KeyI'); run(g, 2.6);
+    assert.equal(p1.combo, 5, 'five waves connect');
+    assert.ok(hp - p2.hp > 40 && hp - p2.hp < 95, `the waves land for medium damage, lost ${hp - p2.hp}`);
+    assert.ok(p2.x > x0 + 100, `the waves shove hard, moved ${p2.x - x0}`);
+  }
+  // O: the wink crawls across the stage and roots on contact
+  {
+    const g = newGame(mana, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 420; p2.facing = -1;
+    g.keyDown('KeyO'); run(g, 1.0);
+    const shot = g.projectiles.find(p => p.fx === 'wink');
+    assert.ok(shot, 'the wink is in the air');
+    assert.ok(shot!.vx > 0 && shot!.vx < 300, `the wink crawls, vx ${shot!.vx}`);
+    run(g, 1.6);
+    assert.ok(p2.root > 0, `the wink roots on contact, left ${p2.root}`);
+  }
+  // L: the chant freezes the clock and the foe, the pulse roots everyone, two hits shake it off
+  {
+    const g = newGame(mana, 2); const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = 100;
+    g.keyDown('KeyL'); run(g, .1);
+    assert.ok(g.timeStop !== null, 'the chant freezes the world');
+    assert.equal(p2.root, 0, 'the pulse waits for the chant');
+    const clock = g.time;
+    run(g, .5);
+    assert.equal(g.time, clock, 'the round clock holds');
+    const anim = p2.animTime;
+    run(g, .2);
+    assert.equal(p2.animTime, anim, 'the frozen foe holds its pose');
+    run(g, .7);
+    assert.equal(g.timeStop, null, 'the pulse ends the freeze');
+    assert.ok(p2.root > 2.5, `the pulse roots three seconds, left ${p2.root}`);
+    assert.equal(p2.rootLevel, 'freeze', 'the pulse is the time-stop tier');
+    assert.ok(g.effects.some(e => e.type === 'world-heart'), 'the pulse heart shows');
+    const pose = p2.animTime;
+    run(g, .3);
+    assert.equal(p2.animTime, pose, 'the frozen pose holds');
+    // the pulse stagger has run out by now: the locks below are the root's, not the hit's
+    assert.equal(g.canAttack(p2, 0), false, 'the freeze locks attacks');
+    assert.equal(g.canAttack(p2, 2), false, 'the freeze locks specials');
+    hit(g, p1, p2, p1.data.skills[0], { hit: new Set() });
+    hit(g, p1, p2, p1.data.skills[0], { hit: new Set() });
+    assert.ok(p2.root > 0, 'her root ignores clean hits until the clock lifts it');
+  }
+  // clips: the cast reads special L, the chant reads the dance sheet, the pulse holds the last pose
+  {
+    const pf = previewFighter(data, 0);
+    pf.attack = { skill: data.skills[5], index: 5, serial: 1, t: .1, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 };
+    assert.equal(clipFor(pf).sheet, 'special', 'the cast reads the special sheet');
+    assert.equal(clipFor(pf).col, 3, 'the cast reads column L');
+    pf.attack = { skill: data.skills[5], index: 5, serial: 2, t: .7, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 };
+    assert.equal(clipFor(pf).sheet, 'world', 'the chant reads the dance sheet');
+    assert.ok(clipFor(pf).row === 0 || clipFor(pf).row === 1, 'the chant cycles the dance rows');
+    pf.attack = { skill: data.skills[5], index: 5, serial: 3, t: 1.4, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 };
+    assert.deepEqual([clipFor(pf).sheet, clipFor(pf).col, clipFor(pf).row], ['world', 0, 2], 'the pulse holds the final pose');
+    pf.attack = { skill: data.skills[4], index: 4, serial: 4, t: .6, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 };
+    assert.equal(clipFor(pf).col, 2, 'the wink reads column O');
+    pf.attack = { skill: data.skills[3], index: 3, serial: 5, t: .5, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 };
+    assert.equal(clipFor(pf).col, 1, 'the crown reads column I');
+  }
+}
+
 console.log('selfcheck ok');

@@ -88,6 +88,16 @@ const FUGA_BURST_TIME = .6;
 /** Seconds of flight before the arrow may detonate: it visibly leaves the bow, and a
     point-blank blast lands just after her cast invuln ends, so hugging the foe still burns her. */
 const FUGA_FUSE = .12;
+/** 甜甜圈: strawberry roots for this long; chocolate frails at this bonus for that long. */
+const DONUT_ROOT = 2;
+const DONUT_FRAIL = 3.5;
+const DONUT_FRAIL_BONUS = .25;
+const DONUT_KNOCK = 150;
+/** 五冠王的威压: five waves, each wider, harder and shove-ier than the last. */
+const CROWN_WAVES = 5;
+const CROWN_R0 = 230, CROWN_R1 = 330;
+const CROWN_D0 = 14, CROWN_D1 = 20;
+const CROWN_K0 = 420, CROWN_K1 = 600;
 
 /** 哭泣的紫罗兰: she does not exist between the vanish and the reappear — no body is drawn. */
 export function violetHidden(f: Fighter): boolean {
@@ -168,6 +178,25 @@ export function riffShot(s: Skill, i: number): Skill {
   };
 }
 
+/** 五冠王的威压: the wave fired at index i, with its own reach, damage and shove. */
+export function crownShot(s: Skill, i: number): Skill {
+  const k = i / (CROWN_WAVES - 1);
+  const lerp = (a: number, b: number) => a + (b - a) * k;
+  return {
+    ...s,
+    range: Math.round(lerp(CROWN_R0, CROWN_R1)),
+    damage: Math.round(lerp(CROWN_D0, CROWN_D1)),
+    knock: Math.round(lerp(CROWN_K0, CROWN_K1)),
+  };
+}
+
+/** 甜甜圈: the flavour is rolled at the cast into a per-shot copy, so the shared skill stays put. */
+function donutVariant(g: FightGame, s: Skill): Skill {
+  return g.random() < .5
+    ? { ...s, fx: 'donut-straw', knock: 0, root: DONUT_ROOT, rootBreak: 0, rootPin: true }
+    : { ...s, fx: 'donut-choc', frail: DONUT_FRAIL, frailBonus: DONUT_FRAIL_BONUS, knock: DONUT_KNOCK };
+}
+
 export interface HitSource { hit: Set<number> }
 
 export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: Skill, source: HitSource, originX = attacker.x): boolean {
@@ -197,6 +226,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   const howling = defender.attack?.skill.fx === 'howl';
   const superBrace = !blocked && !isGrab
     && skill.fx !== 'heart' && skill.fx !== 'shout' && skill.fx !== 'ban'
+    && skill.fx !== 'wink' && skill.fx !== 'donut-straw'
     && ((defender.braced > 0 && defender.frenzy > 0) || howling);
   let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .9 : 1) * ((braced || superBrace) ? BRACED_DAMAGE : 1) * (defender.ban > 0 ? BAN_DAMAGE : 1) * attacker.baseDmgMul * attacker.dmgMul * (attacker.muscle > 0 ? 1 + MUSCLE_BONUS : 1) * (defender.frail > 0 ? 1 + defender.frailBonus : 1);
   // 堕天: below half health the attacker swings harder; 这是最后通牒: a defender under a quarter takes more.
@@ -205,7 +235,8 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
 
   // 直接无限大: ordinary hits are written on the bill and do not flinch. Grabs and the
   // control set (root, ban) still land now, so they are not also billed.
-  const control = isGrab || skill.fx === 'heart' || skill.fx === 'shout' || skill.fx === 'ban';
+  const control = isGrab || skill.fx === 'heart' || skill.fx === 'shout' || skill.fx === 'ban'
+    || skill.fx === 'wink' || skill.fx === 'donut-straw';
   if (!blocked && defender.debt > 0 && !control) {
     attacker.combo = attacker.comboTime > 0 ? attacker.combo + 1 : 1;
     attacker.comboTime = 1.3 + attacker.comboTimeBonus;
@@ -281,9 +312,9 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
         g.text('脱离连段', defender.x, defender.y - 195, SIDE[1], .7, 16);
       }
     } else {
-      if (wasRooted) {
+      if (wasRooted && defender.rootBreak > 0) {
         defender.rootHits++;
-        if (defender.rootHits >= 2) {
+        if (defender.rootHits >= defender.rootBreak) {
           defender.root = 0;
           defender.rootHits = 0;
           holdStill = false;
@@ -303,24 +334,27 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       defender.blockBuffer = 0;
       defender.blockLeft = 0;
       defender.blocking = false;
-      if (skill.fx === 'heart' && !wasRooted) {
-        defender.root = 3;
+      if (skill.root && !wasRooted) {
+        // 定身: the parameterized control. root seconds and the tier come from the skill,
+        // rootBreak clean hits shake it off early (default 2, 0 holds to the clock),
+        // rootPin freezes the body in place.
+        defender.root = skill.root;
+        defender.rootLevel = skill.rootLevel ?? 'move';
+        defender.rootBreak = skill.rootBreak ?? 2;
         defender.rootHits = 0;
         defender.dodge = 0;
-        defender.vy = 0;
-        defender.knocked = 0;
         defender.stun = hitStun(.25);
-        holdStill = true;
-      } else if (skill.fx === 'shout' && !wasRooted) {
-        // 为什么要演奏春日影: rooted for four seconds; the wave itself still shoves a little.
-        defender.root = 4;
-        defender.rootHits = 0;
-        defender.stun = hitStun(.3);
+        if (skill.rootPin) {
+          defender.vy = 0;
+          defender.knocked = 0;
+          holdStill = true;
+        }
         g.text('定身!', defender.x, defender.y - 195, '#ffd27a', .6, 20);
       } else if (skill.fx === 'onegai') {
         // The headbutt hurls them out of the kneel: a real launch, and the grab shakes the root off.
         defender.root = 0;
         defender.rootHits = 0;
+        defender.rootLevel = 'move';
         holdStill = false;
         defender.vy = -440;
         defender.knocked = .72;
@@ -385,6 +419,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
         defender.ban = BAN_TIME;
         defender.root = 0;
         defender.rootHits = 0;
+        defender.rootLevel = 'move';
         defender.vy = Math.min(defender.vy, 0);
         defender.knocked = 0;
         defender.dodge = 0;
@@ -466,7 +501,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   if (attacker.lifesteal > 0 && damage > 0) attacker.hp = Math.min(attacker.data.hp, attacker.hp + damage * attacker.lifesteal);
   // 竟敢无视灯: melee hits pain the attacker back — pure hp loss, no stagger, no fx, it can kill.
   if (defender.thorns > 0 && skill.type !== 'projectile' && damage > 0) attacker.hp = Math.max(0, attacker.hp - damage * defender.thorns);
-  const knock = skill.fx === 'bag' || skill.fx === 'heart' ? 0
+  const knock = skill.fx === 'bag' || skill.fx === 'heart' || skill.fx === 'wink' || skill.fx === 'donut-straw' ? 0
     : skill.fx === 'chord' ? 160
     : skill.fx === 'onegai' ? 360 : skill.fx === 'shout' ? 110
     : skill.fx === 'spin' && !spinFinale(skill, source) ? 0
@@ -490,7 +525,7 @@ export function applyMelee(g: FightGame, f: Fighter, a: Attack): void {
     const dist = Math.abs(o.x - f.x);
     const dy = Math.abs(o.y - f.y);
     const ripple = s.fx === 'ripple' || s.fx === 'huh';
-    if (s.fx === 'riff' || s.fx === 'howl' || s.fx === 'groove') {
+    if (s.fx === 'riff' || s.fx === 'howl' || s.fx === 'groove' || s.fx === 'crown') {
       // 吉他激奏: a screen-facing disc centred on her — every direction, any height. A jump no longer dodges it.
       if (Math.hypot(o.x - f.x, o.y - f.y) < s.range) {
         hit(g, f, o, s, a);
@@ -717,6 +752,8 @@ function fugaBurst(g: FightGame, p: Projectile, owner: Fighter | undefined): voi
 export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
   const a = f.attack;
   if (!a) return;
+  // 时停级定身: their move clock stops with the pose and resumes when the freeze lifts.
+  if (f.root > 0 && f.rootLevel === 'freeze') return;
   const s = a.skill;
   // Frenzy only hurries the ground jab and kick; specials and air normals keep their own clock.
   const rate = f.frenzy > 0 && a.index <= 1 && !s.air ? (f.data.frenzy?.rate ?? FRENZY_RATE) : 1;
@@ -1168,6 +1205,11 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
         a.skill = riffShot(s, a.shots);
         applyMelee(g, f, a);
         g.effect('riff', f.x, f.y - 85, f.data.color, .4, { radius: a.skill.range });
+      } else if (s.fx === 'crown') {
+        // 五冠王的威压: every wave is its own copy — wider, harder, shove-ier.
+        a.skill = crownShot(s, a.shots);
+        applyMelee(g, f, a);
+        g.effect('crown', f.x, f.y - 85, f.data.color, .45, { radius: a.skill.range });
       } else if (s.fx === 'groove') {
         applyMelee(g, f, a);
         g.effect('burst', f.x, f.y - 80, f.data.color, .22, { radius: s.range });
@@ -1194,7 +1236,26 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
     if ((s.fx === 'riff' || s.fx === 'groove') && a.shots >= 1 && !attackHeld(g, f) && a.t < s.duration - .3) a.t = s.duration - .3;
   } else if (!a.emitted && a.t >= s.start) {
     a.emitted = true;
-    if (s.fx === 'resolve') {
+    if (s.fx === 'world') {
+      // 此即世界: the chant ends the freeze. The pulse roots every opponent outright — no
+      // damage, nothing to block or dodge; seconds, tier and break rule all come from the skill.
+      for (const o of g.opponents(f)) {
+        if (o.hp <= 0) continue;
+        o.root = s.root ?? 0;
+        o.rootLevel = s.rootLevel ?? 'move';
+        o.rootBreak = s.rootBreak ?? 0;
+        o.rootHits = 0;
+        o.dodge = 0;
+        o.vy = 0;
+        o.knocked = 0;
+        o.stun = Math.max(o.stun, .25);
+        g.effect('world-heart', o.x, o.y - 85, f.data.color, 1.6, { radius: 92 });
+        g.text('定身!', o.x, o.y - 195, '#ffd27a', .6, 20);
+      }
+      g.flash = Math.max(g.flash, .25);
+      g.timeStop = null;
+      a.t = Math.max(a.t, s.duration);
+    } else if (s.fx === 'resolve') {
       // 就由我来结束一切: no strike, just the mask dropping. The ripple shoves everyone away; the frenzy clock starts here.
       f.frenzy = f.data.frenzy?.time ?? FRENZY_TIME;
       g.effect('resolve', f.x, f.y - 80, f.data.color, .75, { radius: RESOLVE_REPEL_RANGE });
@@ -1320,6 +1381,7 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
       f.invuln = Math.min(f.invuln, s.start);
       a.t = Math.max(a.t, s.duration);
     } else if (s.type === 'projectile') {
+      if (s.fx === 'donut') a.skill = donutVariant(g, s);
       spawnShot(g, f, a);
     } else if (s.type !== 'dash' && s.fx !== 'slam' && s.fx !== 'onegai' && s.fx !== 'vow' && s.fx !== 'compose' && s.fx !== 'record') {
       if (s.type !== 'upper') applyMelee(g, f, a);
@@ -1557,7 +1619,7 @@ export function stepProjectiles(g: FightGame, dt: number): void {
       }
     }
     p.trail.push({ x: p.x, y: p.y });
-    const trailCap = p.fx === 'mutsumi-note' || p.fx === 'chord' || p.fx === 'sob' ? 14 : 7;
+    const trailCap = p.fx === 'mutsumi-note' || p.fx === 'chord' || p.fx === 'sob' ? 14 : p.fx === 'wink' ? 10 : 7;
     if (p.trail.length > trailCap) p.trail.shift();
     if (p.settled && p.fx === 'milk' && owner && owner.hp > 0 && Math.abs(owner.x - p.x) < 40 && owner.y >= FLOOR - 1) {
       gainEnergy(owner, 26);
