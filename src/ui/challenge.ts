@@ -235,7 +235,10 @@ export function showBuffPicker(stage: number, enemies: CharacterData[], views: M
       const ctx = canvas.getContext('2d');
       const view = views.get(c.id);
       if (!ctx || !view) return;
+      const waiting = !!view.idleReady && !view.idleReady();
+      canvas.classList.toggle('pending', waiting);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (waiting) return;
       ctx.save();
       ctx.translate(canvas.width / 2, canvas.height - 6);
       ctx.scale(.55, .55);

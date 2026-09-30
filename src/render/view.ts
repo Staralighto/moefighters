@@ -12,6 +12,8 @@ export interface FrozenPose { sheet: string; col: number; row: number; facing: n
 
 export interface FighterView {
   draw(ctx: CanvasRenderingContext2D, f: Fighter, x: number, y: number, alpha: number, tint?: string, outline?: string, pose?: FrozenPose): void;
+  /** False while the idle sheet is still downloading. Select portraits hold their box instead of drawing the block figure. */
+  idleReady?(): boolean;
 }
 
 function buildFor(data: CharacterData): 'slim' | 'bulky' | 'tall' {

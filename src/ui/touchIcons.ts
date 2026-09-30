@@ -17,6 +17,16 @@ export function atkIcon(heavy: boolean): string {
   return heavy ? typeIcon.heavy : typeIcon.light;
 }
 
+/** Fighters with their own ultimate drawing. Anyone else gets the shared mark. */
+const ultArt = new Set(['gale', 'ember', 'boulder', 'sakiko', 'mutsumi', 'uika', 'umiri', 'nyamu', 'anon']);
+
+/** Phosphor fill lightning, MIT. public/icons/ult.svg */
+export const DEFAULT_ULT_ICON = '/icons/ult.svg';
+
+export function ultIcon(id: string): string {
+  return ultArt.has(id) ? `/icons/ult-${id}.png` : DEFAULT_ULT_ICON;
+}
+
 /** Skill buttons follow the fighter's move types. The ultimate is per character. */
 export function applyTouchIcons(c: CharacterData): void {
   const pad = document.getElementById('touchpad');
@@ -30,7 +40,8 @@ export function applyTouchIcons(c: CharacterData): void {
   put('[data-pad="s1"]', typeIcon[c.skills[2].type], c.skills[2].name);
   put('[data-pad="s2"]', typeIcon[c.skills[3].type], c.skills[3].name);
   put('[data-pad="s3"]', typeIcon[c.skills[4].type], c.skills[4].name);
-  put('[data-pad="ult"]', `/icons/ult-${c.id}.png`, c.skills[5].name);
-  pad.querySelector<HTMLElement>('[data-pad="ult"]')?.style.setProperty('--ico', `url("/icons/ult-${c.id}.png")`);
+  const ult = ultIcon(c.id);
+  put('[data-pad="ult"]', ult, c.skills[5].name);
+  pad.querySelector<HTMLElement>('[data-pad="ult"]')?.style.setProperty('--ico', `url("${ult}")`);
   put('[data-pad="atk"]', typeIcon.light);
 }

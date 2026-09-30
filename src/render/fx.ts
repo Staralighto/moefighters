@@ -90,33 +90,39 @@ export function mortisAfterimage(p: number): [number, number] | null {
 }
 
 let ghostBuf: HTMLCanvasElement | undefined;
-let tintBuf: HTMLCanvasElement | undefined;
 
-/** A flat single-colour silhouette of any image, source-atop like the mortis ghost. */
+const silhouetteCache = new WeakMap<CanvasImageSource, Map<string, HTMLCanvasElement>>();
+
+/** A flat single-colour silhouette of any image, source-atop like the mortis ghost.
+ *  ponytail: the result is pure per (source, size, colour), so it bakes once; the per-src
+ *  map stays tiny (one effect, one colour each) and clears rather than growing. */
 function tintedSilhouette(src: CanvasImageSource, w: number, h: number, color: string): CanvasImageSource | null {
   if (typeof document === 'undefined') return null;
-  if (!tintBuf) tintBuf = document.createElement('canvas');
-  if (tintBuf.width !== Math.round(w) || tintBuf.height !== Math.round(h)) {
-    tintBuf.width = Math.round(w);
-    tintBuf.height = Math.round(h);
-  }
-  const g = tintBuf.getContext('2d');
+  const bw = Math.round(w), bh = Math.round(h);
+  let perSrc = silhouetteCache.get(src);
+  if (!perSrc) { perSrc = new Map(); silhouetteCache.set(src, perSrc); }
+  const key = bw + 'x' + bh + '|' + color;
+  const hit = perSrc.get(key);
+  if (hit) return hit;
+  const canvas = document.createElement('canvas');
+  canvas.width = bw;
+  canvas.height = bh;
+  const g = canvas.getContext('2d');
   if (!g) return null;
-  g.globalCompositeOperation = 'source-over';
-  g.clearRect(0, 0, tintBuf.width, tintBuf.height);
-  g.drawImage(src, 0, 0, tintBuf.width, tintBuf.height);
+  g.drawImage(src, 0, 0, bw, bh);
   g.globalCompositeOperation = 'source-atop';
   g.fillStyle = color;
-  g.fillRect(0, 0, tintBuf.width, tintBuf.height);
-  g.globalCompositeOperation = 'source-over';
-  return tintBuf;
+  g.fillRect(0, 0, bw, bh);
+  if (perSrc.size >= 8) perSrc.clear();
+  perSrc.set(key, canvas);
+  return canvas;
 }
 
 function drawMortisGhost(ctx: CanvasRenderingContext2D, im: HTMLImageElement, col: number, row: number, alpha: number): void {
   if (typeof document === 'undefined') return;
   if (!ghostBuf) ghostBuf = document.createElement('canvas');
-  ghostBuf.width = CELL;
-  ghostBuf.height = CELL;
+  // Assigning width/height resets the bitmap even when the value is unchanged; guard it.
+  if (ghostBuf.width !== CELL) { ghostBuf.width = CELL; ghostBuf.height = CELL; }
   const g = ghostBuf.getContext('2d');
   if (!g) return;
   g.imageSmoothingEnabled = true;
@@ -1451,12 +1457,25 @@ export function drawKuji(ctx: CanvasRenderingContext2D, g: FightGame): void {
 const LIME = new Set(['#b7ff6e']);
 export const UI_FONT = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif';
 
+/** Floating texts cycle a handful of sizes; the font string is built once per (weight, px). */
+const fontCache = new Map<string, string>();
+function floatingFont(lime: boolean, size: number): string {
+  const px = lime ? Math.round(size * 1.2) : size;
+  const key = (lime ? 'b' : 'h') + px;
+  let font = fontCache.get(key);
+  if (!font) {
+    font = `${lime ? 700 : 900} ${px}px ${UI_FONT}`;
+    fontCache.set(key, font);
+  }
+  return font;
+}
+
 export function drawTexts(ctx: CanvasRenderingContext2D, texts: FloatingText[]): void {
   ctx.textAlign = 'center';
   for (const t of texts) {
     const lime = LIME.has(t.color);
     ctx.globalAlpha = Math.min(1, t.life * 4);
-    ctx.font = `${lime ? 700 : 900} ${lime ? Math.round(t.size * 1.2) : t.size}px ${UI_FONT}`;
+    ctx.font = floatingFont(lime, t.size);
     ctx.lineWidth = lime ? 6 : 4;
     ctx.strokeStyle = lime ? '#000' : '#171120';
     ctx.strokeText(t.text, t.x, t.y);

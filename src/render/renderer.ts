@@ -10,6 +10,14 @@ import { drawBanSign, drawCombo, drawEffect, drawKuji, drawParticles, drawProjec
 const TEAM_GLOW = SIDE;
 
 let veilBuf: HTMLCanvasElement | undefined;
+/** The scanline tile is one 1×4 pattern; the overlay itself never changes. */
+let scanPattern: CanvasPattern | null = null;
+/** Gradients below depend only on FLOOR (and the fixed origin under a translate), so they are built once. */
+let eraseGrad: CanvasGradient | null = null;
+let poolEraseGrad: CanvasGradient | null = null;
+let beamGrad: CanvasGradient | null = null;
+let glowGrad: CanvasGradient | null = null;
+let poolGrad: CanvasGradient | null = null;
 
 /** The stage-darkness layer with the lit cone punched out, so the spotlight leaves her bright.
     One reused offscreen buffer; only drawn while the chant holds the world still. */
@@ -26,28 +34,39 @@ function stageVeil(gx: number, sway: number): HTMLCanvasElement | null {
   // Punch the light cones out of the darkness: dim high up, near-full strength at stage level,
   // so the whole standing body inside the beam clears the veil, not just the legs.
   v.globalCompositeOperation = 'destination-out';
-  const erase = v.createLinearGradient(0, 0, 0, FLOOR);
-  erase.addColorStop(0, 'rgba(0,0,0,.5)');
-  erase.addColorStop(1, 'rgba(0,0,0,.92)');
-  v.fillStyle = erase;
+  if (!eraseGrad) {
+    eraseGrad = v.createLinearGradient(0, 0, 0, FLOOR);
+    eraseGrad.addColorStop(0, 'rgba(0,0,0,.5)');
+    eraseGrad.addColorStop(1, 'rgba(0,0,0,.92)');
+  }
+  v.fillStyle = eraseGrad;
+  // The gradient is drawn in translated space, so the cached one works at any cone position.
   const cone = (topX: number) => {
+    v.save();
+    v.translate(topX, 0);
     v.beginPath();
-    v.moveTo(topX - 20, 0);
-    v.lineTo(topX + 20, 0);
-    v.lineTo(gx + 100 + sway, FLOOR);
-    v.lineTo(gx - 100 + sway, FLOOR);
+    v.moveTo(-20, 0);
+    v.lineTo(20, 0);
+    v.lineTo(gx + 100 + sway - topX, FLOOR);
+    v.lineTo(gx - 100 + sway - topX, FLOOR);
     v.closePath();
     v.fill();
+    v.restore();
   };
   cone(-34);
   cone(W + 34);
-  const poolErase = v.createRadialGradient(gx + sway, FLOOR, 10, gx + sway, FLOOR, 150);
-  poolErase.addColorStop(0, 'rgba(0,0,0,.9)');
-  poolErase.addColorStop(1, 'rgba(0,0,0,0)');
-  v.fillStyle = poolErase;
+  if (!poolEraseGrad) {
+    poolEraseGrad = v.createRadialGradient(0, 0, 10, 0, 0, 150);
+    poolEraseGrad.addColorStop(0, 'rgba(0,0,0,.9)');
+    poolEraseGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  }
+  v.save();
+  v.translate(gx + sway, FLOOR);
+  v.fillStyle = poolEraseGrad;
   v.beginPath();
-  v.ellipse(gx + sway, FLOOR, 130, 36, 0, 0, Math.PI * 2);
+  v.ellipse(0, 0, 130, 36, 0, 0, Math.PI * 2);
   v.fill();
+  v.restore();
   v.globalCompositeOperation = 'source-over';
   return veilBuf;
 }
@@ -58,6 +77,8 @@ export class Renderer {
   private readonly views: Map<string, FighterView>;
   private readonly stage: StageData;
   private readonly images: ImageCache;
+  /** The backdrop + dim overlay never change once the sheet is in, so they bake to one blit. */
+  private stageBuf: HTMLCanvasElement | undefined;
 
   constructor(canvas: HTMLCanvasElement, views: Map<string, FighterView>, stage: StageData, images: ImageCache) {
     const ctx = canvas.getContext('2d');
@@ -148,42 +169,65 @@ export class Renderer {
       }
       c.save();
       c.globalCompositeOperation = 'lighter';
+      if (!beamGrad) {
+        beamGrad = c.createLinearGradient(0, 0, 0, FLOOR);
+        beamGrad.addColorStop(0, 'rgba(255, 240, 205, .3)');
+        beamGrad.addColorStop(1, 'rgba(255, 240, 205, .06)');
+      }
+      c.fillStyle = beamGrad;
+      // Same trick as the veil cones: translate to the apex so the cached gradient fits any sway.
       const beam = (topX: number) => {
-        const grad = c.createLinearGradient(0, 0, 0, FLOOR);
-        grad.addColorStop(0, 'rgba(255, 240, 205, .3)');
-        grad.addColorStop(1, 'rgba(255, 240, 205, .06)');
-        c.fillStyle = grad;
+        c.save();
+        c.translate(topX, 0);
         c.beginPath();
-        c.moveTo(topX - 20, 0);
-        c.lineTo(topX + 20, 0);
-        c.lineTo(gx + 100 + sway, FLOOR);
-        c.lineTo(gx - 100 + sway, FLOOR);
+        c.moveTo(-20, 0);
+        c.lineTo(20, 0);
+        c.lineTo(gx + 100 + sway - topX, FLOOR);
+        c.lineTo(gx - 100 + sway - topX, FLOOR);
         c.closePath();
         c.fill();
+        c.restore();
       };
       beam(-34);
       beam(W + 34);
       // A warm halo at chest height sells the hit of the spot on her body, not just the floor.
-      const glow = c.createRadialGradient(gx + sway, FLOOR - 88, 6, gx + sway, FLOOR - 88, 90);
-      glow.addColorStop(0, 'rgba(255, 244, 210, .26)');
-      glow.addColorStop(1, 'rgba(255, 244, 210, 0)');
-      c.fillStyle = glow;
+      if (!glowGrad) {
+        glowGrad = c.createRadialGradient(0, 0, 6, 0, 0, 90);
+        glowGrad.addColorStop(0, 'rgba(255, 244, 210, .26)');
+        glowGrad.addColorStop(1, 'rgba(255, 244, 210, 0)');
+      }
+      c.save();
+      c.translate(gx + sway, FLOOR - 88);
+      c.fillStyle = glowGrad;
       c.beginPath();
-      c.arc(gx + sway, FLOOR - 88, 90, 0, Math.PI * 2);
+      c.arc(0, 0, 90, 0, Math.PI * 2);
       c.fill();
+      c.restore();
       c.translate(gx + sway, FLOOR);
       c.scale(1, .3);
-      const pool = c.createRadialGradient(0, 0, 8, 0, 0, 105);
-      pool.addColorStop(0, 'rgba(255, 244, 210, .38)');
-      pool.addColorStop(1, 'rgba(255, 244, 210, 0)');
-      c.fillStyle = pool;
+      if (!poolGrad) {
+        poolGrad = c.createRadialGradient(0, 0, 8, 0, 0, 105);
+        poolGrad.addColorStop(0, 'rgba(255, 244, 210, .38)');
+        poolGrad.addColorStop(1, 'rgba(255, 244, 210, 0)');
+      }
+      c.fillStyle = poolGrad;
       c.beginPath();
       c.arc(0, 0, 105, 0, Math.PI * 2);
       c.fill();
       c.restore();
     }
-    c.fillStyle = '#0000000c';
-    for (let y = 0; y < H; y += 4) c.fillRect(0, y, W, 1);
+    if (!scanPattern) {
+      const tile = document.createElement('canvas');
+      tile.width = 1;
+      tile.height = 4;
+      const t = tile.getContext('2d');
+      if (t) {
+        t.fillStyle = '#0000000c';
+        t.fillRect(0, 0, 1, 1);
+        scanPattern = c.createPattern(tile, 'repeat');
+      }
+    }
+    if (scanPattern) { c.fillStyle = scanPattern; c.fillRect(0, 0, W, H); }
   }
 
   private view(id: string): FighterView {
@@ -195,14 +239,26 @@ export class Renderer {
   private drawStage(): void {
     const c = this.ctx, s = this.stage;
     const bg = s.image ? this.images.get(s.image) : undefined;
-    if (bg) {
-      c.drawImage(bg, 0, 0, W, H);
-    } else {
-      c.fillStyle = s.sky; c.fillRect(0, 0, W, FLOOR + 4);
-      c.fillStyle = s.ground; c.fillRect(0, FLOOR + 4, W, H - FLOOR - 4);
-      c.fillStyle = s.accent + '30';
-      for (let x = 40; x < W; x += 120) c.fillRect(x, 60 + (x % 240) / 4, 6, 6);
+    if (!this.stageBuf && (!s.image || (bg && bg.naturalWidth))) {
+      const buf = document.createElement('canvas');
+      buf.width = W;
+      buf.height = H;
+      const g = buf.getContext('2d');
+      if (g) {
+        if (bg) g.drawImage(bg, 0, 0, W, H);
+        else {
+          g.fillStyle = s.sky; g.fillRect(0, 0, W, FLOOR + 4);
+          g.fillStyle = s.ground; g.fillRect(0, FLOOR + 4, W, H - FLOOR - 4);
+          g.fillStyle = s.accent + '30';
+          for (let x = 40; x < W; x += 120) g.fillRect(x, 60 + (x % 240) / 4, 6, 6);
+        }
+        g.fillStyle = '#10101b20'; g.fillRect(0, 0, W, H);
+        this.stageBuf = buf;
+      }
     }
+    if (this.stageBuf) { c.drawImage(this.stageBuf, 0, 0); return; }
+    // The sheet has not arrived yet: repaint frame by frame until it has, then bake once.
+    if (bg && bg.naturalWidth) c.drawImage(bg, 0, 0, W, H);
     c.fillStyle = '#10101b20'; c.fillRect(0, 0, W, H);
   }
 }

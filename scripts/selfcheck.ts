@@ -4,15 +4,26 @@ import { drumShotTime, hit, violetHidden } from '../src/game/combat.ts';
 import { vowBeatTime, VOW_BEATS } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
 import { ROSTER } from '../src/data/characters.ts';
+import { AIR_SKILLS } from '../src/data/skills.ts';
 import { STAGES } from '../src/data/stages.ts';
 import { FLOOR, COMBO_DECAY, STEP, X_MAX } from '../src/game/constants.ts';
 import { clipFor, drumRow } from '../src/render/clips.ts';
 import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
 import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell } from '../src/render/fx.ts';
 import { previewFighter } from '../src/game/fighter.ts';
-import { guideIndex, skillHTML } from '../src/ui/select.ts';
+import { easeLoad, nextSrc } from '../src/assets/loader.ts';
+import { isTouchJump, thumbBandTop } from '../src/game/input.ts';
+import { battleFrame } from '../src/ui/battleFrame.ts';
+import { TOUCH_LAYOUT } from '../src/ui/touchLayout.data.ts';
+import { DEFAULT_ULT_ICON, ultIcon } from '../src/ui/touchIcons.ts';
+import { assignSlotWho, guideIndex, skillHTML, stageCover } from '../src/ui/select.ts';
 import { POOL, aggregatePicks, bestLabel, drawThree, readBest, rollEnemies, stageSetup } from '../src/ui/challenge.ts';
 import { checkSpriteGuard } from './sprite-guard.ts';
+
+/* `npm run check` runs this file through node's type stripping: no bundler, and no @types/node to type
+   `import 'node:fs'` with. `process.getBuiltinModule` reaches the same builtin without an import. */
+declare const process: { getBuiltinModule(name: 'fs'): { readFileSync(path: string, encoding: 'utf8'): string } };
+const readFileSync = process.getBuiltinModule('fs').readFileSync;
 
 checkSpriteGuard();
 
@@ -1325,6 +1336,95 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const touch = skillHTML(ROSTER[3], 0, true);
   assert.ok(touch.includes('<kbd>轻</kbd>') && touch.includes('<kbd>必</kbd>') && !touch.includes('<kbd>J</kbd>'), 'phone shows on-screen pad labels');
   assert.ok(touch.includes('轻 / 重') && !touch.includes('J / K'), 'combo hint follows the pad labels');
+  assert.ok(
+    first.includes('class="brief"') && first.includes('class="nums"') && first.includes('class="detail"')
+    && !first.includes('undefined'), 'movelist carries the brief / nums / detail tiers with no missing field',
+  );
+  // 技能文案 (docs/skill-desc-guide.md): the battle table opens on tier 2 and the two tiers never
+  // show at once, so a brief has to stand alone. These are the rules the copy pass has to keep.
+  for (const s of [...ROSTER.flatMap(c => c.skills), ...AIR_SKILLS]) {
+    const where = `${s.name}(${s.key})`;
+    assert.ok(s.brief.trim().length > 0 && s.detail.trim().length > 0, `${where} carries both tiers`);
+    assert.ok([...s.brief].length <= 24, `${where} brief stays within 24 chars: ${s.brief}`);
+    assert.equal([...s.brief].filter(ch => ch === '；').length <= 1, true, `${where} brief uses at most one ；: ${s.brief}`);
+    for (const [field, text] of [['brief', s.brief], ['detail', s.detail]] as const) {
+      assert.ok(!/[,;:()]/.test(text), `${where} ${field} uses full-width punctuation: ${text}`);
+      // The render layer swaps this exact string for the numpad / touch labels; J/K misses it.
+      assert.ok(!text.includes('J/K'), `${where} ${field} writes J / K with spaces: ${text}`);
+    }
+  }
+  const wide = stageCover(828, 199, 30);
+  assert.ok(wide.width >= 828 && wide.height >= 199, 'a short wide stage still covers');
+  assert.ok(wide.fromBottom < 0 && wide.fromBottom >= 199 - wide.height, 'wide stage keeps the floor in frame');
+  const flush = stageCover(960, 540, 200);
+  assert.equal(flush.fromBottom, 0, 'an exact-fit image stays flush instead of leaving a bar');
+  const capped = stageCover(828, 199, -500);
+  assert.equal(capped.fromBottom, 199 - capped.height, 'sliding past the top slack is clamped');
+  assert.deepEqual(assignSlotWho(['player', 'cpu'], 1, 'player', false, 2), ['player', 'player']);
+  assert.equal(assignSlotWho(['player', 'cpu'], 1, 'player', false, 1), null);
+  assert.deepEqual(assignSlotWho(['player', 'cpu'], 1, 'cpu', true, 1), ['cpu', 'player']);
+  assert.deepEqual(assignSlotWho(['player', 'cpu'], 0, 'player', true, 1), ['cpu', 'cpu']);
+  assert.equal(assignSlotWho(['player', 'cpu'], 0, 'player', false, 2), null);
+  assert.equal(easeLoad(0, 0, 0), 0, 'an empty load stays at the start');
+  assert.ok(easeLoad(0, 0, 3000) > 0 && easeLoad(0, 0, 3000) <= 0.96, 'the bar creeps before the first file arrives');
+  assert.ok(easeLoad(0.95, 0.5, 0) <= 0.96, 'a partial load cannot draw a full bar');
+  assert.ok(easeLoad(0.9, 1, 0) > 0.9 && easeLoad(0.9, 1, 0) <= 1, 'a finished load is allowed to reach the end');
+  const waiting = new Set<string>();
+  assert.equal(nextSrc(['stage', 'a'], ['c', 'stage', 'a'], ['b'], waiting), 'stage', 'pinned files load before a jumped roster card');
+  waiting.add('stage');
+  assert.equal(nextSrc(['stage', 'a'], ['c', 'a'], ['b'], waiting), 'a', 'the next pin still beats the jumped card');
+  waiting.add('a');
+  assert.equal(nextSrc(['stage', 'a'], ['c'], ['b'], waiting), 'c', 'the queue falls through to jumped cards, then the rest');
+  assert.equal(nextSrc(['stage'], ['c'], [], new Set()), 'c', 'a pin that was never queued is skipped');
+  assert.equal(nextSrc([], [], ['b'], new Set()), 'b', 'the background queue runs once nothing is waiting ahead of it');
+  const phone = battleFrame(844, 390);
+  assert.ok(phone.top < 0, 'a wide phone crops vertically instead of leaving side bars');
+  assert.ok(Math.abs(phone.floorY / 390 - FLOOR / 540) < 1e-6, 'phone floor stays at the desktop ratio');
+  assert.ok(Math.abs(phone.hud - (390 * 960) / (844 * 540)) < 1e-9, 'a short phone shrinks the top HUD to the desktop share');
+  const widePhone = battleFrame(667, 375);
+  assert.ok(Math.abs(widePhone.top) < 1, 'a 16:9 phone is barely cropped');
+  assert.ok(Math.abs(widePhone.imageH - 375) < 1, 'a 16:9 phone already fills the height');
+  assert.ok(widePhone.hud > 0.99 && widePhone.hud <= 1, 'a 16:9 phone keeps the desktop HUD size');
+  const tablet = battleFrame(1024, 768);
+  const tabletScale = 1024 / 960;
+  const centered = (768 - 540 * tabletScale) / 2 + FLOOR * tabletScale;
+  const ratio = 768 * FLOOR / 540;
+  assert.ok(tablet.floorY > centered, 'tablet floor sits lower than the old centered picture');
+  assert.ok(tablet.floorY - centered < 768 * 0.18, 'tablet floor is not much lower than centered');
+  assert.ok(Math.abs(ratio - tablet.floorY) <= 768 * 0.04 + 1e-6, 'tablet floor never rises past 4% off the desktop ratio');
+  assert.equal(tablet.hud, 1, 'a tall tablet does not shrink the HUD');
+  // The landscape keys are placed by CSS: attack in the bottom-right, three skills in a row to its left,
+  // guard above the attack, the ultimate to the left of the skills once it is ready. Jump is still the stick edge.
+  assert.deepEqual(Object.keys(TOUCH_LAYOUT), ['stick'], 'only the stick keeps a hand-placed spot; the keys are laid out');
+  assert.ok(TOUCH_LAYOUT.stick.x < 20 && TOUCH_LAYOUT.stick.y > 70, 'the stick stays in the bottom-left thumb zone');
+  const html = readFileSync('index.html', 'utf8');
+  for (const gone of ['data-pad="jump"']) {
+    assert.ok(!html.includes(gone), gone + ' is gone: jumping is the stick edge');
+  }
+  assert.ok(html.includes('data-guard'), 'the guard button blocks on press instead of dodging');
+  for (const kept of ['data-pad="atk"', 'data-pad="guard"', 'data-pad="s1"', 'data-pad="s2"', 'data-pad="s3"', 'data-pad="ult"']) {
+    assert.ok(html.includes(kept), kept + ' is still on the pad');
+  }
+  assert.equal(ultIcon('gale'), '/icons/ult-gale.png', 'a drawn ultimate keeps its own icon');
+  assert.equal(ultIcon('soyo'), DEFAULT_ULT_ICON, 'an ultimate without art uses the shared mark');
+  for (const c of ROSTER) {
+    try { readFileSync('public' + ultIcon(c.id), 'utf8'); }
+    catch { throw Error('FAIL: ' + ultIcon(c.id) + ' is missing for ' + c.id); }
+  }
+  // Jump fires only at the strict outer edge, only with a mostly upward push, and only once until the stick returns.
+  const up = (out: number) => ({ out, up: true });
+  const side = (out: number) => ({ out, up: false });
+  assert.ok(!isTouchJump(up(.6), false), 'a shallow up-push stays a walk');
+  assert.ok(!isTouchJump(up(.71), false), 'just inside the outer edge still stays a walk');
+  assert.ok(isTouchJump(up(.8), false), 'the strict outer edge jumps');
+  assert.ok(!isTouchJump(side(.9), false), 'a sideways drag past the edge never jumps');
+  assert.ok(isTouchJump(up(.8), true), 'holding at the edge does not cancel the jump');
+  assert.ok(isTouchJump(up(.65), true), 'still out of the re-arm zone, the jump holds');
+  assert.ok(!isTouchJump(up(.4), true), 'back inside the ring the jump re-arms');
+  // Band starts just below the attack top, so a ~390px phone exempts about the bottom fifth.
+  const phoneBand = thumbBandTop(297, 87);
+  assert.ok(phoneBand > 297 && phoneBand - 297 < 87 * .15, 'the band starts just below the attack top');
+  assert.ok((390 - phoneBand) / 390 < .28, 'a phone no longer exempts the bottom half');
 }
 
 {

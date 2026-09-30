@@ -1,7 +1,7 @@
 import type { CharacterData, StageData } from '../data/types.ts';
 import type { ChallengeMods, Mode } from '../game/game.ts';
 import type { FighterView } from '../render/view.ts';
-import { previewFighter } from '../game/fighter.ts';
+import { previewFighter, type Fighter } from '../game/fighter.ts';
 import { FLOOR, H, W } from '../game/constants.ts';
 import { bestLabel, challengeName, foeCount, readBest, readRun, rollEnemies, type ChallengeKind } from './challenge.ts';
 
@@ -18,7 +18,6 @@ export interface MatchSetup {
   challengeKind?: ChallengeKind;
 }
 
-const RULES_KEY = 'moe-rules-seen';
 const STATE_KEY = 'mf-select-state';
 const MODES: Mode[] = ['cpu', 'training', 'team', 'challenge'];
 
@@ -34,7 +33,7 @@ interface SavedSelect {
 }
 const KEYS_1P = 'A D 移动 · W / 空格 跳跃 · 长按 S 格挡 · 点按 S 后闪 · J K 轻 / 重击（跳中为空击） · U I O 技能 · L 必杀';
 const KEYS_2P = '玩家二：方向键移动 · 上跳 · 下格挡 · 小键盘 1 / 2 轻重击 · 4 / 5 / 6 技能 · 3 必杀';
-const KEYS_TOUCH = '横屏开打 · 左下摇杆只左右移动 · 技能3上方跳跃 · 短按轻击、长按重击 · 点防也是格挡 · 手机只能一名玩家';
+const KEYS_TOUCH = '横屏开打 · 左下摇杆移动，推到外缘向上跳 · 短按轻击、长按重击 · 攻击键上方按住格挡 · 手机只能一名玩家';
 /** Same order as CONTROLS[].attacks. Index 0 is the earlier player slot, 1 the later one. */
 const PAD_KEYS = [
   ['J', 'K', 'U', 'I', 'O', 'L'],
@@ -66,17 +65,47 @@ const $ = (id: string) => document.getElementById(id) as HTMLElement;
 const PORTRAIT_SCALE = 1.3;
 const PORTRAIT_FOOT = 276;
 
+/** Apply a slot-control click. A lone chip (`mateHidden`) flips, and on a full roster it takes the player seat from someone else. `null` means leave it. */
+export function assignSlotWho(who: readonly ('player' | 'cpu')[], lead: number, clicked: 'player' | 'cpu', mateHidden: boolean, maxPlayers: number): ('player' | 'cpu')[] | null {
+  const atCap = who.filter(w => w === 'player').length >= maxPlayers;
+  let next: 'player' | 'cpu' | null = mateHidden && who[lead] === clicked ? (clicked === 'player' ? 'cpu' : 'player') : clicked;
+  if (next === who[lead]) next = null;
+  else if (next === 'player' && atCap) next = null;
+  const copy = who.slice();
+  if (!next && mateHidden && who[lead] === 'cpu' && atCap) {
+    const other = copy.findIndex((w, i) => w === 'player' && i !== lead);
+    if (other < 0) return null;
+    copy[other] = 'cpu';
+    next = 'player';
+  }
+  if (!next) return null;
+  copy[lead] = next;
+  return copy;
+}
+
+/** Backdrop that covers the panel. `idealFromBottom` is where the image bottom would sit to put the floor on the portrait feet; it is clamped so neither edge can slip inside the panel. */
+export function stageCover(panelW: number, panelH: number, idealFromBottom: number): { width: number; height: number; fromBottom: number } {
+  const cover = Math.max(panelW / W, panelH / H);
+  const width = Math.ceil(W * cover);
+  const height = Math.ceil(H * cover);
+  const fromBottom = Math.min(0, Math.max(panelH - height, idealFromBottom - (H - FLOOR) * cover));
+  return { width, height, fromBottom };
+}
+
 interface SlotView {
   slot: number; name: string; tag: string; portrait: string; facing: 1 | -1;
 }
 
+/** Movelist card: the key chip, the name, and all three text tiers (docs/skill-desc-guide.md).
+ *  Which tiers show is CSS: the select screen pins tier 3, the battle table picks via data-tier.
+ *  Both the brief and the detail carry the full mechanic set; only the numbers differ. */
 export function skillHTML(c: CharacterData, pad = 0, touch = isTouch()): string {
   const keys = touch ? TOUCH_KEYS : PAD_KEYS[pad] ?? PAD_KEYS[0];
+  const swap = (t: string): string => touch ? t.replaceAll('J / K', '轻 / 重') : pad ? t.replaceAll('J / K', '1 / 2') : t;
   return c.skills.map((s, i) => {
     const dmg = (s.count ? s.count + ' × ' : '') + s.damage + ' 基础伤害';
     const cost = s.super ? ' · 100 气' : s.cd ? ' · ' + s.cd + 's 冷却' : '';
-    const desc = touch ? s.desc.replaceAll('J / K', '轻 / 重') : pad ? s.desc.replaceAll('J / K', '1 / 2') : s.desc;
-    return `<div class="skill ${s.super ? 'super' : ''}"><kbd>${keys[i]}</kbd><div><b>${s.name}</b><p>${dmg}${cost}<br>${desc}</p></div>${s.super ? '<span class="charge" aria-hidden="true"><i></i></span>' : ''}</div>`;
+    return `<div class="skill ${s.super ? 'super' : ''}"><kbd>${keys[i]}</kbd><div><b>${s.name}</b><p class="brief">${swap(s.brief)}</p><p class="nums">${dmg}${cost}</p><p class="detail">${swap(s.detail)}</p></div>${s.super ? '<span class="charge" aria-hidden="true"><i></i></span>' : ''}</div>`;
   }).join('');
 }
 
@@ -90,23 +119,28 @@ export class SelectScreen {
   private readonly stage: StageData;
   private readonly onStart: (setup: MatchSetup) => void;
   private readonly onPick: () => void;
+  private readonly onShown: (shown: CharacterData[]) => void;
   private selected: number[] = [0, 1];
   /** Per slot, earlier player slots take the first key set. */
   private who: ('player' | 'cpu')[] = ['player', 'cpu'];
   /** Stage-1 opponents, rolled on entering challenge mode and shown in the two enemy slots. */
   private challengeEnemies: CharacterData[] = rollEnemies();
   private side = 0;
-  private rulesSeen = false;
   private lastFrame = 0;
   private time = 0;
+  /** Roster thumbnails, cached once at mount — animate() used to re-query them every frame. */
+  private rosterCanvases: HTMLCanvasElement[] = [];
+  private lastRosterDraw = 0;
+  /** One idle stand-in per portrait canvas, rebuilt only when the slot switches character. */
+  private readonly previewCache = new WeakMap<HTMLCanvasElement, { id: string; facing: number; f: Fighter }>();
 
-  constructor(roster: CharacterData[], views: Map<string, FighterView>, stage: StageData, onStart: (setup: MatchSetup) => void, onPick: () => void) {
+  constructor(roster: CharacterData[], views: Map<string, FighterView>, stage: StageData, onStart: (setup: MatchSetup) => void, onPick: () => void, onShown: (shown: CharacterData[]) => void = () => {}) {
     this.roster = roster;
     this.views = views;
     this.stage = stage;
     this.onStart = onStart;
     this.onPick = onPick;
-    try { this.rulesSeen = localStorage.getItem(RULES_KEY) === '1'; } catch { /* private mode */ }
+    this.onShown = onShown;
     this.restore();
   }
 
@@ -114,40 +148,38 @@ export class SelectScreen {
     $('roster').innerHTML = this.roster.map((c, i) =>
       `<button class="character" data-index="${i}" title="${c.name} · ${c.title}" aria-label="选择${c.name}"><canvas width="96" height="96" aria-hidden="true"></canvas><span class="slot-tag" hidden></span><span class="char-name">${c.name}</span></button>`).join('');
     $('roster').querySelectorAll<HTMLButtonElement>('button').forEach(b => b.onclick = () => this.pick(Number(b.dataset.index)));
+    this.rosterCanvases = [...$('roster').querySelectorAll<HTMLCanvasElement>('canvas')];
+    // The backdrop geometry only changes with the viewport; per-frame restyling did a
+    // read-then-write layout pass 60 times a second for the same output.
+    window.addEventListener('resize', () => this.placeStage(), { passive: true });
     document.querySelectorAll<HTMLElement>('.fighter-preview').forEach(el => {
       el.onclick = e => {
         if ((e.target as HTMLElement).closest('.slot-control')) return;
         this.focus(Number(el.dataset.slot));
       };
     });
-    document.querySelectorAll<HTMLButtonElement>('.slot-control button').forEach(b => b.onclick = e => {
+    document.querySelectorAll<HTMLElement>('.slot-head').forEach(head => head.addEventListener('click', e => {
+      const box = head.querySelector('.slot-control') as HTMLElement | null;
+      if (!box || box.hidden) return;
+      const buttons = [...box.querySelectorAll<HTMLButtonElement>('button')];
+      const mateHidden = buttons.some(b => getComputedStyle(b).display === 'none');
+      const btn = (e.target as HTMLElement).closest('button');
+      // Desktop: the P letter still focuses the slot. The chip only toggles once its mate is hidden.
+      if (!btn && !mateHidden) return;
       e.stopPropagation();
-      const lead = Number((b.closest('.slot-control') as HTMLElement).dataset.lead);
-      const next = b.dataset.who as 'player' | 'cpu';
-      if (next === 'player' && this.who[lead] !== 'player' && this.who.filter(w => w === 'player').length >= this.maxPlayers()) return;
-      if (this.who[lead] === next) return;
-      this.who[lead] = next;
+      const clicked = (btn?.dataset.who ?? buttons.find(b => getComputedStyle(b).display !== 'none')?.dataset.who) as 'player' | 'cpu' | undefined;
+      if (!clicked) return;
+      const lead = Number(box.dataset.lead);
+      const next = assignSlotWho(this.who, lead, clicked, mateHidden, this.maxPlayers());
+      if (!next) return;
+      this.who = next;
       this.onPick();
       this.refresh();
-    });
+    }));
     $('random').onclick = () => this.pick(Math.floor(Math.random() * this.roster.length));
-    $('rules-summary').onclick = () => this.toggleRules();
     document.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach(b => b.onclick = () => this.setMode(b.dataset.mode as Mode));
     document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach(b => b.onclick = () => { this.difficulty = Number(b.dataset.difficulty); this.refresh(); });
     document.querySelectorAll<HTMLButtonElement>('[data-challenge-kind]').forEach(b => b.onclick = () => this.setChallengeKind(b.dataset.challengeKind as ChallengeKind));
-    document.addEventListener('pointerdown', e => {
-      const panel = $('rules-panel');
-      if (panel.hidden) return;
-      const t = e.target as Node;
-      if ($('rules-summary').contains(t) || panel.contains(t)) return;
-      panel.hidden = true;
-      $('rules-summary').setAttribute('aria-expanded', 'false');
-    });
-    document.addEventListener('keydown', e => {
-      if (e.key !== 'Escape' || $('selection').hidden || $('rules-panel').hidden) return;
-      $('rules-panel').hidden = true;
-      $('rules-summary').setAttribute('aria-expanded', 'false');
-    });
     $('start').onclick = () => this.onStart(this.setup());
     this.refresh();
   }
@@ -195,17 +227,6 @@ export class SelectScreen {
     this.side = side;
     this.onPick();
     this.refresh();
-  }
-
-  private toggleRules(): void {
-    const panel = $('rules-panel');
-    panel.hidden = !panel.hidden;
-    $('rules-summary').setAttribute('aria-expanded', String(!panel.hidden));
-    if (!panel.hidden && !this.rulesSeen) {
-      this.rulesSeen = true;
-      try { localStorage.setItem(RULES_KEY, '1'); } catch { /* private mode */ }
-      this.refresh();
-    }
   }
 
   /** The last session's mode, picks, controllers and difficulty, so a revisit opens where it left off. */
@@ -375,7 +396,6 @@ export class SelectScreen {
       // Landing on a kind with no run: field the right number of foes for its preview.
       this.challengeEnemies = rollEnemies(foeCount(this.challengeKind));
     }
-    const open = !$('rules-panel').hidden;
     $('select-stage').classList.toggle('team', team);
     $('select-stage').classList.toggle('challenge', challenge);
     $('select-stage').classList.toggle('solo', challenge && this.challengeKind === 'climb');
@@ -388,11 +408,7 @@ export class SelectScreen {
     document.querySelectorAll<HTMLElement>('.slot-control').forEach(el => { el.hidden = challenge; });
     (document.getElementById('difficulty-row') as HTMLElement).hidden = challenge;
     (document.getElementById('challenge-kind-row') as HTMLElement).hidden = !challenge;
-    $('rules-panel').hidden = !open;
-    $('rules-text').textContent = this.summary() + ' ›';
-    $('rules-summary').classList.toggle('fresh', !this.rulesSeen);
-    const aiFights = this.mode !== 'training' && (team || challenge || this.who.includes('cpu'));
-    $('rules-panel').classList.toggle('dim-diff', !aiFights);
+    $('rules-text').textContent = this.summary();
     document.querySelectorAll<HTMLElement>('.fighter-preview').forEach(el => {
       el.classList.toggle('active', !el.hidden && Number(el.dataset.slot) === this.side);
     });
@@ -407,7 +423,12 @@ export class SelectScreen {
       const on = who === b.dataset.who;
       b.classList.toggle('active', !!who && on);
       b.setAttribute('aria-pressed', String(!!who && on));
-      b.title = capped && b.dataset.who === 'player' && !on ? (max === 1 ? '手机上只能一名玩家' : '玩家最多两名') : '';
+      const mate = b.parentElement?.querySelector<HTMLButtonElement>(`button:not([data-who="${b.dataset.who}"])`);
+      const solo = !!mate && getComputedStyle(mate).display === 'none';
+      const capNote = max === 1 ? '手机上只能一名玩家' : '玩家最多两名';
+      b.title = capped && b.dataset.who === 'player' && !on ? capNote
+        : solo && on ? `改为${b.dataset.who === 'player' ? '人机' : '玩家'}`
+        : '';
     });
     for (const v of this.shown()) {
       const c = this.slotChar(v);
@@ -452,6 +473,13 @@ export class SelectScreen {
       ? '两边都是人机，开始后只看不打 · ESC 暂停'
       : isTouch() ? KEYS_TOUCH : humans === 2 ? KEYS_1P + ' · ' + KEYS_2P : KEYS_1P;
     this.save();
+    this.placeStage();
+    this.onShown(this.cast());
+  }
+
+  /** Whoever is standing on the stage right now. The first screen loads these idle sheets before the rest of the roster. */
+  cast(): CharacterData[] {
+    return this.shown().map(v => this.slotChar(v));
   }
 
   /** Call from requestAnimationFrame while the select screen is visible. */
@@ -459,11 +487,17 @@ export class SelectScreen {
     const dt = Math.min((now - this.lastFrame) / 1000, .05);
     this.lastFrame = now;
     this.time += dt;
-    this.placeStage();
     for (const v of this.shown()) {
       this.portrait($(v.portrait) as HTMLCanvasElement, this.slotChar(v), v.facing, PORTRAIT_SCALE, PORTRAIT_FOOT);
     }
-    $('roster').querySelectorAll<HTMLCanvasElement>('canvas').forEach((canvas, i) => this.portrait(canvas, this.roster[i], 1, .46, 93));
+    // 96px thumbs idle at ~15fps: they are small and peripheral, and 20 full redraws per
+    // frame was the select screen's biggest ongoing cost.
+    if (now - this.lastRosterDraw >= 66) {
+      this.lastRosterDraw = now;
+      for (let i = 0; i < this.rosterCanvases.length; i++) {
+        this.portrait(this.rosterCanvases[i], this.roster[i], 1, .46, 93);
+      }
+    }
   }
 
   /** Challenge enemy slots read the rolled pair; every other slot reads the roster selection. */
@@ -475,28 +509,39 @@ export class SelectScreen {
     const ctx = canvas.getContext('2d');
     const view = this.views.get(c.id);
     if (!ctx || !view) return;
+    const waiting = !!view.idleReady && !view.idleReady();
+    canvas.classList.toggle('pending', waiting);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (waiting) return;
+    // Reuse the stand-in instead of building a fresh Fighter every frame; the view only
+    // reads its anim clock, so advancing it in place draws exactly the same pose.
+    let pv = this.previewCache.get(canvas);
+    if (!pv || pv.id !== c.id || pv.facing !== facing) {
+      pv = { id: c.id, facing, f: previewFighter(c, 0, facing) };
+      this.previewCache.set(canvas, pv);
+    }
+    pv.f.animTime = this.time;
     ctx.save();
     ctx.translate(canvas.width / 2, baseY);
     ctx.scale(scale, scale);
-    view.draw(ctx, previewFighter(c, this.time, facing), 0, 0, 1);
+    view.draw(ctx, pv.f, 0, 0, 1);
     ctx.restore();
   }
 
-  /** One backdrop for the whole select panel. Floor of the stage meets the portrait foot line. */
+  /** One backdrop for the whole select panel. Cover first, then sit the floor on the portrait feet. */
   private placeStage(): void {
     const panel = $('select-stage');
     const canvas = $('portrait1') as HTMLCanvasElement;
     const panelBox = panel.getBoundingClientRect();
     const box = canvas.getBoundingClientRect();
-    if (!this.stage.image || !panelBox.height || !box.height) return;
+    if (!this.stage.image || !panel.clientWidth || !panel.clientHeight || !box.height) return;
     const fit = Math.min(box.width / canvas.width, box.height / canvas.height);
     const drawnH = canvas.height * fit;
     const footScreen = box.top + (box.height - drawnH) + PORTRAIT_FOOT * fit;
-    const viewScale = PORTRAIT_SCALE * fit;
-    const fromBottom = panelBox.bottom - footScreen - (H - FLOOR) * viewScale;
+    const cover = stageCover(panel.clientWidth, panel.clientHeight, panelBox.bottom - footScreen);
     panel.style.backgroundImage = `url("${this.stage.image}")`;
-    panel.style.backgroundSize = `${W * viewScale}px ${H * viewScale}px`;
-    panel.style.backgroundPosition = `center bottom ${fromBottom}px`;
+    panel.style.backgroundRepeat = 'no-repeat';
+    panel.style.backgroundSize = `${cover.width}px ${cover.height}px`;
+    panel.style.backgroundPosition = `center bottom ${cover.fromBottom}px`;
   }
 }

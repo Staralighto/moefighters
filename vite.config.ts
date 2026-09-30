@@ -48,7 +48,7 @@ function serialize(raw: unknown): string {
   });
   return `import type { PropPlace } from './propLayout.ts';
 
-/** 部件相对角色的位置。用开发面板「部件」改，改完会写回这个文件。手改后刷新页面。
+/** 部件相对角色的位置。用开发面板改（战斗中 Shift+P），改完会写回这个文件。手改后刷新页面。
     x：扫弦朝面向为正；大招向屏幕右为正。y：相对脚底，向上为负。rot：弧度，正数让远端往下倒。size：图宽像素。 */
 export const PROP_LAYOUT: Record<string, PropPlace> = {
 ${lines.join('\n')}

@@ -98,6 +98,12 @@ const CROWN_WAVES = 5;
 const CROWN_R0 = 230, CROWN_R1 = 330;
 const CROWN_D0 = 14, CROWN_D1 = 20;
 const CROWN_K0 = 420, CROWN_K1 = 600;
+/** Multi-swing melee stamp offsets, cycled per swing. Constant: rebuilding it per step was pure churn. */
+const SWING_RING = [
+  { x: 76, y: -74, dir: 1 },
+  { x: 6, y: -128, dir: 1 },
+  { x: -42, y: -76, dir: -1 },
+];
 
 /** 哭泣的紫罗兰: she does not exist between the vanish and the reappear — no body is drawn. */
 export function violetHidden(f: Fighter): boolean {
@@ -517,11 +523,25 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   return true;
 }
 
+/** ponytail: shared scratch so the per-step melee sweeps do not allocate. Not reentrant —
+ *  hit() never calls back into melee code. */
+const meleeSweep: Fighter[] = [];
+
 export function applyMelee(g: FightGame, f: Fighter, a: Attack): void {
   if (f.hp <= 0 || f.stun > 0) return;
   const s = a.skill;
-  const targets = g.opponents(f).sort((p, q) => Math.abs(p.x - f.x) - Math.abs(q.x - f.x));
-  for (const o of targets) {
+  meleeSweep.length = 0;
+  for (const o of g.fighters) if (g.isEnemy(f, o) && o.hp > 0 && !o.echo) meleeSweep.push(o);
+  // Insertion sort by |x - f.x|: the sweep holds at most a handful of fighters and must
+  // keep the array's original order on ties, exactly like the stable sort it replaced.
+  for (let i = 1; i < meleeSweep.length; i++) {
+    const t = meleeSweep[i];
+    const d = Math.abs(t.x - f.x);
+    let j = i - 1;
+    while (j >= 0 && Math.abs(meleeSweep[j].x - f.x) > d) { meleeSweep[j + 1] = meleeSweep[j]; j--; }
+    meleeSweep[j + 1] = t;
+  }
+  for (const o of meleeSweep) {
     const dist = Math.abs(o.x - f.x);
     const dy = Math.abs(o.y - f.y);
     const ripple = s.fx === 'ripple' || s.fx === 'huh';
@@ -794,30 +814,32 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
     }
   }
 
-  // 满场: the kit stays up for the sit; nearby foes are bounced on every pulse. No extra hit.
-  const repel = (power: number) => {
-    let pushed = false;
-    for (const o of g.opponents(f)) {
-      if (o.hp <= 0 || o.invuln > 0) continue;
-      const dx = o.x - f.x;
-      if (Math.abs(dx) < DRUM_REPEL_RANGE) {
-        const dir = Math.sign(dx) || f.facing;
-        o.vx = dir * power;
-        o.stun = Math.max(o.stun, .22);
-        pushed = true;
-      }
+/** Repel pulse while the drums super is up: anyone closing in gets bounced. Returns whether anyone was pushed. */
+function repelPulse(g: FightGame, f: Fighter, power: number): boolean {
+  let pushed = false;
+  for (const o of g.opponents(f)) {
+    if (o.hp <= 0 || o.invuln > 0) continue;
+    const dx = o.x - f.x;
+    if (Math.abs(dx) < DRUM_REPEL_RANGE) {
+      const dir = Math.sign(dx) || f.facing;
+      o.vx = dir * power;
+      o.stun = Math.max(o.stun, .22);
+      pushed = true;
     }
-    return pushed;
-  };
+  }
+  return pushed;
+}
+
+  // 满场: the kit stays up for the sit; nearby foes are bounced on every pulse. No extra hit.
   if (s.fx === 'drums' && !a.emitted) {
     a.emitted = true;
-    repel(DRUM_REPEL_PUSH);
+    repelPulse(g, f, DRUM_REPEL_PUSH);
     g.effect('drums', f.x, f.y, f.data.color, s.duration, { dir: f.facing });
   }
   if (s.fx === 'drums' && a.t < s.duration) {
     const prev = Math.floor(Math.max(0, a.t - dt) / DRUM_REPEL_EVERY);
     const cur = Math.floor(a.t / DRUM_REPEL_EVERY);
-    if (cur > prev && repel(DRUM_REPEL_PUSH)) {
+    if (cur > prev && repelPulse(g, f, DRUM_REPEL_PUSH)) {
       g.effect('burst', f.x, f.y - 80, f.data.color, .25, { radius: DRUM_REPEL_RANGE });
     }
   }
@@ -1190,15 +1212,10 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
     if (s.fx === 'shout' && a.shots >= volley) a.t = s.duration;
   } else if ((s.count ?? 1) > 1 && s.fx !== 'compose' && s.fx !== 'snip') {
     // ponytail: N swings, one cooldown. Each swing gets a fresh hit set so the same target can be caught again.
-    const ring = [
-      { x: 76, y: -74, dir: 1 },
-      { x: 6, y: -128, dir: 1 },
-      { x: -42, y: -76, dir: -1 },
-    ];
     while (a.shots < (s.count ?? 1) && a.t >= s.start + a.shots * (s.interval ?? .11)) {
       // 吉他激奏 / 韵律直觉: past the first wave the key has to stay down.
       if ((s.fx === 'riff' || s.fx === 'groove') && a.shots >= 1 && !attackHeld(g, f)) break;
-      const swing = ring[a.shots % ring.length];
+      const swing = SWING_RING[a.shots % SWING_RING.length];
       if (a.shots === 0 && a.index >= 2) g.text(s.name, f.x, f.y - 190, f.data.color, .65, 17);
       a.hit = new Set();
       if (s.fx === 'riff') {
@@ -1461,7 +1478,24 @@ function stepSealVolleys(g: FightGame, dt: number): void {
       else g.effect('burst', target.x, target.y - 80, v.color, .2, { radius: (v.skill.size ?? 140) * .4 });
     }
   }
-  g.sealVolleys = g.sealVolleys.filter(v => v.n < cap(v));
+  // ponytail: in-place cull, same reason as the projectile list — this runs every step.
+  let w = 0;
+  for (let i = 0; i < g.sealVolleys.length; i++) {
+    const v = g.sealVolleys[i];
+    if (v.n < cap(v)) g.sealVolleys[w++] = v;
+  }
+  g.sealVolleys.length = w;
+}
+
+/** Append to a capped trail. ponytail: the evicted point object is recycled as the newest head —
+ *  a full-screen barrage would otherwise hand GC ~2000 short-lived points a second. */
+function pushTrail(p: Projectile, cap: number): void {
+  if (p.trail.length >= cap) {
+    const head = p.trail.shift();
+    if (head) { head.x = p.x; head.y = p.y; p.trail.push(head); }
+    return;
+  }
+  p.trail.push({ x: p.x, y: p.y });
 }
 
 export function stepProjectiles(g: FightGame, dt: number): void {
@@ -1535,9 +1569,8 @@ export function stepProjectiles(g: FightGame, dt: number): void {
     if (p.fx === 'fuga') {
       // 火的故事: level flight, contact or the far edge ends it, and the blast does the talking.
       p.x += p.vx * dt;
-      p.trail.push({ x: p.x, y: p.y });
       // History long enough for the golden afterimages to reach a few body-lengths behind.
-      if (p.trail.length > 48) p.trail.shift();
+      pushTrail(p, 48);
       const owner = g.fighterById(p.owner);
       // The fuse: no detonation for the first stretch of flight, so the arrow visibly leaves
       // the bow — and a point-blank blast lands just after her cast invuln is gone.
@@ -1566,7 +1599,7 @@ export function stepProjectiles(g: FightGame, dt: number): void {
     if ((p.fx === 'milk' || p.fx === 'bag' || p.fx === 'matcha') && !p.settled) p.vy += GRAVITY * dt;
     const owner = g.fighterById(p.owner);
     if (p.fx === 'groove-note' && owner && owner.hp > 0) {
-      const foe = g.opponents(owner).filter(o => o.hp > 0).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
+      const foe = g.nearestEnemyTo(owner, p.x);
       if (foe) {
         const dx = foe.x - p.x;
         const spd = Math.abs(p.vx) || 250;
@@ -1580,7 +1613,7 @@ export function stepProjectiles(g: FightGame, dt: number): void {
       }
     }
     if (p.fx === 'chord' && owner && owner.hp > 0) {
-      const foe = g.opponents(owner).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
+      const foe = g.nearestEnemyTo(owner, p.x);
       if (foe) {
         const dx = foe.x - p.x, dy = (foe.y - 83) - p.y;
         const spd = Math.hypot(p.vx, p.vy) || 420;
@@ -1618,9 +1651,8 @@ export function stepProjectiles(g: FightGame, dt: number): void {
         p.hit.clear();
       }
     }
-    p.trail.push({ x: p.x, y: p.y });
     const trailCap = p.fx === 'mutsumi-note' || p.fx === 'chord' || p.fx === 'sob' ? 14 : p.fx === 'wink' ? 10 : 7;
-    if (p.trail.length > trailCap) p.trail.shift();
+    pushTrail(p, trailCap);
     if (p.settled && p.fx === 'milk' && owner && owner.hp > 0 && Math.abs(owner.x - p.x) < 40 && owner.y >= FLOOR - 1) {
       gainEnergy(owner, 26);
       p.life = 0;
@@ -1639,19 +1671,28 @@ export function stepProjectiles(g: FightGame, dt: number): void {
       }
     }
   }
-  // Opposing shots cancel each other.
+  // Opposing shots cancel each other. Owner lookups are hoisted: the pair loop ran two linear
+  // scans per pair (~10k element visits a second during barrage supers) for the same answer.
+  const owners: (Fighter | undefined)[] = new Array(g.projectiles.length);
+  for (let i = 0; i < g.projectiles.length; i++) owners[i] = g.fighterById(g.projectiles[i].owner);
   for (let i = 0; i < g.projectiles.length; i++) {
     for (let j = i + 1; j < g.projectiles.length; j++) {
       const p = g.projectiles[i], q = g.projectiles[j];
       // Shots die on each other; the well is a zone, so shots pass through it.
       // 剪 is the same kind of zone, and the fuga arrow is a super nobody pecks down.
-      if (!p.settled && !q.settled && p.fx !== 'blackhole' && q.fx !== 'blackhole' && p.fx !== 'parfait' && q.fx !== 'parfait' && p.fx !== 'seal' && q.fx !== 'seal' && p.fx !== 'meat' && q.fx !== 'meat' && p.fx !== 'snip' && q.fx !== 'snip' && p.fx !== 'fuga' && q.fx !== 'fuga' && g.isEnemy(g.fighterById(p.owner), g.fighterById(q.owner)) && p.life > 0 && q.life > 0 && Math.abs(p.x - q.x) < 25 && Math.abs(p.y - q.y) < 27) {
+      if (!p.settled && !q.settled && p.fx !== 'blackhole' && q.fx !== 'blackhole' && p.fx !== 'parfait' && q.fx !== 'parfait' && p.fx !== 'seal' && q.fx !== 'seal' && p.fx !== 'meat' && q.fx !== 'meat' && p.fx !== 'snip' && q.fx !== 'snip' && p.fx !== 'fuga' && q.fx !== 'fuga' && g.isEnemy(owners[i], owners[j]) && p.life > 0 && q.life > 0 && Math.abs(p.x - q.x) < 25 && Math.abs(p.y - q.y) < 27) {
         p.life = q.life = 0;
         g.sparks(p.x, p.y, '#fff', 12);
       }
     }
   }
-  g.projectiles = g.projectiles.filter(p => p.life > 0 && p.x > -60 && p.x < W + 60 && p.y < FLOOR + 60);
+  // ponytail: in-place cull — this ran every step and the filter allocated even when nothing died.
+  let w = 0;
+  for (let i = 0; i < g.projectiles.length; i++) {
+    const p = g.projectiles[i];
+    if (p.life > 0 && p.x > -60 && p.x < W + 60 && p.y < FLOOR + 60) g.projectiles[w++] = p;
+  }
+  g.projectiles.length = w;
   stepSealVolleys(g, dt);
   easeSealSwells(g, dt);
 }

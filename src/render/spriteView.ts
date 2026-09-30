@@ -1,10 +1,51 @@
 import type { FighterView, FrozenPose } from './view.ts';
 import type { Fighter } from '../game/fighter.ts';
-import type { ImageCache } from '../assets/loader.ts';
+import { missingImages, type ImageCache } from '../assets/loader.ts';
 import { CELL, clipFor, type Clip } from './clips.ts';
 
-let tintBuf: HTMLCanvasElement | undefined;
 const rimCache = new Map<string, HTMLCanvasElement>();
+const cellCache = new Map<string, HTMLCanvasElement>();
+const tintCache = new Map<string, HTMLCanvasElement>();
+
+/** ponytail: LRU cap per baked-cell cache. A cell is h×h (~181px ≈ 130KB), the working set is
+ *  the fielded cast's cells, and 256 keeps a roster crawl bounded at ~34MB; eviction rebuilds
+ *  on demand, so the worst case is a one-frame bake. Raise only with a memory reason. */
+const CELL_CACHE_MAX = 256;
+const RIM_CACHE_MAX = 128;
+
+/** LRU get-or-bake. Refreshing on hit keeps the hot cells of the current match alive. */
+function cacheCell(cache: Map<string, HTMLCanvasElement>, max: number, key: string, bake: () => HTMLCanvasElement): HTMLCanvasElement {
+  const hit = cache.get(key);
+  if (hit) {
+    cache.delete(key);
+    cache.set(key, hit);
+    return hit;
+  }
+  const made = bake();
+  if (cache.size >= max) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  cache.set(key, made);
+  return made;
+}
+
+/** The 256px cell pre-scaled to draw height with the flash filter baked in, so the per-draw
+ *  cost is a 1:1 blit instead of a high-quality resample of the whole sheet. */
+function prescaledCell(im: HTMLImageElement, sx: number, sy: number, h: number, filter: string): HTMLCanvasElement {
+  return cacheCell(cellCache, CELL_CACHE_MAX, im.src + '|' + sx + '|' + sy + '|' + h + '|' + filter, () => {
+    const c = document.createElement('canvas');
+    c.width = h;
+    c.height = h;
+    const g = c.getContext('2d');
+    if (!g) return c;
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = 'high';
+    if (filter !== 'none') g.filter = filter;
+    g.drawImage(im, sx, sy, CELL, CELL, 0, 0, h, h);
+    return c;
+  });
+}
 
 function spriteFilter(f: Fighter): string {
   if (f.hitFlash > 0) return 'brightness(2.1)';
@@ -18,66 +59,69 @@ const RIM_PAD = 4;
 /** ~3px stroke from the smoothed silhouette, then a 1px blur so the edge isn't stepped. Cached per cell. */
 function hardRim(im: HTMLImageElement, sx: number, sy: number, h: number, color: string): HTMLCanvasElement {
   const key = im.src + '|' + sx + '|' + sy + '|' + h + '|' + color;
-  const hit = rimCache.get(key);
-  if (hit) return hit;
-  const tinted = document.createElement('canvas');
-  tinted.width = h;
-  tinted.height = h;
-  const tg = tinted.getContext('2d');
-  if (!tg) return tinted;
-  tg.imageSmoothingEnabled = true;
-  tg.imageSmoothingQuality = 'high';
-  tg.drawImage(im, sx, sy, CELL, CELL, 0, 0, h, h);
-  tg.globalCompositeOperation = 'source-in';
-  tg.fillStyle = color;
-  tg.fillRect(0, 0, h, h);
+  return cacheCell(rimCache, RIM_CACHE_MAX, key, () => {
+    const tinted = document.createElement('canvas');
+    tinted.width = h;
+    tinted.height = h;
+    const tg = tinted.getContext('2d');
+    if (!tg) return tinted;
+    tg.imageSmoothingEnabled = true;
+    tg.imageSmoothingQuality = 'high';
+    tg.drawImage(im, sx, sy, CELL, CELL, 0, 0, h, h);
+    tg.globalCompositeOperation = 'source-in';
+    tg.fillStyle = color;
+    tg.fillRect(0, 0, h, h);
 
-  const size = h + RIM_PAD * 2;
-  const raw = document.createElement('canvas');
-  raw.width = size;
-  raw.height = size;
-  const rg = raw.getContext('2d');
-  if (!rg) return tinted;
-  rg.imageSmoothingEnabled = true;
-  rg.imageSmoothingQuality = 'high';
-  const steps = 20;
-  for (const radius of [RIM, RIM * 0.5]) {
-    for (let i = 0; i < steps; i++) {
-      const a = (i / steps) * Math.PI * 2;
-      rg.drawImage(tinted, RIM_PAD + Math.cos(a) * radius, RIM_PAD + Math.sin(a) * radius);
+    const size = h + RIM_PAD * 2;
+    const raw = document.createElement('canvas');
+    raw.width = size;
+    raw.height = size;
+    const rg = raw.getContext('2d');
+    if (!rg) return tinted;
+    rg.imageSmoothingEnabled = true;
+    rg.imageSmoothingQuality = 'high';
+    const steps = 20;
+    for (const radius of [RIM, RIM * 0.5]) {
+      for (let i = 0; i < steps; i++) {
+        const a = (i / steps) * Math.PI * 2;
+        rg.drawImage(tinted, RIM_PAD + Math.cos(a) * radius, RIM_PAD + Math.sin(a) * radius);
+      }
     }
-  }
 
-  const c = document.createElement('canvas');
-  c.width = size;
-  c.height = size;
-  const g = c.getContext('2d');
-  if (!g) return raw;
-  g.imageSmoothingEnabled = true;
-  g.filter = 'blur(0.8px)';
-  g.drawImage(raw, 0, 0);
-  rimCache.set(key, c);
-  return c;
+    const c = document.createElement('canvas');
+    c.width = size;
+    c.height = size;
+    const g = c.getContext('2d');
+    if (!g) return raw;
+    g.imageSmoothingEnabled = true;
+    g.filter = 'blur(0.8px)';
+    g.drawImage(raw, 0, 0);
+    return c;
+  });
 }
 
-/** Flat colour wash over the opaque pixels. Same trick as the 墨缇丝 afterimage. */
-function drawTint(ctx: CanvasRenderingContext2D, im: CanvasImageSource, sx: number, sy: number, h: number, tint: string): void {
+/** Flat colour wash over the opaque pixels, baked per (sheet, cell, height, tint).
+ *  Same trick as the 墨缇丝 afterimage. */
+function drawTint(ctx: CanvasRenderingContext2D, im: HTMLImageElement, sx: number, sy: number, h: number, tint: string): void {
   if (typeof document === 'undefined') {
     ctx.drawImage(im, sx, sy, CELL, CELL, -h / 2, -h, h, h);
     return;
   }
-  if (!tintBuf) tintBuf = document.createElement('canvas');
-  tintBuf.width = CELL;
-  tintBuf.height = CELL;
-  const g = tintBuf.getContext('2d');
-  if (!g) return;
-  g.clearRect(0, 0, CELL, CELL);
-  g.globalCompositeOperation = 'source-over';
-  g.drawImage(im, sx, sy, CELL, CELL, 0, 0, CELL, CELL);
-  g.globalCompositeOperation = 'source-atop';
-  g.fillStyle = tint;
-  g.fillRect(0, 0, CELL, CELL);
-  ctx.drawImage(tintBuf, -h / 2, -h, h, h);
+  const baked = cacheCell(tintCache, CELL_CACHE_MAX, im.src + '|' + sx + '|' + sy + '|' + h + '|' + tint, () => {
+    const c = document.createElement('canvas');
+    c.width = h;
+    c.height = h;
+    const g = c.getContext('2d');
+    if (!g) return c;
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(im, sx, sy, CELL, CELL, 0, 0, h, h);
+    g.globalCompositeOperation = 'source-atop';
+    g.fillStyle = tint;
+    g.fillRect(0, 0, h, h);
+    return c;
+  });
+  ctx.drawImage(baked, -h / 2, -h, h, h);
 }
 
 /* Looks up the cache every frame so a late-loaded sheet replaces the geometry fallback without rebuilding views. */
@@ -93,6 +137,12 @@ export class SpriteView implements FighterView {
     private readonly kingScale = 1,
     private readonly world?: string,
   ) {}
+
+  /** The select screen only needs the idle sheet. A missing file is "ready" so the block figure can stand in. */
+  idleReady(): boolean {
+    if (missingImages.has(this.common)) return true;
+    return !!this.images.get(this.common)?.naturalWidth;
+  }
 
   draw(ctx: CanvasRenderingContext2D, f: Fighter, x: number, y: number, alpha: number, tint?: string, outline?: string, pose?: FrozenPose): void {
     const clip = pose
@@ -119,14 +169,12 @@ export class SpriteView implements FighterView {
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(hardRim(im, clip.sx, clip.sy, h, outline), -h / 2 - RIM_PAD, -h - RIM_PAD);
       }
-      // Source cell is 256, drawn near 181. High-quality downscale keeps the extra pixels.
+      // Source cell is 256, drawn near 181. The prescale cache bakes the high-quality
+      // downscale (and the flash filter) once; the per-draw cost is a 1:1 blit.
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       if (tint) drawTint(ctx, im, clip.sx, clip.sy, h, tint);
-      else {
-        ctx.filter = spriteFilter(f);
-        ctx.drawImage(im, clip.sx, clip.sy, CELL, CELL, -h / 2, -h, h, h);
-      }
+      else ctx.drawImage(prescaledCell(im, clip.sx, clip.sy, h, spriteFilter(f)), -h / 2, -h, h, h);
     } finally {
       ctx.restore();
     }

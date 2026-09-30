@@ -9,22 +9,12 @@ const KEYS = ['x', 'y', 'rot', 'size'] as const;
 
 /** Dev-only panel. Numbers are the same object the fight draws, and a save writes the data file. */
 export function mountPropTune(): void {
-  const bar = document.querySelector('.battle-top');
-  if (!bar) return;
-
-  const open = document.createElement('button');
-  open.type = 'button';
-  open.dataset.propTune = '';
-  open.id = 'prop-tune-open';
-  open.textContent = '部件';
-  bar.append(open);
-
   const panel = document.createElement('div');
   panel.className = 'prop-tune';
   panel.dataset.propTune = '';
   panel.hidden = true;
   panel.innerHTML = `
-    <p>打出技能后按 ESC 暂停，画面会停在这一帧。改完自动写入 <code>src/render/propLayout.data.ts</code>。手改那个文件后要刷新。</p>
+    <p>Shift+P 开关本面板（只有开发模式有）。打出技能后按 ESC 暂停，画面会停在这一帧。改完自动写入 <code>src/render/propLayout.data.ts</code>。手改那个文件后要刷新。</p>
     <label>部件 <select data-prop-id></select></label>
     <p data-prop-note></p>
     ${KEYS.map(k => `<label>${k} <button type="button" data-d="-1" data-k="${k}">−</button><input data-k="${k}" type="number" step="any"><button type="button" data-d="1" data-k="${k}">+</button></label>`).join('')}
@@ -98,7 +88,11 @@ export function mountPropTune(): void {
     }, 250);
   };
 
-  open.addEventListener('click', () => {
+  // No visible entry: this used to add a 「部件」 button to the battle bar, which is player surface.
+  // The dev-only shortcut keeps the tool without putting anything on screen.
+  window.addEventListener('keydown', e => {
+    if (!e.shiftKey || e.code !== 'KeyP') return;
+    if ((e.target as HTMLElement | null)?.matches?.('input, select')) return;
     panel.hidden = !panel.hidden;
     if (!panel.hidden) load();
   });

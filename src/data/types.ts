@@ -24,7 +24,11 @@ export interface Skill {
   super: boolean;
   /** Key into the renderer's FX table. */
   fx: string;
-  desc: string;
+  /** 档二简述：战斗中唯一常显的一档，动作或类型 + 全部影响打法的机制，不带强度数字。
+   *  写作规范见 docs/skill-desc-guide.md，硬规则由 scripts/selfcheck.ts 兜住。 */
+  brief: string;
+  /** 档三详述：同一套机制 + 数值行（伤害/段数/冷却/气）推不出来的数字。 */
+  detail: string;
   /** Shared airborne normal; never lives in a character's skill list. */
   air?: boolean;
   speed?: number;

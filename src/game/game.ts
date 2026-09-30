@@ -1,5 +1,5 @@
 import type { CharacterData, Skill, StageData } from '../data/types.ts';
-import type { Attack, Fighter, QueuedInput } from './fighter.ts';
+import type { Attack, Fighter } from './fighter.ts';
 import { DECAY_TIMERS, gainEnergy, makeFighter } from './fighter.ts';
 import { AIR_SKILLS } from '../data/skills.ts';
 import { ROSTER_BY_ID } from '../data/characters.ts';
@@ -49,7 +49,7 @@ const FRENZY_CHAIN_WINDOW = .6;
 const MINION_HP_RATIO = .2;
 const MINION_LIFE = 12;
 /** Who can answer the call. ponytail: roster ids only, so a teammate is always a finished character. */
-const MINION_POOL = ['anon', 'soyo'] as const;
+export const MINION_POOL = ['anon', 'soyo'] as const;
 /** 录音: the window the master's actions are captured for, how hard the echo hits, and the fade after the replay. */
 export const RECORD_TIME = 3.5;
 const ECHO_DMG = .5;
@@ -211,8 +211,20 @@ export class FightGame {
   fighterById(id: number): Fighter | undefined { return this.fighters.find(f => f.id === id); }
   /** Echoes are nobody's target: not melee, not shots, not the AI, not a well's pull. */
   opponents(f: Fighter): Fighter[] { return this.fighters.filter(o => this.isEnemy(f, o) && o.hp > 0 && !o.echo); }
+  /** Nearest living enemy to a point, one pass, no allocation. Per-step callers (homing shots,
+   *  the CPU facing check) run this 120 times a second; the filter+sort it replaced did not. */
+  nearestEnemyTo(f: Fighter, x: number): Fighter | undefined {
+    let best: Fighter | undefined;
+    let bestDist = Infinity;
+    for (const o of this.fighters) {
+      if (!this.isEnemy(f, o) || o.hp <= 0 || o.echo) continue;
+      const d = Math.abs(o.x - x);
+      if (d < bestDist) { bestDist = d; best = o; }
+    }
+    return best;
+  }
   targetFor(f: Fighter): Fighter | undefined {
-    return this.opponents(f).sort((a, b) => Math.abs(a.x - f.x) - Math.abs(b.x - f.x))[0];
+    return this.nearestEnemyTo(f, f.x);
   }
   teamHealth(team: number): number {
     const members = this.fighters.filter(f => f.team === team && !f.minion && !f.echo);
@@ -475,19 +487,43 @@ export class FightGame {
     return f.cooldowns[index] > 0;
   }
 
-  /** Fire the first legal attack. An earlier press that cannot happen soon is dropped. */
+  /** Fire the first legal attack. An earlier press that cannot happen soon is dropped.
+   *  ponytail: compacts f.queue in place — this runs per fighter per fixed step, so the
+   *  skipped/later/filter copies it replaced were ~2400 short-lived arrays a second. */
   private releaseQueue(f: Fighter, dt: number): boolean {
-    let fired = false;
-    const skipped: QueuedInput[] = [];
-    const later: QueuedInput[] = [];
-    for (const q of f.queue) {
-      if (!fired && this.attack(f, q.index)) { fired = true; continue; }
-      (fired ? later : skipped).push(q);
+    if (!f.queue.length) return false;
+    let firedAt = -1;
+    for (let i = 0; i < f.queue.length && firedAt < 0; i++) {
+      if (this.attack(f, f.queue[i].index)) firedAt = i;
     }
-    const pending = fired ? [...skipped.filter(q => !this.staleIntent(f, q.index)), ...later] : [...f.queue];
-    for (const q of pending) if (!this.bufferHolds(f, q.index)) q.ttl -= dt;
-    f.queue = pending.filter(q => q.ttl > 0).slice(-4);
-    return fired;
+    if (firedAt < 0) {
+      for (const q of f.queue) if (!this.bufferHolds(f, q.index)) q.ttl -= dt;
+      this.compactQueue(f);
+      return false;
+    }
+    f.queue.splice(firedAt, 1);
+    // A press fired: earlier failures survive only when they can still happen; later presses keep waiting.
+    let w = 0;
+    for (let i = 0; i < f.queue.length; i++) {
+      const q = f.queue[i];
+      if (i < firedAt && this.staleIntent(f, q.index)) continue;
+      f.queue[w++] = q;
+    }
+    f.queue.length = w;
+    for (const q of f.queue) if (!this.bufferHolds(f, q.index)) q.ttl -= dt;
+    this.compactQueue(f);
+    return true;
+  }
+
+  /** Keep the newest 4 presses and drop expired ones, in place. */
+  private compactQueue(f: Fighter): void {
+    const q = f.queue;
+    let w = 0;
+    for (let i = Math.max(0, q.length - 4); i < q.length; i++) {
+      const item = q[i];
+      if (item.ttl > 0) q[w++] = item;
+    }
+    q.length = w;
   }
 
   /* ---- simulation ---- */
@@ -768,11 +804,13 @@ export class FightGame {
 
   private stepFighter(f: Fighter, dt: number): void {
     if (f.hp <= 0) { this.retire(f); this.fall(f, dt); return; }
-    const o = this.targetFor(f);
     const c = f.controller !== null ? CONTROLS[f.controller] : undefined;
     const human = f.controller !== null;
 
-    f.cooldowns = f.cooldowns.map(n => Math.max(0, n - dt * (f.data.trait === 'beat' ? 1 + f.beatStacks * .06 : 1)));
+    // ponytail: in-place decay. The .map() this replaced handed GC a fresh 6-slot array per
+    // fighter per fixed step (~500-700/s across a match) for no semantic gain.
+    const cdRate = f.data.trait === 'beat' ? 1 + f.beatStacks * .06 : 1;
+    for (let i = 0; i < f.cooldowns.length; i++) f.cooldowns[i] = Math.max(0, f.cooldowns[i] - dt * cdRate);
     const debtWas = f.debt;
     const recWas = f.recLeft;
     for (const key of DECAY_TIMERS) f[key] = Math.max(0, f[key] - dt);
@@ -867,7 +905,11 @@ export class FightGame {
 
     if (free) {
       if (move && (human || !f.blocking)) f.facing = Math.sign(move) as 1 | -1;
-      if (!human && o && (f.ai.block > 0 || f.queue.length)) f.facing = f.ai.block > 0 ? f.ai.facing : (o.x >= f.x ? 1 : -1);
+      // Only the CPU reads a target here; humans skip the search entirely.
+      if (!human && (f.ai.block > 0 || f.queue.length)) {
+        const o = this.nearestEnemyTo(f, f.x);
+        if (o) f.facing = f.ai.block > 0 ? f.ai.facing : (o.x >= f.x ? 1 : -1);
+      }
     }
 
     if (f.jumpRequest) { f.jumpBuffer = INPUT_BUFFER; f.jumpRequest = false; }
@@ -942,12 +984,32 @@ export class FightGame {
     f.x = clamp(f.x, X_MIN, X_MAX);
   }
 
+  /** ponytail: compacts the three visual lists in place — the per-step filter chains here
+   *  allocated a fresh array apiece even when nothing expired. */
   private updateVisuals(dt: number): void {
-    for (const e of this.effects) e.life -= dt;
-    this.effects = this.effects.filter(e => e.life > 0);
-    for (const p of this.particles) { p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 520 * dt; }
-    this.particles = this.particles.filter(p => p.life > 0).slice(-320);
-    for (const t of this.texts) { t.life -= dt; t.y -= 28 * dt; }
-    this.texts = this.texts.filter(t => t.life > 0);
+    let w = 0;
+    for (let i = 0; i < this.effects.length; i++) {
+      const e = this.effects[i];
+      e.life -= dt;
+      if (e.life > 0) this.effects[w++] = e;
+    }
+    this.effects.length = w;
+    w = 0;
+    for (let i = 0; i < this.particles.length; i++) {
+      const p = this.particles[i];
+      p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 520 * dt;
+      if (p.life > 0) this.particles[w++] = p;
+    }
+    this.particles.length = w;
+    // Same hard cap as before (keep the newest 320); copyWithin drops the oldest without allocating.
+    const over = this.particles.length - 320;
+    if (over > 0) { this.particles.copyWithin(0, over); this.particles.length -= over; }
+    w = 0;
+    for (let i = 0; i < this.texts.length; i++) {
+      const t = this.texts[i];
+      t.life -= dt; t.y -= 28 * dt;
+      if (t.life > 0) this.texts[w++] = t;
+    }
+    this.texts.length = w;
   }
 }

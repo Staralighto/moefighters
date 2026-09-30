@@ -1,16 +1,17 @@
 import { PLAYABLE } from './data/characters.ts';
 import { STAGES } from './data/stages.ts';
 import type { CharacterData } from './data/types.ts';
-import { FightGame } from './game/game.ts';
+import { FightGame, MINION_POOL } from './game/game.ts';
 import { KeyboardInput, TouchInput } from './game/input.ts';
 import { Renderer } from './render/renderer.ts';
 import { createViews } from './render/view.ts';
-import { assetsFor, loadKujiFont, preload, type ImageCache } from './assets/loader.ts';
+import { assetsFor, easeLoad, imageQueue, loadKujiFont, missingImages, preload, type ImageCache } from './assets/loader.ts';
 import { Sfx } from './audio/sfx.ts';
 import { matchName, SelectScreen, type MatchSetup } from './ui/select.ts';
 import { bestLabel, challengeName, deckLabel, foeCount, hideBuffPicker, readBest, readRun, rollEnemies, showBuffPicker, stageSetup, writeBest, writeRun, type ChallengeKind, type ChallengeRun } from './ui/challenge.ts';
-import { hideEnd, setBattleGuide, setRoundLabel, showBanner, showEnd, updateHUD } from './ui/hud.ts';
-import { applyTouchLayout } from './ui/touchLayout.ts';
+import { cycleSkillTier, hideEnd, setBattleGuide, setRoundLabel, showBanner, showEnd, updateHUD } from './ui/hud.ts';
+import { setIconBtn } from './ui/iconBtn.ts';
+import { applyTouchLayout, bindBattleFrame } from './ui/touchLayout.ts';
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
 const stage = STAGES[0];
@@ -28,6 +29,7 @@ const input = new KeyboardInput(() => game);
 input.attach();
 new TouchInput(() => game, $('touchpad')).attach();
 applyTouchLayout();
+bindBattleFrame();
 /* Phones get one on-screen key set, so body.touch caps the match at one human. */
 const coarse = matchMedia('(hover: none) and (pointer: coarse)');
 document.body.classList.toggle('touch', coarse.matches);
@@ -36,14 +38,80 @@ if (import.meta.env.DEV) {
   void import('./ui/touchTune.ts').then(m => m.mountTouchTune($('touchpad')));
 }
 
-/* Sprite-backed characters need their image before the select screen can draw them. */
-{
-  const [missing] = await Promise.all([preload(images, assetsFor(PLAYABLE, stage)), loadKujiFont()]);
-  if (missing.length) console.warn('缺图，已回退色块人形：' + missing.join(', '));
-}
+/* Idle sheets arrive after the select screen is up. Fight sheets wait until a match actually starts. */
+void loadKujiFont();
 const previewViews = createViews(PLAYABLE, images);
+const queue = imageQueue(images, 2);
+let followCast = false;
+
+function commonOf(list: CharacterData[]): string[] {
+  return list.flatMap(c => c.view.kind === 'sprite' ? [c.view.common] : []);
+}
+
+/** 诗超绊 calls a teammate who is not on the match card. Their sheets ride the fight load. */
+function fightSources(characters: CharacterData[]): string[] {
+  const mates = characters.some(c => c.skills.some(s => s.fx === 'poem'))
+    ? MINION_POOL.flatMap(id => PLAYABLE.filter(c => c.id === id))
+    : [];
+  return assetsFor([...characters, ...mates], stage);
+}
+
+let bootPins: string[] = [];
+let bootAt = 0;
+let bootDisplay = 0;
+let bootShown = false;
+let bootDone = true;
+
+function noteMissing(): void {
+  const miss = bootPins.filter(s => missingImages.has(s));
+  if (miss.length) console.warn('缺图，已回退色块人形：' + miss.join(', '));
+}
+
+function beginWait(srcs: string[]): void {
+  const keep = bootShown && !bootDone;
+  bootPins = [...new Set(srcs)];
+  bootAt = performance.now();
+  bootDone = false;
+  if (keep) return;
+  bootDisplay = 0;
+  bootShown = false;
+  const el = $('stage-load');
+  el.classList.remove('is-out');
+  el.hidden = true;
+  $('select-stage').setAttribute('aria-busy', 'false');
+}
+
+function bootFraction(): number {
+  if (!bootPins.length) return 1;
+  let n = 0;
+  for (const s of bootPins) if (images.has(s) || missingImages.has(s)) n++;
+  return n / bootPins.length;
+}
+
+function tickBoot(now: number): void {
+  if (bootDone || !bootPins.length) return;
+  const real = bootFraction();
+  const elapsed = now - bootAt;
+  if (!bootShown) {
+    if (real >= 1) { bootDone = true; noteMissing(); return; }
+    if (elapsed < 300) return;
+    $('stage-load').hidden = false;
+    $('select-stage').setAttribute('aria-busy', 'true');
+    bootShown = true;
+  }
+  bootDisplay = easeLoad(bootDisplay, real, elapsed);
+  $('stage-load-bar').style.width = `${Math.round(bootDisplay * 1000) / 10}%`;
+  if (real < 1 || bootDisplay <= 0.995) return;
+  bootDone = true;
+  noteMissing();
+  const el = $('stage-load');
+  el.classList.add('is-out');
+  $('select-stage').setAttribute('aria-busy', 'false');
+  window.setTimeout(() => { el.hidden = true; el.classList.remove('is-out'); }, 400);
+}
 
 const select = new SelectScreen(PLAYABLE, previewViews, stage, setup => {
+  queue.soon(commonOf(setup.characters));
   if (setup.mode === 'challenge') {
     // Each sub-mode keeps its own run: switching kinds here reloads the other one from storage,
     // so a parked 闯关 run and a parked 激战 run never block each other.
@@ -65,8 +133,27 @@ const select = new SelectScreen(PLAYABLE, previewViews, stage, setup => {
     return;
   }
   void startGame(setup);
-}, () => { sfx.unlock(); sfx.play('select'); });
+}, () => { sfx.unlock(); sfx.play('select'); }, shown => {
+  if (followCast) queue.soon(commonOf(shown));
+});
 select.mount();
+{
+  const first = [...new Set([...(stage.image ? [stage.image] : []), ...commonOf(select.cast())])];
+  beginWait(first);
+  queue.pin(first);
+  // The rest of the roster loads on scroll (the observer below) or at fight start — not up front:
+  // eager-fetching all 17 sheets spends ~13MB of bandwidth most sessions never use.
+  followCast = true;
+  if (typeof IntersectionObserver !== 'undefined') {
+    const io = new IntersectionObserver(entries => {
+      for (const e of entries) if (e.isIntersecting) {
+        const c = PLAYABLE[Number((e.target as HTMLElement).dataset.index)];
+        if (c) queue.soon(commonOf([c]));
+      }
+    }, { rootMargin: '240px' });
+    $('roster').querySelectorAll('.character').forEach(el => io.observe(el));
+  }
+}
 coarse.addEventListener('change', () => { document.body.classList.toggle('touch', coarse.matches); select.refresh(); });
 
 /* A saved run survives a refresh or crash; 激战 wins ties because it is the long-standing mode.
@@ -78,11 +165,15 @@ if (saved) {
   if (saved.armed) startChallengeStage();
 }
 
+let selectRaf = 0;
 function selectLoop(now: number): void {
-  if (!$('selection').hidden) select.animate(now);
-  requestAnimationFrame(selectLoop);
+  if (!$('selection').hidden) {
+    tickBoot(now);
+    select.animate(now);
+  }
+  selectRaf = requestAnimationFrame(selectLoop);
 }
-requestAnimationFrame(selectLoop);
+selectRaf = requestAnimationFrame(selectLoop);
 
 /** Phone only. Call from the tap's pointerdown, before anything else spends that gesture. */
 function enterBattleFullscreen(): void {
@@ -105,11 +196,28 @@ function leaveBattleFullscreen(): void {
 
 async function startGame(setup: MatchSetup): Promise<void> {
   sfx.unlock();
-  const [missing] = await Promise.all([preload(images, assetsFor(setup.characters, stage)), loadKujiFont()]);
+  const srcs = fightSources(setup.characters);
+  if (srcs.some(s => !images.has(s) && !missingImages.has(s))) beginWait(srcs);
+  $('start').setAttribute('disabled', '');
+  // The fight's own sheets take the link; the background roster queue waits so the
+  // "开打" wait is not competing with 2-at-a-time prefetch for the same bandwidth.
+  queue.pause();
+  let missing: string[];
+  try {
+    [missing] = await Promise.all([preload(images, srcs), loadKujiFont()]);
+  } finally {
+    queue.resume();
+  }
+  $('start').removeAttribute('disabled');
   if (missing.length) console.warn('缺图，已回退色块人形：' + missing.join(', '));
   lastSetup = setup;
 
   cancelAnimationFrame(raf);
+  cancelAnimationFrame(selectRaf);
+  bootDone = true;
+  $('stage-load').hidden = true;
+  $('stage-load').classList.remove('is-out');
+  $('select-stage').setAttribute('aria-busy', 'false');
   $('selection').hidden = true;
   $('battle').hidden = false;
   document.body.classList.add('in-battle');
@@ -120,11 +228,12 @@ async function startGame(setup: MatchSetup): Promise<void> {
     : matchName(setup) + ' · ' + stage.name;
   setRoundLabel(setup.mode === 'challenge' ? '第 ' + setup.stageNumber + ' 关' : '');
   setBattleGuide(setup.characters, setup.controllers);
-  $('pause').textContent = '暂停 ESC';
+  setIconBtn($('pause'), '暂停 ESC');
   $('resume').hidden = true;
   $('pause-quit').hidden = true;
-  $('rematch').textContent = '再来一局 ↻';
-  $('reselect').textContent = setup.mode === 'challenge' ? '返回选人' : '重新选人';
+  $('wide-exit').hidden = true;
+  setIconBtn($('rematch'), '再来一局 ↻');
+  setIconBtn($('reselect'), setup.mode === 'challenge' ? '返回选人' : '重新选人');
 
   game = new FightGame(setup.characters, {
     mode: setup.mode,
@@ -138,9 +247,11 @@ async function startGame(setup: MatchSetup): Promise<void> {
     onBanner: showBanner,
     onEnd: onFightEnd,
     onPause: paused => {
-      $('pause').textContent = paused ? '继续 ESC' : '暂停 ESC';
+      setIconBtn($('pause'), paused ? '继续 ESC' : '暂停 ESC');
       $('resume').hidden = !paused;
       $('pause-quit').hidden = !paused;
+      // 退出宽屏的按钮只活在宽屏的暂停浮层里；这条随暂停状态一起刷新。
+      $('wide-exit').hidden = !paused || !document.body.classList.contains('wide');
       // The deck line rides the pause banner; challenge stages with a deck only.
       const deck = paused && game?.mode === 'challenge' ? deckLabel(challenge?.picks ?? []) : '';
       $('deck-label').hidden = !deck;
@@ -152,7 +263,12 @@ async function startGame(setup: MatchSetup): Promise<void> {
   raf = requestAnimationFrame(frame);
   if (!document.body.classList.contains('touch')) {
     $('game').focus();
-    window.scrollTo(0, 0);
+    // Desktop only. Park the arena's text bar on the top edge of the viewport, so the site header is
+    // out of the way and a short window still shows the fight plus the movelist. The offset is
+    // measured off the element, so any window ratio lands the same way; when the page has nothing
+    // left to scroll the browser clamps it and the header simply stays.
+    const bar = document.querySelector<HTMLElement>('.battle-top');
+    window.scrollTo(0, bar ? bar.getBoundingClientRect().top + window.scrollY : 0);
   }
 }
 
@@ -180,8 +296,8 @@ function onFightEnd(title: string, stats: string): void {
       challenge.newBest = true;
     }
     showEnd('第 ' + stage + ' 关 完成', record);
-    $('rematch').textContent = '下一关 ▶';
-    $('reselect').textContent = '返回休息';
+    setIconBtn($('rematch'), '下一关 ▶');
+    setIconBtn($('reselect'), '返回休息');
     challenge.stage = stage + 1;
     challenge.enemies = rollEnemies(foeCount(kind));
     // The deck stays; the next stage only reopens the picker. Saved at once: closing the tab
@@ -190,8 +306,8 @@ function onFightEnd(title: string, stats: string): void {
     writeRun(kind, challenge);
   } else {
     showEnd('挑战结束', (challenge.newBest ? '新纪录！' : '') + `止步第 ${stage} 关 · 历史最高 ${bestLabel(readBest(kind))} 关`);
-    $('rematch').textContent = '再来一次 ↻';
-    $('reselect').textContent = '返回选人';
+    setIconBtn($('rematch'), '再来一次 ↻');
+    setIconBtn($('reselect'), '返回选人');
     // A dead run drops the whole deck.
     challenge.stage = 1;
     challenge.enemies = rollEnemies(foeCount(kind));
@@ -215,7 +331,10 @@ function restBack(): void {
   renderer = null;
   $('battle').hidden = true;
   $('selection').hidden = false;
+  selectRaf = requestAnimationFrame(selectLoop);
   document.body.classList.remove('in-battle');
+  // The fight parked the page on its text bar (see startGame); the select screen opens at the top.
+  if (!document.body.classList.contains('touch')) window.scrollTo(0, 0);
   leaveBattleFullscreen();
   hideEnd();
   hideBuffPicker();
@@ -261,8 +380,18 @@ $('rematch').onclick = () => {
   if (lastSetup) void startGame(lastSetup);
 };
 $('pause').onclick = () => game?.togglePause();
+$('skill-tier').onclick = () => cycleSkillTier();
+/* 桌面宽屏：顶栏开关只管进。宽屏里顶栏整个隐藏，退出走暂停浮层的 退出宽屏 按钮（ESC 或点
+   计时区域打开）。触屏上这个按钮本来就是隐藏的。 */
+$('fullscreen').onclick = () => document.body.classList.add('wide');
+$('wide-exit').onclick = () => {
+  document.body.classList.remove('wide');
+  $('wide-exit').hidden = true;
+};
 document.querySelector('.timer')?.addEventListener('click', () => {
-  if (document.body.classList.contains('touch')) game?.togglePause();
+  const body = document.body;
+  // 手机点计时暂停；桌面宽屏同理——顶栏藏了，这是鼠标开暂停浮层的入口。
+  if (body.classList.contains('touch') || body.classList.contains('wide')) game?.togglePause();
 });
 $('resume').onclick = () => { if (game?.paused) game.togglePause(false); };
 $('pause-quit').onclick = battleExit;
@@ -306,7 +435,7 @@ helpDialog.addEventListener('click', e => { if (e.target === helpDialog) helpDia
 
 $('sound').onclick = () => {
   sfx.muted = !sfx.muted;
-  $('sound').textContent = sfx.muted ? '♪ 音效关' : '♪ 音效开';
+  setIconBtn($('sound'), sfx.muted ? '♪ 音效关' : '♪ 音效开');
   if (!sfx.muted) sfx.unlock();
 };
 
