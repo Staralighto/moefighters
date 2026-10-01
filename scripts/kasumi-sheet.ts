@@ -6,14 +6,15 @@ import { DIMS, NECK, torsoPoints, torsoRadii, type Pt, SHEET_SCALE } from '../sr
 
 /* Colour-block Kasumi only. Do not import write-sheets.ts — that script redraws the whole cast.
    Common poses are the shared set, empty-handed. Special columns are the star strum (the Random
-   Star sits in the U cells, star body down in front, neck up to the fretting hand), the round-
-   formation beckon, the hug, and the prayer. The hair reads as two star buns on purpose — that
-   is the whole point of the character. */
+   Star guitar outline rides the U cells: star body, neck and headstock at real proportions —
+   the img2img pass copies whatever silhouette this block carries), the round-formation beckon,
+   the hug, and the prayer. Hair, costume and face stay out of the block entirely — those come
+   from the reference image and the prompt. */
 
 type Limb = [number, number];
 interface Pose {
   lean: number; crouch: number; armF: Limb; armB: Limb; legF: Limb; legB: Limb;
-  lying?: boolean; look?: number; guitar?: boolean; eyesClosed?: boolean;
+  lying?: boolean; look?: number; guitar?: boolean;
 }
 
 const IDLE: Pose = { lean: 0, crouch: 0, armF: [.45, 1.9], armB: [.25, 2.0], legF: [.25, 0], legB: [-.25, 0] };
@@ -40,10 +41,10 @@ const POPPA_R: Pose = { lean: .04, crouch: 2, look: .35, armF: [.4, 1.1], armB: 
 /* O: the hug — arms open on the lunge, wrapped tight through the nuzzles, then content. */
 const HUG_W: Pose = { lean: .2, crouch: 6, look: .3, armF: [1.35, -.35], armB: [1.05, -.15], legF: [.35, 0], legB: [-.3, 0] };
 const HUG_H: Pose = { lean: .26, crouch: 4, look: .15, armF: [1.5, .8], armB: [1.35, .95], legF: [.32, 0], legB: [-.28, 0] };
-const HUG_R: Pose = { lean: .3, crouch: 8, look: -.05, armF: [1.25, 1.5], armB: [1.1, 1.6], legF: [.3, 0], legB: [-.26, 0], eyesClosed: true };
+const HUG_R: Pose = { lean: .3, crouch: 8, look: -.05, armF: [1.25, 1.5], armB: [1.1, 1.6], legF: [.3, 0], legB: [-.26, 0] };
 /* L: the prayer — hands together and head bowed, held through the cast, then arms spread at the sky. */
-const WISH_W: Pose = { lean: -.02, crouch: 2, look: -.1, armF: [1.1, .85], armB: [.9, 1.05], legF: [.22, 0], legB: [-.22, 0], eyesClosed: true };
-const WISH_H: Pose = { lean: -.06, crouch: 3, look: -.15, armF: [1.2, .95], armB: [1.0, 1.15], legF: [.22, 0], legB: [-.22, 0], eyesClosed: true };
+const WISH_W: Pose = { lean: -.02, crouch: 2, look: -.1, armF: [1.1, .85], armB: [.9, 1.05], legF: [.22, 0], legB: [-.22, 0] };
+const WISH_H: Pose = { lean: -.06, crouch: 3, look: -.15, armF: [1.2, .95], armB: [1.0, 1.15], legF: [.22, 0], legB: [-.22, 0] };
 const WISH_R: Pose = { lean: -.12, crouch: 0, look: .55, armF: [2.3, -.5], armB: [-2.2, -.3], legF: [.3, 0], legB: [-.3, 0] };
 
 const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
@@ -53,7 +54,7 @@ function mix(a: Pose, b: Pose, k: number): Pose {
     lean: lerp(a.lean, b.lean, k), crouch: lerp(a.crouch, b.crouch, k),
     armF: limb(a.armF, b.armF), armB: limb(a.armB, b.armB),
     legF: limb(a.legF, b.legF), legB: limb(a.legB, b.legB), lying: b.lying, look: b.look,
-    guitar: a.guitar && b.guitar, eyesClosed: b.eyesClosed,
+    guitar: a.guitar && b.guitar,
   };
 }
 
@@ -74,10 +75,7 @@ const GRID = '#ff36c8';
 const OUTLINE = '#151222';
 const FOOT = 12;
 const COLOR = '#FF5522';
-const HAIR = '#7a4a28';
-const HAIR_DARK = '#5d3820';
 const CREAM = '#f4ead8';
-const GOLD = '#ffd257';
 
 function shade(hex: string, k: number): string {
   const n = parseInt(hex.slice(1), 16);
@@ -135,20 +133,10 @@ function figure(pose: Pose): { svg: string; marks: Mark[] } {
     const rad = (w + 4) / 2;
     marks.push({ x: from.x, y: from.y, r: rad }, { x: mid.x, y: mid.y, r: rad }, { x: end.x, y: end.y, r: rad });
   };
-  // Head centre is known before anything is drawn: the back hair hangs off it.
+  // Head centre is known before anything is drawn.
   const r = d.headR * s;
   const cx = shoulder.x + Math.sin(pose.lean) * (r + NECK * s);
   const cy = shoulder.y - Math.cos(pose.lean) * (r + NECK * s);
-  if (!pose.lying) {
-    // Long back hair: a soft mass from the crown down past the waist, behind everything.
-    const hem = hip.y + torsoH * .55;
-    parts.push(`<path d="M ${(cx - r * .78).toFixed(1)} ${(cy - r * .3).toFixed(1)}
-      C ${(cx - r * 1.05).toFixed(1)} ${(cy + r * 2.2).toFixed(1)} ${(cx - r * .95).toFixed(1)} ${(hem - r).toFixed(1)} ${(cx - r * .5).toFixed(1)} ${hem.toFixed(1)}
-      L ${(cx + r * .6).toFixed(1)} ${hem.toFixed(1)}
-      C ${(cx + r * 1.0).toFixed(1)} ${(cy + r * 2.3).toFixed(1)} ${(cx + r * .85).toFixed(1)} ${(cy - r * .4).toFixed(1)} ${(cx + r * .78).toFixed(1)} ${(cy - r * .3).toFixed(1)} Z"
-      fill="${HAIR_DARK}"/>`);
-    marks.push({ x: cx - r * 1.2, y: cy + r * 1.6, r: 3 }, { x: cx + r * 1.2, y: cy + r * 1.6, r: 3 });
-  }
   limb(hip, [pose.legB[0] + bend, pose.legB[1] - bend * 2], d.thigh * s, d.shin * s, dark);
   limb(shoulder, pose.armB, d.upperArm * s, d.foreArm * s, dark);
   const radii = torsoRadii(d.torsoW).map(n => n * s) as [number, number, number];
@@ -156,50 +144,32 @@ function figure(pose: Pose): { svg: string; marks: Mark[] } {
   parts.push(poly(shell, OUTLINE));
   parts.push(poly(torsoPoints(hip, shoulder, radii, 0), COLOR));
   for (const pt of shell) marks.push({ x: pt.x, y: pt.y, r: 0 });
-  // Sailor collar: a cream triangle falling from the front of the neck.
-  parts.push(poly([
-    { x: shoulder.x - 9 * s * .55, y: shoulder.y + 1 },
-    { x: shoulder.x + 9 * s * .55, y: shoulder.y + 1 },
-    { x: shoulder.x, y: shoulder.y + 15 * s * .55 },
-  ], CREAM));
-  parts.push(`<circle cx="${shoulder.x.toFixed(1)}" cy="${(shoulder.y + 4).toFixed(1)}" r="${(3.2 * s * .55).toFixed(1)}" fill="${GOLD}"/>`);
-  // Skull cap of hair over the head, then the face over it, then the two star buns.
-  parts.push(`<path d="M ${(cx - r * 1.02).toFixed(1)} ${(cy + r * .18).toFixed(1)}
-    A ${r.toFixed(1)} ${r.toFixed(1)} 0 0 1 ${(cx + r * 1.02).toFixed(1)} ${(cy + r * .18).toFixed(1)}
-    L ${(cx + r * .82).toFixed(1)} ${(cy - r * .12).toFixed(1)}
-    C ${(cx + r * .3).toFixed(1)} ${(cy - r * .5).toFixed(1)} ${(cx - r * .35).toFixed(1)} ${(cy - r * .45).toFixed(1)} ${(cx - r * .86).toFixed(1)} ${(cy - r * .05).toFixed(1)} Z"
-    fill="${HAIR}"/>`);
-  parts.push(`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(r + 2).toFixed(1)}" fill="none"/>`);
+  parts.push(`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(r + 2).toFixed(1)}" fill="${OUTLINE}"/>`);
   parts.push(`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" fill="${light}"/>`);
-  // The cap sits over the face circle so the fringe reads; the buns crown it.
-  parts.push(`<path d="M ${(cx - r * 1.04).toFixed(1)} ${(cy - r * .1).toFixed(1)}
-    A ${r.toFixed(1)} ${r.toFixed(1)} 0 0 1 ${(cx + r * 1.04).toFixed(1)} ${(cy - r * .1).toFixed(1)}
-    L ${(cx + r * .72).toFixed(1)} ${(cy + r * .22).toFixed(1)}
-    C ${(cx + r * .25).toFixed(1)} ${(cy - r * .18).toFixed(1)} ${(cx - r * .3).toFixed(1)} ${(cy - r * .14).toFixed(1)} ${(cx - r * .78).toFixed(1)} ${(cy + r * .3).toFixed(1)} Z"
-    fill="${HAIR}"/>`);
-  parts.push(star(cx - r * .62, cy - r * 1.02, r * .42, HAIR, undefined, .5, .3));
-  parts.push(star(cx + r * .62, cy - r * 1.02, r * .42, HAIR, undefined, .5, -.3));
-  // The gold hair star: everyone else sees cat ears; the ornament insists otherwise.
-  parts.push(star(cx + r * .95, cy - r * .42, r * .26, GOLD, undefined, .5, .5));
-  if (pose.eyesClosed) {
-    parts.push(`<path d="M ${(cx + r * .18).toFixed(1)} ${(cy - r * .06).toFixed(1)} Q ${(cx + r * .46).toFixed(1)} ${(cy + r * .14).toFixed(1)} ${(cx + r * .7).toFixed(1)} ${(cy - r * .1).toFixed(1)}" fill="none" stroke="${OUTLINE}" stroke-width="2.2" stroke-linecap="round"/>`);
-  } else {
-    const gaze = Math.max(-.2, Math.min(.62, pose.look ?? .28 + pose.lean));
-    const ex = cx + r * gaze, ey = cy - r * .08, er = Math.max(2.4, r * .42);
-    parts.push(`<circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="${er.toFixed(1)}" fill="${OUTLINE}"/>`);
-    parts.push(`<circle cx="${(ex + er * .35).toFixed(1)}" cy="${(ey - er * .2).toFixed(1)}" r="${(er * .38).toFixed(1)}" fill="${light}"/>`);
-  }
+  const gaze = Math.max(-.2, Math.min(.62, pose.look ?? .28 + pose.lean));
+  const ex = cx + r * gaze, ey = cy - r * .08, er = Math.max(2.4, r * .42);
+  parts.push(`<circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="${er.toFixed(1)}" fill="${OUTLINE}"/>`);
+  parts.push(`<circle cx="${(ex + er * .35).toFixed(1)}" cy="${(ey - er * .2).toFixed(1)}" r="${(er * .38).toFixed(1)}" fill="${light}"/>`);
   marks.push({ x: cx, y: cy, r: r + 2 });
-  marks.push({ x: cx - r * .62, y: cy - r * 1.02, r: r * .42 }, { x: cx + r * .62, y: cy - r * 1.02, r: r * .42 });
   limb(hip, [pose.legF[0] + bend, pose.legF[1] - bend * 2], d.thigh * s, d.shin * s, COLOR);
   limb(shoulder, pose.armF, d.upperArm * s, d.foreArm * s, COLOR);
   if (pose.guitar) {
     // The Random Star: star body down in front of the strum hand, neck up to the fretting hand.
+    // The outline is what img2img copies, so it carries the whole instrument: star body, neck,
+    // headstock and pickup at real proportions.
     const fret = limbEnd(shoulder, pose.armF, d, s);
     const strum = limbEnd(shoulder, pose.armB, d, s);
     const bx = (strum.x + fret.x) / 2 + 14, by = (strum.y + fret.y) / 2 + 26;
-    parts.push(stroke(bx, by, fret.x, fret.y, 6 * s * .55, HAIR_DARK));
-    marks.push({ x: fret.x, y: fret.y, r: 5 });
+    const nx = bx + (fret.x - bx) * 1.18, ny = by + (fret.y - by) * 1.18;
+    parts.push(stroke(bx, by, fret.x, fret.y, 6 * s * .55, OUTLINE));
+    const headW = 7, headH = 16;
+    const ang = Math.atan2(fret.y - by, fret.x - bx);
+    const px = Math.cos(ang + Math.PI / 2), py = Math.sin(ang + Math.PI / 2);
+    const hx1 = nx + px * headW, hy1 = ny + py * headW;
+    const hx2 = nx - px * headW, hy2 = ny - py * headW;
+    const tx = nx + Math.cos(ang) * headH, ty = ny + Math.sin(ang) * headH;
+    parts.push(`<polygon points="${hx1.toFixed(1)},${hy1.toFixed(1)} ${hx2.toFixed(1)},${hy2.toFixed(1)} ${(tx - px * 3).toFixed(1)},${(ty - py * 3).toFixed(1)} ${(tx + px * 3).toFixed(1)},${(ty + py * 3).toFixed(1)}" fill="${OUTLINE}"/>`);
+    marks.push({ x: fret.x, y: fret.y, r: 5 }, { x: tx, y: ty, r: 6 });
     parts.push(star(bx, by, 30, COLOR, OUTLINE, .5, .12));
     parts.push(`<circle cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="5.5" fill="${CREAM}"/>`);
     marks.push({ x: bx, y: by, r: 30 });
@@ -269,10 +239,21 @@ const SPECIAL: Pose[][] = [
   [WISH_W, WISH_H, WISH_R],
 ];
 
+function propSvg(w: number, h: number, body: string): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${body}</svg>\n`;
+}
+
+/* 小星星: one star sprite shared by the rain and the wish — gold body, thin dark edge,
+   pale core sitting up-left of centre, matching the old procedural draw in fx.ts. */
+const starProp = propSvg(CELL, CELL, `
+  <polygon points="128,8 157.6,87.2 242.1,90.9 175.9,143.6 198.5,225.1 128,178.4 57.5,225.1 80.1,143.6 13.9,90.9 98.4,87.2"
+    fill="#ffd257" stroke="#b46a1e" stroke-width="6" stroke-linejoin="round"/>
+  <circle cx="114" cy="110" r="14" fill="#fffbe0"/>
+`);
+
 const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'sprites', 'kasumi');
-const common = sheet(COMMON_COLS, COMMON_ROWS, (c, r) => commonPose(COMMON_LABELS[r][c]), (c, r) => COMMON_LABELS[r][c]);
-const special = sheet(SPECIAL_COLS, SPECIAL_ROWS, (c, r) => SPECIAL[c][r], (c, r) => 'UIOL'[c] + '-' + ['wind', 'hit', 'back'][r]);
-const targets = ['common.png', 'special.png'].map(name => join(dir, name));
+// common.png and special.png are finished sheets now (placeholder marks gone) — both left the
+// raster list, per SOP. The sheet builders stay for a future --replace re-run.
+const targets = ['star.png'].map(name => join(dir, name));
 assertAllWritable(targets);
-rasterSheet(join(dir, 'common.png'), common, COMMON_COLS * CELL, COMMON_ROWS * CELL);
-rasterSheet(join(dir, 'special.png'), special, SPECIAL_COLS * CELL, SPECIAL_ROWS * CELL);
+rasterSheet(join(dir, 'star.png'), starProp, CELL, CELL);

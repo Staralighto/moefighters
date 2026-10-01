@@ -76,7 +76,9 @@ function chromeBin(): string {
   return hit;
 }
 
-/** Screenshot an SVG to a PNG of exactly w×h, then stamp it as a placeholder. The target is written only after the shot checks out. */
+/** Screenshot an SVG to a PNG of exactly w×h, then stamp it as a placeholder. The target is written only after the shot checks out.
+    The default background is transparent: sheets paint their own dark cell, props rasterize with
+    real alpha, so placeholder edges never blend into a chroma green. */
 export function rasterSheet(pngPath: string, svg: string, w: number, h: number): void {
   assertWritable(pngPath);
   const scratch = mkdtempSync(join(tmpdir(), 'sheet-'));
@@ -86,6 +88,7 @@ export function rasterSheet(pngPath: string, svg: string, w: number, h: number):
   const url = 'file:///' + svgPath.replaceAll('\\', '/');
   const run = spawnSync(chromeBin(), [
     '--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=1',
+    '--default-background-color=00000000',
     `--user-data-dir=${join(scratch, 'profile')}`, `--window-size=${w},${h}`, `--screenshot=${shot}`, url,
   ], { stdio: 'pipe' });
   if (run.status !== 0 || !existsSync(shot)) {

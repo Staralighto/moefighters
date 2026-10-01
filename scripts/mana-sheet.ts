@@ -229,7 +229,7 @@ function donut(straw: boolean): string {
       }).join('')
     : [0, 1, 2].map(i =>
         `<path d="M ${70 + i * 30} 84 q 14 22 0 44" fill="none" stroke="#5a3319" stroke-width="6" stroke-linecap="round"/>`).join('');
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${CELL}" height="${CELL}" viewBox="0 0 ${CELL} ${CELL}"><rect width="${CELL}" height="${CELL}" fill="#00FF00"/>` +
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${CELL}" height="${CELL}" viewBox="0 0 ${CELL} ${CELL}">` +
     `<circle cx="128" cy="128" r="92" fill="${fill}" stroke="${OUTLINE}" stroke-width="5"/>` +
     `<circle cx="128" cy="128" r="34" fill="#00FF00"/>` +
     sprinkles +
@@ -238,7 +238,7 @@ function donut(straw: boolean): string {
 
 function heartProp(): string {
   const s = 78;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${CELL}" height="${CELL}" viewBox="0 0 ${CELL} ${CELL}"><rect width="${CELL}" height="${CELL}" fill="#00FF00"/>` +
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${CELL}" height="${CELL}" viewBox="0 0 ${CELL} ${CELL}">` +
     `<path d="M 128 ${128 + s * .62} C ${128 - s * 1.05} ${128 - s * .22}, ${128 - s * .42} ${128 - s}, 128 ${128 - s * .38} C ${128 + s * .42} ${128 - s}, ${128 + s * 1.05} ${128 - s * .22}, 128 ${128 + s * .62} Z" fill="${PINK_HOT}" stroke="#ffd9ec" stroke-width="6"/>` +
     `<circle cx="94" cy="82" r="13" fill="#ffd9ec" opacity=".85"/>` +
     `</svg>\n`;
@@ -248,11 +248,10 @@ const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'sprit
 const common = sheet(COMMON_COLS, COMMON_ROWS, (c, r) => commonPose(COMMON_LABELS[r][c]), (c, r) => COMMON_LABELS[r][c]);
 const special = sheet(SPECIAL_COLS, SPECIAL_ROWS, (c, r) => SPECIAL[c][r], (c, r) => 'UIOL'[c] + '-' + ['wind', 'hit', 'back'][r]);
 const world = sheet(SPECIAL_COLS, SPECIAL_ROWS, (c, r) => WORLD[r][c], (c, r) => WORLD[r][c] ? ['step', 'heart', 'twist', 'wave', 'jump', 'wink', 'twirl', 'arms', 'hold'][r * 4 + c] : '');
-const targets = ['common.png', 'special.png', 'world.png', 'donut-straw.png', 'donut-choc.png', 'heart.png'].map(name => join(dir, name));
+/* common/special/world are finished art (mark gone) and left the raster list, per SOP.
+   The donut hole stays a #00FF00 fill on purpose — keyed() punches it out at runtime. */
+const targets = ['donut-straw.png', 'donut-choc.png', 'heart.png'].map(name => join(dir, name));
 assertAllWritable(targets);
-rasterSheet(join(dir, 'common.png'), common, COMMON_COLS * CELL, COMMON_ROWS * CELL);
-rasterSheet(join(dir, 'special.png'), special, SPECIAL_COLS * CELL, SPECIAL_ROWS * CELL);
-rasterSheet(join(dir, 'world.png'), world, SPECIAL_COLS * CELL, SPECIAL_ROWS * CELL);
 rasterSheet(join(dir, 'donut-straw.png'), donut(true), CELL, CELL);
 rasterSheet(join(dir, 'donut-choc.png'), donut(false), CELL, CELL);
 rasterSheet(join(dir, 'heart.png'), heartProp(), CELL, CELL);

@@ -2866,6 +2866,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.equal(data.skills[5].root, 3, 'the wish stuns three seconds');
   assert.equal(data.skills[5].rootBreak, 0, 'the wish stun ignores clean hits');
   assert.ok(data.view.kind === 'sprite', 'kasumi is a sprite');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/kasumi/star.png'), 'the star prop is preloaded');
 
   // U: the lane catches a standing target many times — the stars chain, they do not knock back
   {
@@ -2920,8 +2921,17 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     g.keyDown('KeyL'); run(g, .4);
     assert.ok(g.effects.some(e => e.type === 'wish-mark'), 'the prayer pins a landing tell');
     assert.equal(g.projectiles.some(p => p.fx === 'star-fall'), false, 'the star waits for the prayer');
+    run(g, .65);
+    const fall = g.projectiles.find(p => p.fx === 'star-fall');
+    assert.ok(fall, 'the star drops after the prayer');
+    assert.ok(fall!.vx > 0, `the star rides the rain's diagonal, vx ${fall!.vx}`);
+    assert.ok(fall!.x < p2.x, 'the star enters up-left of the pinned spot');
     const hp = p2.hp;
-    run(g, 2.6);
+    run(g, .8);
+    const pulse = g.effects.find(e => e.type === 'star-pulse');
+    assert.ok(pulse, 'the landing stamps an impact pulse');
+    assert.ok(Math.abs((pulse!.radius ?? 0) - 336) < .01, `the pulse swells to 70% of the star, saw ${pulse!.radius}`);
+    run(g, 1.15);
     assert.ok(g.projectiles.every(p => p.fx !== 'star-fall'), 'the star landed and burst');
     assert.ok(hp - p2.hp > 150, `the star dealt ${hp - p2.hp}`);
     assert.ok(p2.root > 1.2 && p2.root <= 3.01, `the stun holds three seconds, left ${p2.root}`);

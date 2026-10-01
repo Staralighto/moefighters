@@ -311,7 +311,7 @@ const FRENZY: Pose[][] = [
 ];
 
 function propSvg(body: string): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${CELL}" height="${CELL}" viewBox="0 0 ${CELL} ${CELL}"><rect width="${CELL}" height="${CELL}" fill="#00FF00"/>${body}</svg>\n`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${CELL}" height="${CELL}" viewBox="0 0 ${CELL} ${CELL}">${body}</svg>\n`;
 }
 
 /* A cream eighth note with one tear — the crying bass line. */
@@ -328,8 +328,9 @@ const common = sheet(COMMON_COLS, COMMON_ROWS, (c, r) => commonPose(COMMON_LABEL
 const special = sheet(SPECIAL_COLS, SPECIAL_ROWS, (c, r) => SPECIAL[c][r], (c, r) => 'UIOL'[c] + '-' + ['wind', 'hit', 'back'][r]);
 const frenzy = sheet(SPECIAL_COLS, SPECIAL_ROWS, (c, r) => FRENZY[r][c], (c, r) => ['jab', 'kick', 'stance'][r] + '-' + c);
 
-/* Only the reworked I column still regenerates. common/frenzy are finished art (scaled), note is done. */
-const targets = ['special.png'].map(name => join(dir, name));
+/* common/special/frenzy are finished art (mark gone) and left the raster list, per SOP.
+   The note still carries its placeholder mark, so it re-rasterizes — now with real alpha. */
+const targets = ['note.png'].map(name => join(dir, name));
 assertAllWritable(targets);
-rasterSheet(join(dir, 'special.png'), special, SPECIAL_COLS * CELL, SPECIAL_ROWS * CELL);
-console.log('wrote soyo special sheet');
+rasterSheet(join(dir, 'note.png'), note, CELL, CELL);
+console.log('wrote soyo note prop');

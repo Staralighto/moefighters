@@ -212,7 +212,7 @@ const SPECIAL: Pose[][] = [
 ];
 
 function propSvg(body: string): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${CELL}" height="${CELL}" viewBox="0 0 ${CELL} ${CELL}"><rect width="${CELL}" height="${CELL}" fill="#00FF00"/>${body}</svg>\n`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${CELL}" height="${CELL}" viewBox="0 0 ${CELL} ${CELL}">${body}</svg>\n`;
 }
 
 const milk = propSvg(`
@@ -229,10 +229,8 @@ const bag = propSvg(`
 const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'sprites', 'umiri');
 const common = sheet(COMMON_COLS, COMMON_ROWS, (c, r) => commonPose(COMMON_LABELS[r][c]), (c, r) => COMMON_LABELS[r][c]);
 const special = sheet(SPECIAL_COLS, SPECIAL_ROWS, (c, r) => SPECIAL[c][r], (c, r) => 'UIOL'[c] + '-' + ['wind', 'hit', 'back'][r]);
-const targets = ['common.png', 'special.png', 'milk.png', 'bag.png'].map(name => join(dir, name));
+const targets = ['milk.png', 'bag.png'].map(name => join(dir, name));
 assertAllWritable(targets);
-rasterSheet(join(dir, 'common.png'), common, COMMON_COLS * CELL, COMMON_ROWS * CELL);
-rasterSheet(join(dir, 'special.png'), special, SPECIAL_COLS * CELL, SPECIAL_ROWS * CELL);
 rasterSheet(join(dir, 'milk.png'), milk, CELL, CELL);
 rasterSheet(join(dir, 'bag.png'), bag, CELL, CELL);
 console.log('wrote umiri sheets');

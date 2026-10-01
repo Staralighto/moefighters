@@ -129,6 +129,9 @@ const STAR_VX = 340, STAR_VY = 520;
 /** 星之鼓动: the star lands where the wish pinned it; the blast radius is the stun radius. */
 const WISH_RADIUS = 190;
 const WISH_FALL = 620;
+/** The giant star rides the rain's own diagonal: it enters up-left of the mark and slides
+    down-right onto it, so the smash reads as the 小星星 rain's big sister. */
+const WISH_SLANT = STAR_VX / STAR_VY;
 /** Multi-swing melee stamp offsets, cycled per swing. Constant: rebuilding it per step was pure churn. */
 const SWING_RING = [
   { x: 76, y: -74, dir: 1 },
@@ -833,6 +836,8 @@ function fugaBurst(g: FightGame, p: Projectile, owner: Fighter | undefined): voi
     hit while falling shares the projectile's hit set, so nobody pays twice. */
 function wishBurst(g: FightGame, p: Projectile, owner: Fighter | undefined): void {
   g.effect('star-burst', p.x, FLOOR - 60, p.color, .55, { radius: WISH_RADIUS });
+  // The landing stamps a ghost of the star itself, swelling once like kokoro's smile pulse.
+  g.effect('star-pulse', p.x, FLOOR - 60, p.color, .32, { radius: p.size * .7 });
   g.shake = 16;
   g.flash = Math.max(g.flash, .3);
   g.sparks(p.x, FLOOR - 60, '#ffd257', 44, 1.8);
@@ -1358,7 +1363,8 @@ function repelPulse(g: FightGame, f: Fighter, power: number): boolean {
   }
 
   const volley = a.burst || s.count || 1;
-  if (s.type === 'projectile' && volley > 1 && s.fx !== 'snip' && s.fx !== 'smile-ship') {
+  // wish keeps count=3 from the projectile template but fires as one star: its emit handles everything.
+  if (s.type === 'projectile' && volley > 1 && s.fx !== 'snip' && s.fx !== 'smile-ship' && s.fx !== 'wish') {
     if (s.fx === 'drums') {
       while (a.shots < volley && a.t >= drumShotTime(s, a.shots)) {
         spawnRain(g, f, a, a.shots);
@@ -1408,7 +1414,7 @@ function repelPulse(g: FightGame, f: Fighter, power: number): boolean {
     if (s.fx === 'chord' && a.shots >= 3 && !attackHeld(g, f) && a.t < s.duration - .22) a.t = s.duration - .22;
     // 为什么要演奏春日影: the last wave carries the whole super, so the moment it leaves she is free to act.
     if (s.fx === 'shout' && a.shots >= volley) a.t = s.duration;
-  } else if ((s.count ?? 1) > 1 && s.fx !== 'compose' && s.fx !== 'snip' && s.fx !== 'smile-ship') {
+  } else if ((s.count ?? 1) > 1 && s.fx !== 'compose' && s.fx !== 'snip' && s.fx !== 'smile-ship' && s.fx !== 'wish') {
     // ponytail: N swings, one cooldown. Each swing gets a fresh hit set so the same target can be caught again.
     while (a.shots < (s.count ?? 1) && a.t >= s.start + a.shots * (s.interval ?? .11)) {
       // 吉他激奏 / 韵律直觉: past the first wave the key has to stay down.
@@ -1452,11 +1458,14 @@ function repelPulse(g: FightGame, f: Fighter, power: number): boolean {
   } else if (!a.emitted && a.t >= s.start) {
     a.emitted = true;
     if (s.fx === 'wish') {
-      // 星之鼓动: the tell dies with the prayer and the star drops on the pinned spot.
+      // 星之鼓动: the tell dies with the prayer and the star drops in from the upper left,
+      // aimed so its diagonal lands exactly on the pinned spot.
       const mark = g.effects.find(e => e.type === 'wish-mark' && e.fighter === f.id);
       if (mark) mark.life = 0;
+      const drop = (FLOOR - 70) - -90;
       g.projectiles.push({
-        owner: f.id, x: a.anchor, y: -90, vx: 0, vy: WISH_FALL,
+        owner: f.id, x: a.anchor - WISH_SLANT * drop, y: -90,
+        vx: WISH_SLANT * WISH_FALL, vy: WISH_FALL,
         life: 3, skill: s, color: f.data.color,
         radius: 54, size: s.size ?? 480, fx: 'star-fall',
         attack: a, hit: new Set(), trail: [], age: 0,
@@ -1966,8 +1975,8 @@ export function stepProjectiles(g: FightGame, dt: number): void {
           }
           // The cucumber stays up on the way out and only pops on the return hit; the mega wave
           // washes through and keeps carrying whoever it caught; the juggle ball is a bout of
-          // interference, not a shell.
-          if (!(p.fx === 'cucumber' && !p.returned) && p.fx !== 'mega' && p.fx !== 'meat' && p.fx !== 'juggle-ball') p.life = 0;
+          // interference, not a shell; the falling wish star punches through to its landing.
+          if (!(p.fx === 'cucumber' && !p.returned) && p.fx !== 'mega' && p.fx !== 'meat' && p.fx !== 'juggle-ball' && p.fx !== 'star-fall') p.life = 0;
           break;
         }
       }
@@ -1995,7 +2004,8 @@ export function stepProjectiles(g: FightGame, dt: number): void {
   for (let i = 0; i < g.projectiles.length; i++) {
     const p = g.projectiles[i];
     // 微笑号的画面比弹丸中心宽一整屏，中心出界时船尾还在画面里。
-    const onStage = p.fx === 'smile-ship' || (p.x > -60 && p.x < W + 60);
+    // star-fall spawns off the left edge on purpose — its diagonal always carries it back in.
+    const onStage = p.fx === 'smile-ship' || p.fx === 'star-fall' || (p.x > -60 && p.x < W + 60);
     if (p.life > 0 && onStage && p.y < FLOOR + 60) g.projectiles[w++] = p;
   }
   g.projectiles.length = w;

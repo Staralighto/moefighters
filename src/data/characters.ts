@@ -537,7 +537,8 @@ export const ROSTER: CharacterData[] = [
     id: 'kasumi', name: '户山香澄', title: '主唱 / 邦高祖', quote: '一起キラキラドキドキ吧！', color: '#FF5522',
     ...stats('beat'),
     view: {
-      kind: 'sprite', common: '/sprites/kasumi/common.png', special: '/sprites/kasumi/special.png', height: 162,
+      kind: 'sprite', common: '/sprites/kasumi/common.png', special: '/sprites/kasumi/special.png', height: 181,
+      extras: ['/sprites/kasumi/star.png'],
     },
     skills: [
       skill(0, 'light', '轻扫'),
@@ -559,7 +560,7 @@ export const ROSTER: CharacterData[] = [
       skill(5, 'projectile', '星之鼓动', {
         damage: 195, size: 480, start: 1.0, duration: 1.4, life: 3, knock: 0, gain: 0, fx: 'wish',
         root: 3, rootBreak: 0, rootPin: true,
-        brief: '祈愿召下半屏宽的巨星砸落；命中眩晕，不受击解除', detail: '双手合十祈愿 1 秒并标记落点，巨星随后砸下：落点附近巨额伤害并眩晕 3 秒',
+        brief: '祈愿召下半屏宽的巨星砸落；命中眩晕，不受击解除', detail: '双手合十祈愿 1 秒并标记落点，巨星从画面左上斜落砸在标记点上：落点附近巨额伤害并眩晕 3 秒',
       }),
     ],
   },

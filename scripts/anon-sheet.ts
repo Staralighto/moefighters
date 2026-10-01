@@ -236,7 +236,7 @@ const SPECIAL: Pose[][] = [
 ];
 
 function propSheet(inner: string, w: number, h: number): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="${w}" height="${h}" fill="#00FF00"/>${inner}</svg>\n`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${inner}</svg>\n`;
 }
 
 /** Grip at the image center. Neck runs right, body at the outer end. Left half stays empty. */
@@ -265,11 +265,9 @@ function heartSvg(): string {
 const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'sprites', 'anon');
 const common = sheet(COMMON_COLS, COMMON_ROWS, (c, r) => commonPose(COMMON_LABELS[r][c]), (c, r) => COMMON_LABELS[r][c]);
 const special = sheet(SPECIAL_COLS, SPECIAL_ROWS, (c, r) => SPECIAL[c][r], (c, r) => 'UIOL'[c] + '-' + ['wind', 'hit', 'back'][r]);
-const targets = [join(dir, 'common.png'), join(dir, 'special.png'), join(dir, 'note.png'), join(dir, 'heart.png'), join(dir, 'guitar.png')];
+/* common/special/guitar are finished art (mark gone) and left the raster list, per SOP. */
+const targets = [join(dir, 'note.png'), join(dir, 'heart.png')];
 assertAllWritable(targets);
-rasterSheet(targets[0], common, COMMON_COLS * CELL, COMMON_ROWS * CELL);
-rasterSheet(targets[1], special, SPECIAL_COLS * CELL, SPECIAL_ROWS * CELL);
-rasterSheet(targets[2], noteSvg(), CELL, CELL);
-rasterSheet(targets[3], heartSvg(), CELL, CELL);
-rasterSheet(targets[4], guitarSvg(), 512, 256);
+rasterSheet(targets[0], noteSvg(), CELL, CELL);
+rasterSheet(targets[1], heartSvg(), CELL, CELL);
 console.log('wrote anon sheets');

@@ -34,6 +34,7 @@ const MANA_HEART_SRC = '/sprites/mana/heart.png';
 const SHIP_SRC = '/sprites/kokoro/ship.png';
 const BALL_SRC = '/sprites/kokoro/ball.png';
 const WAVE_SRC = '/sprites/kokoro/wave.png';
+const KASUMI_STAR_SRC = '/sprites/kasumi/star.png';
 const MORTIS_H = 181;
 
 /* Drop the pose-sheet chrome and the chroma key so a placeholder can sit in the fight. */
@@ -356,6 +357,29 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
           ctx.lineWidth = 9 - i * 2.5;
           ctx.beginPath();
           ctx.arc(-wr * .3 - i * wr * .22, 0, wr - i * 12, -1.15, 1.15);
+          ctx.stroke();
+        }
+      }
+      break;
+    }
+    case 'star-pulse': {
+      // 星之鼓动 impact pulse: the star's own shape stamped on the landing point, swelling
+      // once — ghostly, fast, gone, the same beat as kokoro's smile pulse.
+      const im = images?.get(KASUMI_STAR_SRC);
+      const grow = 1 - Math.pow(1 - p, 3);
+      const s = r * (.35 + .65 * grow);
+      ctx.translate(e.x, e.y);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      if (im?.naturalWidth) {
+        ctx.globalAlpha = (1 - p) * .5;
+        ctx.drawImage(keyed(im), -s / 2, -s / 2, s, s);
+      } else {
+        ctx.strokeStyle = e.color;
+        for (let i = 0; i < 3; i++) {
+          ctx.globalAlpha = (1 - p) * .5 * (1 - i * .28);
+          ctx.lineWidth = 9 - i * 2.5;
+          starPath(ctx, s * (.55 - i * .14));
           ctx.stroke();
         }
       }
@@ -1617,8 +1641,10 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
       break;
     }
     case 'star': {
-      // 小星星: a small gold star tumbling along the diagonal, pale core, thin dark edge.
+      // 小星星: the shared star sprite tumbling along the diagonal. Procedural fallback keeps
+      // the draw alive before the prop loads.
       ctx.rotate(p.age * 5 * Math.sign(p.vx || 1));
+      if (prop(ctx, images, KASUMI_STAR_SRC, Math.max(18, p.size))) break;
       ctx.fillStyle = '#ffd257';
       starPath(ctx, Math.max(9, p.size * .5));
       ctx.fill();
@@ -1630,9 +1656,11 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
       break;
     }
     case 'star-fall': {
-      // 星之鼓动: the wish star rides the fall — the art sits above the hit centre so the
-      // lower point touches the floor right as it detonates. Streaks above sell the speed.
+      // 星之鼓动: the wish star rides the diagonal — streaks lean against the velocity, the
+      // art sits above the hit centre so the lower point touches the floor right as it lands.
       const r = p.size * .5;
+      ctx.save();
+      ctx.rotate(Math.atan2(-(p.vx || 0), p.vy || 1));
       ctx.strokeStyle = '#fff3c4';
       ctx.lineWidth = 3;
       ctx.globalAlpha = .5;
@@ -1644,8 +1672,10 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
         ctx.stroke();
       }
       ctx.globalAlpha = 1;
+      ctx.restore();
       ctx.translate(0, -p.size * .32);
       ctx.rotate(p.age * .8);
+      if (prop(ctx, images, KASUMI_STAR_SRC, p.size * 1.06)) break;
       ctx.fillStyle = '#ffd257';
       starPath(ctx, r);
       ctx.fill();

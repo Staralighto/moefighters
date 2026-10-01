@@ -226,7 +226,7 @@ const SPECIAL: Pose[][] = [
 ];
 
 function propSvg(w: number, h: number, body: string): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="${w}" height="${h}" fill="#00FF00"/>${body}</svg>\n`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${body}</svg>\n`;
 }
 
 /* 微笑号: a chunky white cruise facing right, yellow decks, the bow grin. */
@@ -271,12 +271,7 @@ const wave = propSvg(CELL, CELL, `
 `);
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'sprites', 'kokoro');
-const common = sheet(COMMON_COLS, COMMON_ROWS, (c, r) => commonPose(COMMON_LABELS[r][c]), (c, r) => COMMON_LABELS[r][c]);
-const special = sheet(SPECIAL_COLS, SPECIAL_ROWS, (c, r) => SPECIAL[c][r], (c, r) => 'UIOL'[c] + '-' + ['wind', 'hit', 'back'][r]);
-const targets = ['common.png', 'special.png', 'ship.png', 'ball.png', 'wave.png'].map(name => join(dir, name));
+/* ship.png and wave.png are finished art (mark gone) and left the raster list, per SOP. */
+const targets = ['ball.png'].map(name => join(dir, name));
 assertAllWritable(targets);
-rasterSheet(join(dir, 'common.png'), common, COMMON_COLS * CELL, COMMON_ROWS * CELL);
-rasterSheet(join(dir, 'special.png'), special, SPECIAL_COLS * CELL, SPECIAL_ROWS * CELL);
-rasterSheet(join(dir, 'ship.png'), ship, 512, 256);
 rasterSheet(join(dir, 'ball.png'), ball, CELL, CELL);
-rasterSheet(join(dir, 'wave.png'), wave, CELL, CELL);
