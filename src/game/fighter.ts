@@ -24,6 +24,8 @@ export interface Attack {
   liftAt: number;
   /** Attack time when 推落 releases the held fighter. 0 means no release pending. */
   tossAt: number;
+  /** 微笑大回旋: the one mid-flight reversal has been spent. */
+  flipped?: boolean;
   /** Fighter id held by 信用 before the slam. -1 means nobody. */
   hold: number;
   /** World x where 高性能作曲AI planted its lane. */
@@ -72,6 +74,8 @@ export interface Fighter {
   rootHits: number;
   /** Clean hits the current root can absorb before it breaks early. 0 holds until the clock lifts it. */
   rootBreak: number;
+  /** The fx that applied the current root: its own follow-up hits do not count toward the break. */
+  rootFx: string;
   /** Tier of the current root. Only read while root > 0; 'move' is the arcade default. */
   rootLevel: RootLevel;
   /** 我要拉黑他: seconds of total lock. Hits during it deal half damage and nothing shortens it. */
@@ -191,7 +195,7 @@ export function makeFighter(
     x: init.x, y: FLOOR, vx: 0, vy: 0, facing: init.facing,
     hp: data.hp, energy: init.energy, guard: 100, blocking: false,
     stun: 0, invuln: 0, comboTime: 0, hitFlash: 0, landing: 0, guardBroken: 0,
-    knocked: 0, downTime: 0, hitBySuper: false, root: 0, rootHits: 0, rootBreak: 0, rootLevel: 'move', ban: 0, beatStacks: 0, frenzy: 0,
+    knocked: 0, downTime: 0, hitBySuper: false, root: 0, rootHits: 0, rootBreak: 0, rootFx: '', rootLevel: 'move', ban: 0, beatStacks: 0, frenzy: 0,
     jabChain: 0, jabChainClock: 0, braced: 0, braceFx: 0, noGain: 0, muscle: 0, sprint: 0, poise: 0, purge: 0, frail: 0, frailBonus: 0, feast: 0,
     dodge: 0, dodgeCd: 0, dodgeRequest: false, dodgeBuffer: 0, blockTap: -1, blockBuffer: 0, blockLeft: 0,
     debt: 0, debtDmg: 0,

@@ -136,7 +136,16 @@ export class GeometryView implements FighterView {
   }
 
   draw(ctx: CanvasRenderingContext2D, f: Fighter, x: number, y: number, alpha: number, _tint?: string, outline?: string): void {
+    if (f.attack?.skill.fx === 'cartwheel') {
+      this.drawStar(ctx, f, x, y, alpha, outline);
+      return;
+    }
     const d = this.dims, pose = poseFor(f);
+    const legLen = d.thigh + d.shin;
+    const hip = { x: 0, y: -legLen + pose.crouch };
+    const shoulder = { x: hip.x + Math.sin(pose.lean) * d.torsoH, y: hip.y - Math.cos(pose.lean) * d.torsoH };
+    // ponytail: crouch drops the hip without inverse kinematics; feet sink a few px, invisible at arcade scale.
+    const bend = pose.crouch * .03;
     ctx.save();
     try {
       ctx.translate(Math.round(x), Math.round(y));
@@ -145,12 +154,6 @@ export class GeometryView implements FighterView {
       if (pose.lying) { ctx.translate(-10, -d.torsoW / 2 - 4); ctx.rotate(-Math.PI / 2); }
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-
-      const legLen = d.thigh + d.shin;
-      const hip = { x: 0, y: -legLen + pose.crouch };
-      const shoulder = { x: hip.x + Math.sin(pose.lean) * d.torsoH, y: hip.y - Math.cos(pose.lean) * d.torsoH };
-      // ponytail: crouch drops the hip without inverse kinematics; feet sink a few px, invisible at arcade scale.
-      const bend = pose.crouch * .03;
 
       if (outline) this.glowBody(ctx, pose, hip, shoulder, bend, outline);
       const parts: string[] = [];
@@ -223,6 +226,63 @@ export class GeometryView implements FighterView {
     const ex = cx + r * gaze, ey = cy - r * .08, er = Math.max(2.4, r * .42);
     ctx.fillStyle = OUTLINE; ctx.beginPath(); ctx.arc(ex, ey, er, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = this.light; ctx.beginPath(); ctx.arc(ex + er * .35, ey - er * .2, er * .38, 0, Math.PI * 2); ctx.fill();
+  }
+
+  /** 微笑大回旋: one front-facing 大字, spun three turns across the dash. Centre sits on the waist. */
+  private drawStar(ctx: CanvasRenderingContext2D, f: Fighter, x: number, y: number, alpha: number, outline?: string): void {
+    const cy = -78;
+    ctx.save();
+    try {
+      ctx.translate(Math.round(x), Math.round(y));
+      const a = f.attack;
+      if (a) {
+        const s = a.skill, end = s.duration - .08;
+        if (a.t >= s.start && a.t < end && end > s.start) {
+          const p = Math.min(1, Math.max(0, (a.t - s.start) / (end - s.start)));
+          ctx.translate(0, cy);
+          ctx.rotate(p * Math.PI * 6);
+          ctx.translate(0, -cy);
+        }
+      }
+      ctx.globalAlpha = alpha;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      if (f.hitFlash > 0) ctx.filter = 'brightness(2.1)';
+      else if (f.invuln > .1) ctx.filter = 'brightness(1.25)';
+      const w = 14;
+      const limb = (x1: number, y1: number, x2: number, y2: number, width: number, color: string) => {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.beginPath();
+        ctx.moveTo(x1, cy + y1);
+        ctx.lineTo(x2, cy + y2);
+        ctx.stroke();
+      };
+      const body = (width: number, color: string) => {
+        limb(0, 6, -48, 78, width, color);
+        limb(0, 6, 48, 78, width, color);
+        limb(0, -22, -72, -78, width, color);
+        limb(0, -22, 72, -78, width, color);
+        limb(0, -22, 0, 6, width + 2, color);
+      };
+      if (outline) body(w + 10, outline);
+      body(w + 6, OUTLINE);
+      body(w, this.color);
+      const r = 22;
+      const hy = cy - 22 - r - 6;
+      ctx.fillStyle = OUTLINE;
+      ctx.beginPath(); ctx.arc(0, hy, r + 3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = this.light;
+      ctx.beginPath(); ctx.arc(0, hy, r, 0, Math.PI * 2); ctx.fill();
+      for (const dx of [-8, 8]) {
+        ctx.fillStyle = OUTLINE;
+        ctx.beginPath(); ctx.arc(dx, hy - 1, 5.5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = this.light;
+        ctx.beginPath(); ctx.arc(dx + 1.6, hy - 2.6, 2, 0, Math.PI * 2); ctx.fill();
+      }
+    } finally {
+      ctx.restore();
+    }
   }
 
   private limb(ctx: CanvasRenderingContext2D, from: { x: number; y: number }, [a1, a2]: Limb, l1: number, l2: number, color: string): void {

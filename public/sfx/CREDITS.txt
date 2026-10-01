@@ -1,0 +1,4 @@
+ship-horn.mp3
+Source: Freesound.org — qubodup, "Fog Horn" (https://freesound.org/people/qubodup/sounds/181949/)
+License: Creative Commons 0 (https://creativecommons.org/publicdomain/zero/1.0/)
+Changes: trimmed to the first 0.9 s blast, 15 ms fade-in and 0.4 s fade-out, re-encoded 128 kbps MP3.

@@ -2740,4 +2740,115 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   }
 }
 
+// kokoro: the cartwheel flips once, the cruise caps at twelve segments with the tail at a
+// fifth strength, the juggle ball is a
+// mortal pinball that flies on two axes, and the smile waves root against two clean hits
+{
+  const kokoro = ROSTER.findIndex(c => c.id === 'kokoro');
+  assert.ok(kokoro >= 0, 'kokoro is on the roster');
+  const data = ROSTER[kokoro];
+  assert.equal(data.trait, 'rush', 'kokoro is rush');
+  assert.equal(data.skills[2].fx, 'cartwheel', 'U is the cartwheel');
+  assert.equal(data.skills[2].speed, 820, 'the cartwheel runs the long-dash speed');
+  assert.equal(data.skills[3].fx, 'smile-ship', 'I is the cruise');
+  assert.equal(data.skills[3].count, 12, 'the cruise has twelve segments');
+  assert.equal(data.skills[4].fx, 'juggle-ball', 'O is the juggle');
+  assert.equal(data.skills[4].life, 6, 'the ball lives on its own clock');
+  assert.equal(data.skills[5].fx, 'smile-wave', 'the super is the smile wave');
+  assert.equal(data.skills[5].root, 3, 'the wave roots three seconds');
+  assert.equal(data.skills[5].rootBreak, undefined, 'the root breaks on the default two clean hits');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/kokoro/ship.png'), 'the ship is preloaded');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/kokoro/ball.png'), 'the ball is preloaded');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/kokoro/wave.png'), 'the wave is preloaded');
+
+  // U: holding the cast key keeps the line, the opposite key flips once, a second reversal is refused
+  {
+    const g = newGame(kokoro, 2); const [p1] = g.fighters; dummy(g);
+    const facing = p1.facing;
+    g.keyDown('KeyD'); g.keyDown('KeyU'); run(g, .25);
+    assert.equal(p1.facing, facing, 'the cartwheel holds its line with the cast direction held');
+    g.keyUp('KeyD'); g.keyDown('KeyA'); run(g, .2);
+    assert.equal(p1.facing, -facing, 'the cartwheel flips against the held key');
+    g.keyUp('KeyA'); g.keyDown('KeyD'); run(g, .35);
+    assert.equal(p1.facing, -facing, 'the second reversal is refused');
+    g.keyUp('KeyD');
+  }
+  // I: the cruise rides across, shoves the body along, and stops at twelve segments
+  {
+    const g = newGame(kokoro, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 240; p2.facing = -1;
+    const hp = p2.hp, x0 = p2.x;
+    g.keyDown('KeyI'); run(g, .4);
+    const ship = g.projectiles.find(p => p.fx === 'smile-ship');
+    assert.ok(ship, 'the cruise launches');
+    // The string lands a dozen hitstop freezes on the way, so the exit needs extra wall time.
+    run(g, 3);
+    assert.equal(g.projectiles.filter(p => p.fx === 'smile-ship' && p.life > 0).length, 0, 'the cruise exits the stage');
+    assert.ok(g.totalHits[p1.id] >= 2, `the cruise lands its segments, landed ${g.totalHits[p1.id]}`);
+    assert.ok(g.totalHits[p1.id] <= 12, `twelve segments cap it, landed ${g.totalHits[p1.id]}`);
+    assert.ok(hp - p2.hp > 20, `the segments deal damage, lost ${hp - p2.hp}`);
+    assert.ok(p2.x > x0 + 60, `the hull shoves the body along, moved ${p2.x - x0}`);
+  }
+  // O: the toss leaves at an angle, a wall sends it back faster, and an enemy shot pops it
+  {
+    const g = newGame(kokoro, 2); const [p1, p2] = g.fighters; dummy(g);
+    g.keyDown('KeyO'); run(g, .35);
+    const ball = g.projectiles.find(p => p.fx === 'juggle-ball');
+    assert.ok(ball, 'the ball is tossed');
+    assert.ok(ball!.vy !== 0, `the toss leaves at an angle, vy ${ball!.vy}`);
+    const vx0 = ball!.vx;
+    const sp0 = Math.hypot(ball!.vx, ball!.vy);
+    let turned = false;
+    for (let i = 0; i < 240 && !turned; i++) {
+      run(g, STEP);
+      turned = Math.sign(ball!.vx) !== Math.sign(vx0);
+    }
+    assert.ok(turned, 'the ball comes back off a wall');
+    const sp1 = Math.hypot(ball!.vx, ball!.vy);
+    assert.ok(sp1 > sp0 * 1.19, `every bounce speeds the ball up 20%, ${sp0.toFixed(1)} -> ${sp1.toFixed(1)}`);
+    // Drop a hostile shot just ahead of the ball's motion, inside the 25px cancel window.
+    const hostile = {
+      owner: p2.id, x: ball!.x + Math.sign(ball!.vx) * 8, y: ball!.y, vx: 0, vy: 0, life: 2, age: 0,
+      skill: p2.data.skills[0], color: '#b7ff6e', radius: 17, size: 62, fx: 'orb',
+      attack: { skill: p2.data.skills[0], index: 0, serial: 1, t: .1, emitted: false, shots: 0, burst: 0, hit: new Set<number>(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 },
+      hit: new Set<number>(), trail: [] as { x: number; y: number }[],
+    };
+    g.projectiles.push(hostile);
+    run(g, .1);
+    assert.equal(g.projectiles.filter(p => p.fx === 'juggle-ball' && p.life > 0).length, 0, 'an enemy shot pops the ball');
+  }
+  // L: three waves hit, root, and the default break rule lifts the root on the second clean hit
+  {
+    const g = newGame(kokoro, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 260; p2.facing = -1;
+    p1.energy = 100;
+    const hp = p2.hp;
+    g.keyDown('KeyL'); run(g, .45);
+    assert.ok(p1.energy < 1, `the super spends the bar, left ${p1.energy}`);
+    // The first wave lands around .7 — catch the pulse while it is still swelling.
+    run(g, .35);
+    const pulse = g.effects.find(e => e.type === 'smile-pulse');
+    assert.ok(pulse, 'a wave hit stamps a smile pulse on the victim');
+    assert.ok(Math.abs((pulse!.radius ?? 0) - 271.5) < .01, `the pulse swells to 150% of her height, saw ${pulse!.radius}`);
+    run(g, .6);
+    assert.ok(p2.root > 0, `the wave roots on contact, left ${p2.root}`);
+    assert.ok(p2.root <= 3.01, `the root is the three-second tier, left ${p2.root}`);
+    assert.ok(hp - p2.hp > 20, `the waves deal damage too, lost ${hp - p2.hp}`);
+    hit(g, p1, p2, p1.data.skills[0], { hit: new Set() });
+    assert.ok(p2.root > 0, 'one clean hit does not break the root');
+    run(g, .35);
+    hit(g, p1, p2, p1.data.skills[0], { hit: new Set() });
+    assert.equal(p2.root, 0, 'two clean hits break the root');
+  }
+  // clips: the four specials read their own special columns
+  {
+    const pf = previewFighter(data, 0);
+    pf.attack = { skill: data.skills[2], index: 2, serial: 1, t: .5, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 };
+    assert.equal(clipFor(pf).sheet, 'special', 'the cartwheel reads the special sheet');
+    assert.equal(clipFor(pf).col, 0, 'the cartwheel reads column U');
+    pf.attack = { skill: data.skills[5], index: 5, serial: 2, t: .5, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 };
+    assert.equal(clipFor(pf).col, 3, 'the wave reads column L');
+  }
+}
+
 console.log('selfcheck ok');

@@ -1,6 +1,7 @@
 import type { Effect, FightGame, FloatingText, Particle, Projectile } from '../game/game.ts';
+import { SHIP_HOLD, SHIP_SWEEP } from '../game/combat.ts';
 import type { Fighter } from '../game/fighter.ts';
-import { SIDE } from '../game/constants.ts';
+import { H, SIDE, W } from '../game/constants.ts';
 import type { ImageCache } from '../assets/loader.ts';
 import { CELL } from './clips.ts';
 import { watchProp } from './propLayout.ts';
@@ -30,6 +31,9 @@ const YUNO_NOTE_SRC = '/sprites/yuno/note.png';
 const DONUT_STRAW_SRC = '/sprites/mana/donut-straw.png';
 const DONUT_CHOC_SRC = '/sprites/mana/donut-choc.png';
 const MANA_HEART_SRC = '/sprites/mana/heart.png';
+const SHIP_SRC = '/sprites/kokoro/ship.png';
+const BALL_SRC = '/sprites/kokoro/ball.png';
+const WAVE_SRC = '/sprites/kokoro/wave.png';
 const MORTIS_H = 181;
 
 /* Drop the pose-sheet chrome and the chroma key so a placeholder can sit in the fight. */
@@ -298,6 +302,33 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(0, 0, r * p, 0, Math.PI * 2); ctx.stroke();
       break;
+    case 'smile-pulse': {
+      // 世界微笑 impact pulse: the wave's own grin stamped on the victim, swelling once —
+      // ghostly, fast, gone. e.radius is the full-swell size (~150% of the victim's height);
+      // the swell eases out so it blows up fast and settles softly while fading.
+      const im = images?.get(WAVE_SRC);
+      const grow = 1 - Math.pow(1 - p, 3);
+      const s = r * (.35 + .65 * grow);
+      ctx.translate(e.x, e.y);
+      ctx.scale(e.dir ?? 1, 1);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      if (im?.naturalWidth) {
+        ctx.globalAlpha = (1 - p) * .5;
+        ctx.drawImage(keyed(im), -s / 2, -s / 2, s, s);
+      } else {
+        const wr = Math.max(40, s * .85);
+        ctx.strokeStyle = e.color;
+        for (let i = 0; i < 3; i++) {
+          ctx.globalAlpha = (1 - p) * .5 * (1 - i * .28);
+          ctx.lineWidth = 9 - i * 2.5;
+          ctx.beginPath();
+          ctx.arc(-wr * .3 - i * wr * .22, 0, wr - i * 12, -1.15, 1.15);
+          ctx.stroke();
+        }
+      }
+      break;
+    }
     case 'debt': {
       ctx.translate(e.x, e.y);
       ctx.globalAlpha = .8;
@@ -967,8 +998,9 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   if (p.fx === 'fuga') ctx.translate(0, -10);
   if (p.fx === 'mutsumi-note' || p.fx === 'chord') noteRibbon(ctx, p);
   else if (p.fx === 'sob') noteRibbon(ctx, p, '#f4e7b4', '#e8c96a');
-  else if (p.fx !== 'fuga') {
+  else if (p.fx !== 'fuga' && p.fx !== 'smile-ship') {
     // 火的故事 skips the stock dots — they read as purple balls; its case draws gold afterimages.
+    // 微笑号 is a screen-sized sweep, so the travelling point must not leave a dot trail.
     ctx.fillStyle = p.color;
     for (let i = 0; i < p.trail.length; i++) {
       const t = p.trail[i], k = (i + 1) / p.trail.length;
@@ -1015,6 +1047,69 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
         ctx.strokeStyle = '#f4ead8';
         ctx.lineWidth = 3;
         ctx.beginPath(); ctx.moveTo(-p.radius * .2, p.radius * .2); ctx.lineTo(p.radius * .9, -p.radius * .5); ctx.stroke();
+      }
+      break;
+    }
+    case 'smile-ship': {
+      // 微笑号: one screen-wide hull. After a beat it slides fully off one side to fully off
+      // the other in two seconds. ponytail: picture only — the hit is still the old point.
+      const dir = Math.sign(p.vx) || 1;
+      const ship = images?.get(SHIP_SRC);
+      const aspect = ship?.naturalWidth ? ship.naturalHeight / ship.naturalWidth : .5;
+      const w = W;
+      const h = w * aspect;
+      const u = Math.min(1, Math.max(0, p.age - SHIP_HOLD) / SHIP_SWEEP);
+      const centerX = dir > 0 ? -w / 2 + u * (W + w) : W + w / 2 - u * (W + w);
+      ctx.translate(centerX - p.x, H / 2 - p.y);
+      ctx.scale(dir, 1);
+      ctx.imageSmoothingEnabled = true;
+      if (ship?.naturalWidth) {
+        ctx.drawImage(keyed(ship), -w / 2, -h / 2, w, h);
+      } else {
+        ctx.fillStyle = '#f6f2ea';
+        ctx.fillRect(-w / 2, -h * .15, w, h * .45);
+        ctx.fillStyle = '#ffd94f';
+        ctx.fillRect(-w * .15, -h * .42, w * .35, h * .28);
+        ctx.strokeStyle = '#151222';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(-w / 2, -h * .15, w, h * .45);
+        ctx.strokeRect(-w * .15, -h * .42, w * .35, h * .28);
+      }
+      break;
+    }
+    case 'juggle-ball': {
+      ctx.rotate(p.age * 9 * Math.sign(p.vx || 1));
+      if (!prop(ctx, images, BALL_SRC, p.size)) {
+        const r = p.size / 2;
+        ctx.fillStyle = '#f6f2ea';
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#d94455';
+        ctx.beginPath(); ctx.ellipse(0, 0, r, r * .38, .5, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#151222';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+      }
+      break;
+    }
+    case 'smile-wave': {
+      // 世界微笑: the shout family of stacked crescents, grinning — a golden wave with the
+      // corners turned up, drawn by hand when the sheet has not landed yet.
+      const r = Math.max(40, p.size * .85);
+      ctx.scale(Math.sign(p.vx) || 1, 1);
+      if (!prop(ctx, images, WAVE_SRC, p.size)) {
+        ctx.strokeStyle = p.color;
+        for (let i = 0; i < 3; i++) {
+          ctx.globalAlpha = (1 - i * .28) * .95;
+          ctx.lineWidth = 9 - i * 2.5;
+          ctx.beginPath();
+          ctx.arc(-r * .3 - i * r * .22, 0, r - i * 12, -1.15, 1.15);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = .9;
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.arc(0, r * .08, r * .42, .35, Math.PI - .35);
+        ctx.stroke();
       }
       break;
     }

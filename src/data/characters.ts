@@ -505,9 +505,37 @@ export const ROSTER: CharacterData[] = [
       }),
     ],
   },
+  {
+    id: 'kokoro', name: '弦卷心', title: '主唱 / 微笑', quote: '为世界带来笑容！', color: '#FFEE22',
+    ...stats('rush'),
+    view: {
+      kind: 'sprite', common: '/sprites/kokoro/common.png', special: '/sprites/kokoro/special.png', height: 181,
+      extras: ['/sprites/kokoro/ship.png', '/sprites/kokoro/ball.png', '/sprites/kokoro/wave.png'],
+    },
+    skills: [
+      skill(0, 'light', '拍手'),
+      skill(1, 'heavy', '横踢'),
+      skill(2, 'dash', '微笑大回旋', {
+        damage: 40, range: 110, start: .1, duration: 1.0, cd: 5.5, speed: 820, knock: 300, fx: 'cartwheel',
+        brief: '长距离大风车回旋突进；中途可转向一次，跳起可躲', detail: '大风车回旋突进约四分之三屏；中途可转向一次，跳起可躲',
+      }),
+      skill(3, 'projectile', '微笑号出航', {
+        damage: 14, count: 12, interval: .12, speed: 400, size: 170, life: 2.6, start: .3, duration: .8, cd: 12, knock: 220, gain: 3, fx: 'smile-ship',
+        brief: '微笑号横穿全场，至多十二段，后段减伤；可格挡', detail: '微笑号横穿全场把人推着走，同一人至多吃十二段，第七段起每段只咬两成；可格挡',
+      }),
+      skill(4, 'projectile', '抛球杂耍', {
+        damage: 12, speed: 650, size: 52, life: 6, start: .2, duration: .5, cd: 8.5, knock: 100, gain: 2, fx: 'juggle-ball',
+        brief: '红白球全场乱飞，越弹越快；可格挡，可被弹幕击落', detail: '红白球高速反弹乱飞 6 秒，每次弹开都换方向并提速两成，至多翻倍；可格挡，可被弹幕击落',
+      }),
+      skill(5, 'projectile', '世界微笑', {
+        damage: 26, count: 3, interval: .16, speed: 520, size: 100, life: 1.1, start: .3, duration: 1.2, knock: 350, root: 3, rootPin: true, fx: 'smile-wave',
+        brief: '连发三枚笑脸波；命中定身，可格挡', detail: '连发三枚笑脸波击退；命中定身 3 秒，受击两次解除，可格挡',
+      }),
+    ],
+  },
 ];
 
 /** Select screen. gale, ember and boulder stay on ROSTER for the headless checks. */
-export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki' || c.id === 'rana' || c.id === 'arale' || c.id === 'miyako' || c.id === 'ritsu' || c.id === 'nonoka' || c.id === 'yuno' || c.id === 'viola' || c.id === 'mana');
+export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki' || c.id === 'rana' || c.id === 'arale' || c.id === 'miyako' || c.id === 'ritsu' || c.id === 'nonoka' || c.id === 'yuno' || c.id === 'viola' || c.id === 'mana' || c.id === 'kokoro');
 
 export const ROSTER_BY_ID = new Map(ROSTER.map(c => [c.id, c]));

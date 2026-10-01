@@ -54,7 +54,7 @@ export const MINION_POOL = ['anon', 'soyo'] as const;
 export const RECORD_TIME = 3.5;
 const ECHO_DMG = .5;
 const ECHO_FADE = .4;
-export type SfxKind = 'light' | 'heavy' | 'hit' | 'block' | 'super' | 'select' | 'jump' | 'ko' | 'cast' | 'key';
+export type SfxKind = 'light' | 'heavy' | 'hit' | 'block' | 'super' | 'select' | 'jump' | 'ko' | 'cast' | 'key' | 'whistle';
 
 export interface Effect {
   type: string; x: number; y: number; color: string; life: number; max: number;
@@ -82,6 +82,8 @@ export interface Projectile {
   swell?: number;
   /** 九字真言: 1 while the circle is on a body. */
   swellTo?: number;
+  /** 抛球杂耍: the launch speed, the baseline the bounces accelerate from. */
+  v0?: number;
 }
 
 /** 九字真言: a committed six-hit string. It outlives the circle, so a late or wall hit still pays in full. */

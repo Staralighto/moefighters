@@ -30,6 +30,28 @@ const MUSCLE_REPEL_PUSH = 500;
 const DREAM_REPEL_PUSH = 420;
 /** 高音量！: anyone inside a wave gets carried along at this speed until it passes them. */
 const MEGA_PUSH = 300;
+/** 微笑号出航: twelve segments per body, one per interval window — the first SHIP_FULL at full
+ *  damage, the rest at a fifth strength. The picture is the truth: the hull waits SHIP_HOLD,
+ *  then takes SHIP_SWEEP to go fully off one side to fully off the other, and the strike point
+ *  rides the visible bow, pulled back SHIP_BLANK of the picture width because the sprite's
+ *  right edge is blank. Bodies in the waterline are carried at the hull's own speed. */
+const SHIP_SEGMENTS = 12;
+const SHIP_FULL = 6;
+const SHIP_TAIL_MUL = .2;
+const SHIP_BLANK = .2;
+export const SHIP_HOLD = .45;
+export const SHIP_SWEEP = 2;
+const SHIP_PUSH = 2 * W / SHIP_SWEEP;
+/** 抛球杂耍: the ball bounces between the walls, the ceiling and the floor. Every bounce
+ *  re-angles the flight by up to JUGGLE_JITTER, speeds it up 20% to at most double the launch
+ *  speed, and the angle is kept out of the flat and the vertical so the ball neither stalls
+ *  sideways nor gets stuck bouncing in place. */
+const JUGGLE_TOP = 36;
+const JUGGLE_JITTER = .5;
+const JUGGLE_MIN_CROSS = .35;
+const JUGGLE_MIN_RISE = .25;
+const JUGGLE_ACCEL = 1.2;
+const JUGGLE_MAX_MUL = 2;
 /** 就由我来结束一切: the cast shoves everyone inside this radius away, no damage. */
 const RESOLVE_REPEL_RANGE = 190;
 const RESOLVE_REPEL_PUSH = 540;
@@ -147,6 +169,14 @@ function attackHeld(g: FightGame, f: Fighter): boolean {
   return !!code && g.keys.has(code);
 }
 
+/** 微笑大回旋: the direction held right now, for the mid-flight reversal. CPUs read 0 and dash straight. */
+function heldDir(g: FightGame, f: Fighter): number {
+  if (f.controller === null) return 0;
+  const c = CONTROLS[f.controller];
+  if (!c) return 0;
+  return (g.keys.has(c.right) ? 1 : 0) - (g.keys.has(c.left) ? 1 : 0);
+}
+
 function syncGuitar(g: FightGame, f: Fighter, a: Attack): void {
   const s = a.skill;
   if (s.fx !== 'chord' && s.fx !== 'spin') return;
@@ -232,7 +262,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   const howling = defender.attack?.skill.fx === 'howl';
   const superBrace = !blocked && !isGrab
     && skill.fx !== 'heart' && skill.fx !== 'shout' && skill.fx !== 'ban'
-    && skill.fx !== 'wink' && skill.fx !== 'donut-straw'
+    && skill.fx !== 'wink' && skill.fx !== 'donut-straw' && skill.fx !== 'smile-wave'
     && ((defender.braced > 0 && defender.frenzy > 0) || howling);
   let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .9 : 1) * ((braced || superBrace) ? BRACED_DAMAGE : 1) * (defender.ban > 0 ? BAN_DAMAGE : 1) * attacker.baseDmgMul * attacker.dmgMul * (attacker.muscle > 0 ? 1 + MUSCLE_BONUS : 1) * (defender.frail > 0 ? 1 + defender.frailBonus : 1);
   // 堕天: below half health the attacker swings harder; 这是最后通牒: a defender under a quarter takes more.
@@ -242,7 +272,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   // 直接无限大: ordinary hits are written on the bill and do not flinch. Grabs and the
   // control set (root, ban) still land now, so they are not also billed.
   const control = isGrab || skill.fx === 'heart' || skill.fx === 'shout' || skill.fx === 'ban'
-    || skill.fx === 'wink' || skill.fx === 'donut-straw';
+    || skill.fx === 'wink' || skill.fx === 'donut-straw' || skill.fx === 'smile-wave';
   if (!blocked && defender.debt > 0 && !control) {
     attacker.combo = attacker.comboTime > 0 ? attacker.combo + 1 : 1;
     attacker.comboTime = 1.3 + attacker.comboTimeBonus;
@@ -318,7 +348,9 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
         g.text('脱离连段', defender.x, defender.y - 195, SIDE[1], .7, 16);
       }
     } else {
-      if (wasRooted && defender.rootBreak > 0) {
+      if (wasRooted && defender.rootBreak > 0 && skill.fx !== defender.rootFx) {
+        // The root's own follow-up segments (微笑号 waves and friends) do not break it;
+        // only outside hits count toward the early shake-off.
         defender.rootHits++;
         if (defender.rootHits >= defender.rootBreak) {
           defender.root = 0;
@@ -348,6 +380,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
         defender.rootLevel = skill.rootLevel ?? 'move';
         defender.rootBreak = skill.rootBreak ?? 2;
         defender.rootHits = 0;
+        defender.rootFx = skill.fx;
         defender.dodge = 0;
         defender.stun = hitStun(.25);
         if (skill.rootPin) {
@@ -588,12 +621,14 @@ export function spawnShot(g: FightGame, f: Fighter, a: Attack, offsetY = 0, arc 
   const hole = s.fx === 'blackhole';
   const parfait = s.fx === 'parfait';
   const speed = lob ? lob.vx : (s.speed ?? (s.super ? 650 : 480)) * (f.data.trait === 'focus' ? 1.15 : 1);
+  // 抛球杂耍: the toss leaves at a small random climb or drop, so two balls never fly the same lane.
+  const juggleAng = s.fx === 'juggle-ball' ? (Math.random() * 2 - 1) * .3 : 0;
   const p: Projectile = {
     owner: f.id,
     x: parfait ? clamp(f.x + f.facing * PARFAIT_DIST, X_MIN, X_MAX) : hole ? clamp(f.x + f.facing * BLACKHOLE_DIST, X_MIN, X_MAX) : f.x + f.facing * 53,
     y: parfait ? FLOOR : hole ? FLOOR - 95 : f.y - 85 + offsetY,
-    vx: hole || parfait ? 0 : f.facing * speed,
-    vy: lob ? lob.vy : 0,
+    vx: hole || parfait ? 0 : f.facing * speed * (s.fx === 'juggle-ball' ? Math.cos(juggleAng) : 1),
+    vy: s.fx === 'juggle-ball' ? Math.sin(juggleAng) * speed : lob ? lob.vy : 0,
     life: s.life ?? 2.7,
     skill: s,
     color: f.data.color,
@@ -604,8 +639,11 @@ export function spawnShot(g: FightGame, f: Fighter, a: Attack, offsetY = 0, arc 
     hit: new Set(),
     trail: [],
     age: 0,
+    v0: s.fx === 'juggle-ball' ? speed : undefined,
   };
   g.projectiles.push(p);
+  // 微笑号出航: a horn blast the moment the hull is called, so the sweep has a warning.
+  if (s.fx === 'smile-ship') g.audio.play('whistle');
   return p;
 }
 
@@ -928,9 +966,23 @@ function repelPulse(g: FightGame, f: Fighter, power: number): boolean {
     live.life = Math.max(.04, s.start - a.t);
   }
   if (s.type === 'dash' && s.fx !== 'wind' && s.fx !== 'violet' && a.t >= s.start && a.t < s.duration - .08) {
+    // 微笑大回旋: one mid-flight reversal, then later inputs ride out the whirl. Held straight,
+    // it is the stock dash line — the flag is what keeps it from becoming a pinball.
+    if (s.fx === 'cartwheel' && !a.flipped) {
+      const held = heldDir(g, f);
+      if (held !== 0 && held !== f.facing) {
+        f.facing = held > 0 ? 1 : -1;
+        a.flipped = true;
+      }
+    }
     f.x += f.facing * (s.speed ?? (s.super ? 820 : 580)) * dt;
     applyMelee(g, f, a);
-    if (Math.floor(a.t * 30) % 3 === 0) g.effect('ghost', f.x - f.facing * 18, f.y, f.data.color, .18, { fighter: f.id, alpha: .3 });
+    // 微笑大回旋: the spin reads as separated poses, not a smear — one spaced stamp every
+    // eighth of a second. The stock dash line fires on floor(a.t * 30) % 3, which stays true
+    // for four consecutive fixed steps and quadruple-stamps the same spot; other dashes keep it.
+    if (s.fx === 'cartwheel') {
+      if (Math.floor(a.t * 8) !== Math.floor((a.t - dt) * 8)) g.effect('ghost', f.x - f.facing * 18, f.y, f.data.color, .18, { fighter: f.id, alpha: .3 });
+    } else if (Math.floor(a.t * 30) % 3 === 0) g.effect('ghost', f.x - f.facing * 18, f.y, f.data.color, .18, { fighter: f.id, alpha: .3 });
   }
   // A grab that lunges. It stops on contact; a whiff runs out the active window.
   if (s.fx === 'shove' && a.hit.size === 0 && a.t >= s.start && a.t < s.start + .72) {
@@ -1187,7 +1239,7 @@ function repelPulse(g: FightGame, f: Fighter, power: number): boolean {
   }
 
   const volley = a.burst || s.count || 1;
-  if (s.type === 'projectile' && volley > 1 && s.fx !== 'snip') {
+  if (s.type === 'projectile' && volley > 1 && s.fx !== 'snip' && s.fx !== 'smile-ship') {
     if (s.fx === 'drums') {
       while (a.shots < volley && a.t >= drumShotTime(s, a.shots)) {
         spawnRain(g, f, a, a.shots);
@@ -1210,7 +1262,7 @@ function repelPulse(g: FightGame, f: Fighter, power: number): boolean {
     if (s.fx === 'chord' && a.shots >= 3 && !attackHeld(g, f) && a.t < s.duration - .22) a.t = s.duration - .22;
     // 为什么要演奏春日影: the last wave carries the whole super, so the moment it leaves she is free to act.
     if (s.fx === 'shout' && a.shots >= volley) a.t = s.duration;
-  } else if ((s.count ?? 1) > 1 && s.fx !== 'compose' && s.fx !== 'snip') {
+  } else if ((s.count ?? 1) > 1 && s.fx !== 'compose' && s.fx !== 'snip' && s.fx !== 'smile-ship') {
     // ponytail: N swings, one cooldown. Each swing gets a fresh hit set so the same target can be caught again.
     while (a.shots < (s.count ?? 1) && a.t >= s.start + a.shots * (s.interval ?? .11)) {
       // 吉他激奏 / 韵律直觉: past the first wave the key has to stay down.
@@ -1262,6 +1314,7 @@ function repelPulse(g: FightGame, f: Fighter, power: number): boolean {
         o.rootLevel = s.rootLevel ?? 'move';
         o.rootBreak = s.rootBreak ?? 0;
         o.rootHits = 0;
+        o.rootFx = s.fx;
         o.dodge = 0;
         o.vy = 0;
         o.knocked = 0;
@@ -1548,6 +1601,48 @@ export function stepProjectiles(g: FightGame, dt: number): void {
         }
       }
     }
+    if (p.fx === 'smile-ship') {
+      // 微笑号出航: the picture is the truth. The strike zone spans the hull itself, narrowed by
+      // the sprite's blank leading margin (SHIP_BLANK of the picture width), so nothing lands
+      // before the visible bow reaches a body and nothing lands after the stern has passed. The
+      // hull carries anyone in the waterline at its own speed — a body shoved into the wall
+      // still has the hull over it, so the full string can land: twelve per body, one per
+      // interval window, segment seven onward at a fifth. Blockers brace (chip only, no ride),
+      // jumpers clear the waterline like any shot.
+      const dir = Math.sign(p.vx) || 1;
+      const u = Math.min(1, Math.max(0, (p.age - SHIP_HOLD) / SHIP_SWEEP));
+      const front = dir > 0 ? u * 2 * W - SHIP_BLANK * W : W - u * 2 * W + SHIP_BLANK * W;
+      const stern = front - dir * (1 - SHIP_BLANK) * W;
+      p.x = front;
+      pushTrail(p, 12);
+      if (p.age >= SHIP_HOLD + SHIP_SWEEP) { p.life = 0; continue; }
+      if (p.age < SHIP_HOLD) continue;
+      const lo = Math.min(front, stern), hi = Math.max(front, stern);
+      const owner = g.fighterById(p.owner);
+      if (owner) {
+        for (const o of g.opponents(owner)) {
+          if (o.hp <= 0 || o.invuln > 0) continue;
+          if (o.x > hi + 38 || o.x < lo - 38 || Math.abs(p.y - (o.y - 83)) >= 72) continue;
+          if (!o.blocking) o.vx = dir * SHIP_PUSH;
+          const mark = p.marks?.get(o.id);
+          let n = 1;
+          if (mark) {
+            if (mark.n >= SHIP_SEGMENTS || p.age < mark.next) continue;
+            mark.n++;
+            mark.next = p.age + (p.skill.interval ?? .12);
+            n = mark.n;
+          } else {
+            if (!p.marks) p.marks = new Map();
+            p.marks.set(o.id, { n: 1, next: p.age + (p.skill.interval ?? .12) });
+          }
+          const seg = n > SHIP_FULL ? { ...p.skill, damage: p.skill.damage * SHIP_TAIL_MUL } : p.skill;
+          if (hit(g, owner, o, seg, { hit: new Set() }, o.x - dir * 40)) {
+            g.effect('burst', o.x, p.y, p.color, .3, { radius: p.size * .45 });
+          }
+        }
+      }
+      continue;
+    }
     if (p.fx === 'snip') {
       // 剪: a standing void field. The first body inside commits the whole multi-cut string;
       // the field keeps waiting for anyone else who steps in before it fades.
@@ -1636,6 +1731,32 @@ export function stepProjectiles(g: FightGame, dt: number): void {
       if (!owner || owner.hp <= 0) p.life = 0;
       else if (Math.abs(p.x - owner.x) < 38 + p.radius && Math.abs(p.y - (owner.y - 83)) < 72) p.life = 0;
     }
+    if (p.fx === 'juggle-ball') {
+      // 抛球杂耍: a pinball off three walls. Each bounce reflects the flight, tilts it by up to
+      // JUGGLE_JITTER, and speeds it up 20% to at most double the launch speed, and clears the
+      // hit list so the next pass can connect. The component floors
+      // keep the ball crossing the stage and climbing or dropping — never stalled on either axis.
+      let reflectX = false;
+      let reflectY = false;
+      if (p.x <= X_MIN && p.vx < 0) { p.x = X_MIN; reflectX = true; }
+      else if (p.x >= X_MAX && p.vx > 0) { p.x = X_MAX; reflectX = true; }
+      if (p.y <= JUGGLE_TOP && p.vy < 0) { p.y = JUGGLE_TOP; reflectY = true; }
+      else if (p.y >= FLOOR && p.vy > 0) { p.y = FLOOR; reflectY = true; }
+      if (reflectX || reflectY) {
+        const outX = reflectX ? -p.vx : p.vx;
+        const outY = reflectY ? -p.vy : p.vy;
+        const speed = Math.min(Math.hypot(outX, outY) * JUGGLE_ACCEL, (p.v0 ?? Math.hypot(outX, outY)) * JUGGLE_MAX_MUL);
+        const ang = Math.atan2(outY, outX) + (Math.random() * 2 - 1) * JUGGLE_JITTER;
+        let cs = Math.cos(ang);
+        let sn = Math.sin(ang);
+        if (Math.abs(cs) < JUGGLE_MIN_CROSS) cs = Math.sign(outX || 1) * JUGGLE_MIN_CROSS;
+        if (Math.abs(sn) < JUGGLE_MIN_RISE) sn = Math.sign(outY || 1) * JUGGLE_MIN_RISE;
+        const m = Math.hypot(cs, sn);
+        p.vx = cs / m * speed;
+        p.vy = sn / m * speed;
+        p.hit.clear();
+      }
+    }
     if ((p.fx === 'milk' || p.fx === 'bag' || p.fx === 'matcha') && !p.settled && p.y >= FLOOR) {
       p.y = FLOOR;
       if (p.fx === 'matcha') {
@@ -1651,7 +1772,12 @@ export function stepProjectiles(g: FightGame, dt: number): void {
         p.hit.clear();
       }
     }
-    const trailCap = p.fx === 'mutsumi-note' || p.fx === 'chord' || p.fx === 'sob' ? 14 : p.fx === 'wink' ? 10 : 7;
+    // 抛球杂耍: the gold trail stretches with the ball — the cap rides the speed from the
+    // launch baseline (10 points) up to the 2× speed ceiling (20), so every bounce leaves
+    // a longer ribbon behind.
+    const trailCap = p.fx === 'mutsumi-note' || p.fx === 'chord' || p.fx === 'sob' ? 14
+      : p.fx === 'juggle-ball' ? Math.round(10 * clamp(Math.hypot(p.vx, p.vy) / (p.v0 ?? 1), 1, 2))
+      : p.fx === 'wink' ? 10 : 7;
     pushTrail(p, trailCap);
     if (p.settled && p.fx === 'milk' && owner && owner.hp > 0 && Math.abs(owner.x - p.x) < 40 && owner.y >= FLOOR - 1) {
       gainEnergy(owner, 26);
@@ -1663,9 +1789,16 @@ export function stepProjectiles(g: FightGame, dt: number): void {
       if (!p.settled && p.life > 0 && Math.abs(p.x - target.x) < 38 + p.radius && Math.abs(p.y - (target.y - 83)) < 72) {
         if (hit(g, owner, target, p.skill, { hit: p.hit }, p.x - Math.sign(p.vx) * 40)) {
           g.effect('burst', p.x, p.y, p.color, .3, { radius: p.size * .8 });
+          // 世界微笑 impact pulse: the wave's own grin swells once off the victim — ghostly,
+          // fast, gone, and ~150% of the victim's height at full swell.
+          if (p.fx === 'smile-wave') {
+            const h = target.data.view.kind === 'sprite' ? target.data.view.height : 181;
+            g.effect('smile-pulse', target.x, target.y - 83, p.color, .28, { radius: h * 1.5, dir: Math.sign(p.vx) || 1 });
+          }
           // The cucumber stays up on the way out and only pops on the return hit; the mega wave
-          // washes through and keeps carrying whoever it caught.
-          if (!(p.fx === 'cucumber' && !p.returned) && p.fx !== 'mega' && p.fx !== 'meat') p.life = 0;
+          // washes through and keeps carrying whoever it caught; the juggle ball is a bout of
+          // interference, not a shell.
+          if (!(p.fx === 'cucumber' && !p.returned) && p.fx !== 'mega' && p.fx !== 'meat' && p.fx !== 'juggle-ball') p.life = 0;
           break;
         }
       }
@@ -1679,8 +1812,9 @@ export function stepProjectiles(g: FightGame, dt: number): void {
     for (let j = i + 1; j < g.projectiles.length; j++) {
       const p = g.projectiles[i], q = g.projectiles[j];
       // Shots die on each other; the well is a zone, so shots pass through it.
-      // 剪 is the same kind of zone, and the fuga arrow is a super nobody pecks down.
-      if (!p.settled && !q.settled && p.fx !== 'blackhole' && q.fx !== 'blackhole' && p.fx !== 'parfait' && q.fx !== 'parfait' && p.fx !== 'seal' && q.fx !== 'seal' && p.fx !== 'meat' && q.fx !== 'meat' && p.fx !== 'snip' && q.fx !== 'snip' && p.fx !== 'fuga' && q.fx !== 'fuga' && g.isEnemy(owners[i], owners[j]) && p.life > 0 && q.life > 0 && Math.abs(p.x - q.x) < 25 && Math.abs(p.y - q.y) < 27) {
+      // 剪 is the same kind of zone, the fuga arrow is a super nobody pecks down, and the
+      // cruise shrugs pebbles off — but the juggle ball is mortal like any shot.
+      if (!p.settled && !q.settled && p.fx !== 'blackhole' && q.fx !== 'blackhole' && p.fx !== 'parfait' && q.fx !== 'parfait' && p.fx !== 'seal' && q.fx !== 'seal' && p.fx !== 'meat' && q.fx !== 'meat' && p.fx !== 'snip' && q.fx !== 'snip' && p.fx !== 'fuga' && q.fx !== 'fuga' && p.fx !== 'smile-ship' && q.fx !== 'smile-ship' && g.isEnemy(owners[i], owners[j]) && p.life > 0 && q.life > 0 && Math.abs(p.x - q.x) < 25 && Math.abs(p.y - q.y) < 27) {
         p.life = q.life = 0;
         g.sparks(p.x, p.y, '#fff', 12);
       }
@@ -1690,7 +1824,9 @@ export function stepProjectiles(g: FightGame, dt: number): void {
   let w = 0;
   for (let i = 0; i < g.projectiles.length; i++) {
     const p = g.projectiles[i];
-    if (p.life > 0 && p.x > -60 && p.x < W + 60 && p.y < FLOOR + 60) g.projectiles[w++] = p;
+    // 微笑号的画面比弹丸中心宽一整屏，中心出界时船尾还在画面里。
+    const onStage = p.fx === 'smile-ship' || (p.x > -60 && p.x < W + 60);
+    if (p.life > 0 && onStage && p.y < FLOOR + 60) g.projectiles[w++] = p;
   }
   g.projectiles.length = w;
   stepSealVolleys(g, dt);

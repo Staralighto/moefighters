@@ -160,7 +160,20 @@ export class SpriteView implements FighterView {
     ctx.save();
     try {
       ctx.translate(Math.round(x), Math.round(y));
-      ctx.scale(pose ? pose.facing : f.facing, 1);
+      // 微笑大回旋: the cell is a front-facing 大字. Don't mirror it; spin that pose three turns on the screen.
+      // Frozen ghosts keep their stamped cell; only the live fighter spins.
+      const cartwheel = !pose && f.attack?.skill.fx === 'cartwheel';
+      ctx.scale(cartwheel ? 1 : (pose ? pose.facing : f.facing), 1);
+      if (cartwheel && f.attack) {
+        const s = f.attack.skill, end = s.duration - .08;
+        if (f.attack.t >= s.start && f.attack.t < end && end > s.start) {
+          const p = Math.min(1, Math.max(0, (f.attack.t - s.start) / (end - s.start)));
+          const wy = -h * .5;
+          ctx.translate(0, wy);
+          ctx.rotate(p * Math.PI * 6);
+          ctx.translate(0, -wy);
+        }
+      }
       // Undo the body offset baked into the cell so only the prop hangs off the fighter origin.
       if (clip.ox) ctx.translate(-clip.ox * h / CELL, 0);
       ctx.globalAlpha = alpha;
