@@ -174,6 +174,19 @@ function heartPath(ctx: CanvasRenderingContext2D, s: number): void {
   ctx.closePath();
 }
 
+/** The five-point star: traced centred at the origin, outer radius s, inner radius s*.42,
+    point up. Shared by the star rain, the wish, the poppa ring and the dizzy head. */
+function starPath(ctx: CanvasRenderingContext2D, s: number): void {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const ang = -Math.PI / 2 + (i * Math.PI) / 5;
+    const rad = i % 2 ? s * .42 : s;
+    const x = Math.cos(ang) * rad, y = Math.sin(ang) * rad;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+}
+
 /** The while-rooted status effect. Every root shows something at the torso; a character whose
  *  control comes from somewhere else overrides it per data (rootFx, e.g. an ice crystal).
  *  The default is the ult pulse's heart, scaled down — solid, gently breathing. */
@@ -182,6 +195,25 @@ export function drawRootFx(ctx: CanvasRenderingContext2D, f: Fighter, time: numb
   ctx.save();
   ctx.translate(f.x, f.y - 105 + bob);
   switch (f.data.rootFx) {
+    case 'stun': {
+      // 星之鼓动: three dizzy little stars circle the head instead of the heart.
+      for (let i = 0; i < 3; i++) {
+        const a = time * 5 + (i * Math.PI * 2) / 3;
+        const sx = Math.cos(a) * 26, sy = Math.sin(a) * 8 - 16;
+        const s = 9 + Math.sin(a + 1.2) * 1.5;
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.rotate(a * .8);
+        ctx.fillStyle = '#ffd257';
+        starPath(ctx, s);
+        ctx.fill();
+        ctx.strokeStyle = '#b46a1e';
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+        ctx.restore();
+      }
+      break;
+    }
     default: {
       const pulse = 1 + Math.sin(time * 6 + f.id) * .06;
       ctx.scale(pulse, pulse);
@@ -958,6 +990,134 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       }
       break;
     }
+    case 'poppa': {
+      // PoPiPa！: the round-formation ring — a wide circle pops open and five little stars
+      // ride it outward, one per member, like everyone called into the circle.
+      const r = (e.radius ?? 90) * (.4 + p * .8);
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= 1 - p * .7;
+      ctx.strokeStyle = '#fff6ea';
+      ctx.lineWidth = 5 * (1 - p) + 1.5;
+      ctx.beginPath(); ctx.ellipse(0, 0, r, r * .38, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = e.color;
+      ctx.lineWidth = 2.5 * (1 - p) + 1;
+      ctx.beginPath(); ctx.ellipse(0, 0, r * .8, r * .3, 0, 0, Math.PI * 2); ctx.stroke();
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2 + p * 1.1;
+        const sx = Math.cos(a) * r, sy = Math.sin(a) * r * .38 - 4;
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.rotate(p * 2.4);
+        ctx.fillStyle = i % 2 ? '#ffd257' : e.color;
+        starPath(ctx, 7 * (1 - p * .4));
+        ctx.fill();
+        ctx.restore();
+      }
+      break;
+    }
+    case 'wish-mark': {
+      // 星之鼓动: the landing tell — a star sits in a shrinking floor ring; when the ring
+      // closes, the sky answers. Blinking harder as the prayer runs out.
+      const k = e.life / e.max;
+      const blink = k < .3 && Math.floor(e.life * 10) % 2 === 0 ? .35 : 1;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= .85 * blink;
+      ctx.strokeStyle = '#ffd257';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.ellipse(0, 0, (e.radius ?? 120) * (.55 + k * .45), (e.radius ?? 120) * .16 * (.55 + k * .45), 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha *= .5;
+      ctx.beginPath(); ctx.ellipse(0, 0, (e.radius ?? 120) * .9, (e.radius ?? 120) * .26, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha *= blink;
+      ctx.fillStyle = '#ffd257';
+      ctx.save();
+      ctx.translate(0, -34 - k * 26);
+      ctx.rotate((1 - k) * 2.4);
+      starPath(ctx, 16 + k * 6);
+      ctx.fill();
+      ctx.restore();
+      break;
+    }
+    case 'star-pop': {
+      // 小星星: a star burns out where it lands — quick star flare and two spark lines.
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= 1 - p;
+      ctx.save();
+      ctx.rotate(p * 1.6);
+      ctx.fillStyle = '#fff3c4';
+      starPath(ctx, 16 * (1 - p * .5));
+      ctx.fill();
+      ctx.restore();
+      ctx.strokeStyle = '#ffd257';
+      ctx.lineWidth = 2 * (1 - p) + .5;
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(side * 10, -4);
+        ctx.lineTo(side * (22 + p * 22), -12 - p * 14);
+        ctx.stroke();
+      }
+      break;
+    }
+    case 'star-burst': {
+      // 星之鼓动: the landing — a white core flashes, a shock ring races out along the floor,
+      // and eight star shards arc outward, spinning, while the column above glows.
+      const r = e.radius ?? 190;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = Math.min(1, e.life * 5);
+      ctx.fillStyle = '#fffbe0';
+      ctx.beginPath(); ctx.ellipse(0, 0, r * .3 * (1 - p * .6), r * .12 * (1 - p * .6), 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#ffd257';
+      ctx.lineWidth = 9 * (1 - p) + 1.5;
+      ctx.beginPath(); ctx.ellipse(0, 6, r * Math.max(.12, p), r * .3 * Math.max(.12, p), 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = '#ff9a4d';
+      ctx.lineWidth = 3 * (1 - p) + 1;
+      ctx.beginPath(); ctx.ellipse(0, 6, r * Math.max(.06, p * .72), r * .2 * Math.max(.06, p * .72), 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = '#ffd257';
+      ctx.globalAlpha *= 1 - p;
+      ctx.lineWidth = 6 * (1 - p) + 1;
+      ctx.beginPath();
+      ctx.moveTo(0, -10);
+      ctx.quadraticCurveTo(10, -110 * (1 - p * .4), 0, -230);
+      ctx.stroke();
+      for (let i = 0; i < 8; i++) {
+        const ang = (i / 8) * Math.PI * 2 + .35;
+        const t = Math.min(1, p * 1.35);
+        const sx = Math.cos(ang) * r * .5 * t, sy = Math.sin(ang) * r * .26 * t - t * t * 46;
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.rotate(t * 6 + i);
+        ctx.fillStyle = i % 2 ? '#ffd257' : '#fff3c4';
+        starPath(ctx, 12 * (1 - t * .5));
+        ctx.fill();
+        ctx.restore();
+      }
+      break;
+    }
+    case 'hug': {
+      // 贴贴: three little hearts pop around the nuzzle, staggered, with a content sparkle.
+      ctx.translate(e.x, e.y);
+      for (let i = 0; i < 3; i++) {
+        const q = (p * 1.4 - i * .18);
+        if (q <= 0 || q >= 1) continue;
+        const s = 10 + q * 16;
+        ctx.save();
+        ctx.translate((i - 1) * 16, -q * 34 + i * 6);
+        ctx.rotate((i - 1) * .4);
+        ctx.globalAlpha = (1 - q) * .85;
+        ctx.fillStyle = i === 1 ? '#ff8fb8' : '#ffd0e4';
+        heartPath(ctx, s);
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.globalAlpha *= 1 - p;
+      ctx.fillStyle = '#fff3c4';
+      ctx.save();
+      ctx.translate(14, -44);
+      ctx.rotate(p * 2.2);
+      starPath(ctx, 7 * (1 - p * .5));
+      ctx.fill();
+      ctx.restore();
+      break;
+    }
     case 'super':
     default:
       ctx.translate(e.x, e.y); ctx.rotate(p * 1.5);
@@ -1454,6 +1614,46 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
         ctx.lineTo(len * .26, 8);
         ctx.closePath(); ctx.fill();
       }
+      break;
+    }
+    case 'star': {
+      // 小星星: a small gold star tumbling along the diagonal, pale core, thin dark edge.
+      ctx.rotate(p.age * 5 * Math.sign(p.vx || 1));
+      ctx.fillStyle = '#ffd257';
+      starPath(ctx, Math.max(9, p.size * .5));
+      ctx.fill();
+      ctx.strokeStyle = '#b46a1e';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = '#fffbe0';
+      ctx.beginPath(); ctx.arc(-p.size * .12, -p.size * .14, Math.max(2.4, p.size * .1), 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case 'star-fall': {
+      // 星之鼓动: the wish star rides the fall — the art sits above the hit centre so the
+      // lower point touches the floor right as it detonates. Streaks above sell the speed.
+      const r = p.size * .5;
+      ctx.strokeStyle = '#fff3c4';
+      ctx.lineWidth = 3;
+      ctx.globalAlpha = .5;
+      for (let i = -1; i <= 1; i++) {
+        const x = i * r * .34;
+        ctx.beginPath();
+        ctx.moveTo(x, -r * 1.15);
+        ctx.lineTo(x + i * 4, -r * 1.7);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      ctx.translate(0, -p.size * .32);
+      ctx.rotate(p.age * .8);
+      ctx.fillStyle = '#ffd257';
+      starPath(ctx, r);
+      ctx.fill();
+      ctx.strokeStyle = '#b46a1e';
+      ctx.lineWidth = 5;
+      ctx.stroke();
+      ctx.fillStyle = '#fffbe0';
+      ctx.beginPath(); ctx.arc(-r * .16, -r * .2, r * .14, 0, Math.PI * 2); ctx.fill();
       break;
     }
     case 'wail':

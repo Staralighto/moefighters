@@ -120,6 +120,15 @@ const CROWN_WAVES = 5;
 const CROWN_R0 = 230, CROWN_R1 = 330;
 const CROWN_D0 = 14, CROWN_D1 = 20;
 const CROWN_K0 = 420, CROWN_K1 = 600;
+/** 小星星: the rain lane runs ahead of her; every star rides the same down-right diagonal
+    (steeper than wide, so the drift back toward the lane stays readable). Lanes overlap on
+    purpose: the second sweep sits half a spacing off the first, so anyone standing inside
+    the lane eats most of the rain. */
+const STAR_SPACING = 56;
+const STAR_VX = 340, STAR_VY = 520;
+/** 星之鼓动: the star lands where the wish pinned it; the blast radius is the stun radius. */
+const WISH_RADIUS = 190;
+const WISH_FALL = 620;
 /** Multi-swing melee stamp offsets, cycled per swing. Constant: rebuilding it per step was pure churn. */
 const SWING_RING = [
   { x: 76, y: -74, dir: 1 },
@@ -160,6 +169,13 @@ function kissFinale(skill: Skill, source: HitSource): boolean {
   if (skill.fx !== 'kiss') return false;
   const shots = 'shots' in source ? Number((source as Attack).shots) : 0;
   return shots >= 4;
+}
+
+/** 贴贴: the last nuzzle lets go and plants the root. shots is the index before it increments. */
+function hugFinale(skill: Skill, source: HitSource): boolean {
+  if (skill.fx !== 'hug') return false;
+  const shots = 'shots' in source ? Number((source as Attack).shots) : 0;
+  return shots >= Math.max(0, (skill.count ?? 1) - 1);
 }
 
 /** C和弦 and 吉他激奏 keep firing past the first shots only while the attack key is still down. CPU taps. */
@@ -388,7 +404,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
           defender.knocked = 0;
           holdStill = true;
         }
-        g.text('定身!', defender.x, defender.y - 195, '#ffd27a', .6, 20);
+        g.text(skill.fx === 'star-fall' ? '眩晕!' : '定身!', defender.x, defender.y - 195, '#ffd27a', .6, 20);
       } else if (skill.fx === 'onegai') {
         // The headbutt hurls them out of the kneel: a real launch, and the grab shakes the root off.
         defender.root = 0;
@@ -424,6 +440,12 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
         defender.knocked = .9;
         defender.downTime = 0;
         defender.stun = hitStun(.45);
+      } else if (skill.fx === 'hug' && !hugFinale(skill, source)) {
+        // 贴贴: every nuzzle but the last keeps the victim standing inside the hug.
+        defender.vy = 0;
+        defender.knocked = 0;
+        defender.stun = hitStun(.22);
+        holdStill = true;
       } else if (skill.fx === 'shove') {
         // Hold them in front, turned to face the attacker. The lift and throw wait on the attack clock.
         defender.stun = hitStun(.5);
@@ -770,7 +792,7 @@ function spawnMatchaBlob(g: FightGame, owner: Fighter, zone: Projectile, index: 
 /** True once this move will not produce more hits. Supers and the throw cinematics stay committed. */
 export function effectSettled(a: Attack): boolean {
   const s = a.skill;
-  if (s.super || s.fx === 'shove' || s.fx === 'slam' || s.fx === 'rabbit' || s.fx === 'kiss') return false;
+  if (s.super || s.fx === 'shove' || s.fx === 'slam' || s.fx === 'rabbit' || s.fx === 'kiss' || s.fx === 'hug') return false;
   // 剪 and 火的故事 hand their pay-off to a zone or an arrow; once that is away she may act.
   if (s.fx === 'snip' || s.fx === 'fuga') return a.emitted;
   if (s.type === 'dash') return a.t >= s.duration - .08;
@@ -804,6 +826,23 @@ function fugaBurst(g: FightGame, p: Projectile, owner: Fighter | undefined): voi
   for (const o of g.fighters) {
     if (o.hp <= 0 || o.echo) continue;
     if (Math.hypot(o.x - p.x, (o.y - 83) - p.y) < FUGA_RADIUS) hit(g, owner, o, sk, { hit: hitSet }, p.x);
+  }
+}
+
+/** 星之鼓动: the landing is the one damage event. The blast roots what it catches; the direct
+    hit while falling shares the projectile's hit set, so nobody pays twice. */
+function wishBurst(g: FightGame, p: Projectile, owner: Fighter | undefined): void {
+  g.effect('star-burst', p.x, FLOOR - 60, p.color, .55, { radius: WISH_RADIUS });
+  g.shake = 16;
+  g.flash = Math.max(g.flash, .3);
+  g.sparks(p.x, FLOOR - 60, '#ffd257', 44, 1.8);
+  if (!owner || owner.hp <= 0) return;
+  const sk = { ...p.skill, knock: 0 };
+  for (const o of g.opponents(owner)) {
+    if (o.hp <= 0 || o.invuln > 0) continue;
+    if (Math.abs(o.x - p.x) < WISH_RADIUS && Math.abs((o.y - 83) - (FLOOR - 60)) < 150) {
+      hit(g, owner, o, sk, { hit: p.hit }, p.x);
+    }
   }
 }
 
@@ -1142,6 +1181,65 @@ function repelPulse(g: FightGame, f: Fighter, power: number): boolean {
       }
     }
   }
+  // 贴贴: a short lunge, then the hug. Six nuzzles pin the victim; the last one lets go and
+  // leaves the two-second root, which clean hits shake off like any other root.
+  if (s.fx === 'hug') {
+    const lunge = .3;
+    const gap = .16;
+    const bites = s.count ?? 6;
+    const reach = 50;
+    if (a.hold < 0 && a.t >= s.start && a.t < s.start + lunge) {
+      let caught: Fighter | undefined;
+      for (const o of g.opponents(f)) {
+        if (o.hp <= 0 || o.invuln > 0) continue;
+        const front = (o.x - f.x) * f.facing >= -20;
+        if (!front || Math.abs(o.y - f.y) >= 112) continue;
+        if ((o.x - f.x) * f.facing < 70) { caught = o; break; }
+      }
+      if (caught) {
+        a.hold = caught.id;
+        a.tossAt = a.t;
+        f.x = clamp(caught.x - f.facing * reach, X_MIN, X_MAX);
+        g.hitstop = Math.max(g.hitstop, .06);
+        g.effect('grab', caught.x, caught.y - 80, f.data.color, .25, { radius: 48 });
+        caught.stun = Math.max(caught.stun, .35);
+        caught.vx = 0;
+        caught.vy = 0;
+        caught.knocked = 0;
+        caught.attack = null;
+        caught.queue = [];
+      } else {
+        f.x = clamp(f.x + f.facing * (s.speed ?? 520) * dt, X_MIN, X_MAX);
+        if (f.x === X_MIN || f.x === X_MAX) a.t = Math.max(a.t, s.duration - .2);
+      }
+    }
+    // Whiff only. A finished hug has tossAt set; pulling t backward here froze her in the recover pose forever.
+    if (a.hold < 0 && a.tossAt === 0 && a.t >= s.start + lunge && a.t < s.duration - .2) a.t = s.duration - .2;
+    if (a.hold >= 0) {
+      const o = g.fighters.find(p => p.id === a.hold);
+      if (!o || o.hp <= 0) {
+        a.t = s.duration;
+      } else {
+        o.x = clamp(f.x + f.facing * reach, X_MIN, X_MAX);
+        o.y = FLOOR;
+        o.vx = 0;
+        o.vy = 0;
+        o.knocked = 0;
+        o.stun = Math.max(o.stun, .3);
+        o.facing = (-f.facing) as 1 | -1;
+        if (a.shots < bites && a.t >= a.tossAt + a.shots * gap) {
+          a.hit = new Set();
+          hit(g, f, o, a.shots === bites - 1 ? { ...s, root: 2, rootPin: true } : s, a);
+          g.effect('hug', o.x, o.y - 100, f.data.color, .4, { radius: 32 });
+          a.shots++;
+          if (a.shots >= bites) {
+            a.hold = -1;
+            a.t = Math.max(a.t, s.duration - .22);
+          }
+        }
+      }
+    }
+  }
   // 和灯在一起的话: a short lunge, she catches a wrist, says the line, then plays the foe like a kit —
   // beats start slow and accelerate, and the last one double-kicks them across the stage.
   if (s.fx === 'vow') {
@@ -1238,6 +1336,27 @@ function repelPulse(g: FightGame, f: Fighter, power: number): boolean {
     }
   }
 
+  // 星之鼓动: the wish reads the landing spot once and pins it with a tell — the window to
+  // leave the mark is the prayer itself. Nothing tracks them after that.
+  if (s.fx === 'wish' && a.t < s.start) {
+    if (a.shots === 0) {
+      a.shots = 1;
+      const foe = g.opponents(f)
+        .filter(o => o.hp > 0)
+        .sort((p, q) => Math.abs(p.x - f.x) - Math.abs(q.x - f.x))[0];
+      a.anchor = foe ? foe.x : clamp(f.x + f.facing * 240, X_MIN, X_MAX);
+    }
+    let live = g.effects.find(e => e.type === 'wish-mark' && e.fighter === f.id);
+    if (!live) {
+      g.effect('wish-mark', a.anchor, FLOOR - 85, f.data.color, s.start, { fighter: f.id });
+      live = g.effects[g.effects.length - 1];
+    }
+    live.x = a.anchor;
+    live.y = FLOOR - 85;
+    live.max = s.start;
+    live.life = Math.max(.04, s.start - a.t);
+  }
+
   const volley = a.burst || s.count || 1;
   if (s.type === 'projectile' && volley > 1 && s.fx !== 'snip' && s.fx !== 'smile-ship') {
     if (s.fx === 'drums') {
@@ -1251,6 +1370,33 @@ function repelPulse(g: FightGame, f: Fighter, power: number): boolean {
         a.emitted = true;
         spawnShot(g, f, a);
         g.effect('parfait', clamp(f.x + f.facing * PARFAIT_DIST, X_MIN, X_MAX), FLOOR, f.data.color, s.life ?? 6.5);
+      }
+    } else if (s.fx === 'star') {
+      // 小星星: the stars pour in from the upper left and fall down-right into the lane —
+      // each spawn is backed off up-left by its own flight drift so the landing spots cover
+      // the lane, two staggered sweeps near to far. A missed read chains into the next star.
+      while (a.shots < volley && a.t >= s.start + a.shots * (s.interval ?? .12)) {
+        const i = a.shots;
+        const land = 70 + (i % 5) * STAR_SPACING + (i >= 5 ? STAR_SPACING / 2 : 0);
+        const rise = 250 + (i % 3) * 55;
+        g.projectiles.push({
+          owner: f.id,
+          x: clamp(f.x + f.facing * (land - (STAR_VX / STAR_VY) * rise), X_MIN - 80, X_MAX + 80),
+          y: FLOOR - rise,
+          vx: f.facing * STAR_VX,
+          vy: STAR_VY,
+          life: s.life ?? 1.2,
+          skill: s,
+          color: f.data.color,
+          radius: 11,
+          size: s.size ?? 46,
+          fx: 'star',
+          attack: a,
+          hit: new Set(),
+          trail: [],
+          age: 0,
+        });
+        a.shots++;
       }
     } else while (a.shots < volley && a.t >= s.start + a.shots * (s.interval ?? .14)) {
       if (s.fx === 'chord' && a.shots >= 3 && !attackHeld(g, f)) break;
@@ -1305,7 +1451,19 @@ function repelPulse(g: FightGame, f: Fighter, power: number): boolean {
     if ((s.fx === 'riff' || s.fx === 'groove') && a.shots >= 1 && !attackHeld(g, f) && a.t < s.duration - .3) a.t = s.duration - .3;
   } else if (!a.emitted && a.t >= s.start) {
     a.emitted = true;
-    if (s.fx === 'world') {
+    if (s.fx === 'wish') {
+      // 星之鼓动: the tell dies with the prayer and the star drops on the pinned spot.
+      const mark = g.effects.find(e => e.type === 'wish-mark' && e.fighter === f.id);
+      if (mark) mark.life = 0;
+      g.projectiles.push({
+        owner: f.id, x: a.anchor, y: -90, vx: 0, vy: WISH_FALL,
+        life: 3, skill: s, color: f.data.color,
+        radius: 54, size: s.size ?? 480, fx: 'star-fall',
+        attack: a, hit: new Set(), trail: [], age: 0,
+      });
+      g.shake = 6;
+      a.t = Math.max(a.t, s.duration - .4);
+    } else if (s.fx === 'world') {
       // 此即世界: the chant ends the freeze. The pulse roots every opponent outright — no
       // damage, nothing to block or dodge; seconds, tier and break rule all come from the skill.
       for (const o of g.opponents(f)) {
@@ -1453,7 +1611,7 @@ function repelPulse(g: FightGame, f: Fighter, power: number): boolean {
     } else if (s.type === 'projectile') {
       if (s.fx === 'donut') a.skill = donutVariant(g, s);
       spawnShot(g, f, a);
-    } else if (s.type !== 'dash' && s.fx !== 'slam' && s.fx !== 'onegai' && s.fx !== 'vow' && s.fx !== 'compose' && s.fx !== 'record') {
+    } else if (s.type !== 'dash' && s.fx !== 'slam' && s.fx !== 'onegai' && s.fx !== 'vow' && s.fx !== 'hug' && s.fx !== 'compose' && s.fx !== 'record') {
       if (s.type !== 'upper') applyMelee(g, f, a);
       if (s.fx === 'ripple') g.effect('ripple', f.x, FLOOR, f.data.color, .45, { radius: s.range });
       else if (s.fx === 'huh') g.effect('huh', f.x, FLOOR, f.data.color, .5, { radius: s.range });
@@ -1757,6 +1915,17 @@ export function stepProjectiles(g: FightGame, dt: number): void {
         p.hit.clear();
       }
     }
+    if (p.fx === 'star' && p.y >= FLOOR - 6) {
+      // 小星星: a star that reaches the floor pops where it lands instead of falling through.
+      p.life = 0;
+      g.effect('star-pop', p.x, FLOOR - 8, p.color, .25, { radius: 34 });
+    }
+    if (p.fx === 'star-fall' && p.y >= FLOOR - 70) {
+      // 星之鼓动: ground contact is the detonation.
+      p.life = 0;
+      wishBurst(g, p, g.fighterById(p.owner));
+      continue;
+    }
     if ((p.fx === 'milk' || p.fx === 'bag' || p.fx === 'matcha') && !p.settled && p.y >= FLOOR) {
       p.y = FLOOR;
       if (p.fx === 'matcha') {
@@ -1812,9 +1981,10 @@ export function stepProjectiles(g: FightGame, dt: number): void {
     for (let j = i + 1; j < g.projectiles.length; j++) {
       const p = g.projectiles[i], q = g.projectiles[j];
       // Shots die on each other; the well is a zone, so shots pass through it.
-      // 剪 is the same kind of zone, the fuga arrow is a super nobody pecks down, and the
-      // cruise shrugs pebbles off — but the juggle ball is mortal like any shot.
-      if (!p.settled && !q.settled && p.fx !== 'blackhole' && q.fx !== 'blackhole' && p.fx !== 'parfait' && q.fx !== 'parfait' && p.fx !== 'seal' && q.fx !== 'seal' && p.fx !== 'meat' && q.fx !== 'meat' && p.fx !== 'snip' && q.fx !== 'snip' && p.fx !== 'fuga' && q.fx !== 'fuga' && p.fx !== 'smile-ship' && q.fx !== 'smile-ship' && g.isEnemy(owners[i], owners[j]) && p.life > 0 && q.life > 0 && Math.abs(p.x - q.x) < 25 && Math.abs(p.y - q.y) < 27) {
+      // 剪 is the same kind of zone, the fuga arrow is a super nobody pecks down, the
+      // cruise shrugs pebbles off — but the juggle ball is mortal like any shot — and
+      // the falling wish star is the super's own body.
+      if (!p.settled && !q.settled && p.fx !== 'blackhole' && q.fx !== 'blackhole' && p.fx !== 'parfait' && q.fx !== 'parfait' && p.fx !== 'seal' && q.fx !== 'seal' && p.fx !== 'meat' && q.fx !== 'meat' && p.fx !== 'snip' && q.fx !== 'snip' && p.fx !== 'fuga' && q.fx !== 'fuga' && p.fx !== 'smile-ship' && q.fx !== 'smile-ship' && p.fx !== 'star-fall' && q.fx !== 'star-fall' && g.isEnemy(owners[i], owners[j]) && p.life > 0 && q.life > 0 && Math.abs(p.x - q.x) < 25 && Math.abs(p.y - q.y) < 27) {
         p.life = q.life = 0;
         g.sparks(p.x, p.y, '#fff', 12);
       }
