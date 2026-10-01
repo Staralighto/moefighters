@@ -505,9 +505,39 @@ export const ROSTER: CharacterData[] = [
       }),
     ],
   },
+  {
+    id: 'kasumi', name: '户山香澄', title: '主唱 / 邦高祖', quote: '一起キラキラドキドキ吧！', color: '#FF5522',
+    ...stats('beat'),
+    view: {
+      kind: 'sprite', common: '/sprites/kasumi/common.png', special: '/sprites/kasumi/special.png', height: 162,
+    },
+    skills: [
+      skill(0, 'light', '轻扫'),
+      skill(1, 'heavy', '横踢'),
+      skill(2, 'projectile', '小星星', {
+        damage: 11, count: 10, interval: .12, size: 46, start: .2, duration: 1.6, cd: 2.5, life: 1.2,
+        knock: 0, gain: 2, fx: 'star',
+        brief: '星星从左上斜落进身前一片；没躲开会被下一颗接上', detail: '十颗星沿同一条斜线落进身前落点区，飞得很快；每颗都可被格挡，命中硬直会接上下一次',
+      }),
+      skill(3, 'heavy', 'PoPiPa！', {
+        damage: 62, range: 135, knock: 520, start: .24, duration: .6, cd: 4.5, fx: 'poppa',
+        brief: '圆阵预备动作；命中强击退', detail: '往后勾腿再往前伸手，像在喊大家围成一圈；命中把对面推得老远',
+      }),
+      skill(4, 'grab', '贴贴', {
+        damage: 14, range: 95, speed: 520, start: .18, duration: 1.7, cd: 8,
+        knock: 0, gain: 2, fx: 'hug',
+        brief: '抱住贴脸连蹭；结束定身，受击两次解除', detail: '冲上去抱住贴脸六连蹭；最后一蹭定身 2 秒',
+      }),
+      skill(5, 'projectile', '星之鼓动', {
+        damage: 195, size: 480, start: 1.0, duration: 1.4, life: 3, knock: 0, gain: 0, fx: 'wish',
+        root: 3, rootBreak: 0, rootPin: true,
+        brief: '祈愿召下半屏宽的巨星砸落；命中眩晕，不受击解除', detail: '双手合十祈愿 1 秒并标记落点，巨星随后砸下：落点附近巨额伤害并眩晕 3 秒',
+      }),
+    ],
+  },
 ];
 
 /** Select screen. gale, ember and boulder stay on ROSTER for the headless checks. */
-export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki' || c.id === 'rana' || c.id === 'arale' || c.id === 'miyako' || c.id === 'ritsu' || c.id === 'nonoka' || c.id === 'yuno' || c.id === 'viola' || c.id === 'mana');
+export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki' || c.id === 'rana' || c.id === 'arale' || c.id === 'miyako' || c.id === 'ritsu' || c.id === 'nonoka' || c.id === 'yuno' || c.id === 'viola' || c.id === 'mana' || c.id === 'kasumi');
 
 export const ROSTER_BY_ID = new Map(ROSTER.map(c => [c.id, c]));

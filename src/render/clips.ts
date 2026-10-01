@@ -206,7 +206,8 @@ export function clipFor(f: Fighter): Clip {
     if (f.attack.skill.fx === 'crown') return at('special', f.attack.index - 2, volleyRow(f.attack.t, f.attack.skill));
     if (f.attack.skill.fx === 'world') return manaWorldFrame(f.attack.t, f.attack.skill);
     if (f.attack.skill.fx === 'poem') return at('special', f.attack.index - 2, poemRow(f.attack.t, f.attack.skill.start));
-    if (f.attack.skill.fx === 'rabbit' || f.attack.skill.fx === 'kiss' || f.attack.skill.fx === 'half' || f.attack.skill.fx === 'king') {
+    if (f.attack.skill.fx === 'star') return at('special', f.attack.index - 2, volleyRow(f.attack.t, f.attack.skill));
+    if (f.attack.skill.fx === 'rabbit' || f.attack.skill.fx === 'kiss' || f.attack.skill.fx === 'hug' || f.attack.skill.fx === 'half' || f.attack.skill.fx === 'king') {
       const t = f.attack.t, s = f.attack.skill;
       const row = t < s.start ? 0 : t >= s.duration - .22 ? 2 : 1;
       return at('special', f.attack.index - 2, row);

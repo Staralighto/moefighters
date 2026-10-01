@@ -2740,4 +2740,96 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   }
 }
 
+// kasumi: the star rain chains into itself, the beckon shoves hard, the hug roots for two
+// clean-hit-breakable seconds, and the wish star stuns without a hit counter
+{
+  const kasumi = ROSTER.findIndex(c => c.id === 'kasumi');
+  assert.ok(kasumi >= 0, 'kasumi is on the roster');
+  const data = ROSTER[kasumi];
+  assert.equal(data.trait, 'beat', 'kasumi is beat');
+  assert.equal(data.skills[2].fx, 'star', 'U is the star rain');
+  assert.equal(data.skills[2].count, 10, 'the rain drops ten stars');
+  assert.equal(data.skills[3].fx, 'poppa', 'I is the beckon');
+  assert.equal(data.skills[4].fx, 'hug', 'O is the hug');
+  assert.equal(data.skills[5].fx, 'wish', 'the super is the wish');
+  assert.equal(data.skills[5].root, 3, 'the wish stuns three seconds');
+  assert.equal(data.skills[5].rootBreak, 0, 'the wish stun ignores clean hits');
+  assert.ok(data.view.kind === 'sprite', 'kasumi is a sprite');
+
+  // U: the lane catches a standing target many times — the stars chain, they do not knock back
+  {
+    const g = newGame(kasumi, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 180; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyU'); run(g, 2.0);
+    assert.ok(g.projectiles.every(p => p.fx !== 'star'), 'the stars are all gone after the rain');
+    assert.ok(p1.combo >= 6, `the rain chains, combo ${p1.combo}`);
+    assert.ok(hp - p2.hp > 45 && hp - p2.hp < 115, `the rain lands for chip damage, lost ${hp - p2.hp}`);
+    // The stars carry no knockback; the only way out is the seven-hit combo escape, which pushes forward.
+    assert.ok(p2.x >= p1.x + 170, 'the rain never drags the victim back');
+  }
+  // I: the beckon connects point-blank and shoves the victim far out
+  {
+    const g = newGame(kasumi, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 80; p2.facing = -1;
+    const hp = p2.hp, x0 = p2.x;
+    g.keyDown('KeyI'); run(g, 1.4);
+    assert.ok(hp - p2.hp > 40 && hp - p2.hp < 80, `the beckon lands once, lost ${hp - p2.hp}`);
+    assert.ok(p2.x > x0 + 50, `the beckon shoves hard, moved ${p2.x - x0}`);
+  }
+  // O: the hug pins six nuzzles, then roots for two seconds that two clean hits shake off
+  {
+    const g = newGame(kasumi, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 90; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyO'); run(g, 1.6);
+    assert.equal(p1.combo, 6, `six nuzzles connect, combo ${p1.combo}`);
+    assert.ok(hp - p2.hp > 55, `the hug dealt ${hp - p2.hp}`);
+    assert.ok(p2.root > 1.4 && p2.root <= 2.01, `the hug roots two seconds, left ${p2.root}`);
+    assert.equal(p2.rootBreak, 2, 'the hug root breaks on two clean hits');
+  }
+  // the hug root itself shakes off after two clean hits (measured away from the cast, whose
+  // seventh hit hands the victim the combo escape instead)
+  {
+    const g = newGame(kasumi, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 90; p2.facing = -1;
+    hit(g, p1, p2, { ...data.skills[4], root: 2, rootPin: true }, { hit: new Set() });
+    run(g, 1.4);
+    assert.ok(p2.root > 0, `the hug root survives one clean hit, left ${p2.root}`);
+    hit(g, p1, p2, p1.data.skills[0], { hit: new Set() });
+    assert.ok(p2.root > 0, 'one hit does not break the hug root');
+    hit(g, p1, p2, p1.data.skills[0], { hit: new Set() });
+    assert.equal(p2.root, 0, 'two clean hits break the hug root');
+  }
+  // L: the prayer marks the spot, then the star stuns without a hit counter
+  {
+    const g = newGame(kasumi, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 200; p2.facing = -1;
+    p1.energy = 100;
+    g.keyDown('KeyL'); run(g, .4);
+    assert.ok(g.effects.some(e => e.type === 'wish-mark'), 'the prayer pins a landing tell');
+    assert.equal(g.projectiles.some(p => p.fx === 'star-fall'), false, 'the star waits for the prayer');
+    const hp = p2.hp;
+    run(g, 2.6);
+    assert.ok(g.projectiles.every(p => p.fx !== 'star-fall'), 'the star landed and burst');
+    assert.ok(hp - p2.hp > 150, `the star dealt ${hp - p2.hp}`);
+    assert.ok(p2.root > 1.2 && p2.root <= 3.01, `the stun holds three seconds, left ${p2.root}`);
+    assert.equal(p2.rootLevel, 'move', 'the stun is the move tier, not the time stop');
+    assert.equal(p2.rootBreak, 0, 'the stun has no hit counter');
+    hit(g, p1, p2, p1.data.skills[0], { hit: new Set() });
+    hit(g, p1, p2, p1.data.skills[0], { hit: new Set() });
+    assert.ok(p2.root > 0, 'the stun ignores clean hits until the clock lifts it');
+  }
+  // clips: the strum cycles the U column, the hug reads O, the prayer reads L
+  {
+    const pf = previewFighter(data, 0);
+    pf.attack = { skill: data.skills[2], index: 2, serial: 1, t: .3, emitted: false, shots: 1, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 };
+    assert.equal(clipFor(pf).col, 0, 'the strum reads column U');
+    pf.attack = { skill: data.skills[4], index: 4, serial: 2, t: .5, emitted: false, shots: 2, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 1, hold: 3, anchor: 0 };
+    assert.equal(clipFor(pf).col, 2, 'the hug reads column O');
+    pf.attack = { skill: data.skills[5], index: 5, serial: 3, t: .5, emitted: false, shots: 1, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 };
+    assert.equal(clipFor(pf).col, 3, 'the prayer reads column L');
+  }
+}
+
 console.log('selfcheck ok');
