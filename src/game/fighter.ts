@@ -161,6 +161,12 @@ export interface Fighter {
   lifesteal: number;
   /** 竟敢无视灯: fraction of melee damage reflected at the attacker. 0 is neutral. */
   thorns: number;
+  /** 荆棘的蓝蔷薇: seconds left on the thorn window; hitting zero hands thorns back to roseBase. */
+  rose: number;
+  /** The thorns value the rose window arms over, so a challenge deck's own thorns survives the bloom. */
+  roseBase: number;
+  /** 漆黑呐喊: seconds of the unsealed damage buff left; the price lands the moment it dies. */
+  shout: number;
   /** 我会保护小睦: multiplier on hitstun taken, and the combo count that frees the victim. */
   stunMul: number;
   escapeCombo: number;
@@ -183,7 +189,7 @@ export interface Fighter {
   tape?: RecTape;
 }
 
-export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braced', 'braceFx', 'noGain', 'ban', 'muscle', 'sprint', 'poise', 'purge', 'frail', 'feast', 'debt', 'recLeft'] as const;
+export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braced', 'braceFx', 'noGain', 'ban', 'muscle', 'sprint', 'poise', 'purge', 'frail', 'feast', 'debt', 'recLeft', 'rose', 'shout'] as const;
 
 export function makeFighter(
   data: CharacterData,
@@ -207,7 +213,7 @@ export function makeFighter(
     dmgMul: 1, baseDmgMul: 1, regen: 0,
     critChance: 0, comboTimeBonus: 0, comboDecay: COMBO_DECAY, energyMul: 1,
     moveMul: 1, dodgeCdMul: 1, cdMul: 1,
-    lowHpDmg: 0, executeDmg: 0, lifesteal: 0, thorns: 0,
+    lowHpDmg: 0, executeDmg: 0, lifesteal: 0, thorns: 0, rose: 0, roseBase: 0, shout: 0,
     stunMul: 1, escapeCombo: COMBO_ESCAPE, deathSave: 0, vainDmg: 0, vainEnergy: 0,
     recLeft: 0, recTape: [], recMove: 0,
   };

@@ -564,9 +564,45 @@ export const ROSTER: CharacterData[] = [
       }),
     ],
   },
+  {
+    id: 'yukina', name: '凑友希那', title: '主唱 / 顶点', quote: '目标只有一个，就是顶点。', color: '#4455BB',
+    ...stats('rush'),
+    view: {
+      kind: 'sprite', common: '/sprites/yukina/common.png', special: '/sprites/yukina/special.png', height: 181,
+      extras: ['/sprites/yukina/pillar.png'],
+    },
+    skills: [
+      skill(0, 'light', '轻扫'),
+      skill(1, 'heavy', '横踢'),
+      skill(2, 'launch', '火鸟', {
+        // Four standing pillars, two ahead and two behind; each burns a body twice. The spawn
+        // and the re-hit live in combat.ts under fx 'firebird'; count stays unset so the
+        // melee-count caster never claims this move. knock 0 keeps the victim inside the
+        // pillar for the second burn — the float is the whole knockback.
+        damage: 18, start: .3, duration: 1.0, cd: 9, size: 110, life: .75, fx: 'firebird', knock: 0,
+        brief: '张开双手，前后各召出两道火焰柱；命中挑空',
+        detail: '四道火焰柱从地面喷发，每道至多烧两段；命中挑空，跳起追打可连段',
+      }),
+      skill(3, 'endure', '荆棘的蓝蔷薇', {
+        damage: 0, range: 210, start: .3, duration: .85, cd: 10, fx: 'blue-rose',
+        brief: '震开身周敌人；短时间近战反伤，蓝蔷薇花瓣飘落',
+        detail: '震开近身的敌人；6 秒内近战攻击者受到所造成伤害 30% 的反伤，飞行道具不反弹',
+      }),
+      skill(4, 'endure', '顶点', {
+        damage: 0, range: 520, start: .45, duration: .9, cd: 13, fx: 'summit',
+        brief: '大喝一声，全屏音波把敌人轰飞；无伤害，跳不掉',
+        detail: '前摇被打中则作废；以自身为中心的 360 度音波贯穿全场，把所有敌人轰飞出去',
+      }),
+      skill(5, 'endure', '漆黑呐喊', {
+        damage: 0, range: 0, start: .55, duration: 1.1, fx: 'black-shout',
+        brief: '解除封印：攻击力大幅提升，结束后反噬自伤',
+        detail: '8 秒内攻击力提高 50%；结束时固定受到 10% 最大生命值的反噬伤害，可以致死',
+      }),
+    ],
+  },
 ];
 
 /** Select screen. gale, ember and boulder stay on ROSTER for the headless checks. */
-export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki' || c.id === 'rana' || c.id === 'arale' || c.id === 'miyako' || c.id === 'ritsu' || c.id === 'nonoka' || c.id === 'yuno' || c.id === 'viola' || c.id === 'mana' || c.id === 'kokoro' || c.id === 'kasumi');
+export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki' || c.id === 'rana' || c.id === 'arale' || c.id === 'miyako' || c.id === 'ritsu' || c.id === 'nonoka' || c.id === 'yuno' || c.id === 'viola' || c.id === 'mana' || c.id === 'kokoro' || c.id === 'kasumi' || c.id === 'yukina');
 
 export const ROSTER_BY_ID = new Map(ROSTER.map(c => [c.id, c]));

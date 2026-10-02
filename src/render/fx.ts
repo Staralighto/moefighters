@@ -3,7 +3,7 @@ import { SHIP_HOLD, SHIP_SWEEP } from '../game/combat.ts';
 import type { Fighter } from '../game/fighter.ts';
 import { H, SIDE, W } from '../game/constants.ts';
 import type { ImageCache } from '../assets/loader.ts';
-import { CELL } from './clips.ts';
+import { CELL, pillarFrame } from './clips.ts';
 import { watchProp } from './propLayout.ts';
 
 const CUCUMBER_SRC = '/sprites/mutsumi/cucumber.png';
@@ -35,6 +35,7 @@ const SHIP_SRC = '/sprites/kokoro/ship.png';
 const BALL_SRC = '/sprites/kokoro/ball.png';
 const WAVE_SRC = '/sprites/kokoro/wave.png';
 const KASUMI_STAR_SRC = '/sprites/kasumi/star.png';
+const PILLAR_SRC = '/sprites/yukina/pillar.png';
 const MORTIS_H = 181;
 
 /* Drop the pose-sheet chrome and the chroma key so a placeholder can sit in the fight. */
@@ -554,6 +555,104 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
         ctx.fillRect(-4, -2, 8, 4);
         ctx.restore();
       }
+      break;
+    }
+    case 'blue-rose': {
+      // 荆棘的蓝蔷薇: a ring of thorns bursts outward while a halo of petals scatters and falls.
+      const r = e.radius ?? 210;
+      ctx.translate(e.x, e.y);
+      for (let i = 0; i < 2; i++) {
+        const ring = Math.min(1, p * 1.4 - i * .2);
+        if (ring <= 0) continue;
+        ctx.globalAlpha = (1 - ring) * .9;
+        ctx.strokeStyle = i === 0 ? '#5a8fd8' : '#9cc4ff';
+        ctx.lineWidth = (4 - i) * (1 - p) + 1;
+        ctx.beginPath(); ctx.ellipse(0, 0, Math.max(6, r * ring), 14 + ring * 8, 0, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.fillStyle = '#6fa8ff';
+      for (let i = 0; i < 7; i++) {
+        const ang = (i / 7) * Math.PI * 2 + .4;
+        const t = Math.min(1, p * 1.6);
+        const px = Math.cos(ang) * r * t;
+        const py = Math.sin(ang) * r * t * .3 - t * 46 + t * t * 40;
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(ang + t * 5);
+        ctx.globalAlpha = (1 - p) * .85;
+        ctx.beginPath(); ctx.ellipse(0, 0, 7, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+      break;
+    }
+    case 'rose-petal': {
+      // 荆棘的蓝蔷薇: one petal sways down from where the bloom dropped it.
+      const fall = p * 150;
+      const sway = Math.sin(p * 9) * 14;
+      ctx.translate(e.x + sway, e.y + fall);
+      ctx.rotate(Math.sin(p * 9) * .9 + p * 3);
+      ctx.globalAlpha = (1 - p) * .9;
+      ctx.fillStyle = '#6fa8ff';
+      ctx.beginPath(); ctx.ellipse(0, 0, 6.5, 3, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#9cc4ff';
+      ctx.beginPath(); ctx.ellipse(-1.5, -1, 3, 1.4, -.4, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case 'summit': {
+      // 顶点: the shout is a 360° wave facing the screen — rings race out of her body in
+      // circle space (no floor perspective) with a white-hot core flash on the cast.
+      const r = e.radius ?? 560;
+      ctx.translate(e.x, e.y);
+      for (let i = 0; i < 4; i++) {
+        const ring = Math.min(1, p * 1.35 - i * .14);
+        if (ring <= 0) continue;
+        ctx.globalAlpha = (1 - ring) * .95;
+        ctx.strokeStyle = i === 0 ? '#eaf4ff' : i === 1 ? '#cfe6ff' : '#8fb8ff';
+        ctx.lineWidth = (6 - i * 1.2) * (1 - p) + 1;
+        ctx.beginPath(); ctx.arc(0, 0, Math.max(8, r * ring), 0, Math.PI * 2); ctx.stroke();
+      }
+      if (p < .4) {
+        ctx.globalAlpha = (1 - p / .4) * .8;
+        ctx.fillStyle = '#eaf4ff';
+        ctx.beginPath(); ctx.arc(0, 0, 40 * (p / .4) + 10, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+    case 'black-shout': {
+      // 漆黑呐喊: the seal burns off — a dark indigo burst with a blue flame standing in it.
+      const r = e.radius ?? 130;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = (1 - p) * .9;
+      ctx.strokeStyle = '#3f6fd8';
+      ctx.lineWidth = 5 * (1 - p) + 1;
+      ctx.beginPath(); ctx.arc(0, 0, r * p, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = (1 - p) * .5;
+      ctx.fillStyle = '#1c2450';
+      ctx.beginPath(); ctx.arc(0, 0, r * p * .7, 0, Math.PI * 2); ctx.fill();
+      const flick = Math.sin(p * 26) * 3;
+      ctx.globalAlpha = (1 - p);
+      ctx.fillStyle = '#5fd0ff';
+      ctx.beginPath();
+      ctx.moveTo(0, -r * .85 - flick);
+      ctx.quadraticCurveTo(r * .22, -r * .3, 0, r * .18);
+      ctx.quadraticCurveTo(-r * .22, -r * .3, 0, -r * .85 - flick);
+      ctx.fill();
+      break;
+    }
+    case 'eye-flame': {
+      // 漆黑呐喊: one wisp of blue flame sheds off the eyes and drifts back over the hair.
+      const drift = -(e.dir ?? 1) * p * 46;
+      ctx.translate(e.x + drift, e.y - p * 26 + Math.sin(p * 12) * 4);
+      ctx.rotate(-(e.dir ?? 1) * .5 + Math.sin(p * 14) * .2);
+      ctx.globalAlpha = (1 - p) * .95;
+      const s = 7 * (1 - p * .55);
+      ctx.fillStyle = '#5fd0ff';
+      ctx.beginPath();
+      ctx.moveTo(0, -s * 2.1);
+      ctx.quadraticCurveTo(s * .8, -s * .5, 0, s * .55);
+      ctx.quadraticCurveTo(-s * .8, -s * .5, 0, -s * 2.1);
+      ctx.fill();
+      ctx.fillStyle = '#d8f4ff';
+      ctx.beginPath(); ctx.ellipse(0, -s * .2, s * .3, s * .75, 0, 0, Math.PI * 2); ctx.fill();
       break;
     }
     case 'parfait': {
@@ -1195,6 +1294,40 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   ctx.globalAlpha = 1;
   ctx.translate(p.x, p.y);
   switch (p.fx) {
+    case 'firebird': {
+      // 火鸟: the pillar sheet plays eruption → burn → embers, cell bottom pinned to the
+      // stage floor. The procedural tongues are the stand-in while the sheet is a missing
+      // or still-unloaded colour block.
+      const pillarSheet = images?.get(PILLAR_SRC);
+      if (pillarSheet?.naturalWidth) {
+        const [col, row] = pillarFrame(p.age, p.life);
+        ctx.drawImage(keyed(pillarSheet), col * CELL, row * CELL, CELL, CELL, -CELL / 2, -CELL, CELL, CELL);
+        break;
+      }
+      const grow = Math.min(1, p.age / .12);
+      const fade = Math.min(1, p.life / .22);
+      const h = 225 * grow * (.7 + .3 * fade);
+      const w = 52 * (1 + Math.sin(p.age * 21) * .08);
+      const sway = Math.sin(p.age * 13) * 7;
+      ctx.globalAlpha = fade;
+      const tongue = (hh: number, ww: number, fill: string) => {
+        ctx.beginPath();
+        ctx.moveTo(-ww, 0);
+        ctx.quadraticCurveTo(-ww * .9, -hh * .45, sway, -hh);
+        ctx.quadraticCurveTo(ww * .9, -hh * .45, ww, 0);
+        ctx.closePath();
+        ctx.fillStyle = fill;
+        ctx.fill();
+      };
+      tongue(h, w, '#ff7a33');
+      tongue(h * .78, w * .62, '#ffc24d');
+      tongue(h * .5, w * .34, '#fff3c4');
+      ctx.fillStyle = '#b83a1a';
+      ctx.beginPath(); ctx.ellipse(0, 0, w * 1.15, 12, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffc24d';
+      ctx.beginPath(); ctx.ellipse(0, 0, w * .8, 8, 0, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
     case 'milk': {
       if (p.settled) ctx.translate(0, -p.size * .28);
       if (!prop(ctx, images, MILK_SRC, p.size)) {

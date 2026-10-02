@@ -112,6 +112,18 @@ export function composeRow(t: number, start: number, duration: number): number {
   return Math.floor((t - start) / .12) % 2;
 }
 
+/** 火鸟: the pillar sheet plays eruption → burn → embers over the projectile's own clock.
+ *  Row 0 erupts (4 frames over .2s), row 1 burns (a 4-frame loop at 12fps), row 2 sinks into
+ *  embers over the last .25s; the empty last cell never plays. `life` is the remaining clock
+ *  (it hits 0 exactly when the pillar dies), so the die-down reads off it directly — pairing
+ *  it with `age` would run the tail at double speed and freeze the last ember frame.
+ *  Lives here so the renderer and any future scheduler share one mapping. */
+export function pillarFrame(age: number, life: number): [number, number] {
+  if (age < .2) return [Math.min(3, Math.floor(age / .05)), 0];
+  if (life < .25) return [Math.min(2, Math.floor((.25 - life) / .09)), 2];
+  return [Math.floor(age * 12) % 4, 1];
+}
+
 /** 抹茶大芭菲: the arms-wide beat holds 0.25s — well past the default 0.1s active — then the bow. */
 export function parfaitRow(t: number, start: number, duration: number): number {
   if (t < start) return 0;

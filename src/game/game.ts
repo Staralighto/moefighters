@@ -4,7 +4,7 @@ import { DECAY_TIMERS, gainEnergy, makeFighter } from './fighter.ts';
 import { AIR_SKILLS } from '../data/skills.ts';
 import { ROSTER_BY_ID } from '../data/characters.ts';
 import { advanceAnim } from './animState.ts';
-import { easeSealSwells, effectSettled, FEAST_REGEN, MARATHON_SPEED, stepProjectiles, updateAttack, wailShots } from './combat.ts';
+import { easeSealSwells, effectSettled, FEAST_REGEN, MARATHON_SPEED, SHOUT_PRICE, stepProjectiles, updateAttack, wailShots } from './combat.ts';
 import { stepAI } from './ai.ts';
 import { COMBO_DECAY, COMBO_ESCAPE, CONTROLS, FLOOR, GRAVITY, INPUT_BUFFER, SIDE, STEP, X_MAX, X_MIN, clamp } from './constants.ts';
 import { clipFor } from '../render/clips.ts';
@@ -815,6 +815,8 @@ export class FightGame {
     for (let i = 0; i < f.cooldowns.length; i++) f.cooldowns[i] = Math.max(0, f.cooldowns[i] - dt * cdRate);
     const debtWas = f.debt;
     const recWas = f.recLeft;
+    const roseWas = f.rose;
+    const shoutWas = f.shout;
     for (const key of DECAY_TIMERS) f[key] = Math.max(0, f[key] - dt);
     if (debtWas > 0 && f.debt === 0 && f.debtDmg > 0) {
       const bill = Math.round(f.debtDmg * 1.5);
@@ -823,6 +825,27 @@ export class FightGame {
       f.stun = Math.max(f.stun, .35);
       this.text('-' + bill, f.x, f.y - 170, '#ff4d6a', .8, 28);
       this.shake = 10;
+    }
+    // 荆棘的蓝蔷薇: the bloom hands the thorns back to whatever held before it.
+    if (roseWas > 0 && f.rose === 0) {
+      f.thorns = f.roseBase;
+      f.roseBase = 0;
+    }
+    if (shoutWas > 0 && f.shout === 0) {
+      // 漆黑呐喊: the seal snaps shut. The price is fixed against max health and can kill.
+      const price = Math.round(f.data.hp * SHOUT_PRICE);
+      f.hp = Math.max(0, f.hp - price);
+      this.text('-' + price, f.x, f.y - 170, '#8fd8ff', .8, 26);
+      this.shake = Math.max(this.shake, 7);
+      this.effect('burst', f.x, f.y - 85, '#3f6fd8', .5, { radius: 90 });
+    }
+    // 荆棘的蓝蔷薇: petals keep falling while the thorns hold, so the buff reads across the stage.
+    if (f.rose > 0 && Math.floor(f.rose * 6) !== Math.floor((f.rose + dt) * 6)) {
+      this.effect('rose-petal', f.x + (this.random() * 2 - 1) * 62, f.y - 168 - this.random() * 54, '#6fa8ff', 1.1);
+    }
+    // 漆黑呐喊: blue flame trails off the eyes while the seal is open.
+    if (f.shout > 0 && Math.floor(f.shout * 12) !== Math.floor((f.shout + dt) * 12)) {
+      this.effect('eye-flame', f.x, f.y - 150, '#5fd0ff', .55, { dir: f.facing });
     }
     if (recWas > 0 && f.recLeft === 0) this.startEchoPlayback(f);
     if (f.hp <= 0) { this.retire(f); this.fall(f, dt); return; }

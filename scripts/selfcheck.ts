@@ -2953,4 +2953,65 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   }
 }
 
+// yukina: the firebird burns twice per pillar and floats, the rose reflects melee for a window,
+// the summit wave flings the whole stage without damage, and the shout pays on expiry
+{
+  const yukina = ROSTER.findIndex(c => c.id === 'yukina');
+  assert.ok(yukina >= 0, 'yukina is on the roster');
+  const data = ROSTER[yukina];
+  // U: four pillars, two ahead and two behind, each burning a standing body twice
+  {
+    const g = newGame(yukina, 1); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 170; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyU'); run(g, .5);
+    const pillars = g.projectiles.filter(p => p.fx === 'firebird');
+    assert.equal(pillars.length, 4, 'four pillars erupt');
+    assert.equal(pillars.filter(p => p.x > p1.x).length, 2, 'two pillars ahead');
+    assert.equal(pillars.filter(p => p.x < p1.x).length, 2, 'two pillars behind');
+    run(g, .5);
+    assert.ok(hp - p2.hp >= 30, `two burns landed, dealt ${hp - p2.hp}`);
+    assert.ok(p2.y < FLOOR - 1 || p2.stun > 0, 'the burn floats the victim');
+  }
+  // I: the bloom shoves, arms the thorns, melee comes back at the attacker, then lifts
+  {
+    const g = newGame(yukina, 1); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 120; p2.facing = -1;
+    g.keyDown('KeyI'); run(g, .55);
+    assert.ok(p1.rose > 5, `the thorn window is armed, left ${p1.rose}`);
+    assert.ok(Math.abs(p1.thorns - .3) < 1e-9, `the thorns reflect 30%, saw ${p1.thorns}`);
+    assert.ok(Math.abs(p2.x - p1.x) > 120, `the bloom shoves, gap ${Math.abs(p2.x - p1.x)}`);
+    const hp2 = p2.hp;
+    hit(g, p2, p1, p2.data.skills[0], { hit: new Set() });
+    assert.ok(p2.hp < hp2, 'melee against the thorns costs the attacker');
+    run(g, 6.2);
+    assert.equal(p1.rose, 0, 'the petal window expires');
+    assert.equal(p1.thorns, 0, 'the thorns lift with the petals');
+  }
+  // O: the wave flings everyone to the wall and deals nothing
+  {
+    const g = newGame(yukina, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 400; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyO'); run(g, .7);
+    assert.ok(p2.x > X_MAX - 40, `the wave flings to the wall, x ${p2.x}`);
+    assert.equal(hp - p2.hp, 0, 'the wave deals no damage');
+    assert.ok(p2.knocked > 0 || p2.y < FLOOR - 1, 'the fling knocks down');
+  }
+  // L: the buff boosts the jab, then the backlash bills 10% of max health
+  {
+    const g = newGame(yukina, 1); const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = 100;
+    g.keyDown('KeyL'); run(g, .8);
+    assert.ok(p1.shout > 6.5, `the buff is running, left ${p1.shout}`);
+    const hp2 = p2.hp;
+    hit(g, p1, p2, p1.data.skills[0], { hit: new Set() });
+    assert.equal(hp2 - p2.hp, Math.round(26 * 1.5), `the shout boosts the jab, dealt ${hp2 - p2.hp}`);
+    const hp1 = p1.hp;
+    run(g, 8);
+    assert.equal(p1.shout, 0, 'the seal snaps shut');
+    assert.equal(hp1 - p1.hp, 100, `the backlash costs 10% max health, lost ${hp1 - p1.hp}`);
+  }
+}
+
 console.log('selfcheck ok');

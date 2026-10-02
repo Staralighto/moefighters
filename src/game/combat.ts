@@ -68,6 +68,20 @@ const BRACED_TIME = 6;
 const BRACED_DAMAGE = .67;
 const PLASTER_REPEL_RANGE = 190;
 const PLASTER_REPEL_PUSH = 500;
+/** 火鸟: two pillars this far ahead and two this far behind, each burning a body twice on this clock. */
+const FIREBIRD_OFFSETS = [85, 170];
+const FIREBIRD_TICK = .18;
+/** 荆棘的蓝蔷薇: the bloom shoves like the muscle flex, then the thorns hold for the petal window. */
+export const ROSE_TIME = 6;
+export const ROSE_THORNS = .3;
+const ROSE_REPEL_PUSH = 520;
+/** 顶点: the shout carries the whole stage and flings like the shove toss, minus a notch. */
+const SUMMIT_VX = 2800;
+const SUMMIT_VY = -520;
+/** 漆黑呐喊: the unsealed buff clock, the damage it adds, and the price when it burns out. */
+export const SHOUT_TIME = 8;
+export const SHOUT_BONUS = .5;
+export const SHOUT_PRICE = .1;
 /** 奇独点: the well spawns this far ahead and drags bodies toward its centre. Airborne bodies feel a fraction of it. */
 const BLACKHOLE_DIST = 320;
 const BLACKHOLE_RADIUS = 150;
@@ -283,7 +297,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     && skill.fx !== 'heart' && skill.fx !== 'shout' && skill.fx !== 'ban'
     && skill.fx !== 'wink' && skill.fx !== 'donut-straw' && skill.fx !== 'smile-wave'
     && ((defender.braced > 0 && defender.frenzy > 0) || howling);
-  let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .9 : 1) * ((braced || superBrace) ? BRACED_DAMAGE : 1) * (defender.ban > 0 ? BAN_DAMAGE : 1) * attacker.baseDmgMul * attacker.dmgMul * (attacker.muscle > 0 ? 1 + MUSCLE_BONUS : 1) * (defender.frail > 0 ? 1 + defender.frailBonus : 1);
+  let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .9 : 1) * ((braced || superBrace) ? BRACED_DAMAGE : 1) * (defender.ban > 0 ? BAN_DAMAGE : 1) * attacker.baseDmgMul * attacker.dmgMul * (attacker.muscle > 0 ? 1 + MUSCLE_BONUS : 1) * (attacker.shout > 0 ? 1 + SHOUT_BONUS : 1) * (defender.frail > 0 ? 1 + defender.frailBonus : 1);
   // 堕天: below half health the attacker swings harder; 这是最后通牒: a defender under a quarter takes more.
   if (attacker.lowHpDmg > 0 && attacker.hp < attacker.data.hp * .5) damage *= 1 + attacker.lowHpDmg;
   if (defender.executeDmg > 0 && defender.hp < defender.data.hp * .25) damage *= 1 + defender.executeDmg;
@@ -702,6 +716,7 @@ function composeTick(g: FightGame, attacker: Fighter, defender: Fighter, skill: 
   const blocked = defender.blocking && defender.facing === -dir && defender.guard > 0;
   let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .9 : 1)
     * attacker.baseDmgMul * attacker.dmgMul * (attacker.muscle > 0 ? 1 + MUSCLE_BONUS : 1)
+    * (attacker.shout > 0 ? 1 + SHOUT_BONUS : 1)
     * (defender.frail > 0 ? 1 + defender.frailBonus : 1);
   if (blocked) {
     damage *= .13;
@@ -1617,6 +1632,55 @@ function repelPulse(g: FightGame, f: Fighter, power: number): boolean {
       // The draw is protected; the flight is not. Her own blast can catch her the moment it leaves.
       f.invuln = Math.min(f.invuln, s.start);
       a.t = Math.max(a.t, s.duration);
+    } else if (s.fx === 'firebird') {
+      // 火鸟: four pillars erupt from the stage floor, two ahead and two behind; each burns
+      // a body twice on its own clock in stepProjectiles.
+      for (const off of [FIREBIRD_OFFSETS[0], FIREBIRD_OFFSETS[1], -FIREBIRD_OFFSETS[0], -FIREBIRD_OFFSETS[1]]) {
+        g.projectiles.push({
+          owner: f.id, x: clamp(f.x + f.facing * off, X_MIN, X_MAX), y: FLOOR, vx: 0, vy: 0,
+          life: s.life ?? .75, skill: s, color: f.data.color,
+          radius: 26, size: s.size ?? 110, fx: 'firebird',
+          attack: a, hit: new Set(), trail: [], age: 0,
+        });
+      }
+      g.shake = Math.max(g.shake, 4);
+    } else if (s.fx === 'blue-rose') {
+      // 荆棘的蓝蔷薇: the bloom shoves the crowd and arms the thorns; the petals ride the
+      // rose clock in stepFighter, and expiry hands thorns back to whatever held before.
+      f.roseBase = f.thorns;
+      f.thorns = Math.max(f.thorns, ROSE_THORNS);
+      f.rose = ROSE_TIME;
+      g.effect('blue-rose', f.x, f.y - 80, f.data.color, .75, { radius: s.range });
+      for (const o of g.opponents(f)) {
+        if (o.hp <= 0 || o.invuln > 0) continue;
+        const dx = o.x - f.x;
+        if (Math.abs(dx) < s.range) {
+          o.vx = (Math.sign(dx) || f.facing) * ROSE_REPEL_PUSH;
+          o.stun = Math.max(o.stun, .2);
+        }
+      }
+    } else if (s.fx === 'summit') {
+      // 顶点: the shout carries through the whole stage. No damage — the wave only hurls
+      // everyone away as hard as the shove toss, and jumping does not clear it. The wave is
+      // a screen-facing ring centred on her body, not a floor ellipse.
+      g.effect('summit', f.x, f.y - 80, f.data.color, .6, { radius: 560 });
+      g.shake = Math.max(g.shake, 8);
+      for (const o of g.opponents(f)) {
+        if (o.hp <= 0 || o.invuln > 0) continue;
+        const dir = Math.sign(o.x - f.x) || f.facing;
+        o.vx = dir * SUMMIT_VX;
+        o.vy = SUMMIT_VY;
+        o.knocked = .9;
+        o.downTime = 0;
+        o.stun = Math.max(o.stun, .4);
+      }
+    } else if (s.fx === 'black-shout') {
+      // 漆黑呐喊: the seal burns off. The buff and the eye flames share one clock; the price
+      // lands the moment it dies, in stepFighter.
+      f.shout = SHOUT_TIME;
+      g.flash = Math.max(g.flash, .3);
+      g.effect('black-shout', f.x, f.y - 80, f.data.color, .8, { radius: 130 });
+      g.text(s.name, f.x, f.y - 240, '#8fd8ff', .9, 19);
     } else if (s.type === 'projectile') {
       if (s.fx === 'donut') a.skill = donutVariant(g, s);
       spawnShot(g, f, a);
@@ -1730,6 +1794,23 @@ export function stepProjectiles(g: FightGame, dt: number): void {
       if (tick !== p.ticked && tick < (p.skill.count ?? 22)) {
         p.ticked = tick;
         spawnMatchaBlob(g, owner, p, tick);
+      }
+      continue;
+    }
+    if (p.fx === 'firebird') {
+      // 火鸟: a standing pillar. Two burns per body on the pillar's own clock; both are
+      // launch hits, so the first floats and the second keeps the victim up there.
+      const owner = g.fighterById(p.owner);
+      if (!owner) continue;
+      if (!p.marks) p.marks = new Map();
+      for (const o of g.opponents(owner)) {
+        if (o.hp <= 0 || o.invuln > 0) continue;
+        const mark = p.marks.get(o.id);
+        if (mark && (mark.n >= 2 || p.age < mark.next)) continue;
+        if (Math.abs(o.x - p.x) >= 30 + p.radius || o.y < FLOOR - 250) continue;
+        if (!hit(g, owner, o, p.skill, { hit: new Set() }, p.x)) continue;
+        if (mark) { mark.n++; mark.next = p.age + FIREBIRD_TICK; }
+        else p.marks.set(o.id, { n: 1, next: p.age + FIREBIRD_TICK });
       }
       continue;
     }
