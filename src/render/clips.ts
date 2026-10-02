@@ -199,8 +199,8 @@ export function soyoFrenzyFrame(kind: 'light' | 'heavy', t: number, s: { start: 
 /** Which cell a fighter occupies this frame. Missing sheets still fall back in SpriteView. */
 export function clipFor(f: Fighter): Clip {
   if (f.attack) {
-    // 狂化: ground J/K read the frenzy sheet. A king reskin keeps the common cells and swaps the image.
-    const crowned = f.data.view.kind === 'sprite' && !!f.data.view.king;
+    // 狂化: ground J/K read the frenzy sheet. A king or box reskin keeps the common cells and swaps the image.
+    const crowned = f.data.view.kind === 'sprite' && (!!f.data.view.king || !!f.data.view.box);
     if (f.frenzy > 0 && !crowned && f.attack.index <= 1 && !f.attack.skill.air) {
       const [col, row] = soyoFrenzyFrame(f.attack.index === 0 ? 'light' : 'heavy', f.attack.t, f.attack.skill);
       return { sheet: 'frenzy', col, row, sx: col * CELL, sy: row * CELL };
@@ -230,6 +230,13 @@ export function clipFor(f: Fighter): Clip {
       const row = t < s.start ? 0 : t >= s.duration - .26 ? 2 : 1;
       return at('special', f.attack.index - 2, row);
     }
+    // 脸靠的太近了: the generic active window is capped at .1s, which hides the scream pose.
+    // Hold the hit cell through the wave instead, leaving a fixed settle tail.
+    if (f.attack.skill.fx === 'tsun') {
+      const t = f.attack.t, s = f.attack.skill;
+      const row = t < s.start ? 0 : t >= s.duration - .3 ? 2 : 1;
+      return at('special', f.attack.index - 2, row);
+    }
     const phase = PHASE_COL[attackPhase(f.attack).phase];
     if (f.attack.skill.air) {
       const base = f.attack.skill.type === 'heavy' ? NORMAL.airHeavy : NORMAL.airLight;
@@ -248,8 +255,8 @@ export function clipFor(f: Fighter): Clip {
     return at('special', f.attack.index - 2, phase);
   }
   const state = stateFor(f);
-  // 狂化 stance while she is otherwise just standing around. The king sheet uses the common idle cell.
-  const crowned = f.data.view.kind === 'sprite' && !!f.data.view.king;
+  // 狂化 stance while she is otherwise just standing around. The king/box sheet uses the common idle cell.
+  const crowned = f.data.view.kind === 'sprite' && (!!f.data.view.king || !!f.data.view.box);
   if (f.frenzy > 0 && !crowned && state === 'idle') return at('frenzy', 0, 2);
   // 4 frames at 8 Hz: one stride is 0.5s.
   if (state === 'run') return loco(RUN_FRAMES[Math.floor(f.animTime * 8) % 4]);

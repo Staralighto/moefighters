@@ -55,6 +55,11 @@ function spriteFilter(f: Fighter): string {
 
 const RIM = 3;
 const RIM_PAD = 4;
+/** 无敌仓库大王: the box art's bottom face is a perspective parallelogram, so the picture sinks
+ *  until its LEFT/RIGHT bottom vertices straddle the shared foot line — the front tip (the
+ *  lowest point) deliberately hangs below. Measured on the current sheet: vertices y=191/167,
+ *  average 179 → 46px at h=181, backed off to 40 after eyeballing. Re-measure if the art is replaced. */
+const BOX_SINK = 40;
 
 /** ~3px stroke from the smoothed silhouette, then a 1px blur so the edge isn't stepped. Cached per cell. */
 function hardRim(im: HTMLImageElement, sx: number, sy: number, h: number, color: string): HTMLCanvasElement {
@@ -180,6 +185,8 @@ export class SpriteView implements FighterView {
           ctx.translate(0, -wy);
         }
       }
+      // 无敌仓库大王: sink the one-picture box onto the floor line (see BOX_SINK).
+      if (boxed) ctx.translate(0, BOX_SINK);
       // Undo the body offset baked into the cell so only the prop hangs off the fighter origin.
       if (!boxed && clip.ox) ctx.translate(-clip.ox * h / CELL, 0);
       ctx.globalAlpha = alpha;

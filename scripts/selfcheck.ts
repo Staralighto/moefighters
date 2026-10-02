@@ -1357,6 +1357,13 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(saw, '气泡 spawns');
   assert.ok(b2.root > 0, '气泡 roots the victim');
 
+  const wave = newGame(arisa, 2); const [v1] = wave.fighters; dummy(wave);
+  wave.keyDown('KeyO');
+  run(wave, .4);
+  assert.ok(v1.attack && clipFor(v1).row === 1, '傲娇音波 holds the scream cell past the generic .1s active window');
+  run(wave, .4);
+  assert.ok(v1.attack && clipFor(v1).row === 2, '傲娇音波 settles on the recover cell in the tail');
+
   const boxGame = newGame(arisa, 2); const [k1, k2] = boxGame.fighters; dummy(boxGame);
   k1.energy = 100;
   boxGame.keyDown('KeyL');
@@ -1369,6 +1376,9 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   k1.queue.push({ index: 2, ttl: .18 });
   run(boxGame, .3);
   assert.ok(!k1.attack, '纸箱 keeps U I O L locked');
+  boxGame.keyDown('KeyJ');
+  run(boxGame, .12);
+  assert.ok(k1.attack && clipFor(k1).sheet === 'common', '纸箱 keeps reading the common sheet so view.box can swap the picture');
 
   run(boxGame, .5);
   const before = k1.hp;

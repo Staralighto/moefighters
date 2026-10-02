@@ -33,6 +33,16 @@ const DODGE: Pose = { lean: -.35, crouch: 8, look: -.12, armF: [-.6, -.6], armB:
 const TSUN_WIND: Pose = { lean: -.12, crouch: 2, look: -.1, armF: [-.9, -2.1], armB: [-.8, -2.0], legF: [.25, 0], legB: [-.25, 0] };
 const TSUN_POINT: Pose = { lean: .22, crouch: 2, look: .55, armF: [1.5, -.1], armB: [-.7, -.9], legF: [.45, 0], legB: [-.35, 0] };
 
+/* O 脸靠的太近了: fold in tight on the windup, then both arms fling up in a V for the scream wave. */
+const WAVE_WIND: Pose = { lean: -.12, crouch: 14, look: -.05, armF: [.9, -1.6], armB: [.6, -1.5], legF: [.4, 0], legB: [-.35, 0] };
+const WAVE_HIT: Pose = { lean: .06, crouch: 2, look: .55, armF: [2.45, .25], armB: [-2.45, .25], legF: [.5, 0], legB: [-.4, 0] };
+
+/* L 无敌仓库大王: knees fold forward into a heel-sit squat and the torso hunches over them;
+   the recover holds the huddle — it never stands back up. crouch stays small (its bend term
+   straightens the legs), the squat comes from the leg angles. */
+const BOX_WIND: Pose = { lean: .3, crouch: 14, look: -.1, armF: [1.15, .35], armB: [.95, .3], legF: [.38, -.06], legB: [.13, 1.04] };
+const BOX_HIT: Pose = { lean: .5, crouch: 18, look: -.2, armF: [1.3, .25], armB: [1.1, .25], legF: [.41, -.02], legB: [.06, 1.18] };
+
 /* Contact, pass, opposite contact, opposite pass. The leg that reaches forward gets the opposite arm. */
 const RUN: Pose[] = [
   { lean: .1, crouch: 8, look: .55, armF: [-.85, -1.15], armB: [.95, 1.15], legF: [.55, -.4], legB: [-.55, .45] },
@@ -155,7 +165,7 @@ function cell(label: string, pose: Pose | null, col: number, row: number): strin
     for (const m of drawn.marks) {
       const p = cellPoint(pose, m);
       const over = Math.max(-p.x + p.r, p.x + p.r - CELL, -p.y + p.r, p.y + p.r - CELL);
-      if (over > 1) throw new Error(`${BUILD} ${label} leaves the cell by ${over.toFixed(1)}px`);
+      if (over > 1) throw new Error(`${BUILD} ${label} leaves the cell by ${over.toFixed(1)}px at (${p.x.toFixed(0)},${p.y.toFixed(0)})`);
     }
   }
   const text = label
@@ -186,13 +196,23 @@ function commonSheet(): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${cells.join('')}</svg>\n`;
 }
 
-function specialSheet(skills: SkillType[]): string {
+/* One pose triple per special column, U I O L. They must stay four clearly distinct
+   actions (SOP): brace / shy point / scream wave / box dive. The box column never
+   stands back up, so its recover holds the huddle instead of mixing toward IDLE. */
+const SPECIAL_POSES: [Pose, Pose, Pose][] = [
+  [ENDURE_WIND, ENDURE_HIT, mix(ENDURE_HIT, IDLE, .55)],
+  [TSUN_WIND, TSUN_POINT, mix(TSUN_POINT, IDLE, .55)],
+  [WAVE_WIND, WAVE_HIT, mix(WAVE_HIT, IDLE, .55)],
+  [BOX_WIND, BOX_HIT, BOX_HIT],
+];
+
+function specialSheet(cols: [Pose, Pose, Pose][] = SPECIAL_POSES): string {
   const w = SPECIAL_COLS * CELL, h = SPECIAL_ROWS * CELL;
   const cells: string[] = [];
   for (let r = 0; r < SPECIAL_ROWS; r++) {
     for (let c = 0; c < SPECIAL_COLS; c++) {
       const label = `${SPECIAL_KEYS[c]}-${PHASES[r]}`;
-      cells.push(cell(label, pair(skills[c], false)[r], c, r));
+      cells.push(cell(label, cols[c][r], c, r));
     }
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${cells.join('')}</svg>\n`;
@@ -213,14 +233,10 @@ function boxSvg(): string {
 }
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'sprites', 'arisa');
-const commonPx: [number, number] = [COMMON_COLS * CELL, COMMON_ROWS * CELL];
-const specialPx: [number, number] = [SPECIAL_COLS * CELL, SPECIAL_ROWS * CELL];
-const jobs = [
-  { png: join(dir, 'common.png'), svg: commonSheet(), w: commonPx[0], h: commonPx[1] },
-  { png: join(dir, 'special.png'), svg: specialSheet(['endure', 'projectile', 'endure', 'endure']), w: specialPx[0], h: specialPx[1] },
-  { png: join(dir, 'box.png'), svg: boxSvg(), w: CELL, h: CELL },
-];
-for (const [name, d] of Object.entries(DIMS)) console.log(`${name} ${headsTall(d).toFixed(2)} heads`);
-assertAllWritable(jobs.map(job => job.png));
-for (const job of jobs) rasterSheet(job.png, job.svg, job.w, job.h);
-console.log(`wrote ${jobs.length} arisa pngs`);
+// common.png, special.png and box.png are finished art now (placeholder marks gone) —
+// all three left the raster list, per SOP. To redo any of them with --replace, re-add
+//   { png: join(dir, 'common.png'), svg: commonSheet(), w: 2048, h: 768 }
+//   { png: join(dir, 'special.png'), svg: specialSheet(), w: 1024, h: 768 }
+//   { png: join(dir, 'box.png'), svg: boxSvg(), w: 256, h: 256 }
+// The builders stay for that, like yukina-sheet.ts.
+console.log('arisa sheets are finished art; nothing rasterized (builders kept)');
