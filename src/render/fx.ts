@@ -517,6 +517,45 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.restore();
       break;
     }
+    case 'tsun': {
+      // 脸靠的太近了: a hot-red pride ring slams out along the floor, a thinner one chasing it.
+      const r = e.radius ?? 280;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= 1 - p;
+      ctx.strokeStyle = '#ff5f7a';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      for (let i = 0; i <= 22; i++) {
+        const ang = (i / 22) * Math.PI * 2;
+        const rad = r * p * (i % 2 ? 1.05 : .93);
+        const px = Math.cos(ang) * rad, py = Math.sin(ang) * rad * .32;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath(); ctx.stroke();
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.ellipse(0, 0, r * p * .7, 12 + p * 8, 0, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
+    case 'box': {
+      // 无敌仓库大王: a cardboard dust ring, scraps of packing paper kicking up around it.
+      const r = e.radius ?? 200;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= 1 - p;
+      ctx.strokeStyle = '#c8965a';
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.ellipse(0, 0, r * p, 14 + p * 10, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#e8d9b0';
+      for (let i = 0; i < 6; i++) {
+        const a = i * 1.05 + p * 2;
+        const d = r * (.3 + p * .7);
+        ctx.save();
+        ctx.translate(Math.cos(a) * d, Math.sin(a) * d * .3 - p * 30);
+        ctx.rotate(a * 2);
+        ctx.fillRect(-6, -4, 12, 8);
+        ctx.restore();
+      }
+      break;
+    }
     case 'riff': {
       // 吉他激奏: screen-facing sound rings race out from her chest and fade as they widen.
       const r = e.radius ?? 240;
@@ -795,6 +834,25 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
         ctx.moveTo(side * r * .3, 8);
         ctx.lineTo(side * r * .3, -r * .55 * p - 8);
         ctx.stroke();
+      }
+      break;
+    }
+    case 'boost': {
+      // 认真模式: a confident double ring pops at her chest with a few orbiting sparks.
+      const r = e.radius ?? 90;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= 1 - p;
+      ctx.strokeStyle = e.color;
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(0, 0, r * Math.min(1, p * 1.4), 0, Math.PI * 2); ctx.stroke();
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(0, 0, r * Math.min(1, p * 1.4) * .72, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = e.color;
+      for (let i = 0; i < 5; i++) {
+        const a = i * 1.256 + p * 3;
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * r * .9, Math.sin(a) * r * .6, 3, 0, Math.PI * 2);
+        ctx.fill();
       }
       break;
     }
@@ -1523,6 +1581,27 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
       for (const dx of [-r * .38, 0, r * .38]) {
         ctx.beginPath(); ctx.arc(dx, 0, r * .13, 0, Math.PI * 2); ctx.fill();
       }
+      break;
+    }
+    case 'bubble': {
+      // 才没有喜欢你呢: a blush-pink speech bubble wobbles ahead, "!?" scrawled inside.
+      ctx.rotate(p.age * 2.4 * Math.sign(p.vx || 1));
+      const r = Math.max(14, p.radius);
+      ctx.fillStyle = '#fff5fa';
+      ctx.strokeStyle = '#e86ba4';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, r * 1.12, r * .92, 0, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-r * .5, r * .62);
+      ctx.lineTo(-r * .78, r * 1.24);
+      ctx.lineTo(-r * .12, r * .84);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#e86ba4';
+      ctx.font = `900 ${Math.round(r * 1.1)}px ${UI_FONT}`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('!?', 0, r * .04);
       break;
     }
     case 'heart': {

@@ -600,9 +600,40 @@ export const ROSTER: CharacterData[] = [
       }),
     ],
   },
+  {
+    id: 'arisa', name: '市谷有咲', title: '键盘 / 仓库大王', quote: '一开始以为你只是个脑袋空空的乐天家伙呢。', color: '#AA66DD',
+    ...stats('armor'),
+    // Neutral on purpose: the frenzy clock only drives the box form's king sheet swap.
+    frenzy: { rate: 1, rangeMul: 1, cdMul: 1, chain: false, time: 7 },
+    view: {
+      kind: 'sprite', common: '/sprites/arisa/common.png', special: '/sprites/arisa/special.png', height: 181,
+      box: '/sprites/arisa/box.png',
+    },
+    skills: [
+      skill(0, 'light', '弹键盘'),
+      skill(1, 'heavy', '横踢'),
+      skill(2, 'heavy', '认真模式', {
+        damage: 0, range: 0, start: .35, duration: .75, cd: 9, fx: 'boost',
+        brief: '摆架势；攻击提高且不被打断', detail: '摆出自信架势：完成后 6 秒内攻击提高 30% 且不受普攻打断；被打断则失效',
+      }),
+      skill(3, 'projectile', '才没有喜欢你呢', {
+        damage: 28, speed: 460, size: 56, start: .35, duration: .9, cd: 7, life: 2.2, knock: 0, fx: 'bubble',
+        root: 3, rootPin: true,
+        brief: '娇羞射出气泡；命中定身', detail: '对话气泡：命中定身 3 秒，受击两次解除；可格挡可跳过',
+      }),
+      skill(4, 'endure', '脸靠的太近了', {
+        damage: 34, range: 280, start: .26, duration: .85, cd: 8, knock: 620, breakout: true, fx: 'tsun',
+        brief: '全方位傲娇音波；可解控', detail: '全方位傲娇音波，强击退；霸体挡一次，跳起可躲，被连段时可解控',
+      }),
+      skill(5, 'endure', '无敌仓库大王', {
+        damage: 0, range: 200, start: .4, duration: .85, fx: 'box',
+        brief: '变身仓库纸箱：减伤回血', detail: '变成仓库纸箱 7 秒：受伤减半、不受打断、每秒回复 36；只剩 J / K，无法获得气',
+      }),
+    ],
+  },
 ];
 
 /** Select screen. gale, ember and boulder stay on ROSTER for the headless checks. */
-export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki' || c.id === 'rana' || c.id === 'arale' || c.id === 'miyako' || c.id === 'ritsu' || c.id === 'nonoka' || c.id === 'yuno' || c.id === 'viola' || c.id === 'mana' || c.id === 'kokoro' || c.id === 'kasumi' || c.id === 'yukina');
+export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki' || c.id === 'rana' || c.id === 'arale' || c.id === 'miyako' || c.id === 'ritsu' || c.id === 'nonoka' || c.id === 'yuno' || c.id === 'viola' || c.id === 'mana' || c.id === 'kokoro' || c.id === 'kasumi' || c.id === 'yukina' || c.id === 'arisa');
 
 export const ROSTER_BY_ID = new Map(ROSTER.map(c => [c.id, c]));

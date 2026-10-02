@@ -3,7 +3,7 @@ import { FightGame } from '../src/game/game.ts';
 import { drumShotTime, hit, violetHidden } from '../src/game/combat.ts';
 import { vowBeatTime, VOW_BEATS } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
-import { ROSTER } from '../src/data/characters.ts';
+import { PLAYABLE, ROSTER } from '../src/data/characters.ts';
 import { AIR_SKILLS } from '../src/data/skills.ts';
 import { STAGES } from '../src/data/stages.ts';
 import { FLOOR, COMBO_DECAY, STEP, X_MAX } from '../src/game/constants.ts';
@@ -1321,6 +1321,61 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const pf2 = previewFighter(tomoriData, 0);
   pf2.attack = { skill: tomoriData.skills[2], index: 2, serial: 1, t: 0, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 };
   assert.deepEqual([clipFor(pf2).col, clipFor(pf2).row], [0, 0], 'the stone reads the U column');
+}
+
+// arisa: 认真模式 buffs only on a clean pose, the bubble roots, the wave breaks out, the box halves damage and drips hp
+{
+  const arisa = ROSTER.findIndex(c => c.id === 'arisa');
+  assert.ok(arisa >= 0, 'arisa is on the roster');
+  assert.ok(PLAYABLE.some(c => c.id === 'arisa'), 'arisa is playable');
+  const data = ROSTER[arisa];
+  assert.equal(data.skills[3].root, 3, '气泡 roots for 3s');
+  assert.equal(data.skills[3].knock, 0, '气泡 does not knock the victim away');
+  assert.equal(data.skills[4].breakout, true, '傲娇音波 is a breakout');
+
+  const pose = newGame(arisa, 2); const [s1] = pose.fighters; dummy(pose);
+  pose.keyDown('KeyU');
+  run(pose, .5);
+  assert.ok(s1.muscle > 0 && s1.poise > 0, '认真模式 arms damage and poise once the pose lands');
+
+  const hitWind = newGame(arisa, 2); const [w1, w2] = hitWind.fighters; dummy(hitWind);
+  w2.x = w1.x + 60; w2.facing = -1;
+  hitWind.keyDown('KeyU');
+  run(hitWind, .1);
+  hit(hitWind, w2, w1, w2.data.skills[0], { hit: new Set() });
+  run(hitWind, .5);
+  assert.equal(w1.muscle, 0, '被打断则失效: a hit during the windup cancels the buff');
+
+  const bubble = newGame(arisa, 2); const [b1, b2] = bubble.fighters; dummy(bubble);
+  b2.x = b1.x + 320; b2.facing = -1;
+  bubble.keyDown('KeyI');
+  let saw = false;
+  for (let i = 0; i < Math.round(1.2 / STEP); i++) {
+    bubble.step(STEP);
+    if (bubble.projectiles.some(p => p.fx === 'bubble')) saw = true;
+  }
+  assert.ok(saw, '气泡 spawns');
+  assert.ok(b2.root > 0, '气泡 roots the victim');
+
+  const boxGame = newGame(arisa, 2); const [k1, k2] = boxGame.fighters; dummy(boxGame);
+  k1.energy = 100;
+  boxGame.keyDown('KeyL');
+  run(boxGame, .6);
+  assert.ok(k1.king && k1.box > 0 && k1.poise > 0, '纸箱 form is up with poise');
+  k1.hp = k1.data.hp * .5;
+  const healed = k1.hp;
+  run(boxGame, 1);
+  assert.ok(k1.hp > healed, '纸箱 drips hp');
+  k1.queue.push({ index: 2, ttl: .18 });
+  run(boxGame, .3);
+  assert.ok(!k1.attack, '纸箱 keeps U I O L locked');
+
+  run(boxGame, .5);
+  const before = k1.hp;
+  hit(boxGame, k2, k1, k2.data.skills[0], { hit: new Set() });
+  const loss = before - k1.hp;
+  const plain = 26 * k2.data.power * .9; // armor trait cuts damage taken before the box does
+  assert.ok(Math.abs(loss - plain * .5) < .01, `纸箱 halves damage taken, saw ${loss.toFixed(2)} vs ${(plain * .5).toFixed(2)}`);
 }
 
 {

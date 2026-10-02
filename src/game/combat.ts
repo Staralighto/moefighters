@@ -63,6 +63,9 @@ const STEAK_BRACE = 4;
 /** 超恢复: the brace, this much hp each second, and J/K stay locked. The three end together. */
 export const FEAST_TIME = 6;
 export const FEAST_REGEN = 36;
+/** 无敌仓库大王: damage taken while boxed — grabs and supers punch through — and hp dripped per second. */
+const BOX_CUT = .5;
+export const BOX_REGEN = 36;
 /** 绊创膏: seconds of no-flinch, the damage cut while it holds, and the shove the plaster gives the people around her. */
 const BRACED_TIME = 6;
 const BRACED_DAMAGE = .67;
@@ -297,7 +300,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     && skill.fx !== 'heart' && skill.fx !== 'shout' && skill.fx !== 'ban'
     && skill.fx !== 'wink' && skill.fx !== 'donut-straw' && skill.fx !== 'smile-wave'
     && ((defender.braced > 0 && defender.frenzy > 0) || howling);
-  let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .9 : 1) * ((braced || superBrace) ? BRACED_DAMAGE : 1) * (defender.ban > 0 ? BAN_DAMAGE : 1) * attacker.baseDmgMul * attacker.dmgMul * (attacker.muscle > 0 ? 1 + MUSCLE_BONUS : 1) * (attacker.shout > 0 ? 1 + SHOUT_BONUS : 1) * (defender.frail > 0 ? 1 + defender.frailBonus : 1);
+  let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .9 : 1) * ((braced || superBrace) ? BRACED_DAMAGE : 1) * (defender.box > 0 && !isGrab && !skill.super ? BOX_CUT : 1) * (defender.ban > 0 ? BAN_DAMAGE : 1) * attacker.baseDmgMul * attacker.dmgMul * (attacker.muscle > 0 ? 1 + MUSCLE_BONUS : 1) * (attacker.shout > 0 ? 1 + SHOUT_BONUS : 1) * (defender.frail > 0 ? 1 + defender.frailBonus : 1);
   // 堕天: below half health the attacker swings harder; 这是最后通牒: a defender under a quarter takes more.
   if (attacker.lowHpDmg > 0 && attacker.hp < attacker.data.hp * .5) damage *= 1 + attacker.lowHpDmg;
   if (defender.executeDmg > 0 && defender.hp < defender.data.hp * .25) damage *= 1 + defender.executeDmg;
@@ -616,7 +619,7 @@ export function applyMelee(g: FightGame, f: Fighter, a: Attack): void {
   for (const o of meleeSweep) {
     const dist = Math.abs(o.x - f.x);
     const dy = Math.abs(o.y - f.y);
-    const ripple = s.fx === 'ripple' || s.fx === 'huh';
+    const ripple = s.fx === 'ripple' || s.fx === 'huh' || s.fx === 'tsun';
     if (s.fx === 'riff' || s.fx === 'howl' || s.fx === 'groove' || s.fx === 'crown') {
       // 吉他激奏: a screen-facing disc centred on her — every direction, any height. A jump no longer dodges it.
       if (Math.hypot(o.x - f.x, o.y - f.y) < s.range) {
@@ -717,6 +720,7 @@ function composeTick(g: FightGame, attacker: Fighter, defender: Fighter, skill: 
   let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .9 : 1)
     * attacker.baseDmgMul * attacker.dmgMul * (attacker.muscle > 0 ? 1 + MUSCLE_BONUS : 1)
     * (attacker.shout > 0 ? 1 + SHOUT_BONUS : 1)
+    * (defender.box > 0 ? BOX_CUT : 1)
     * (defender.frail > 0 ? 1 + defender.frailBonus : 1);
   if (blocked) {
     damage *= .13;
@@ -1600,6 +1604,29 @@ function repelPulse(g: FightGame, f: Fighter, power: number): boolean {
       f.braced = Math.max(f.braced, FEAST_TIME);
       f.feast = FEAST_TIME;
       g.effect('burst', f.x, f.y - 80, '#9ad4ff', .4, { radius: 80 });
+    } else if (s.fx === 'boost') {
+      // 认真模式: the pose finished, so the confidence holds — damage up and nothing flinches her.
+      f.muscle = 6;
+      f.poise = 6;
+      g.effect('boost', f.x, f.y - 80, f.data.color, .75, { radius: 90 });
+    } else if (s.fx === 'box') {
+      // 无敌仓库大王: shove for room, then the box — king sheet swap, halved damage, hp drip,
+      // no-flinch and the meter locked. Only J/K stay open (the king lock).
+      const time = f.data.frenzy?.time ?? 7;
+      f.frenzy = time;
+      f.noGain = time;
+      f.king = true;
+      f.poise = time;
+      f.box = time;
+      g.effect('box', f.x, FLOOR, f.data.color, .6, { radius: s.range });
+      for (const o of g.opponents(f)) {
+        if (o.hp <= 0 || o.invuln > 0) continue;
+        const dx = o.x - f.x;
+        if (Math.abs(dx) < s.range) {
+          o.vx = (Math.sign(dx) || f.facing) * 380;
+          o.stun = Math.max(o.stun, .2);
+        }
+      }
     } else if (s.fx === 'snip') {
       // 剪: the tell dies with the lock. The void field plants on the frozen spot, not on the runner.
       const mark = g.effects.find(e => e.type === 'snip-mark' && e.fighter === f.id);
@@ -1688,6 +1715,7 @@ function repelPulse(g: FightGame, f: Fighter, power: number): boolean {
       if (s.type !== 'upper') applyMelee(g, f, a);
       if (s.fx === 'ripple') g.effect('ripple', f.x, FLOOR, f.data.color, .45, { radius: s.range });
       else if (s.fx === 'huh') g.effect('huh', f.x, FLOOR, f.data.color, .5, { radius: s.range });
+      else if (s.fx === 'tsun') g.effect('tsun', f.x, FLOOR, f.data.color, .5, { radius: s.range });
       else if (s.fx === 'howl') g.effect('howl', f.x, f.y - 80, f.data.color, .4, { radius: s.range });
       else if (s.fx === 'yokan') g.effect('yokan', f.x + f.facing * 70, FLOOR, f.data.color, .28, { dir: f.facing, radius: 80 });
       else if (s.fx === 'rib') g.effect('slash', f.x + f.facing * 65, f.y - 83, f.data.color, .22, { dir: f.facing, radius: s.range * .5 });

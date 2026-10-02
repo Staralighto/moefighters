@@ -19,7 +19,7 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
 /** Every image a match needs: sprite views plus the stage backdrop. */
 export function assetsFor(characters: CharacterData[], stage: StageData): string[] {
   const srcs = characters.flatMap(c => c.view.kind === 'sprite'
-    ? [c.view.common, c.view.special, ...(c.view.frenzy ? [c.view.frenzy] : []), ...(c.view.king ? [c.view.king] : []), ...(c.view.world ? [c.view.world] : []), ...(c.view.extras ?? [])]
+    ? [c.view.common, c.view.special, ...(c.view.frenzy ? [c.view.frenzy] : []), ...(c.view.king ? [c.view.king] : []), ...(c.view.world ? [c.view.world] : []), ...(c.view.box ? [c.view.box] : []), ...(c.view.extras ?? [])]
     : []);
   if (stage.image) srcs.push(stage.image);
   return [...new Set(srcs)];

@@ -136,6 +136,7 @@ export class SpriteView implements FighterView {
     private readonly king?: string,
     private readonly kingScale = 1,
     private readonly world?: string,
+    private readonly box?: string,
   ) {}
 
   /** The select screen only needs the idle sheet. A missing file is "ready" so the block figure can stand in. */
@@ -148,7 +149,11 @@ export class SpriteView implements FighterView {
     const clip = pose
       ? { sheet: pose.sheet as Clip['sheet'], col: pose.col, row: pose.row, sx: pose.col * CELL, sy: pose.row * CELL }
       : clipFor(f);
-    const src = f.king && clip.sheet === 'common' && this.king
+    // 无敌仓库大王: one 256×256 picture stands in for the whole body while the form runs.
+    // The picture is a single cell, so the clip reads (0,0) and no grid math applies.
+    const boxed = f.king && !!this.box && clip.sheet === 'common';
+    const src = boxed ? this.box
+      : f.king && clip.sheet === 'common' && this.king
       ? this.king
       : clip.sheet === 'common' ? this.common
       : clip.sheet === 'special' ? this.special
@@ -157,6 +162,7 @@ export class SpriteView implements FighterView {
     const im = src ? this.images.get(src) : undefined;
     if (!im || !im.naturalWidth) { this.fallback.draw(ctx, f, x, y, alpha, undefined, outline); return; }
     const h = src === this.king ? this.height * this.kingScale : this.height;
+    const cell = boxed ? { sx: 0, sy: 0 } : clip;
     ctx.save();
     try {
       ctx.translate(Math.round(x), Math.round(y));
@@ -175,19 +181,19 @@ export class SpriteView implements FighterView {
         }
       }
       // Undo the body offset baked into the cell so only the prop hangs off the fighter origin.
-      if (clip.ox) ctx.translate(-clip.ox * h / CELL, 0);
+      if (!boxed && clip.ox) ctx.translate(-clip.ox * h / CELL, 0);
       ctx.globalAlpha = alpha;
       if (outline && typeof document !== 'undefined') {
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(hardRim(im, clip.sx, clip.sy, h, outline), -h / 2 - RIM_PAD, -h - RIM_PAD);
+        ctx.drawImage(hardRim(im, cell.sx, cell.sy, h, outline), -h / 2 - RIM_PAD, -h - RIM_PAD);
       }
       // Source cell is 256, drawn near 181. The prescale cache bakes the high-quality
       // downscale (and the flash filter) once; the per-draw cost is a 1:1 blit.
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
-      if (tint) drawTint(ctx, im, clip.sx, clip.sy, h, tint);
-      else ctx.drawImage(prescaledCell(im, clip.sx, clip.sy, h, spriteFilter(f)), -h / 2, -h, h, h);
+      if (tint) drawTint(ctx, im, cell.sx, cell.sy, h, tint);
+      else ctx.drawImage(prescaledCell(im, cell.sx, cell.sy, h, spriteFilter(f)), -h / 2, -h, h, h);
     } finally {
       ctx.restore();
     }

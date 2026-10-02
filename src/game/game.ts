@@ -4,7 +4,7 @@ import { DECAY_TIMERS, gainEnergy, makeFighter } from './fighter.ts';
 import { AIR_SKILLS } from '../data/skills.ts';
 import { ROSTER_BY_ID } from '../data/characters.ts';
 import { advanceAnim } from './animState.ts';
-import { easeSealSwells, effectSettled, FEAST_REGEN, MARATHON_SPEED, SHOUT_PRICE, stepProjectiles, updateAttack, wailShots } from './combat.ts';
+import { easeSealSwells, effectSettled, BOX_REGEN, FEAST_REGEN, MARATHON_SPEED, SHOUT_PRICE, stepProjectiles, updateAttack, wailShots } from './combat.ts';
 import { stepAI } from './ai.ts';
 import { COMBO_DECAY, COMBO_ESCAPE, CONTROLS, FLOOR, GRAVITY, INPUT_BUFFER, SIDE, STEP, X_MAX, X_MIN, clamp } from './constants.ts';
 import { clipFor } from '../render/clips.ts';
@@ -876,6 +876,8 @@ export class FightGame {
     gainEnergy(f, dt * 2);
     if (f.regen > 0) f.hp = Math.min(f.data.hp, f.hp + f.data.hp * f.regen * dt);
     if (f.feast > 0) f.hp = Math.min(f.data.hp, f.hp + FEAST_REGEN * dt);
+    // 无敌仓库大王: the box drips hp back for the whole form; the king flag rides the same clock.
+    if (f.box > 0) f.hp = Math.min(f.data.hp, f.hp + BOX_REGEN * dt);
     if (this.mode === 'training') {
       f.energy = 100;
       if (f.id === 1 && f.stun === 0 && !this.fighters[0].comboTime) f.hp = Math.min(f.data.hp, f.hp + dt * 350);

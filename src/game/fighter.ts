@@ -65,6 +65,9 @@ export interface Fighter {
   hitBySuper: boolean;
   /** 超恢复: seconds of hp regen and a lock on J/K. The brace timer is separate. */
   feast: number;
+  /** 无敌仓库大王: seconds left of the box form. Halves damage taken (grabs and supers
+   *  excepted) and drips hp back; the king flag rides the same clock for the sheet swap. */
+  box: number;
   /** 直接无限大: seconds left on the bill window. Damage taken is stored in debtDmg, not subtracted yet. */
   debt: number;
   debtDmg: number;
@@ -189,7 +192,7 @@ export interface Fighter {
   tape?: RecTape;
 }
 
-export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braced', 'braceFx', 'noGain', 'ban', 'muscle', 'sprint', 'poise', 'purge', 'frail', 'feast', 'debt', 'recLeft', 'rose', 'shout'] as const;
+export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braced', 'braceFx', 'noGain', 'ban', 'muscle', 'sprint', 'poise', 'purge', 'frail', 'feast', 'box', 'debt', 'recLeft', 'rose', 'shout'] as const;
 
 export function makeFighter(
   data: CharacterData,
@@ -202,7 +205,7 @@ export function makeFighter(
     hp: data.hp, energy: init.energy, guard: 100, blocking: false,
     stun: 0, invuln: 0, comboTime: 0, hitFlash: 0, landing: 0, guardBroken: 0,
     knocked: 0, downTime: 0, hitBySuper: false, root: 0, rootHits: 0, rootBreak: 0, rootFx: '', rootLevel: 'move', ban: 0, beatStacks: 0, frenzy: 0,
-    jabChain: 0, jabChainClock: 0, braced: 0, braceFx: 0, noGain: 0, muscle: 0, sprint: 0, poise: 0, purge: 0, frail: 0, frailBonus: 0, feast: 0,
+    jabChain: 0, jabChainClock: 0, braced: 0, braceFx: 0, noGain: 0, muscle: 0, sprint: 0, poise: 0, purge: 0, frail: 0, frailBonus: 0, feast: 0, box: 0,
     dodge: 0, dodgeCd: 0, dodgeRequest: false, dodgeBuffer: 0, blockTap: -1, blockBuffer: 0, blockLeft: 0,
     debt: 0, debtDmg: 0,
     attack: null, attackSerial: 0, cooldowns: [0, 0, 0, 0, 0, 0], queue: [],
