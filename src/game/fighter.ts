@@ -1,4 +1,5 @@
 import type { CharacterData, RootLevel, Skill } from '../data/types.ts';
+import type { Mod } from './mods.ts';
 import { COMBO_DECAY, COMBO_ESCAPE, FLOOR, clamp } from './constants.ts';
 
 export type AnimState =
@@ -190,9 +191,11 @@ export interface Fighter {
   master?: number;
   /** 录音: the tape an echo performs. Echoes only. */
   tape?: RecTape;
+  /** Scalar buffs. The same-named timers below are a projection of this list. */
+  mods: Mod[];
 }
 
-export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braced', 'braceFx', 'noGain', 'ban', 'muscle', 'sprint', 'poise', 'purge', 'frail', 'feast', 'box', 'debt', 'recLeft', 'rose', 'shout'] as const;
+export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braceFx', 'ban', 'frail', 'recLeft'] as const;
 
 export function makeFighter(
   data: CharacterData,
@@ -219,13 +222,14 @@ export function makeFighter(
     lowHpDmg: 0, executeDmg: 0, lifesteal: 0, thorns: 0, rose: 0, roseBase: 0, shout: 0,
     stunMul: 1, escapeCombo: COMBO_ESCAPE, deathSave: 0, vainDmg: 0, vainEnergy: 0,
     recLeft: 0, recTape: [], recMove: 0,
+    mods: [],
   };
 }
 
 /** Every energy gain funnels through here so card multipliers apply once; drains stay raw.
  *  禁回: while the lock holds the fighter cannot gain energy at all. */
 export function gainEnergy(f: Fighter, amount: number): void {
-  if (f.noGain > 0) return;
+  if (f.mods.some(m => m.kind === 'noGain' && m.left > 0)) return;
   f.energy = clamp(f.energy + amount * f.energyMul, 0, 100);
 }
 

@@ -8,6 +8,25 @@ export type SkillType =
  *  stay open. 'freeze' is the time-stop tier: the pose holds and nothing comes out at all. */
 export type RootLevel = 'move' | 'freeze';
 
+/** What a clean hit does to the body, once root / ban / seal / shove have had their say.
+ *  Unset kind falls through to the type default (launch floats, grab/super/upper/sweep knock down). */
+export type ReactKind = 'none' | 'stand' | 'pin' | 'float' | 'knockdown' | 'launch';
+
+export interface HitReact {
+  kind?: ReactKind;
+  stun?: number;
+  vy?: number;
+  knocked?: number;
+  /** Pin the feet: vx and vy cleared after knockback. */
+  holdStill?: boolean;
+  /** 求你了: the hit shakes a root off before the launch. */
+  clearRoot?: boolean;
+  /** Plant the body on the floor (信用). */
+  snapFloor?: boolean;
+  /** The shove lands even when combo escape already set invuln (高能量末拳). */
+  forceKnock?: boolean;
+}
+
 export interface Skill {
   key: string;
   name: string;
@@ -40,8 +59,11 @@ export interface Skill {
   invuln?: number;
   /** Combo escape (e.g. 恐湖, 轮奏): stays buffered through a super and clears control on cast. */
   breakout?: boolean;
-  /** Per-skill hit knockback velocity; falls back to the type/fx default when unset. */
+  /** Per-skill hit knockback velocity; falls back to the type default when unset.
+   *  A blocked hit is 75 unless knockOnBlock is set, in which case this value is used (including 0). */
   knock?: number;
+  /** Blocked hits keep `knock` instead of the 75 chip shove. */
+  knockOnBlock?: boolean;
   /** Unblocked hits cut this much energy from the victim (raw, no multipliers). */
   drain?: number;
   /** Energy granted per unblocked hit; falls back to the 9 (2 for supers) arcade default. */
@@ -58,6 +80,68 @@ export interface Skill {
   rootPin?: boolean;
   /** How completely the 定身 holds the body. Default 'move'. 'freeze' is the time-stop tier. */
   rootLevel?: RootLevel;
+  /** Clean-hit pose. Stun-only (no kind) just overrides hitstun. */
+  react?: HitReact;
+  /** Screen shake on a clean hit. Block and juggle keep their own numbers. */
+  shake?: number;
+  /** Hitstop on a clean hit. Block and juggle keep their own numbers. */
+  hitstop?: number;
+  /** Pierces dream-brace and is not written onto a debt bill. Grabs already do this. */
+  control?: boolean;
+  /** The blast hits teammates too (火的故事). */
+  friendly?: boolean;
+  /** A blocked projectile does not siphon the attacker's energy (剪, 火的故事). */
+  noSiphon?: boolean;
+  /** No hit sparks (剪 draws its own burst). */
+  noSparks?: boolean;
+  /** Endure lasts the whole move, not only the windup (恐湖, 哈？). */
+  holdEndure?: boolean;
+  /** Active frames are true super armour (满月嚎叫). */
+  superArmor?: boolean;
+  /** Melee shape. Grabs default to radial unless this is 'front'. */
+  hitbox?: 'front' | 'radial' | 'disc';
+  /** Vertical reach. Sweeps default to ground. */
+  reach?: 'ground' | 'low';
+  /** A radial hit connects with everyone in the arc, instead of stopping at the first. */
+  hitAll?: boolean;
+  /** Last swing of a counted move. Spread over the base skill for that hit only. */
+  finale?: Partial<Skill>;
+  /** Timeless ops at the active frame. Replaces a self-buff branch. */
+  onActive?: Op[];
+  /** Timeless ops when the move ends without being interrupted. */
+  onFinish?: Op[];
+  /** Pin grab. rabbit / kiss / hug only; a third finale shape goes back to a script. */
+  hold?: Hold;
+  /** 'fall' drops under gravity until the floor axis settles the shot. */
+  motion?: 'fall';
+  /** 'pass' stays in the air after a hit. The default pops. */
+  contact?: 'pass';
+  /** Landing. 'pop' bursts above the floor; 'stick' waits to be picked up; 'drop' dies; 'splash' pops on the floor. */
+  floor?: 'pop' | 'stick' | 'drop' | 'splash';
+  /** False: other shots fly through. The default can be shot down. */
+  solid?: boolean;
+}
+
+/** Scalar buffs a move can arm. The kernel still stores these on Fighter until mods.ts folds them. */
+export type BuffKind = 'brace' | 'poise' | 'muscle' | 'shout' | 'feast' | 'box' | 'sprint' | 'noGain' | 'rose' | 'debt';
+
+/** No clock of its own. Runs at one of the three gates the attack clock already has. */
+export type Op =
+  | { op: 'mod'; kind: BuffKind; time?: number; v?: number; set?: boolean; max?: boolean }
+  | { op: 'form'; king?: boolean }
+  | { op: 'repel'; range?: number; push: number; stun?: number }
+  | { op: 'heal'; hp: number }
+  | { op: 'fx'; type?: string; life: number; y?: number; radius?: number; dir?: boolean; floor?: boolean; color?: string; flash?: number; announce?: { color: string; life: number; size: number; y: number } }
+  | { op: 'shot' }
+  | { op: 'summon'; kind: 'ally' | 'half' };
+
+/** Shared pin: lunge, catch, beats. Last-hit pose stays on Skill.finale. */
+export interface Hold {
+  lunge: number;
+  reach: number;
+  beats: number;
+  gap: number;
+  finale?: 'stand' | 'knockdown' | 'launch';
 }
 
 export type Trait = 'rush' | 'focus' | 'armor' | 'beat';

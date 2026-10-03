@@ -1,8 +1,10 @@
-import type { Skill } from '../data/types.ts';
+import type { HitReact, Op, Skill } from '../data/types.ts';
 import { gainEnergy, type Attack, type Fighter } from './fighter.ts';
+import { addDebt, addMod, dmgDealtMul, dmgTakenMul, has } from './mods.ts';
 import type { FightGame, Projectile, SealVolley } from './game.ts';
 import { CONTROLS, FLOOR, GRAVITY, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
-import { clipFor, drumRow, vowBeatTime, VOW_BEATS } from '../render/clips.ts';
+import { clipFor, drumRow } from '../render/clips.ts';
+import { SCRIPTS } from './scripts.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
 
@@ -97,8 +99,6 @@ const BAN_TIME = 3;
 const BAN_DAMAGE = .5;
 /** 鼓点: beat stacks cap; each one speeds cooldowns 6% and walking 2%. */
 const BEAT_MAX = 8;
-/** 和灯在一起的话: the final double-kick throws the body this hard. Beats live on the clip schedule. */
-const VOW_LAUNCH = 700;
 /** 吉他激奏: ten waves while the key stays down; each one reaches further, hits harder, shoves harder. */
 const RIFF_WAVES = 10;
 const RIFF_R0 = 144, RIFF_R1 = 240;
@@ -159,43 +159,27 @@ const SWING_RING = [
 /** 哭泣的紫罗兰: she does not exist between the vanish and the reappear — no body is drawn. */
 export function violetHidden(f: Fighter): boolean {
   const a = f.attack;
-  return !!a && a.skill.fx === 'violet' && a.t >= a.skill.start && a.t < a.skill.start + VIOLET_WARP;
+  return !!a && !!SCRIPTS[a.skill.fx]?.hidden && a.t >= a.skill.start && a.t < a.skill.start + VIOLET_WARP;
 }
 
 /** 悲鸣: more cries as she breaks. Resolved once per cast so the shared skill stays put. */
-/** 不会再逃避了: every swing except the last stays in place. shots is the swing index before it increments. */
-function spinFinale(skill: Skill, source: HitSource): boolean {
-  if (skill.fx !== 'spin') return false;
-  const shots = 'shots' in source ? Number((source as Attack).shots) : 0;
-  return shots >= Math.max(0, (skill.count ?? 1) - 1);
+/** Last swing wears `finale`. The caller decides when; hit() only reads the skill it was given. */
+export function withFinale(s: Skill, last: boolean): Skill {
+  return last && s.finale ? { ...s, ...s.finale } : s;
 }
 
-/** 和灯在一起的话: the last beat is the launch; every earlier one keeps the victim pinned in front. */
-function vowFinale(skill: Skill, source: HitSource): boolean {
-  if (skill.fx !== 'vow') return false;
-  const shots = 'shots' in source ? Number((source as Attack).shots) : 0;
-  return shots >= VOW_BEATS - 1;
-}
-
-/** 高能量！: the last punch is the shove; every earlier one keeps the victim inside the flurry. */
-function flurryFinale(skill: Skill, source: HitSource): boolean {
-  if (skill.fx !== 'flurry') return false;
-  const shots = 'shots' in source ? Number((source as Attack).shots) : 0;
-  return shots >= Math.max(0, (skill.count ?? 1) - 1);
-}
-
-/** 抱抱还是亲亲: the fifth kiss is the knockdown. shots is the index before it increments. */
-function kissFinale(skill: Skill, source: HitSource): boolean {
-  if (skill.fx !== 'kiss') return false;
-  const shots = 'shots' in source ? Number((source as Attack).shots) : 0;
-  return shots >= 4;
-}
-
-/** 贴贴: the last nuzzle lets go and plants the root. shots is the index before it increments. */
-function hugFinale(skill: Skill, source: HitSource): boolean {
-  if (skill.fx !== 'hug') return false;
-  const shots = 'shots' in source ? Number((source as Attack).shots) : 0;
-  return shots >= Math.max(0, (skill.count ?? 1) - 1);
+/** Type default when the skill does not name a pose. A stun-only react is not a pose. */
+function poseOf(skill: Skill): HitReact | null {
+  if (skill.react?.kind) return skill.react;
+  if (skill.type === 'launch') return { kind: 'float', vy: -600, stun: 1.1 };
+  if (skill.type === 'grab' || skill.super || skill.type === 'upper' || skill.type === 'sweep') {
+    return {
+      kind: 'knockdown',
+      vy: skill.type === 'upper' ? -430 : skill.type === 'sweep' ? -140 : -240,
+      knocked: .72,
+    };
+  }
+  return null;
 }
 
 /** C和弦 and 吉他激奏 keep firing past the first shots only while the attack key is still down. CPU taps. */
@@ -215,8 +199,8 @@ function heldDir(g: FightGame, f: Fighter): number {
 
 function syncGuitar(g: FightGame, f: Fighter, a: Attack): void {
   const s = a.skill;
-  if (s.fx !== 'chord' && s.fx !== 'spin') return;
-  const kind = s.fx === 'spin' ? 'spin' : 'strum';
+  const kind = SCRIPTS[s.fx]?.guitar;
+  if (!kind) return;
   let live = g.effects.find(e => e.type === kind && e.fighter === f.id);
   if (!live) {
     g.effect(kind, f.x, f.y, f.data.color, s.duration, { dir: f.facing, fighter: f.id });
@@ -265,15 +249,15 @@ export function crownShot(s: Skill, i: number): Skill {
 /** 甜甜圈: the flavour is rolled at the cast into a per-shot copy, so the shared skill stays put. */
 function donutVariant(g: FightGame, s: Skill): Skill {
   return g.random() < .5
-    ? { ...s, fx: 'donut-straw', knock: 0, root: DONUT_ROOT, rootBreak: 0, rootPin: true }
+    ? { ...s, fx: 'donut-straw', knock: 0, knockOnBlock: true, control: true, root: DONUT_ROOT, rootBreak: 0, rootPin: true }
     : { ...s, fx: 'donut-choc', frail: DONUT_FRAIL, frailBonus: DONUT_FRAIL_BONUS, knock: DONUT_KNOCK };
 }
 
 export interface HitSource { hit: Set<number> }
 
 export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: Skill, source: HitSource, originX = attacker.x): boolean {
-  // 火的故事: the blast reads everyone on the field — its fuga skill is the one friendly-fire opt-in.
-  const blast = skill.fx === 'fuga';
+  // friendly is the one blast that reads everyone on the field (火的故事).
+  const blast = !!skill.friendly;
   if ((!g.isEnemy(attacker, defender) && !blast) || defender.echo || defender.hp <= 0 || defender.invuln > 0 || source.hit.has(defender.id)) return false;
   source.hit.add(defender.id);
   // 我会保护小睦: every hitstun this defender takes runs through the stack multiplier.
@@ -286,42 +270,48 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   const blocked = defender.blocking && inFront && defender.guard > 0 && !isGrab;
   // Super armour: an endure move in wind-up eats one strike. 恐湖 and 哈？ keep it through the hit. Grabs and supers still go through.
   const armour = defender.attack;
-  const rippleLive = !!armour && (armour.skill.fx === 'ripple' || armour.skill.fx === 'huh') && armour.t < armour.skill.duration - .22;
+  const rippleLive = !!armour && !!armour.skill.holdEndure && armour.t < armour.skill.duration - .22;
   const endured = !blocked && !!armour && armour.endure > 0 && (rippleLive || armour.t < armour.skill.start) && !isGrab && !skill.super;
   // 绊创膏: the buffed fighter eats the damage without the flinch. Grabs and supers ignore the plaster.
-  const braced = !blocked && defender.braced > 0 && !isGrab && !skill.super;
+  const braced = !blocked && has(defender, 'brace') && !isGrab && !skill.super;
   // 秋叶原马拉松: same no-flinch as the plaster, without the damage cut or the halved knockback.
-  const poised = !blocked && defender.poise > 0 && !isGrab && !skill.super;
+  const poised = !blocked && has(defender, 'poise') && !isGrab && !skill.super;
   // 梦想即力量！: the frenzy brace is true super armour — only the control set (grabs, the
   // roots, the ban) staggers her. Supers lose their pierce and the combo escape never fires.
   // 满月嚎叫 wears the same brace for the howl itself, and it ends when the howl does.
-  const howling = defender.attack?.skill.fx === 'howl';
-  const superBrace = !blocked && !isGrab
-    && skill.fx !== 'heart' && skill.fx !== 'shout' && skill.fx !== 'ban'
-    && skill.fx !== 'wink' && skill.fx !== 'donut-straw' && skill.fx !== 'smile-wave'
-    && ((defender.braced > 0 && defender.frenzy > 0) || howling);
-  let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .9 : 1) * ((braced || superBrace) ? BRACED_DAMAGE : 1) * (defender.box > 0 && !isGrab && !skill.super ? BOX_CUT : 1) * (defender.ban > 0 ? BAN_DAMAGE : 1) * attacker.baseDmgMul * attacker.dmgMul * (attacker.muscle > 0 ? 1 + MUSCLE_BONUS : 1) * (attacker.shout > 0 ? 1 + SHOUT_BONUS : 1) * (defender.frail > 0 ? 1 + defender.frailBonus : 1);
+  const howling = !!defender.attack?.skill.superArmor;
+  const superBrace = !blocked && !isGrab && !skill.control
+    && ((has(defender, 'brace') && defender.frenzy > 0) || howling);
+  let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .9 : 1)
+    * dmgTakenMul(defender, { grab: isGrab, superHit: !!skill.super, superBrace, fallback: BRACED_DAMAGE })
+    * (defender.ban > 0 ? BAN_DAMAGE : 1) * attacker.baseDmgMul * attacker.dmgMul * dmgDealtMul(attacker)
+    * (defender.frail > 0 ? 1 + defender.frailBonus : 1);
   // 堕天: below half health the attacker swings harder; 这是最后通牒: a defender under a quarter takes more.
   if (attacker.lowHpDmg > 0 && attacker.hp < attacker.data.hp * .5) damage *= 1 + attacker.lowHpDmg;
   if (defender.executeDmg > 0 && defender.hp < defender.data.hp * .25) damage *= 1 + defender.executeDmg;
 
   // 直接无限大: ordinary hits are written on the bill and do not flinch. Grabs and the
   // control set (root, ban) still land now, so they are not also billed.
-  const control = isGrab || skill.fx === 'heart' || skill.fx === 'shout' || skill.fx === 'ban'
-    || skill.fx === 'wink' || skill.fx === 'donut-straw' || skill.fx === 'smile-wave';
-  if (!blocked && defender.debt > 0 && !control) {
-    attacker.combo = attacker.comboTime > 0 ? attacker.combo + 1 : 1;
-    attacker.comboTime = 1.3 + attacker.comboTimeBonus;
-    attacker.hitCount++;
-    g.totalHits[attacker.id]++;
-    g.maxCombo[attacker.id] = Math.max(g.maxCombo[attacker.id], attacker.combo);
-    damage *= Math.max(.4, 1 - (attacker.combo - 1) * attacker.comboDecay);
+  const control = isGrab || !!skill.control;
+  const quiet = skill.react?.kind === 'none';
+  let crit = false;
+  if (!blocked && has(defender, 'debt') && !control) {
+    if (!quiet) {
+      attacker.combo = attacker.comboTime > 0 ? attacker.combo + 1 : 1;
+      attacker.comboTime = 1.3 + attacker.comboTimeBonus;
+      attacker.hitCount++;
+      g.totalHits[attacker.id]++;
+      g.maxCombo[attacker.id] = Math.max(g.maxCombo[attacker.id], attacker.combo);
+      damage *= Math.max(.4, 1 - (attacker.combo - 1) * attacker.comboDecay);
+    }
     const rounded = Math.round(damage);
-    defender.debtDmg += rounded;
+    addDebt(defender, rounded);
     defender.hitFlash = .08;
-    const rushBonus = attacker.data.trait === 'rush' && attacker.hitCount % 3 === 0 ? 14 : 0;
-    gainEnergy(attacker, (skill.gain ?? (skill.super ? 2 : 9)) + rushBonus);
-    g.audio.play('hit');
+    if (!quiet) {
+      const rushBonus = attacker.data.trait === 'rush' && attacker.hitCount % 3 === 0 ? 14 : 0;
+      gainEnergy(attacker, (skill.gain ?? (skill.super ? 2 : 9)) + rushBonus);
+    }
+    g.audio.play(quiet ? 'key' : 'hit');
     g.text('-' + rounded, defender.x, defender.y - 160, '#f4b4c8', .45, 18);
     return true;
   }
@@ -330,13 +320,13 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     const fullHit = damage;
     damage *= skill.super ? .24 : .13;
     defender.guard -= skill.super ? 42 : skill.type === 'heavy' ? 26 : 15;
-    defender.stun = hitStun(.075);
+    if (!quiet) defender.stun = hitStun(.075);
     defender.blockTap = 1;
     gainEnergy(defender, 5);
     gainEnergy(attacker, 4);
     // 远程反制：挡下投掷物按其伤害削减对方的气，静默结算，不跳字。
     // 剪 is a trap and 火的故事 is her own blast: neither siphons meter for being blocked.
-    if (skill.type === 'projectile' && skill.fx !== 'snip' && skill.fx !== 'fuga') attacker.energy = clamp(attacker.energy - fullHit * GUARD_DRAIN, 0, 100);
+    if (skill.type === 'projectile' && !skill.noSiphon) attacker.energy = clamp(attacker.energy - fullHit * GUARD_DRAIN, 0, 100);
     g.effect('shield', defender.x - dir * 30, defender.y - 78, '#8df0ff', .22, { radius: 65 });
     g.audio.play('block');
     g.text('格挡', defender.x, defender.y - 170, '#91eaff', .35, 16);
@@ -354,7 +344,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       defender.blockLeft = 0;
       g.text('破防!', defender.x, defender.y - 200, SIDE[0], .8, 30);
     }
-  } else {
+  } else if (!quiet) {
     attacker.combo = attacker.comboTime > 0 ? attacker.combo + 1 : 1;
     attacker.comboTime = 1.3 + attacker.comboTimeBonus;
     attacker.hitCount++;
@@ -362,14 +352,14 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     g.maxCombo[attacker.id] = Math.max(g.maxCombo[attacker.id], attacker.combo);
     damage *= Math.max(.4, 1 - (attacker.combo - 1) * attacker.comboDecay);
     // 最喜欢闪闪发光的东西！: unblocked hits only, and the damage number prints one size up.
-    const crit = attacker.critChance > 0 && g.random() < attacker.critChance;
+    crit = attacker.critChance > 0 && g.random() < attacker.critChance;
     if (crit) damage *= 1.5;
     // 鼓点: a clean hit adds a beat; taking one shakes two off.
     if (attacker.data.trait === 'beat') attacker.beatStacks = Math.min(BEAT_MAX, attacker.beatStacks + 1);
     if (defender.data.trait === 'beat') defender.beatStacks = Math.max(0, defender.beatStacks - 2);
     defender.hitFlash = .13;
     if (endured && armour) {
-      if (armour.skill.fx !== 'ripple' && armour.skill.fx !== 'huh') armour.endure--;
+      if (!armour.skill.holdEndure) armour.endure--;
       g.text('霸体', defender.x, defender.y - 195, '#ffd27a', .5, 18);
     } else if (braced || superBrace || poised) {
       // 绊创膏: the hit lands, nothing flinches, and the combo escape below still applies.
@@ -394,7 +384,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
           holdStill = false;
         }
       }
-      defender.stun = hitStun(skill.fx === 'groove-note' ? .16 : skill.fx === 'bag' ? .26 : skill.fx === 'matcha' ? .18 : skill.fx === 'ripple' || skill.fx === 'huh' ? .35 : skill.type === 'light' ? .28 : skill.super ? .42 : .37);
+      defender.stun = hitStun(skill.react?.stun ?? (skill.type === 'light' ? .28 : skill.super ? .42 : .37));
       defender.attack = null;
       defender.hitBySuper = skill.super;
       // A super wipes the buffer except combo escapes (恐湖, 轮奏), so the escape can still come out between hits.
@@ -424,105 +414,37 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
           defender.knocked = 0;
           holdStill = true;
         }
-        g.text(skill.fx === 'star-fall' ? '眩晕!' : '定身!', defender.x, defender.y - 195, '#ffd27a', .6, 20);
-      } else if (skill.fx === 'onegai') {
-        // The headbutt hurls them out of the kneel: a real launch, and the grab shakes the root off.
-        defender.root = 0;
-        defender.rootHits = 0;
-        defender.rootLevel = 'move';
-        holdStill = false;
-        defender.vy = -440;
-        defender.knocked = .72;
-        defender.downTime = 0;
-        defender.stun = hitStun(.5);
-      } else if (skill.fx === 'spin' && !spinFinale(skill, source)) {
-        defender.vy = 0;
-        defender.knocked = 0;
-        defender.stun = hitStun(.2);
-      } else if (skill.fx === 'flurry' && !flurryFinale(skill, source)) {
-        // 高能量！: every punch but the last keeps the victim standing inside the flurry.
-        defender.vy = 0;
-        defender.knocked = 0;
-        defender.stun = hitStun(.2);
-      } else if (skill.fx === 'rabbit') {
-        // 食兔者: three bites, pinned, still standing when the last one lets go.
-        defender.vy = 0;
-        defender.knocked = 0;
-        defender.stun = hitStun(.25);
-        holdStill = true;
-      } else if (skill.fx === 'kiss' && !kissFinale(skill, source)) {
-        defender.vy = 0;
-        defender.knocked = 0;
-        defender.stun = hitStun(.28);
-        holdStill = true;
-      } else if (skill.fx === 'kiss') {
-        defender.vy = -120;
-        defender.knocked = .9;
-        defender.downTime = 0;
-        defender.stun = hitStun(.45);
-      } else if (skill.fx === 'hug' && !hugFinale(skill, source)) {
-        // 贴贴: every nuzzle but the last keeps the victim standing inside the hug.
-        defender.vy = 0;
-        defender.knocked = 0;
-        defender.stun = hitStun(.22);
-        holdStill = true;
-      } else if (skill.fx === 'shove') {
-        // Hold them in front, turned to face the attacker. The lift and throw wait on the attack clock.
-        defender.stun = hitStun(.5);
-        defender.knocked = 0;
-        defender.vx = 0;
-        defender.vy = 0;
-        defender.x -= dir * 28;
-        const face = Math.sign(attacker.x - defender.x) || (dir > 0 ? -1 : 1);
-        defender.facing = face < 0 ? -1 : 1;
-        if ('tossAt' in source) {
-          const atk = source as Attack;
-          atk.liftAt = atk.t + .1;
-          atk.tossAt = atk.t + .22;
+        g.text('定身!', defender.x, defender.y - 195, '#ffd27a', .6, 20);
+      } else {
+        const posed = SCRIPTS[skill.fx]?.hit?.(g, attacker, defender, source, dir);
+        if (posed === 'still') holdStill = true;
+        if (!posed) {
+        const pose = poseOf(skill);
+        if (pose?.clearRoot) {
+          defender.root = 0;
+          defender.rootHits = 0;
+          defender.rootLevel = 'move';
+          holdStill = false;
         }
-      } else if (skill.fx === 'slam') {
-        defender.y = FLOOR;
-        defender.vy = 0;
-        defender.knocked = 1;
-        defender.downTime = 0;
-        defender.stun = hitStun(.4);
-      } else if (skill.fx === 'ripple' || skill.fx === 'bag') {
-        defender.vy = 0;
-        defender.knocked = 0;
-      } else if (skill.fx === 'seal') {
-        // 九字真言: the circle holds them on their feet. A clean hit seals block and the back-dodge.
-        defender.vy = 0;
-        defender.knocked = 0;
-        if (defender.purge <= 0) g.text('驱邪', defender.x, defender.y - 195, '#e6d4ff', .6, 20);
-        defender.purge = PURGE_TIME;
-      } else if (skill.fx === 'ban') {
-        // 我要拉黑他: frozen for three seconds, holding the hit pose. Nothing but the clock lifts it.
-        defender.ban = BAN_TIME;
-        defender.root = 0;
-        defender.rootHits = 0;
-        defender.rootLevel = 'move';
-        defender.vy = Math.min(defender.vy, 0);
-        defender.knocked = 0;
-        defender.dodge = 0;
-        defender.stun = hitStun(BAN_TIME);
-        holdStill = true;
-        g.text('拉黑!', defender.x, defender.y - 195, '#ff5a5a', .7, 22);
-      } else if (skill.fx === 'vow' && !vowFinale(skill, source)) {
-        // 和灯在一起的话: every beat but the last keeps the victim pinned in front of her.
-        defender.vy = 0;
-        defender.knocked = 0;
-        defender.stun = hitStun(.3);
-        holdStill = true;
-      } else if (isGrab || skill.super || skill.type === 'upper' || skill.type === 'sweep') {
-        defender.vy = skill.type === 'upper' ? -430 : skill.type === 'sweep' ? -140 : -240;
-        defender.knocked = .72;
-        defender.downTime = 0;
-      } else if (skill.type === 'launch') {
-        // Float, not knockdown: the defender stays hittable until they land.
-        // High enough to meet with a jump attack; the fall itself is slowed in stepFighter.
-        defender.vy = -600;
-        defender.stun = hitStun(1.1);
-        g.text('浮空!', defender.x, defender.y - 200, '#ffd27a', .6, 20);
+        if (pose?.kind === 'stand' || pose?.kind === 'pin') {
+          defender.vy = pose.vy ?? 0;
+          defender.knocked = pose.knocked ?? 0;
+          if (pose.stun != null) defender.stun = hitStun(pose.stun);
+          if (pose.holdStill) holdStill = true;
+        } else if (pose?.kind === 'float') {
+          // Float, not knockdown: the defender stays hittable until they land.
+          defender.vy = pose.vy ?? -600;
+          defender.stun = hitStun(pose.stun ?? 1.1);
+          g.text('浮空!', defender.x, defender.y - 200, '#ffd27a', .6, 20);
+        } else if (pose?.kind === 'knockdown' || pose?.kind === 'launch') {
+          if (pose.snapFloor) defender.y = FLOOR;
+          defender.vy = pose.vy ?? 0;
+          defender.knocked = pose.knocked ?? .72;
+          defender.downTime = 0;
+          if (pose.stun != null) defender.stun = hitStun(pose.stun);
+          if (pose.holdStill) holdStill = true;
+        }
+        }
       }
       if (!blocked && skill.air && defender.y < FLOOR - .5) {
         // Juggle: an air normal pops a floating victim slightly upward and locks them briefly.
@@ -541,14 +463,12 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     gainEnergy(attacker, (skill.gain ?? (skill.super ? 2 : 9)) + rushBonus);
     gainEnergy(defender, 7);
     if (skill.drain) {
-      // 离灯远点: the abuse strips the victim's meter raw — no multipliers, and it says so out loud.
       defender.energy = clamp(defender.energy - skill.drain, 0, 100);
       g.text(`-${skill.drain} 气`, defender.x, defender.y - 135, '#ffd27a', .6, 16);
     }
     g.audio.play('hit');
     g.text('-' + Math.round(damage), defender.x + dir * 15, defender.y - 160, skill.super ? SIDE[attacker.team] : '#fff', .65, (skill.super ? 30 : 23) + (crit ? 6 : 0));
-    // 剪 draws its own spindle burst — no sparks and no star on top, so the cut reads as blades only.
-    if (skill.fx !== 'snip') {
+    if (!skill.noSparks) {
       g.sparks(defender.x - dir * 23, defender.y - 85, attacker.data.color, skill.super ? 36 : 18, skill.super ? 1.6 : 1);
       g.effect('hit', defender.x - dir * 23, defender.y - 85, attacker.data.color, .25, { radius: skill.super ? 90 : 48 });
     }
@@ -559,6 +479,11 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       defender.frail = Math.max(defender.frail, skill.frail);
       if (fresh) g.text('脆弱', defender.x, defender.y - 195, '#ffb4c8', .6, 18);
     }
+  } else {
+    crit = attacker.critChance > 0 && g.random() < attacker.critChance;
+    if (crit) damage *= 1.5;
+    g.audio.play('key');
+    g.text('-' + Math.round(damage), defender.x + dir * 8, defender.y - 148, '#fff', .35, 16);
   }
 
   defender.hp = clamp(defender.hp - damage, 0, defender.data.hp);
@@ -582,19 +507,14 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   if (attacker.lifesteal > 0 && damage > 0) attacker.hp = Math.min(attacker.data.hp, attacker.hp + damage * attacker.lifesteal);
   // 竟敢无视灯: melee hits pain the attacker back — pure hp loss, no stagger, no fx, it can kill.
   if (defender.thorns > 0 && skill.type !== 'projectile' && damage > 0) attacker.hp = Math.max(0, attacker.hp - damage * defender.thorns);
-  const knock = skill.fx === 'bag' || skill.fx === 'heart' || skill.fx === 'wink' || skill.fx === 'donut-straw' ? 0
-    : skill.fx === 'chord' ? 160
-    : skill.fx === 'onegai' ? 360 : skill.fx === 'shout' ? 110
-    : skill.fx === 'spin' && !spinFinale(skill, source) ? 0
-    : skill.fx === 'flurry' && !flurryFinale(skill, source) ? 0
-    : skill.fx === 'ripple' ? 620 : skill.fx === 'slam' ? 120 : blocked ? 75 : skill.knock ?? (skill.type === 'light' ? 95 : skill.super ? 340 : 235);
-  if (skill.fx !== 'shove' && defender.invuln <= 0 && !endured) defender.vx = dir * knock * (braced || superBrace ? .5 : 1);
-  // 高能量！: the finale shove outruns the combo-escape push, so the last punch always reads as the finisher.
-  else if (skill.fx === 'flurry' && flurryFinale(skill, source)) defender.vx = dir * knock;
+  const rawKnock = skill.knock ?? (skill.type === 'light' ? 95 : skill.super ? 340 : 235);
+  const knock = blocked && !skill.knockOnBlock ? 75 : rawKnock;
+  if (!quiet && !SCRIPTS[skill.fx]?.noKnock && defender.invuln <= 0 && !endured) defender.vx = dir * knock * (braced || superBrace ? .5 : 1);
+  else if (skill.react?.forceKnock) defender.vx = dir * knock;
   if (holdStill) { defender.vx = 0; defender.vy = 0; }
-  g.shake = blocked ? 2 : skill.fx === 'slam' ? 14 : skill.fx === 'onegai' ? 10 : skill.super ? 12 : skill.type === 'heavy' ? 7 : 4;
+  g.shake = quiet ? 0 : blocked ? 2 : skill.shake ?? (skill.super ? 12 : skill.type === 'heavy' ? 7 : 4);
   const juggleHit = !blocked && !!skill.air && defender.y < FLOOR - .5;
-  g.hitstop = blocked ? .018 : juggleHit ? .085 : skill.fx === 'slam' ? .09 : skill.fx === 'onegai' ? .08 : skill.fx === 'seal' ? .09 : skill.super ? .065 : skill.type === 'heavy' ? .065 : .032;
+  g.hitstop = quiet ? 0 : blocked ? .018 : juggleHit ? .085 : skill.hitstop ?? (skill.super ? .065 : skill.type === 'heavy' ? .065 : .032);
   return true;
 }
 
@@ -619,8 +539,7 @@ export function applyMelee(g: FightGame, f: Fighter, a: Attack): void {
   for (const o of meleeSweep) {
     const dist = Math.abs(o.x - f.x);
     const dy = Math.abs(o.y - f.y);
-    const ripple = s.fx === 'ripple' || s.fx === 'huh' || s.fx === 'tsun';
-    if (s.fx === 'riff' || s.fx === 'howl' || s.fx === 'groove' || s.fx === 'crown') {
+    if (s.hitbox === 'disc') {
       // 吉他激奏: a screen-facing disc centred on her — every direction, any height. A jump no longer dodges it.
       if (Math.hypot(o.x - f.x, o.y - f.y) < s.range) {
         hit(g, f, o, s, a);
@@ -628,16 +547,16 @@ export function applyMelee(g: FightGame, f: Fighter, a: Attack): void {
       }
       continue;
     }
-    const radial = ripple || s.fx === 'spin' || (s.type === 'grab' && s.fx !== 'shove' && s.fx !== 'slam');
+    const radial = s.hitbox === 'radial' || (s.hitbox !== 'front' && s.type === 'grab');
     const front = (o.x - f.x) * f.facing >= -20;
     // Sweeps only touch grounded targets; air normals and uppers reach further vertically.
-    // A crawl's hand only reaches a standing chest, so a real jump clears it.
-    const height = ripple || s.fx === 'yokan' || s.fx === 'skewer' || s.type === 'sweep' ? o.y > FLOOR - 40
-      : s.fx === 'crawl' ? dy < 48
+    // A low reach only meets a standing chest, so a real jump clears it.
+    const height = s.reach === 'ground' || s.type === 'sweep' ? o.y > FLOOR - 40
+      : s.reach === 'low' ? dy < 48
       : dy < (s.super ? 170 : s.air || s.type === 'upper' ? 150 : 112);
     if (dist < s.range && (radial || front) && height) {
       hit(g, f, o, s, a);
-      if (f.hp <= 0 || f.stun > 0 || f.attack !== a || (radial && !ripple && a.hit.size)) break;
+      if (f.hp <= 0 || f.stun > 0 || f.attack !== a || (radial && !s.hitAll && a.hit.size)) break;
     }
   }
 }
@@ -657,20 +576,22 @@ const BAG_ARCS = [
 
 export function spawnShot(g: FightGame, f: Fighter, a: Attack, offsetY = 0, arc = 0): Projectile {
   const s = a.skill;
-  const lob = s.fx === 'milk' ? MILK_ARC : s.fx === 'bag' ? BAG_ARCS[arc % BAG_ARCS.length] : null;
-  if (s.fx === 'milk') g.projectiles = g.projectiles.filter(p => !(p.fx === 'milk' && p.owner === f.id));
+  const place = SCRIPTS[s.fx]?.spawn;
+  const lob = place === 'milk' ? MILK_ARC : place === 'bag' ? BAG_ARCS[arc % BAG_ARCS.length] : null;
+  if (place === 'milk') g.projectiles = g.projectiles.filter(p => !(p.fx === s.fx && p.owner === f.id));
   // 奇独点: the well takes a fixed spot ahead and never travels. 抹茶大芭菲 stands on the floor the same way.
-  const hole = s.fx === 'blackhole';
-  const parfait = s.fx === 'parfait';
+  const hole = place === 'well';
+  const parfait = place === 'zone';
+  const juggle = place === 'juggle';
   const speed = lob ? lob.vx : (s.speed ?? (s.super ? 650 : 480)) * (f.data.trait === 'focus' ? 1.15 : 1);
   // 抛球杂耍: the toss leaves at a small random climb or drop, so two balls never fly the same lane.
-  const juggleAng = s.fx === 'juggle-ball' ? (Math.random() * 2 - 1) * .3 : 0;
+  const juggleAng = juggle ? (Math.random() * 2 - 1) * .3 : 0;
   const p: Projectile = {
     owner: f.id,
     x: parfait ? clamp(f.x + f.facing * PARFAIT_DIST, X_MIN, X_MAX) : hole ? clamp(f.x + f.facing * BLACKHOLE_DIST, X_MIN, X_MAX) : f.x + f.facing * 53,
     y: parfait ? FLOOR : hole ? FLOOR - 95 : f.y - 85 + offsetY,
-    vx: hole || parfait ? 0 : f.facing * speed * (s.fx === 'juggle-ball' ? Math.cos(juggleAng) : 1),
-    vy: s.fx === 'juggle-ball' ? Math.sin(juggleAng) * speed : lob ? lob.vy : 0,
+    vx: hole || parfait ? 0 : f.facing * speed * (juggle ? Math.cos(juggleAng) : 1),
+    vy: juggle ? Math.sin(juggleAng) * speed : lob ? lob.vy : 0,
     life: s.life ?? 2.7,
     skill: s,
     color: f.data.color,
@@ -681,18 +602,19 @@ export function spawnShot(g: FightGame, f: Fighter, a: Attack, offsetY = 0, arc 
     hit: new Set(),
     trail: [],
     age: 0,
-    v0: s.fx === 'juggle-ball' ? speed : undefined,
+    v0: juggle ? speed : undefined,
+    solid: s.solid,
   };
   g.projectiles.push(p);
   // 微笑号出航: a horn blast the moment the hull is called, so the sweep has a warning.
-  if (s.fx === 'smile-ship') g.audio.play('whistle');
+  if (SCRIPTS[s.fx]?.whistle) g.audio.play('whistle');
   return p;
 }
 
 /** 韵律直觉: a slow note that only steers left and right, so a jump clears it. */
 function spawnGrooveNote(g: FightGame, f: Fighter, a: Attack): void {
   const speed = 250 * (f.data.trait === 'focus' ? 1.15 : 1);
-  const skill: Skill = { ...a.skill, type: 'projectile', damage: 12, knock: 90, gain: 2, fx: 'groove-note', speed: 250, size: 32, life: 2 };
+  const skill: Skill = { ...a.skill, type: 'projectile', damage: 12, knock: 90, gain: 2, fx: 'groove-note', speed: 250, size: 32, life: 2, react: { stun: .16 } };
   g.projectiles.push({
     owner: f.id,
     x: f.x + f.facing * 40,
@@ -712,33 +634,18 @@ function spawnGrooveNote(g: FightGame, f: Fighter, a: Attack): void {
   });
 }
 
-/** 高性能作曲AI: one tick of the lane. No stun, no combo, no hitstop — leaving is the way out. */
+/** 高性能作曲AI: one tick of the lane. No stun, no combo, no hitstop — leaving is the way out.
+ *  Damage still goes through hit(), so brace, ban, thorns and the rest apply. */
 function composeTick(g: FightGame, attacker: Fighter, defender: Fighter, skill: Skill): void {
-  if (!g.isEnemy(attacker, defender) || defender.hp <= 0 || defender.invuln > 0) return;
-  const dir = defender.x >= attacker.x ? 1 : -1;
-  const blocked = defender.blocking && defender.facing === -dir && defender.guard > 0;
-  let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .9 : 1)
-    * attacker.baseDmgMul * attacker.dmgMul * (attacker.muscle > 0 ? 1 + MUSCLE_BONUS : 1)
-    * (attacker.shout > 0 ? 1 + SHOUT_BONUS : 1)
-    * (defender.box > 0 ? BOX_CUT : 1)
-    * (defender.frail > 0 ? 1 + defender.frailBonus : 1);
-  if (blocked) {
-    damage *= .13;
-    defender.guard -= 15;
-    if (defender.guard <= 0) {
-      defender.guard = 0;
-      defender.stun = Math.max(defender.stun, .9);
-      defender.guardBroken = 1.2;
-      defender.blocking = false;
-      defender.queue = [];
-      g.text('破防!', defender.x, defender.y - 200, SIDE[0], .8, 30);
-    }
-  }
-  const rounded = Math.round(damage);
-  if (rounded <= 0) return;
-  defender.hp = clamp(defender.hp - rounded, 0, defender.data.hp);
-  g.audio.play('key');
-  g.text('-' + rounded, defender.x + dir * 8, defender.y - 148, '#fff', .35, 16);
+  hit(g, attacker, defender, {
+    ...skill,
+    react: { kind: 'none', stun: 0 },
+    shake: 0,
+    hitstop: 0,
+    noSparks: true,
+    gain: 0,
+    knock: 0,
+  }, { hit: new Set() });
 }
 
 /** 满场: sixteen notes in two full-stage drops. Slots repeat every 8 so each wave spans the stage. */
@@ -808,19 +715,21 @@ function spawnMatchaBlob(g: FightGame, owner: Fighter, zone: Projectile, index: 
     hit: new Set(),
     trail: [],
     age: 0,
+    floor: 'splash',
   });
 }
 
 /** True once this move will not produce more hits. Supers and the throw cinematics stay committed. */
 export function effectSettled(a: Attack): boolean {
   const s = a.skill;
-  if (s.super || s.fx === 'shove' || s.fx === 'slam' || s.fx === 'rabbit' || s.fx === 'kiss' || s.fx === 'hug') return false;
+  const sc = SCRIPTS[s.fx];
+  if (s.super || s.hold || sc?.commit) return false;
   // 剪 and 火的故事 hand their pay-off to a zone or an arrow; once that is away she may act.
-  if (s.fx === 'snip' || s.fx === 'fuga') return a.emitted;
+  if (sc?.freeWhenEmitted) return a.emitted;
   if (s.type === 'dash') return a.t >= s.duration - .08;
   if (s.type === 'upper') return a.t >= s.start + .25;
   const volley = a.burst || s.count || 1;
-  if (volley > 1) return a.shots >= volley || (s.fx === 'chord' && a.t >= s.duration - .22) || (s.fx === 'riff' && a.t >= s.duration - .3);
+  if (volley > 1) return a.shots >= volley || (sc?.settle != null && a.t >= s.duration - sc.settle);
   return a.emitted;
 }
 
@@ -870,6 +779,149 @@ function wishBurst(g: FightGame, p: Projectile, owner: Fighter | undefined): voi
   }
 }
 
+/** Shove everyone inside `range`. Invulnerable bodies stay. */
+function repel(g: FightGame, f: Fighter, range: number, push: number, stun = .2): void {
+  for (const o of g.opponents(f)) {
+    if (o.hp <= 0 || o.invuln > 0) continue;
+    const dx = o.x - f.x;
+    if (Math.abs(dx) < range) {
+      o.vx = (Math.sign(dx) || f.facing) * push;
+      o.stun = Math.max(o.stun, stun);
+    }
+  }
+}
+
+/** Active-frame and finish ops. A missing mod time uses the form this list just armed. */
+function runOps(g: FightGame, f: Fighter, s: Skill, ops: Op[]): void {
+  let formTime = 0;
+  for (const op of ops) {
+    if (op.op === 'form') {
+      formTime = f.data.frenzy?.time ?? FRENZY_TIME;
+      f.frenzy = formTime;
+      if (op.king) f.king = true;
+    } else if (op.op === 'mod') {
+      const time = op.time ?? formTime;
+      if (op.kind === 'brace') addMod(f, 'brace', time, { v: BRACED_DAMAGE, max: !op.set });
+      else if (op.kind === 'noGain') addMod(f, 'noGain', time, { max: !!op.max });
+      else if (op.kind === 'poise') addMod(f, 'poise', time);
+      else if (op.kind === 'muscle') addMod(f, 'dmgDealt', time, {
+        v: MUSCLE_BONUS, tag: 'muscle', pulseEvery: 1,
+        pulse: (game, who) => game.effect('burst', who.x, who.y - 95, who.data.color, .45, { radius: 55 }),
+      });
+      else if (op.kind === 'shout') addMod(f, 'dmgDealt', time, {
+        v: SHOUT_BONUS, tag: 'shout', pulseEvery: 12,
+        pulse: (game, who) => game.effect('eye-flame', who.x, who.y - 150, '#5fd0ff', .55, { dir: who.facing }),
+        onExpire: (game, who) => {
+          const price = Math.round(who.data.hp * SHOUT_PRICE);
+          who.hp = Math.max(0, who.hp - price);
+          game.text('-' + price, who.x, who.y - 170, '#8fd8ff', .8, 26);
+          game.shake = Math.max(game.shake, 7);
+          game.effect('burst', who.x, who.y - 85, '#3f6fd8', .5, { radius: 90 });
+        },
+      });
+      else if (op.kind === 'feast') {
+        addMod(f, 'lockNormals', time, { tag: 'feast', max: true });
+        addMod(f, 'regen', time, { v: FEAST_REGEN, tag: 'feast', max: true });
+      } else if (op.kind === 'box') {
+        addMod(f, 'dmgTaken', time, { v: BOX_CUT, tag: 'box' });
+        addMod(f, 'regen', time, { v: BOX_REGEN, tag: 'box' });
+      } else if (op.kind === 'sprint') addMod(f, 'speed', time, {
+        v: MARATHON_SPEED, pulseEvery: 2,
+        pulse: (game, who) => game.effect('dust', who.x - who.facing * 18, FLOOR, who.data.color, .22, { radius: 16 }),
+      });
+      else if (op.kind === 'rose') {
+        f.roseBase = f.thorns;
+        f.thorns = Math.max(f.thorns, op.v ?? 0);
+        addMod(f, 'thorns', time, {
+          tag: 'rose', pulseEvery: 6,
+          pulse: (game, who) => game.effect('rose-petal', who.x + (game.random() * 2 - 1) * 62, who.y - 168 - game.random() * 54, '#6fa8ff', 1.1),
+          onExpire: (_game, who) => { who.thorns = who.roseBase; who.roseBase = 0; },
+        });
+      } else if (op.kind === 'debt') addMod(f, 'debt', time, {
+        acc: 0,
+        onExpire: (game, who) => {
+          const acc = who.mods.find(m => m.kind === 'debt')?.acc ?? 0;
+          if (acc <= 0) return;
+          const bill = Math.round(acc * 1.5);
+          who.hp = Math.max(0, who.hp - bill);
+          who.stun = Math.max(who.stun, .35);
+          game.text('-' + bill, who.x, who.y - 170, '#ff4d6a', .8, 28);
+          game.shake = 10;
+        },
+      });
+    } else if (op.op === 'repel') {
+      repel(g, f, op.range ?? s.range, op.push, op.stun);
+    } else if (op.op === 'heal') {
+      f.hp = Math.min(f.data.hp, f.hp + op.hp);
+      g.text(`+${op.hp}`, f.x, f.y - 160, '#ffd0d8', .6, 18);
+    } else if (op.op === 'fx') {
+      if (op.flash) g.flash = Math.max(g.flash, op.flash);
+      const y = op.floor ? FLOOR : f.y + (op.y ?? -80);
+      g.effect(op.type ?? s.fx, f.x, y, op.color ?? f.data.color, op.life, {
+        ...(op.dir ? { dir: f.facing } : {}),
+        ...(op.radius != null ? { radius: op.radius } : {}),
+      });
+      if (op.announce) g.text(s.name, f.x, f.y + op.announce.y, op.announce.color, op.announce.life, op.announce.size);
+    } else if (op.op === 'summon') {
+      if (op.kind === 'ally') g.summonAlly(f);
+      else g.summonHalf(f);
+    }
+  }
+}
+
+/** rabbit / kiss / hug. The catch is a short lunge, then a pin, then `beats` hits on a fixed gap. */
+function stepHold(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  const h = s.hold;
+  if (!h) return;
+  a.emitted = true;
+  if (a.hold < 0 && a.t >= s.start && a.t < s.start + h.lunge) {
+    let caught: Fighter | undefined;
+    for (const o of g.opponents(f)) {
+      if (o.hp <= 0 || o.invuln > 0) continue;
+      const front = (o.x - f.x) * f.facing >= -20;
+      if (!front || Math.abs(o.y - f.y) >= 112) continue;
+      if ((o.x - f.x) * f.facing < 70) { caught = o; break; }
+    }
+    if (caught) {
+      a.hold = caught.id;
+      a.tossAt = a.t;
+      f.x = clamp(caught.x - f.facing * h.reach, X_MIN, X_MAX);
+      g.hitstop = Math.max(g.hitstop, .06);
+      g.effect('grab', caught.x, caught.y - 80, f.data.color, .25, { radius: 48 });
+      caught.stun = Math.max(caught.stun, .35);
+      caught.vx = 0;
+      caught.vy = 0;
+      caught.knocked = 0;
+      caught.attack = null;
+      caught.queue = [];
+    } else {
+      f.x = clamp(f.x + f.facing * (s.speed ?? 520) * dt, X_MIN, X_MAX);
+      if (f.x === X_MIN || f.x === X_MAX) a.t = Math.max(a.t, s.duration - .2);
+    }
+  }
+  if (a.hold < 0 && a.tossAt === 0 && a.t >= s.start + h.lunge && a.t < s.duration - .2) a.t = s.duration - .2;
+  if (a.hold < 0) return;
+  const o = g.fighters.find(p => p.id === a.hold);
+  if (!o || o.hp <= 0) { a.t = s.duration; return; }
+  o.x = clamp(f.x + f.facing * h.reach, X_MIN, X_MAX);
+  o.y = FLOOR;
+  o.vx = 0;
+  o.vy = 0;
+  o.knocked = 0;
+  o.stun = Math.max(o.stun, .3);
+  o.facing = (-f.facing) as 1 | -1;
+  if (a.shots >= h.beats || a.t < a.tossAt + a.shots * h.gap) return;
+  a.hit = new Set();
+  hit(g, f, o, withFinale(s, a.shots >= h.beats - 1), a);
+  g.effect(s.fx, o.x, o.y - 90, f.data.color, .3, { radius: 32 });
+  a.shots++;
+  if (a.shots >= h.beats) {
+    a.hold = -1;
+    a.t = Math.max(a.t, s.duration - .22);
+  }
+}
+
 export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
   const a = f.attack;
   if (!a) return;
@@ -886,152 +938,12 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
     g.effect('ghost', f.x - f.facing * 20, f.y, f.data.color, .28, { fighter: f.id, alpha: .5, tint: f.data.frenzy?.tint ?? FRENZY_TINT, sheet: clip.sheet, col: clip.col, row: clip.row, facing: f.facing });
   }
 
-  // 推落: a short hold, a small lift, then the throw. Facing stays toward the attacker.
-  if (s.fx === 'shove' && a.tossAt > 0) {
-    const release = a.t >= a.tossAt;
-    for (const id of a.hit) {
-      const o = g.fighters.find(p => p.id === id);
-      if (!o || o.hp <= 0) continue;
-      const face = Math.sign(f.x - o.x) || -f.facing;
-      o.facing = face < 0 ? -1 : 1;
-      if (release) {
-        const dir = Math.sign(o.x - f.x) || f.facing;
-        o.vx = dir * 3200;
-        o.vy = -560;
-        o.knocked = .9;
-        o.downTime = 0;
-        o.stun = Math.max(o.stun, .4);
-      } else {
-        o.vx = 0;
-        o.vy = a.t < a.liftAt ? -20 : -120;
-        o.knocked = 0;
-        o.stun = Math.max(o.stun, .3);
-      }
-    }
-    if (release) {
-      a.liftAt = 0;
-      a.tossAt = 0;
-      a.t = Math.max(a.t, s.duration - .22);
-    }
-  }
+  if (s.hold) stepHold(g, f, a, dt);
+  else SCRIPTS[s.fx]?.update?.(g, f, a, dt);
 
-/** Repel pulse while the drums super is up: anyone closing in gets bounced. Returns whether anyone was pushed. */
-function repelPulse(g: FightGame, f: Fighter, power: number): boolean {
-  let pushed = false;
-  for (const o of g.opponents(f)) {
-    if (o.hp <= 0 || o.invuln > 0) continue;
-    const dx = o.x - f.x;
-    if (Math.abs(dx) < DRUM_REPEL_RANGE) {
-      const dir = Math.sign(dx) || f.facing;
-      o.vx = dir * power;
-      o.stun = Math.max(o.stun, .22);
-      pushed = true;
-    }
-  }
-  return pushed;
-}
-
-  // 满场: the kit stays up for the sit; nearby foes are bounced on every pulse. No extra hit.
-  if (s.fx === 'drums' && !a.emitted) {
-    a.emitted = true;
-    repelPulse(g, f, DRUM_REPEL_PUSH);
-    g.effect('drums', f.x, f.y, f.data.color, s.duration, { dir: f.facing });
-  }
-  if (s.fx === 'drums' && a.t < s.duration) {
-    const prev = Math.floor(Math.max(0, a.t - dt) / DRUM_REPEL_EVERY);
-    const cur = Math.floor(a.t / DRUM_REPEL_EVERY);
-    if (cur > prev && repelPulse(g, f, DRUM_REPEL_PUSH)) {
-      g.effect('burst', f.x, f.y - 80, f.data.color, .25, { radius: DRUM_REPEL_RANGE });
-    }
-  }
-  if (s.fx === 'drums' && drumRow(a.t, s.duration) === 1 && drumRow(Math.max(0, a.t - dt), s.duration) !== 1) {
-    const y = f.y - 78;
-    g.effect('drum-wave', f.x - 110, y, '#f4ecff', .32, { radius: 24 });
-    g.effect('drum-wave', f.x + 110, y, '#f4ecff', .32, { radius: 24 });
-  }
-
-  // One travelling double for the whole super. The four grabs still come from the flurry below.
-  if (s.fx === 'mortis' && !a.emitted) {
-    a.emitted = true;
-    const foe = g.opponents(f)
-      .filter(o => o.hp > 0 && (o.x - f.x) * f.facing >= -20 && Math.abs(o.x - f.x) < s.range)
-      .sort((p, q) => Math.abs(p.x - f.x) - Math.abs(q.x - f.x))[0];
-    const dist = foe ? Math.max(48, Math.abs(foe.x - f.x)) : s.range;
-    g.effect('mortis', f.x, f.y, f.data.color, s.duration, { dir: f.facing, radius: dist });
-  }
-
-  // 诗超绊: the first note shoves everyone nearby, so the one-second sing is not free to walk into.
-  if (s.fx === 'poem' && a.shots === 0) {
-    a.shots = 1;
-    for (const o of g.opponents(f)) {
-      if (o.hp <= 0 || o.invuln > 0) continue;
-      const dx = o.x - f.x;
-      if (Math.abs(dx) < POEM_REPEL_RANGE) {
-        o.vx = (Math.sign(dx) || f.facing) * POEM_REPEL_PUSH;
-        o.stun = Math.max(o.stun, .2);
-      }
-    }
-    g.effect('poem', f.x, f.y - 80, f.data.color, s.start, { radius: POEM_REPEL_RANGE });
-  }
-
-  // 来去如风: no travel at all — the wind coil bursts where she stood and she steps out ahead.
-  if (s.fx === 'wind' && !a.emitted && a.t >= s.start) {
-    a.emitted = true;
-    g.effect('wind', f.x, f.y - 85, f.data.color, .45, { dir: f.facing });
-    f.x = clamp(f.x + f.facing * s.range, X_MIN, X_MAX);
-    g.effect('wind', f.x, f.y - 85, f.data.color, .45, { dir: -f.facing });
-    g.effect('dust', f.x, FLOOR, '#afa1c1', .3, { radius: 25 });
-  }
-  // 哭泣的紫罗兰: burst where she stood, ride the petals out, burst again on the far edge.
-  if (s.fx === 'violet' && !a.emitted && a.t >= s.start) {
-    a.emitted = true;
-    violetBurst(g, f, s);
-  }
-  if (s.fx === 'violet' && a.emitted && a.shots === 0 && a.t >= s.start + VIOLET_WARP) {
-    a.shots = 1;
-    f.x = f.x < W / 2 ? X_MAX : X_MIN;
-    const foe = g.targetFor(f);
-    if (foe) f.facing = foe.x >= f.x ? 1 : -1;
-    g.effect('dust', f.x, FLOOR, '#afa1c1', .3, { radius: 25 });
-    violetBurst(g, f, s);
-  }
-  // 剪: the spot is read once at cast — the mark freezes where the enemy stood and pinches shut.
-  // The wind-up is the window to leave it; nothing tracks them after that.
-  if (s.fx === 'snip' && a.t < s.start) {
-    if (a.shots === 0) {
-      a.shots = 1;
-      const mark = g.opponents(f)
-        .filter(o => Math.abs(o.x - f.x) <= s.range)
-        .sort((p, q) => Math.abs(p.x - f.x) - Math.abs(q.x - f.x))[0];
-      a.anchor = mark ? mark.x : f.x;
-    }
-    let live = g.effects.find(e => e.type === 'snip-mark' && e.fighter === f.id);
-    if (!live) {
-      g.effect('snip-mark', a.anchor, FLOOR - 85, f.data.color, s.start, { fighter: f.id });
-      live = g.effects[g.effects.length - 1];
-    }
-    live.x = a.anchor;
-    live.y = FLOOR - 85;
-    live.max = s.start;
-    live.life = Math.max(.04, s.start - a.t);
-  }
-  // 火的故事: the void bow condenses over the draw; its spread reads the time left on the tell.
-  if (s.fx === 'fuga' && a.t < s.start) {
-    let live = g.effects.find(e => e.type === 'fuga-bow' && e.fighter === f.id);
-    if (!live) {
-      g.effect('fuga-bow', f.x, f.y - 85, f.data.color, s.start, { fighter: f.id, dir: f.facing });
-      live = g.effects[g.effects.length - 1];
-    }
-    live.x = f.x;
-    live.y = f.y - 85;
-    live.dir = f.facing;
-    live.max = s.start;
-    live.life = Math.max(.04, s.start - a.t);
-  }
-  if (s.type === 'dash' && s.fx !== 'wind' && s.fx !== 'violet' && a.t >= s.start && a.t < s.duration - .08) {
-    // 微笑大回旋: one mid-flight reversal, then later inputs ride out the whirl. Held straight,
-    // it is the stock dash line — the flag is what keeps it from becoming a pinball.
-    if (s.fx === 'cartwheel' && !a.flipped) {
+  if (s.type === 'dash' && !SCRIPTS[s.fx]?.customDash && a.t >= s.start && a.t < s.duration - .08) {
+    const dash = SCRIPTS[s.fx];
+    if (dash?.flip && !a.flipped) {
       const held = heldDir(g, f);
       if (held !== 0 && held !== f.facing) {
         f.facing = held > 0 ? 1 : -1;
@@ -1040,685 +952,58 @@ function repelPulse(g: FightGame, f: Fighter, power: number): boolean {
     }
     f.x += f.facing * (s.speed ?? (s.super ? 820 : 580)) * dt;
     applyMelee(g, f, a);
-    // 微笑大回旋: the spin reads as separated poses, not a smear — one spaced stamp every
-    // eighth of a second. The stock dash line fires on floor(a.t * 30) % 3, which stays true
-    // for four consecutive fixed steps and quadruple-stamps the same spot; other dashes keep it.
-    if (s.fx === 'cartwheel') {
+    if (dash?.sparseGhost) {
       if (Math.floor(a.t * 8) !== Math.floor((a.t - dt) * 8)) g.effect('ghost', f.x - f.facing * 18, f.y, f.data.color, .18, { fighter: f.id, alpha: .3 });
     } else if (Math.floor(a.t * 30) % 3 === 0) g.effect('ghost', f.x - f.facing * 18, f.y, f.data.color, .18, { fighter: f.id, alpha: .3 });
   }
-  // A grab that lunges. It stops on contact; a whiff runs out the active window.
-  if (s.fx === 'shove' && a.hit.size === 0 && a.t >= s.start && a.t < s.start + .72) {
-    f.x += f.facing * (s.speed ?? 700) * dt;
-    applyMelee(g, f, a);
-    // Pale gold silhouette, same source-atop wash as 墨缇丝. One stamp per 1/16s along the lunge.
-    if (Math.floor(a.t * 16) !== Math.floor((a.t - dt) * 16)) {
-      g.effect('ghost', f.x - f.facing * 24, f.y, '#ffe7a8', .3, { fighter: f.id, alpha: .55, tint: '#ffe7a8' });
-    }
-  }
-  // Whiff: the last clip frame is already up when the lunge ends. 2.2s is the throw, not the miss.
-  if (s.fx === 'shove' && a.hit.size === 0 && a.t >= s.start + .72) a.t = s.duration;
-  // 信用: catch in front, then slam the other way. Damage waits for the impact.
-  if (s.fx === 'slam' && a.hold < 0 && a.t >= s.start && a.t < s.start + .45) {
-    f.x += f.facing * (s.speed ?? 220) * dt;
-    for (const o of g.opponents(f)) {
-      if (o.hp <= 0 || o.invuln > 0) continue;
-      const front = (o.x - f.x) * f.facing >= -20;
-      if (Math.abs(o.x - f.x) < s.range && front && Math.abs(o.y - f.y) < 112) {
-        a.hold = o.id;
-        a.tossAt = a.t + .18;
-        o.stun = .6;
-        o.vx = 0;
-        o.vy = 0;
-        o.knocked = 0;
-        o.attack = null;
-        o.queue = [];
-        break;
-      }
-    }
-  }
-  if (s.fx === 'slam' && a.hold >= 0 && a.tossAt > 0) {
-    const o = g.fighters.find(p => p.id === a.hold);
-    if (o && o.hp > 0) {
-      if (a.t < a.tossAt) {
-        o.x = f.x + f.facing * 48;
-        o.y = FLOOR;
-        o.vx = 0;
-        o.vy = 0;
-        o.stun = Math.max(o.stun, .3);
-        const face = Math.sign(f.x - o.x) || -f.facing;
-        o.facing = face < 0 ? -1 : 1;
-      } else {
-        o.x = f.x - f.facing * 80;
-        o.y = FLOOR;
-        hit(g, f, o, s, a);
-        g.effect('slam', o.x, FLOOR, f.data.color, .45, { radius: 90 });
-        a.tossAt = 0;
-        a.t = Math.max(a.t, s.duration - .35);
-      }
-    }
-  }
-  if (s.fx === 'slam' && a.hold < 0 && a.t > s.start + .5) a.t = s.duration;
-  // 求你了: a short lunge, she catches a wrist, a frozen beat, the kneel pause, then the headbutt launches.
-  if (s.fx === 'onegai' && a.hold < 0 && a.t >= s.start && a.t < s.start + .42) {
-    f.x += f.facing * (s.speed ?? 520) * dt;
-    if (Math.floor(a.t * 16) !== Math.floor((a.t - dt) * 16)) {
-      g.effect('ghost', f.x - f.facing * 24, f.y, f.data.color, .3, { fighter: f.id, alpha: .35 });
-    }
-    for (const o of g.opponents(f)) {
-      if (o.hp <= 0 || o.invuln > 0) continue;
-      const front = (o.x - f.x) * f.facing >= -20;
-      if (Math.abs(o.x - f.x) < s.range && front && Math.abs(o.y - f.y) < 112) {
-        a.hold = o.id;
-        a.tossAt = a.t + ONEGAI_PAUSE;
-        // The catch lands with a freeze-frame and a flash, so the pause reads as power, not lag.
-        g.hitstop = Math.max(g.hitstop, .09);
-        g.effect('grab', o.x, o.y - 80, f.data.color, .3, { radius: 55 });
-        o.stun = Math.max(o.stun, .35);
-        o.vx = 0;
-        o.vy = 0;
-        o.knocked = 0;
-        o.attack = null;
-        o.queue = [];
-        break;
-      }
-    }
-  }
-  if (s.fx === 'onegai' && a.hold >= 0 && a.tossAt > 0) {
-    const o = g.fighters.find(p => p.id === a.hold);
-    if (o && o.hp > 0) {
-      if (a.t < a.tossAt) {
-        // Held by the wrist in front of the kneel, turned to face her.
-        o.x = f.x + f.facing * 58;
-        o.y = FLOOR;
-        o.vx = 0;
-        o.vy = 0;
-        o.knocked = 0;
-        o.stun = Math.max(o.stun, .3);
-        o.facing = (-f.facing) as 1 | -1;
-      } else {
-        hit(g, f, o, s, a);
-        g.effect('hit', o.x, o.y - 90, f.data.color, .25, { radius: 60 });
-        a.tossAt = 0;
-        a.t = Math.max(a.t, s.duration - .3);
-      }
-    }
-  }
-  if (s.fx === 'onegai' && a.hold < 0 && a.t >= s.start + .42) a.t = s.duration;
-  // 食兔者 / 抱抱还是亲亲: a short lunge, then a pin. Bites let go standing; the fifth kiss knocks down.
-  if (s.fx === 'rabbit' || s.fx === 'kiss') {
-    if (!a.emitted) a.emitted = true;
-    const kiss = s.fx === 'kiss';
-    const lunge = kiss ? .24 : .3;
-    const gap = kiss ? .3 : .2;
-    const bites = kiss ? 5 : 3;
-    const reach = kiss ? 48 : 52;
-    if (a.hold < 0 && a.t >= s.start && a.t < s.start + lunge) {
-      let caught: Fighter | undefined;
-      for (const o of g.opponents(f)) {
-        if (o.hp <= 0 || o.invuln > 0) continue;
-        const front = (o.x - f.x) * f.facing >= -20;
-        if (!front || Math.abs(o.y - f.y) >= 112) continue;
-        if ((o.x - f.x) * f.facing < 70) { caught = o; break; }
-      }
-      if (caught) {
-        a.hold = caught.id;
-        a.tossAt = a.t;
-        f.x = clamp(caught.x - f.facing * reach, X_MIN, X_MAX);
-        g.hitstop = Math.max(g.hitstop, .06);
-        g.effect('grab', caught.x, caught.y - 80, f.data.color, .25, { radius: 48 });
-        caught.stun = Math.max(caught.stun, .35);
-        caught.vx = 0;
-        caught.vy = 0;
-        caught.knocked = 0;
-        caught.attack = null;
-        caught.queue = [];
-      } else {
-        f.x = clamp(f.x + f.facing * (s.speed ?? (kiss ? 420 : 580)) * dt, X_MIN, X_MAX);
-        if (f.x === X_MIN || f.x === X_MAX) a.t = Math.max(a.t, s.duration - .2);
-      }
-    }
-    // Whiff only. A finished pin has tossAt set; pulling t backward here froze her in the recover pose forever.
-    if (a.hold < 0 && a.tossAt === 0 && a.t >= s.start + lunge && a.t < s.duration - .2) a.t = s.duration - .2;
-    if (a.hold >= 0) {
-      const o = g.fighters.find(p => p.id === a.hold);
-      if (!o || o.hp <= 0) {
-        a.t = s.duration;
-      } else {
-        o.x = clamp(f.x + f.facing * reach, X_MIN, X_MAX);
-        o.y = FLOOR;
-        o.vx = 0;
-        o.vy = 0;
-        o.knocked = 0;
-        o.stun = Math.max(o.stun, .3);
-        o.facing = (-f.facing) as 1 | -1;
-        if (a.shots < bites && a.t >= a.tossAt + a.shots * gap) {
-          a.hit = new Set();
-          hit(g, f, o, s, a);
-          g.effect(kiss ? 'kiss' : 'rabbit', o.x, o.y - (kiss ? 110 : 64), f.data.color, kiss ? .4 : .2, { radius: kiss ? 28 : 34 });
-          a.shots++;
-          if (a.shots >= bites) {
-            a.hold = -1;
-            a.t = Math.max(a.t, s.duration - .22);
-          }
-        }
-      }
-    }
-  }
-  // 贴贴: a short lunge, then the hug. Six nuzzles pin the victim; the last one lets go and
-  // leaves the two-second root, which clean hits shake off like any other root.
-  if (s.fx === 'hug') {
-    const lunge = .3;
-    const gap = .16;
-    const bites = s.count ?? 6;
-    const reach = 50;
-    if (a.hold < 0 && a.t >= s.start && a.t < s.start + lunge) {
-      let caught: Fighter | undefined;
-      for (const o of g.opponents(f)) {
-        if (o.hp <= 0 || o.invuln > 0) continue;
-        const front = (o.x - f.x) * f.facing >= -20;
-        if (!front || Math.abs(o.y - f.y) >= 112) continue;
-        if ((o.x - f.x) * f.facing < 70) { caught = o; break; }
-      }
-      if (caught) {
-        a.hold = caught.id;
-        a.tossAt = a.t;
-        f.x = clamp(caught.x - f.facing * reach, X_MIN, X_MAX);
-        g.hitstop = Math.max(g.hitstop, .06);
-        g.effect('grab', caught.x, caught.y - 80, f.data.color, .25, { radius: 48 });
-        caught.stun = Math.max(caught.stun, .35);
-        caught.vx = 0;
-        caught.vy = 0;
-        caught.knocked = 0;
-        caught.attack = null;
-        caught.queue = [];
-      } else {
-        f.x = clamp(f.x + f.facing * (s.speed ?? 520) * dt, X_MIN, X_MAX);
-        if (f.x === X_MIN || f.x === X_MAX) a.t = Math.max(a.t, s.duration - .2);
-      }
-    }
-    // Whiff only. A finished hug has tossAt set; pulling t backward here froze her in the recover pose forever.
-    if (a.hold < 0 && a.tossAt === 0 && a.t >= s.start + lunge && a.t < s.duration - .2) a.t = s.duration - .2;
-    if (a.hold >= 0) {
-      const o = g.fighters.find(p => p.id === a.hold);
-      if (!o || o.hp <= 0) {
-        a.t = s.duration;
-      } else {
-        o.x = clamp(f.x + f.facing * reach, X_MIN, X_MAX);
-        o.y = FLOOR;
-        o.vx = 0;
-        o.vy = 0;
-        o.knocked = 0;
-        o.stun = Math.max(o.stun, .3);
-        o.facing = (-f.facing) as 1 | -1;
-        if (a.shots < bites && a.t >= a.tossAt + a.shots * gap) {
-          a.hit = new Set();
-          hit(g, f, o, a.shots === bites - 1 ? { ...s, root: 2, rootPin: true } : s, a);
-          g.effect('hug', o.x, o.y - 100, f.data.color, .4, { radius: 32 });
-          a.shots++;
-          if (a.shots >= bites) {
-            a.hold = -1;
-            a.t = Math.max(a.t, s.duration - .22);
-          }
-        }
-      }
-    }
-  }
-  // 和灯在一起的话: a short lunge, she catches a wrist, says the line, then plays the foe like a kit —
-  // beats start slow and accelerate, and the last one double-kicks them across the stage.
-  if (s.fx === 'vow') {
-    if (a.hold < 0 && a.t >= s.start && a.t < s.start + .45) {
-      f.x += f.facing * (s.speed ?? 500) * dt;
-      if (Math.floor(a.t * 16) !== Math.floor((a.t - dt) * 16)) {
-        g.effect('ghost', f.x - f.facing * 24, f.y, f.data.color, .3, { fighter: f.id, alpha: .35 });
-      }
-      for (const o of g.opponents(f)) {
-        if (o.hp <= 0 || o.invuln > 0) continue;
-        const front = (o.x - f.x) * f.facing >= -20;
-        if (Math.abs(o.x - f.x) < s.range && front && Math.abs(o.y - f.y) < 112) {
-          a.hold = o.id;
-          a.tossAt = a.t;
-          // The catch lands with a freeze-frame, so the vow reads before the first beat.
-          g.hitstop = Math.max(g.hitstop, .09);
-          g.effect('grab', o.x, o.y - 80, f.data.color, .3, { radius: 55 });
-          const line = f.hp < f.data.hp * .3 ? '反正我就是做不到像祥子那样好啊！' : '我发誓，和灯在一起的话，一辈子也可以。';
-          g.text(line, o.x, o.y - 235, '#a9d3f5', 1.1, 15);
-          o.stun = Math.max(o.stun, .35);
-          o.vx = 0;
-          o.vy = 0;
-          o.knocked = 0;
-          o.attack = null;
-          o.queue = [];
-          break;
-        }
-      }
-    }
-    // Whiff: nothing was ever caught, so the last clip frame is already up when the lunge ends.
-    if (a.hold < 0 && a.tossAt === 0 && a.t >= s.start + .45) a.t = s.duration;
-    if (a.hold >= 0) {
-      const o = g.fighters.find(p => p.id === a.hold);
-      if (!o || o.hp <= 0) {
-        a.t = s.duration;
-      } else {
-        // Held by the wrist in front of her, pinned to the floor and turned to face her.
-        o.x = f.x + f.facing * 58;
-        o.y = FLOOR;
-        o.vx = 0;
-        o.vy = 0;
-        o.knocked = 0;
-        o.stun = Math.max(o.stun, .3);
-        o.facing = (-f.facing) as 1 | -1;
-        if (a.shots < VOW_BEATS && a.t >= a.tossAt + vowBeatTime(a.shots)) {
-          a.hit = new Set();
-          hit(g, f, o, s, a);
-          g.effect('drum-wave', o.x, o.y - 90, '#f4ecff', .32, { radius: 22 + a.shots * 9 });
-          g.text(String(120 + a.shots * 30), f.x, f.y - 255, f.data.color, .45, 14 + a.shots * 2);
-          a.shots++;
-          if (a.shots >= VOW_BEATS) {
-            const dir = Math.sign(o.x - f.x) || f.facing;
-            o.vx = dir * VOW_LAUNCH;
-            o.vy = -520;
-            o.knocked = .9;
-            o.downTime = 0;
-            o.stun = Math.max(o.stun, .5);
-            g.flash = .2;
-            // Release the wrist: the body flies free and a short recover plays out the clock.
-            a.hold = -1;
-            a.t = Math.max(a.t, s.duration - .35);
-          }
-        }
-      }
-    }
-  }
+
   // The rising fist stays live for a while so it catches jumpers at any height.
   if (s.type === 'upper' && a.t >= s.start && a.t < s.start + .25) applyMelee(g, f, a);
 
-  // 月牙踢: two or three copies of the kicking pose, stepped back along the arc.
-  if (s.fx === 'arc-kick' && a.t >= s.start && a.t < s.start + .34) {
-    const tick = Math.floor((a.t - s.start) * 12);
-    if (tick > a.shots && tick <= 3) {
-      a.shots = tick;
-      g.effect('ghost', f.x - f.facing * (14 + tick * 16), f.y, f.data.color, .2, { fighter: f.id, alpha: .32 });
-    }
-  }
-
-  // 高性能作曲AI: a fixed lane. The falling notes are paint; the damage is this clock.
-  if (s.fx === 'compose' && a.t >= s.start) {
-    if (!a.emitted) {
-      a.emitted = true;
-      g.effect('compose', a.anchor + f.facing * 148, FLOOR, f.data.color, Math.max(.2, s.duration - s.start), { dir: f.facing, radius: 100, fighter: f.id });
-      g.text(s.name, f.x, f.y - 190, f.data.color, .65, 17);
-    }
-    const near = a.anchor + f.facing * 48;
-    const far = a.anchor + f.facing * 248;
-    const lo = Math.min(near, far), hi = Math.max(near, far);
-    while (a.shots < (s.count ?? 1) && a.t >= s.start + a.shots * (s.interval ?? .12)) {
-      for (const o of g.opponents(f)) {
-        if (o.x >= lo && o.x <= hi) composeTick(g, f, o, s);
-      }
-      a.shots++;
-    }
-  }
-
-  // 星之鼓动: the wish reads the landing spot once and pins it with a tell — the window to
-  // leave the mark is the prayer itself. Nothing tracks them after that.
-  if (s.fx === 'wish' && a.t < s.start) {
-    if (a.shots === 0) {
-      a.shots = 1;
-      const foe = g.opponents(f)
-        .filter(o => o.hp > 0)
-        .sort((p, q) => Math.abs(p.x - f.x) - Math.abs(q.x - f.x))[0];
-      a.anchor = foe ? foe.x : clamp(f.x + f.facing * 240, X_MIN, X_MAX);
-    }
-    let live = g.effects.find(e => e.type === 'wish-mark' && e.fighter === f.id);
-    if (!live) {
-      g.effect('wish-mark', a.anchor, FLOOR - 85, f.data.color, s.start, { fighter: f.id });
-      live = g.effects[g.effects.length - 1];
-    }
-    live.x = a.anchor;
-    live.y = FLOOR - 85;
-    live.max = s.start;
-    live.life = Math.max(.04, s.start - a.t);
-  }
-
   const volley = a.burst || s.count || 1;
+  const sc = SCRIPTS[s.fx];
   // wish keeps count=3 from the projectile template but fires as one star: its emit handles everything.
-  if (s.type === 'projectile' && volley > 1 && s.fx !== 'snip' && s.fx !== 'smile-ship' && s.fx !== 'wish') {
-    if (s.fx === 'drums') {
-      while (a.shots < volley && a.t >= drumShotTime(s, a.shots)) {
-        spawnRain(g, f, a, a.shots);
+  if (s.type === 'projectile' && volley > 1 && !sc?.skipVolley) {
+    if (sc?.volley) sc.volley(g, f, a);
+    else {
+      while (a.shots < volley && a.t >= s.start + a.shots * (s.interval ?? .14)) {
+        if (sc?.holdFrom != null && a.shots >= sc.holdFrom && !attackHeld(g, f)) break;
+        const off = sc?.noteOff ? sc.noteOff[Math.min(a.shots, sc.noteOff.length - 1)] : (a.shots % 3 - 1) * 15;
+        spawnShot(g, f, a, off, a.shots);
         a.shots++;
       }
-    } else if (s.fx === 'parfait') {
-      // 抹茶大芭菲: one standing zone; the blobs erupt from it on the zone's own clock in stepProjectiles.
-      if (!a.emitted && a.t >= s.start) {
-        a.emitted = true;
-        spawnShot(g, f, a);
-        g.effect('parfait', clamp(f.x + f.facing * PARFAIT_DIST, X_MIN, X_MAX), FLOOR, f.data.color, s.life ?? 6.5);
-      }
-    } else if (s.fx === 'star') {
-      // 小星星: the stars pour in from the upper left and fall down-right into the lane —
-      // each spawn is backed off up-left by its own flight drift so the landing spots cover
-      // the lane, two staggered sweeps near to far. A missed read chains into the next star.
-      while (a.shots < volley && a.t >= s.start + a.shots * (s.interval ?? .12)) {
-        const i = a.shots;
-        const land = 70 + (i % 5) * STAR_SPACING + (i >= 5 ? STAR_SPACING / 2 : 0);
-        const rise = 250 + (i % 3) * 55;
-        g.projectiles.push({
-          owner: f.id,
-          x: clamp(f.x + f.facing * (land - (STAR_VX / STAR_VY) * rise), X_MIN - 80, X_MAX + 80),
-          y: FLOOR - rise,
-          vx: f.facing * STAR_VX,
-          vy: STAR_VY,
-          life: s.life ?? 1.2,
-          skill: s,
-          color: f.data.color,
-          radius: 11,
-          size: s.size ?? 46,
-          fx: 'star',
-          attack: a,
-          hit: new Set(),
-          trail: [],
-          age: 0,
-        });
-        a.shots++;
-      }
-    } else while (a.shots < volley && a.t >= s.start + a.shots * (s.interval ?? .14)) {
-      if (s.fx === 'chord' && a.shots >= 3 && !attackHeld(g, f)) break;
-      // 不甘的演奏: two notes leave the bass at the floor, the second a shade lower than the first.
-      const off = s.fx === 'sob' ? (a.shots === 0 ? 45 : 70) : (a.shots % 3 - 1) * 15;
-      spawnShot(g, f, a, off, a.shots);
-      a.shots++;
     }
-    if (s.fx === 'chord' && a.shots >= 3 && !attackHeld(g, f) && a.t < s.duration - .22) a.t = s.duration - .22;
-    // 为什么要演奏春日影: the last wave carries the whole super, so the moment it leaves she is free to act.
-    if (s.fx === 'shout' && a.shots >= volley) a.t = s.duration;
-  } else if ((s.count ?? 1) > 1 && s.fx !== 'compose' && s.fx !== 'snip' && s.fx !== 'smile-ship' && s.fx !== 'wish') {
-    // ponytail: N swings, one cooldown. Each swing gets a fresh hit set so the same target can be caught again.
+    if (sc?.holdFrom != null && sc.release != null && a.shots >= sc.holdFrom && !attackHeld(g, f) && a.t < s.duration - sc.release) a.t = s.duration - sc.release;
+    if (sc?.freeOnLast && a.shots >= volley) a.t = s.duration;
+  } else if ((s.count ?? 1) > 1 && !sc?.skipCount) {
     while (a.shots < (s.count ?? 1) && a.t >= s.start + a.shots * (s.interval ?? .11)) {
-      // 吉他激奏 / 韵律直觉: past the first wave the key has to stay down.
-      if ((s.fx === 'riff' || s.fx === 'groove') && a.shots >= 1 && !attackHeld(g, f)) break;
+      if (sc?.holdFrom != null && a.shots >= sc.holdFrom && !attackHeld(g, f)) break;
       const swing = SWING_RING[a.shots % SWING_RING.length];
       if (a.shots === 0 && a.index >= 2) g.text(s.name, f.x, f.y - 190, f.data.color, .65, 17);
       a.hit = new Set();
-      if (s.fx === 'riff') {
-        a.skill = riffShot(s, a.shots);
+      if (sc?.swing) sc.swing(g, f, a, s);
+      else {
+        const prev = a.skill;
+        a.skill = withFinale(s, a.shots >= (s.count ?? 1) - 1);
         applyMelee(g, f, a);
-        g.effect('riff', f.x, f.y - 85, f.data.color, .4, { radius: a.skill.range });
-      } else if (s.fx === 'crown') {
-        // 五冠王的威压: every wave is its own copy — wider, harder, shove-ier.
-        a.skill = crownShot(s, a.shots);
-        applyMelee(g, f, a);
-        g.effect('crown', f.x, f.y - 85, f.data.color, .45, { radius: a.skill.range });
-      } else if (s.fx === 'groove') {
-        applyMelee(g, f, a);
-        g.effect('burst', f.x, f.y - 80, f.data.color, .22, { radius: s.range });
-        // The tap is the ring only. Notes start on the second pulse.
-        if (a.shots >= 1) spawnGrooveNote(g, f, a);
-      } else {
-        applyMelee(g, f, a);
-        if (s.fx === 'flurry') {
-          // 高能量！: every punch stamps an afterimage of the pose she just threw.
-          g.effect('ghost', f.x - f.facing * 14, f.y, f.data.color, .22, { fighter: f.id, alpha: .4 });
-        } else if (s.fx !== 'mortis' && s.fx !== 'spin') {
-          g.effect(s.fx, f.x + f.facing * swing.x, f.y + swing.y, f.data.color, .18, { dir: f.facing * swing.dir, radius: s.range * .34 });
-        }
+        a.skill = prev;
+        if (sc?.ghostSwing) g.effect('ghost', f.x - f.facing * 14, f.y, f.data.color, .22, { fighter: f.id, alpha: .4 });
+        else if (!sc?.noStamp) g.effect(s.fx, f.x + f.facing * swing.x, f.y + swing.y, f.data.color, .18, { dir: f.facing * swing.dir, radius: s.range * .34 });
       }
       a.shots++;
-      if (s.fx === 'riff' && a.shots > 1) {
-        // The first wave is the tap at base cooldown; every wave past it lengthens the cooldown clock.
-        f.cooldowns[a.index] = Math.min(RIFF_CD_MAX, f.cooldowns[a.index] + f.cdMul * (RIFF_CD_MAX - RIFF_CD_TAP) / (RIFF_WAVES - 1));
-      }
-      if (s.fx === 'groove' && a.shots > 1) {
-        f.cooldowns[a.index] = Math.min(GROOVE_CD_MAX, f.cooldowns[a.index] + f.cdMul * (GROOVE_CD_MAX - GROOVE_CD_TAP) / (GROOVE_WAVES - 1));
-      }
+      if (sc?.cd && a.shots > 1) f.cooldowns[a.index] = Math.min(sc.cd.max, f.cooldowns[a.index] + f.cdMul * (sc.cd.max - sc.cd.tap) / (sc.cd.waves - 1));
     }
-    if ((s.fx === 'riff' || s.fx === 'groove') && a.shots >= 1 && !attackHeld(g, f) && a.t < s.duration - .3) a.t = s.duration - .3;
+    if (sc?.holdFrom != null && sc.release != null && a.shots >= sc.holdFrom && !attackHeld(g, f) && a.t < s.duration - sc.release) a.t = s.duration - sc.release;
   } else if (!a.emitted && a.t >= s.start) {
     a.emitted = true;
-    if (s.fx === 'wish') {
-      // 星之鼓动: the tell dies with the prayer and the star drops in from the upper left,
-      // aimed so its diagonal lands exactly on the pinned spot.
-      const mark = g.effects.find(e => e.type === 'wish-mark' && e.fighter === f.id);
-      if (mark) mark.life = 0;
-      const drop = (FLOOR - 70) - -90;
-      g.projectiles.push({
-        owner: f.id, x: a.anchor - WISH_SLANT * drop, y: -90,
-        vx: WISH_SLANT * WISH_FALL, vy: WISH_FALL,
-        life: 3, skill: s, color: f.data.color,
-        radius: 54, size: s.size ?? 480, fx: 'star-fall',
-        attack: a, hit: new Set(), trail: [], age: 0,
-      });
-      g.shake = 6;
-      a.t = Math.max(a.t, s.duration - .4);
-    } else if (s.fx === 'world') {
-      // 此即世界: the chant ends the freeze. The pulse roots every opponent outright — no
-      // damage, nothing to block or dodge; seconds, tier and break rule all come from the skill.
-      for (const o of g.opponents(f)) {
-        if (o.hp <= 0) continue;
-        o.root = s.root ?? 0;
-        o.rootLevel = s.rootLevel ?? 'move';
-        o.rootBreak = s.rootBreak ?? 0;
-        o.rootHits = 0;
-        o.rootFx = s.fx;
-        o.dodge = 0;
-        o.vy = 0;
-        o.knocked = 0;
-        o.stun = Math.max(o.stun, .25);
-        g.effect('world-heart', o.x, o.y - 85, f.data.color, 1.6, { radius: 92 });
-        g.text('定身!', o.x, o.y - 195, '#ffd27a', .6, 20);
-      }
-      g.flash = Math.max(g.flash, .25);
-      g.timeStop = null;
-      a.t = Math.max(a.t, s.duration);
-    } else if (s.fx === 'resolve') {
-      // 就由我来结束一切: no strike, just the mask dropping. The ripple shoves everyone away; the frenzy clock starts here.
-      f.frenzy = f.data.frenzy?.time ?? FRENZY_TIME;
-      g.effect('resolve', f.x, f.y - 80, f.data.color, .75, { radius: RESOLVE_REPEL_RANGE });
-      for (const o of g.opponents(f)) {
-        if (o.hp <= 0 || o.invuln > 0) continue;
-        const dx = o.x - f.x;
-        if (Math.abs(dx) < RESOLVE_REPEL_RANGE) {
-          o.vx = (Math.sign(dx) || f.facing) * RESOLVE_REPEL_PUSH;
-          o.stun = Math.max(o.stun, .22);
-        }
-      }
-    } else if (s.fx === 'muscle') {
-      // 高肌肉！: no strike either — the double-biceps flex shoves the crowd and arms the damage buff.
-      f.muscle = MUSCLE_TIME;
-      g.effect('muscle', f.x, f.y - 80, f.data.color, .75, { radius: s.range });
-      for (const o of g.opponents(f)) {
-        if (o.hp <= 0 || o.invuln > 0) continue;
-        const dx = o.x - f.x;
-        if (Math.abs(dx) < s.range) {
-          o.vx = (Math.sign(dx) || f.facing) * MUSCLE_REPEL_PUSH;
-          o.stun = Math.max(o.stun, .2);
-        }
-      }
-    } else if (s.fx === 'dream') {
-      // 梦想即力量！: the golden burst shoves like the sing, then the frenzy and the brace run
-      // together — and the meter locks (禁回) for the whole window, the pay-off can't fund itself.
-      const time = f.data.frenzy?.time ?? FRENZY_TIME;
-      f.frenzy = time;
-      f.braced = Math.max(f.braced, time);
-      f.noGain = time;
-      g.effect('dream', f.x, f.y - 80, f.data.color, .9, { radius: s.range });
-      for (const o of g.opponents(f)) {
-        if (o.hp <= 0 || o.invuln > 0) continue;
-        const dx = o.x - f.x;
-        if (Math.abs(dx) < s.range) {
-          o.vx = (Math.sign(dx) || f.facing) * DREAM_REPEL_PUSH;
-          o.stun = Math.max(o.stun, .2);
-        }
-      }
-    } else if (s.fx === 'plaster') {
-      // 绊创膏: the plaster on her chest pulses three translucent copies of itself, then holds.
-      f.braced = BRACED_TIME;
-      g.effect('plaster', f.x, f.y - 80, f.data.color, 1.2, { dir: f.facing });
-      for (const o of g.opponents(f)) {
-        if (o.hp <= 0 || o.invuln > 0) continue;
-        const dx = o.x - f.x;
-        if (Math.abs(dx) < PLASTER_REPEL_RANGE) {
-          o.vx = (Math.sign(dx) || f.facing) * PLASTER_REPEL_PUSH;
-          o.stun = Math.max(o.stun, .2);
-        }
-      }
-    } else if (s.fx === 'poem') {
-      // 诗超绊: the sing lands, and a teammate takes the stage beside her.
-      g.summonAlly(f);
-    } else if (s.fx === 'half') {
-      // 对半分: a softer copy steps out behind the foe.
-      g.summonHalf(f);
-    } else if (s.fx === 'king') {
-      // Nono国王: glow, cape, then the staff form. No armour — the push only makes room for the first swing.
-      const time = f.data.frenzy?.time ?? 7;
-      f.frenzy = time;
-      f.noGain = time;
-      f.king = true;
-      g.effect('king', f.x, f.y - 80, f.data.color, .7, { radius: s.range });
-      for (const o of g.opponents(f)) {
-        if (o.hp <= 0 || o.invuln > 0) continue;
-        const dx = o.x - f.x;
-        if (Math.abs(dx) < s.range) {
-          o.vx = (Math.sign(dx) || f.facing) * 380;
-          o.stun = Math.max(o.stun, .2);
-        }
-      }
-    } else if (s.fx === 'marathon') {
-      // 秋叶原马拉松: the pose itself does nothing. Speed and poise start only if it finishes.
-    } else if (s.fx === 'steak') {
-      // 大份牛排: the bite is the active frame. Wind-up that gets hit never reaches here.
-      f.hp = Math.min(f.data.hp, f.hp + STEAK_HEAL);
-      f.braced = Math.max(f.braced, STEAK_BRACE);
-      g.text(`+${STEAK_HEAL}`, f.x, f.y - 160, '#ffd0d8', .6, 18);
-      g.effect('steak', f.x, f.y - 118, '#6eb6ff', .55, { dir: f.facing });
-    } else if (s.fx === 'infinite') {
-      // 直接无限大: the pose is the switch. The bill window and the gain lock run together from here.
-      f.debt = 4;
-      f.debtDmg = 0;
-      f.noGain = Math.max(f.noGain, 4);
-      g.effect('burst', f.x, f.y - 80, f.data.color, .7, { radius: 120 });
-    } else if (s.fx === 'feast') {
-      // 超恢复: brace, regen and the J/K lock share one window. A later steak must not shorten it.
-      // The side arcs are drawn while feast > 0, so they leave with the buff.
-      f.braced = Math.max(f.braced, FEAST_TIME);
-      f.feast = FEAST_TIME;
-      g.effect('burst', f.x, f.y - 80, '#9ad4ff', .4, { radius: 80 });
-    } else if (s.fx === 'boost') {
-      // 认真模式: the pose finished, so the confidence holds — damage up and nothing flinches her.
-      f.muscle = 6;
-      f.poise = 6;
-      g.effect('boost', f.x, f.y - 80, f.data.color, .75, { radius: 90 });
-    } else if (s.fx === 'box') {
-      // 无敌仓库大王: shove for room, then the box — king sheet swap, halved damage, hp drip,
-      // no-flinch and the meter locked. Only J/K stay open (the king lock).
-      const time = f.data.frenzy?.time ?? 7;
-      f.frenzy = time;
-      f.noGain = time;
-      f.king = true;
-      f.poise = time;
-      f.box = time;
-      g.effect('box', f.x, FLOOR, f.data.color, .6, { radius: s.range });
-      for (const o of g.opponents(f)) {
-        if (o.hp <= 0 || o.invuln > 0) continue;
-        const dx = o.x - f.x;
-        if (Math.abs(dx) < s.range) {
-          o.vx = (Math.sign(dx) || f.facing) * 380;
-          o.stun = Math.max(o.stun, .2);
-        }
-      }
-    } else if (s.fx === 'snip') {
-      // 剪: the tell dies with the lock. The void field plants on the frozen spot, not on the runner.
-      const mark = g.effects.find(e => e.type === 'snip-mark' && e.fighter === f.id);
-      if (mark) mark.life = 0;
-      if (!a.shots) {
-        a.shots = 1;
-        const caught = g.opponents(f)
-          .filter(o => Math.abs(o.x - f.x) <= s.range)
-          .sort((p, q) => Math.abs(p.x - f.x) - Math.abs(q.x - f.x))[0];
-        a.anchor = caught ? caught.x : f.x;
-      }
-      g.projectiles.push({
-        owner: f.id, x: a.anchor, y: FLOOR - 85, vx: 0, vy: 0,
-        life: s.life ?? .8, skill: s, color: f.data.color,
-        radius: 24, size: s.size ?? 105, fx: 'snip',
-        attack: a, hit: new Set(), trail: [], age: 0,
-      });
-    } else if (s.fx === 'fuga') {
-      // 火的故事: the bow dissolves with the release. The arrow flies level until something ends it,
-      // and she is free the moment it leaves — the flight is the recover.
-      const bow = g.effects.find(e => e.type === 'fuga-bow' && e.fighter === f.id);
-      if (bow) bow.life = 0;
-      g.projectiles.push({
-        owner: f.id, x: f.x + f.facing * 53, y: FLOOR - 85,
-        vx: f.facing * (s.speed ?? 200), vy: 0,
-        life: s.life ?? 6, skill: s, color: f.data.color,
-        radius: 30, size: s.size ?? 160, fx: 'fuga',
-        attack: a, hit: new Set(), trail: [], age: 0,
-      });
-      // The draw is protected; the flight is not. Her own blast can catch her the moment it leaves.
-      f.invuln = Math.min(f.invuln, s.start);
-      a.t = Math.max(a.t, s.duration);
-    } else if (s.fx === 'firebird') {
-      // 火鸟: four pillars erupt from the stage floor, two ahead and two behind; each burns
-      // a body twice on its own clock in stepProjectiles.
-      for (const off of [FIREBIRD_OFFSETS[0], FIREBIRD_OFFSETS[1], -FIREBIRD_OFFSETS[0], -FIREBIRD_OFFSETS[1]]) {
-        g.projectiles.push({
-          owner: f.id, x: clamp(f.x + f.facing * off, X_MIN, X_MAX), y: FLOOR, vx: 0, vy: 0,
-          life: s.life ?? .75, skill: s, color: f.data.color,
-          radius: 26, size: s.size ?? 110, fx: 'firebird',
-          attack: a, hit: new Set(), trail: [], age: 0,
-        });
-      }
-      g.shake = Math.max(g.shake, 4);
-    } else if (s.fx === 'blue-rose') {
-      // 荆棘的蓝蔷薇: the bloom shoves the crowd and arms the thorns; the petals ride the
-      // rose clock in stepFighter, and expiry hands thorns back to whatever held before.
-      f.roseBase = f.thorns;
-      f.thorns = Math.max(f.thorns, ROSE_THORNS);
-      f.rose = ROSE_TIME;
-      g.effect('blue-rose', f.x, f.y - 80, f.data.color, .75, { radius: s.range });
-      for (const o of g.opponents(f)) {
-        if (o.hp <= 0 || o.invuln > 0) continue;
-        const dx = o.x - f.x;
-        if (Math.abs(dx) < s.range) {
-          o.vx = (Math.sign(dx) || f.facing) * ROSE_REPEL_PUSH;
-          o.stun = Math.max(o.stun, .2);
-        }
-      }
-    } else if (s.fx === 'summit') {
-      // 顶点: the shout carries through the whole stage. No damage — the wave only hurls
-      // everyone away as hard as the shove toss, and jumping does not clear it. The wave is
-      // a screen-facing ring centred on her body, not a floor ellipse.
-      g.effect('summit', f.x, f.y - 80, f.data.color, .6, { radius: 560 });
-      g.shake = Math.max(g.shake, 8);
-      for (const o of g.opponents(f)) {
-        if (o.hp <= 0 || o.invuln > 0) continue;
-        const dir = Math.sign(o.x - f.x) || f.facing;
-        o.vx = dir * SUMMIT_VX;
-        o.vy = SUMMIT_VY;
-        o.knocked = .9;
-        o.downTime = 0;
-        o.stun = Math.max(o.stun, .4);
-      }
-    } else if (s.fx === 'black-shout') {
-      // 漆黑呐喊: the seal burns off. The buff and the eye flames share one clock; the price
-      // lands the moment it dies, in stepFighter.
-      f.shout = SHOUT_TIME;
-      g.flash = Math.max(g.flash, .3);
-      g.effect('black-shout', f.x, f.y - 80, f.data.color, .8, { radius: 130 });
-      g.text(s.name, f.x, f.y - 240, '#8fd8ff', .9, 19);
-    } else if (s.type === 'projectile') {
-      if (s.fx === 'donut') a.skill = donutVariant(g, s);
+    if (sc?.emit) sc.emit(g, f, a);
+    else if (s.onActive) runOps(g, f, s, s.onActive);
+    else if (s.type === 'projectile') {
+      if (sc?.variant) a.skill = sc.variant(g, s);
       spawnShot(g, f, a);
-    } else if (s.type !== 'dash' && s.fx !== 'slam' && s.fx !== 'onegai' && s.fx !== 'vow' && s.fx !== 'hug' && s.fx !== 'compose' && s.fx !== 'record') {
+    } else if (s.type !== 'dash' && !sc?.noMelee) {
       if (s.type !== 'upper') applyMelee(g, f, a);
-      if (s.fx === 'ripple') g.effect('ripple', f.x, FLOOR, f.data.color, .45, { radius: s.range });
-      else if (s.fx === 'huh') g.effect('huh', f.x, FLOOR, f.data.color, .5, { radius: s.range });
-      else if (s.fx === 'tsun') g.effect('tsun', f.x, FLOOR, f.data.color, .5, { radius: s.range });
-      else if (s.fx === 'howl') g.effect('howl', f.x, f.y - 80, f.data.color, .4, { radius: s.range });
-      else if (s.fx === 'yokan') g.effect('yokan', f.x + f.facing * 70, FLOOR, f.data.color, .28, { dir: f.facing, radius: 80 });
-      else if (s.fx === 'rib') g.effect('slash', f.x + f.facing * 65, f.y - 83, f.data.color, .22, { dir: f.facing, radius: s.range * .5 });
+      if (sc?.flash) sc.flash(g, f, a);
       else g.effect(s.fx, f.x + f.facing * 65, f.y - (s.type === 'sweep' ? 22 : 83), f.data.color, .22, { dir: f.facing, radius: s.range * .5 });
     }
     if (a.index >= 2 && !s.super) g.text(s.name, f.x, f.y - 190, f.data.color, .65, 17);
@@ -1726,13 +1011,8 @@ function repelPulse(g: FightGame, f: Fighter, power: number): boolean {
 
   syncGuitar(g, f, a);
   if (a.t >= s.duration) {
-    if (s.fx === 'marathon' && f.attack === a && f.hp > 0 && f.stun <= 0) {
-      f.sprint = MARATHON_TIME;
-      f.poise = MARATHON_TIME;
-      g.effect('marathon', f.x, f.y - 70, f.data.color, .55, { radius: 80 });
-    }
-    // 录音: a finished pose starts the tape — the stand-in rises where she stands.
-    if (s.fx === 'record' && f.attack === a && f.hp > 0 && f.stun <= 0) g.spawnEcho(f);
+    if (s.onFinish && f.attack === a && f.hp > 0 && f.stun <= 0) runOps(g, f, s, s.onFinish);
+    if (sc?.echo && f.attack === a && f.hp > 0 && f.stun <= 0) g.spawnEcho(f);
     if (f.attack === a) f.attack = null;
   }
 }
@@ -1764,7 +1044,7 @@ const SEAL_SWELL_TIME = .1;
 export function easeSealSwells(g: FightGame, dt: number): void {
   const step = dt / SEAL_SWELL_TIME;
   for (const p of g.projectiles) {
-    if (p.fx !== 'seal') continue;
+    if (!SCRIPTS[p.fx]?.swell) continue;
     const cur = p.swell ?? 0;
     const to = p.swellTo ?? 0;
     if (cur === to) continue;
@@ -1774,7 +1054,7 @@ export function easeSealSwells(g: FightGame, dt: number): void {
 
 function stepSealVolleys(g: FightGame, dt: number): void {
   // 剪: the field's string runs its own count with the skill's own finale knock; the seal stays six.
-  const cap = (v: SealVolley) => v.skill.fx === 'snip' ? (v.skill.count ?? 4) : SEAL_HITS;
+  const cap = (v: SealVolley) => SCRIPTS[v.skill.fx]?.ownCount ? (v.skill.count ?? 4) : SEAL_HITS;
   for (const v of g.sealVolleys) {
     if (v.n >= cap(v)) continue;
     v.wait -= dt;
@@ -1786,7 +1066,8 @@ function stepSealVolleys(g: FightGame, dt: number): void {
     if (!owner || !target || target.hp <= 0) { v.n = cap(v); continue; }
     const sk = { ...v.skill, knock: v.n >= cap(v) ? (v.skill.knock ?? SEAL_FINALE_KNOCK) : 0 };
     if (hit(g, owner, target, sk, { hit: new Set() }, target.x - v.dir * 40)) {
-      if (v.skill.fx === 'snip') g.effect('snip', target.x, target.y - 85, v.color, .22, { dir: v.dir, radius: 56 });
+      const mark = SCRIPTS[v.skill.fx]?.mark;
+      if (mark) g.effect(mark, target.x, target.y - 85, v.color, .22, { dir: v.dir, radius: 56 });
       else g.effect('burst', target.x, target.y - 80, v.color, .2, { radius: (v.skill.size ?? 140) * .4 });
     }
   }
@@ -1810,166 +1091,850 @@ function pushTrail(p: Projectile, cap: number): void {
   p.trail.push({ x: p.x, y: p.y });
 }
 
+/** One clean hit. `pass` leaves the shot up; otherwise it pops. */
+function touchProjectile(g: FightGame, p: Projectile): void {
+  const owner = g.fighterById(p.owner);
+  if (!owner || p.settled || p.life <= 0) return;
+  for (const target of g.opponents(owner)) {
+    if (Math.abs(p.x - target.x) >= 38 + p.radius || Math.abs(p.y - (target.y - 83)) >= 72) continue;
+    if (!hit(g, owner, target, p.skill, { hit: p.hit }, p.x - Math.sign(p.vx) * 40)) continue;
+    g.effect('burst', p.x, p.y, p.color, .3, { radius: p.size * .8 });
+    SCRIPTS[p.fx]?.pulse?.(g, p, target);
+    const pass = p.skill.contact === 'pass' || (SCRIPTS[p.fx]?.boomerang && !p.returned);
+    if (!pass) p.life = 0;
+    break;
+  }
+}
+
+function landProjectile(g: FightGame, p: Projectile): void {
+  const floor = p.floor ?? p.skill.floor;
+  if (!floor || p.settled) return;
+  if (floor === 'pop') {
+    if (p.y < FLOOR - 6) return;
+    p.life = 0;
+    g.effect('star-pop', p.x, FLOOR - 8, p.color, .25, { radius: 34 });
+    return;
+  }
+  if (p.y < FLOOR) return;
+  p.y = FLOOR;
+  if (floor === 'splash') {
+    p.life = 0;
+    g.effect('burst', p.x, FLOOR - 8, p.color, .3, { radius: 44 });
+  } else if (floor === 'drop') p.life = 0;
+  else {
+    p.vx = 0;
+    p.vy = 0;
+    p.settled = true;
+    p.life = 3;
+    p.hit.clear();
+  }
+}
+
+/** 微笑号出航. Owns motion and hits. */
+function stepSmileShip(g: FightGame, p: Projectile): boolean {
+  const dir = Math.sign(p.vx) || 1;
+  const u = Math.min(1, Math.max(0, (p.age - SHIP_HOLD) / SHIP_SWEEP));
+  const front = dir > 0 ? u * 2 * W - SHIP_BLANK * W : W - u * 2 * W + SHIP_BLANK * W;
+  const stern = front - dir * (1 - SHIP_BLANK) * W;
+  p.x = front;
+  pushTrail(p, 12);
+  if (p.age >= SHIP_HOLD + SHIP_SWEEP) { p.life = 0; return true; }
+  if (p.age < SHIP_HOLD) return true;
+  const lo = Math.min(front, stern), hi = Math.max(front, stern);
+  const owner = g.fighterById(p.owner);
+  if (owner) {
+    for (const o of g.opponents(owner)) {
+      if (o.hp <= 0 || o.invuln > 0) continue;
+      if (o.x > hi + 38 || o.x < lo - 38 || Math.abs(p.y - (o.y - 83)) >= 72) continue;
+      if (!o.blocking) o.vx = dir * SHIP_PUSH;
+      const mark = p.marks?.get(o.id);
+      let n = 1;
+      if (mark) {
+        if (mark.n >= SHIP_SEGMENTS || p.age < mark.next) continue;
+        mark.n++;
+        mark.next = p.age + (p.skill.interval ?? .12);
+        n = mark.n;
+      } else {
+        if (!p.marks) p.marks = new Map();
+        p.marks.set(o.id, { n: 1, next: p.age + (p.skill.interval ?? .12) });
+      }
+      const seg = n > SHIP_FULL ? { ...p.skill, damage: p.skill.damage * SHIP_TAIL_MUL } : p.skill;
+      if (hit(g, owner, o, seg, { hit: new Set() }, o.x - dir * 40)) {
+        g.effect('burst', o.x, p.y, p.color, .3, { radius: p.size * .45 });
+      }
+    }
+  }
+  return true;
+}
+
+/** 火的故事. Owns motion and the blast. */
+function stepFuga(g: FightGame, p: Projectile, dt: number): boolean {
+  p.x += p.vx * dt;
+  pushTrail(p, 48);
+  const owner = g.fighterById(p.owner);
+  let boom = false;
+  if (p.age >= FUGA_FUSE) {
+    if (owner) {
+      for (const o of g.opponents(owner)) {
+        if (o.hp <= 0 || o.invuln > 0) continue;
+        if (Math.abs(p.x - o.x) < 38 + p.radius && Math.abs(p.y - (o.y - 83)) < 72) { boom = true; break; }
+      }
+    }
+    if (!boom && ((p.vx < 0 && p.x <= X_MIN + 6) || (p.vx > 0 && p.x >= X_MAX - 6))) boom = true;
+  }
+  if (boom) {
+    fugaBurst(g, p, owner);
+    p.life = 0;
+  }
+  return true;
+}
+
+/** 带骨肉之人: the chunk bounces until she picks it up. Hits still pass through. */
+function stepMeat(g: FightGame, p: Projectile, dt: number): boolean {
+  p.life += dt;
+  p.x += p.vx * dt;
+  p.y += p.vy * dt;
+  if (p.x <= X_MIN && p.vx < 0) { p.x = X_MIN; p.vx = -p.vx; p.hit.clear(); }
+  else if (p.x >= X_MAX && p.vx > 0) { p.x = X_MAX; p.vx = -p.vx; p.hit.clear(); }
+  const owner = g.fighterById(p.owner);
+  if (!owner || owner.hp <= 0) p.life = 0;
+  else if (Math.abs(p.x - owner.x) < 38 + p.radius && Math.abs(p.y - (owner.y - 83)) < 72) p.life = 0;
+  pushTrail(p, 7);
+  touchProjectile(g, p);
+  return true;
+}
+
+function stepParfait(g: FightGame, p: Projectile): boolean {
+  const owner = g.fighterById(p.owner);
+  if (!owner) return true;
+  const tick = Math.floor(p.age / (p.skill.interval ?? .28));
+  if (tick !== p.ticked && tick < (p.skill.count ?? 22)) {
+    p.ticked = tick;
+    spawnMatchaBlob(g, owner, p, tick);
+  }
+  return true;
+}
+
+function stepFirebird(g: FightGame, p: Projectile): boolean {
+  const owner = g.fighterById(p.owner);
+  if (!owner) return true;
+  if (!p.marks) p.marks = new Map();
+  for (const o of g.opponents(owner)) {
+    if (o.hp <= 0 || o.invuln > 0) continue;
+    const mark = p.marks.get(o.id);
+    if (mark && (mark.n >= 2 || p.age < mark.next)) continue;
+    if (Math.abs(o.x - p.x) >= 30 + p.radius || o.y < FLOOR - 250) continue;
+    if (!hit(g, owner, o, p.skill, { hit: new Set() }, p.x)) continue;
+    if (mark) { mark.n++; mark.next = p.age + FIREBIRD_TICK; }
+    else p.marks.set(o.id, { n: 1, next: p.age + FIREBIRD_TICK });
+  }
+  return true;
+}
+
+function stepBlackhole(g: FightGame, p: Projectile): boolean {
+  const owner = g.fighterById(p.owner);
+  if (!owner) return true;
+  for (const o of g.opponents(owner)) {
+    if (o.hp <= 0 || o.invuln > 0) continue;
+    const dx = p.x - o.x;
+    if (Math.abs(dx) < BLACKHOLE_RADIUS) o.vx = Math.sign(dx) * BLACKHOLE_PULL * (o.y < FLOOR - .5 ? .4 : 1);
+  }
+  const tick = Math.floor(p.age / (p.skill.interval ?? .2));
+  if (tick !== p.ticked) {
+    p.ticked = tick;
+    p.hit.clear();
+    for (const o of g.opponents(owner)) {
+      if (Math.abs(o.x - p.x) < BLACKHOLE_RADIUS && Math.abs(o.y - 83 - p.y) < 72) hit(g, owner, o, p.skill, { hit: p.hit }, p.x);
+    }
+  }
+  return true;
+}
+
+function stepMega(g: FightGame, p: Projectile): boolean {
+  const owner = g.fighterById(p.owner);
+  if (!owner) return false;
+  for (const o of g.opponents(owner)) {
+    if (o.hp <= 0 || o.invuln > 0 || o.blocking) continue;
+    if (Math.abs(o.x - p.x) < 38 + p.radius && Math.abs(p.y - (o.y - 83)) < 72) o.vx = Math.sign(p.vx || 1) * MEGA_PUSH;
+  }
+  return false;
+}
+
+function stepSnip(g: FightGame, p: Projectile): boolean {
+  const owner = g.fighterById(p.owner);
+  if (!owner) return true;
+  if (!p.marks) p.marks = new Map();
+  for (const o of g.opponents(owner)) {
+    if (o.hp <= 0 || p.life <= 0) continue;
+    if (p.marks.has(o.id)) continue;
+    if (Math.abs(p.x - o.x) >= SNIP_BAND_X || Math.abs(p.y - (o.y - 83)) >= SNIP_BAND_Y) continue;
+    const dir = Math.sign(o.x - p.x) || 1;
+    if (!hit(g, owner, o, { ...p.skill, knock: 0 }, { hit: new Set() }, p.x)) continue;
+    p.marks.set(o.id, { n: 1, next: 0 });
+    g.effect('snip', p.x, p.y, p.color, .22, { dir, radius: 56 });
+    g.sealVolleys.push({ owner: owner.id, target: o.id, n: 1, wait: p.skill.interval ?? .15, dir, color: p.color, skill: p.skill });
+  }
+  return true;
+}
+
+SCRIPTS['smile-ship'] = { shot: (g, p) => stepSmileShip(g, p) };
+SCRIPTS['fuga'] = { shot: (g, p, dt) => stepFuga(g, p, dt) };
+SCRIPTS['meat'] = { shot: (g, p, dt) => stepMeat(g, p, dt), oneShot: true };
+SCRIPTS['parfait'] = { shot: (g, p) => stepParfait(g, p) };
+SCRIPTS['firebird'] = { shot: (g, p) => stepFirebird(g, p) };
+SCRIPTS['blackhole'] = { shot: (g, p) => stepBlackhole(g, p) };
+SCRIPTS['mega'] = { shot: (g, p) => stepMega(g, p) };
+SCRIPTS['snip'] = { shot: (g, p) => stepSnip(g, p) };
+SCRIPTS['shove'] = {
+  noKnock: true,
+  hit(g, attacker, defender, source, dir) {
+    defender.stun = .5 * defender.stunMul;
+    defender.knocked = 0;
+    defender.vx = 0;
+    defender.vy = 0;
+    defender.x -= dir * 28;
+    const face = Math.sign(attacker.x - defender.x) || (dir > 0 ? -1 : 1);
+    defender.facing = face < 0 ? -1 : 1;
+    if ('tossAt' in source) {
+      const atk = source as Attack;
+      atk.liftAt = atk.t + .1;
+      atk.tossAt = atk.t + .22;
+    }
+    return true;
+  },
+};
+SCRIPTS['seal'] = {
+  hit(g, _attacker, defender) {
+    defender.vy = 0;
+    defender.knocked = 0;
+    if (!has(defender, 'lockGuard')) g.text('驱邪', defender.x, defender.y - 195, '#e6d4ff', .6, 20);
+    addMod(defender, 'lockGuard', PURGE_TIME);
+    return true;
+  },
+};
+SCRIPTS['ban'] = {
+  hit(g, _attacker, defender) {
+    defender.ban = BAN_TIME;
+    defender.root = 0;
+    defender.rootHits = 0;
+    defender.rootLevel = 'move';
+    defender.vy = Math.min(defender.vy, 0);
+    defender.knocked = 0;
+    defender.dodge = 0;
+    defender.stun = BAN_TIME * defender.stunMul;
+    g.text('拉黑!', defender.x, defender.y - 195, '#ff5a5a', .7, 22);
+    return 'still';
+  },
+};
+SCRIPTS['infinite'] = {
+  cast(_g, f) { addMod(f, 'noGain', 4.4, { max: true }); },
+};
+SCRIPTS['world'] = {
+  timeStop: true,
+  cast(g, f) { g.timeStop = f.id; },
+};
+/** Repel pulse while the drums super is up: anyone closing in gets bounced. Returns whether anyone was pushed. */
+function repelPulse(g: FightGame, f: Fighter, power: number): boolean {
+  let pushed = false;
+  for (const o of g.opponents(f)) {
+    if (o.hp <= 0 || o.invuln > 0) continue;
+    const dx = o.x - f.x;
+    if (Math.abs(dx) < DRUM_REPEL_RANGE) {
+      const dir = Math.sign(dx) || f.facing;
+      o.vx = dir * power;
+      o.stun = Math.max(o.stun, .22);
+      pushed = true;
+    }
+  }
+  return pushed;
+}
+
+function step_shove(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (a.tossAt > 0) {
+    const release = a.t >= a.tossAt;
+    for (const id of a.hit) {
+      const o = g.fighters.find(p => p.id === id);
+      if (!o || o.hp <= 0) continue;
+      const face = Math.sign(f.x - o.x) || -f.facing;
+      o.facing = face < 0 ? -1 : 1;
+      if (release) {
+        const dir = Math.sign(o.x - f.x) || f.facing;
+        o.vx = dir * 3200;
+        o.vy = -560;
+        o.knocked = .9;
+        o.downTime = 0;
+        o.stun = Math.max(o.stun, .4);
+      } else {
+        o.vx = 0;
+        o.vy = a.t < a.liftAt ? -20 : -120;
+        o.knocked = 0;
+        o.stun = Math.max(o.stun, .3);
+      }
+    }
+    if (release) {
+      a.liftAt = 0;
+      a.tossAt = 0;
+      a.t = Math.max(a.t, s.duration - .22);
+    }
+  }
+  if (a.hit.size === 0 && a.t >= s.start && a.t < s.start + .72) {
+    f.x += f.facing * (s.speed ?? 700) * dt;
+    applyMelee(g, f, a);
+    // Pale gold silhouette, same source-atop wash as 墨缇丝. One stamp per 1/16s along the lunge.
+    if (Math.floor(a.t * 16) !== Math.floor((a.t - dt) * 16)) {
+      g.effect('ghost', f.x - f.facing * 24, f.y, '#ffe7a8', .3, { fighter: f.id, alpha: .55, tint: '#ffe7a8' });
+    }
+  }
+  if (a.hit.size === 0 && a.t >= s.start + .72) a.t = s.duration;
+}
+
+function step_drums(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (!a.emitted) {
+    a.emitted = true;
+    repelPulse(g, f, DRUM_REPEL_PUSH);
+    g.effect('drums', f.x, f.y, f.data.color, s.duration, { dir: f.facing });
+  }
+  if (a.t < s.duration) {
+    const prev = Math.floor(Math.max(0, a.t - dt) / DRUM_REPEL_EVERY);
+    const cur = Math.floor(a.t / DRUM_REPEL_EVERY);
+    if (cur > prev && repelPulse(g, f, DRUM_REPEL_PUSH)) {
+      g.effect('burst', f.x, f.y - 80, f.data.color, .25, { radius: DRUM_REPEL_RANGE });
+    }
+  }
+  if (drumRow(a.t, s.duration) === 1 && drumRow(Math.max(0, a.t - dt), s.duration) !== 1) {
+    const y = f.y - 78;
+    g.effect('drum-wave', f.x - 110, y, '#f4ecff', .32, { radius: 24 });
+    g.effect('drum-wave', f.x + 110, y, '#f4ecff', .32, { radius: 24 });
+  }
+}
+
+function step_mortis(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (!a.emitted) {
+    a.emitted = true;
+    const foe = g.opponents(f)
+      .filter(o => o.hp > 0 && (o.x - f.x) * f.facing >= -20 && Math.abs(o.x - f.x) < s.range)
+      .sort((p, q) => Math.abs(p.x - f.x) - Math.abs(q.x - f.x))[0];
+    const dist = foe ? Math.max(48, Math.abs(foe.x - f.x)) : s.range;
+    g.effect('mortis', f.x, f.y, f.data.color, s.duration, { dir: f.facing, radius: dist });
+  }
+}
+
+function step_poem(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (a.shots === 0) {
+    a.shots = 1;
+    for (const o of g.opponents(f)) {
+      if (o.hp <= 0 || o.invuln > 0) continue;
+      const dx = o.x - f.x;
+      if (Math.abs(dx) < POEM_REPEL_RANGE) {
+        o.vx = (Math.sign(dx) || f.facing) * POEM_REPEL_PUSH;
+        o.stun = Math.max(o.stun, .2);
+      }
+    }
+    g.effect('poem', f.x, f.y - 80, f.data.color, s.start, { radius: POEM_REPEL_RANGE });
+  }
+}
+
+function step_wind(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (!a.emitted && a.t >= s.start) {
+    a.emitted = true;
+    g.effect('wind', f.x, f.y - 85, f.data.color, .45, { dir: f.facing });
+    f.x = clamp(f.x + f.facing * s.range, X_MIN, X_MAX);
+    g.effect('wind', f.x, f.y - 85, f.data.color, .45, { dir: -f.facing });
+    g.effect('dust', f.x, FLOOR, '#afa1c1', .3, { radius: 25 });
+  }
+}
+
+function step_violet(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (!a.emitted && a.t >= s.start) {
+    a.emitted = true;
+    violetBurst(g, f, s);
+  }
+  if (a.emitted && a.shots === 0 && a.t >= s.start + VIOLET_WARP) {
+    a.shots = 1;
+    f.x = f.x < W / 2 ? X_MAX : X_MIN;
+    const foe = g.targetFor(f);
+    if (foe) f.facing = foe.x >= f.x ? 1 : -1;
+    g.effect('dust', f.x, FLOOR, '#afa1c1', .3, { radius: 25 });
+    violetBurst(g, f, s);
+  }
+}
+
+function step_snip(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (a.t < s.start) {
+    if (a.shots === 0) {
+      a.shots = 1;
+      const mark = g.opponents(f)
+        .filter(o => Math.abs(o.x - f.x) <= s.range)
+        .sort((p, q) => Math.abs(p.x - f.x) - Math.abs(q.x - f.x))[0];
+      a.anchor = mark ? mark.x : f.x;
+    }
+    let live = g.effects.find(e => e.type === 'snip-mark' && e.fighter === f.id);
+    if (!live) {
+      g.effect('snip-mark', a.anchor, FLOOR - 85, f.data.color, s.start, { fighter: f.id });
+      live = g.effects[g.effects.length - 1];
+    }
+    live.x = a.anchor;
+    live.y = FLOOR - 85;
+    live.max = s.start;
+    live.life = Math.max(.04, s.start - a.t);
+  }
+}
+
+function step_fuga(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (a.t < s.start) {
+    let live = g.effects.find(e => e.type === 'fuga-bow' && e.fighter === f.id);
+    if (!live) {
+      g.effect('fuga-bow', f.x, f.y - 85, f.data.color, s.start, { fighter: f.id, dir: f.facing });
+      live = g.effects[g.effects.length - 1];
+    }
+    live.x = f.x;
+    live.y = f.y - 85;
+    live.dir = f.facing;
+    live.max = s.start;
+    live.life = Math.max(.04, s.start - a.t);
+  }
+}
+
+function step_slam(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (a.hold < 0 && a.t >= s.start && a.t < s.start + .45) {
+    f.x += f.facing * (s.speed ?? 220) * dt;
+    for (const o of g.opponents(f)) {
+      if (o.hp <= 0 || o.invuln > 0) continue;
+      const front = (o.x - f.x) * f.facing >= -20;
+      if (Math.abs(o.x - f.x) < s.range && front && Math.abs(o.y - f.y) < 112) {
+        a.hold = o.id;
+        a.tossAt = a.t + .18;
+        o.stun = .6;
+        o.vx = 0;
+        o.vy = 0;
+        o.knocked = 0;
+        o.attack = null;
+        o.queue = [];
+        break;
+      }
+    }
+  }
+  if (a.hold >= 0 && a.tossAt > 0) {
+    const o = g.fighters.find(p => p.id === a.hold);
+    if (o && o.hp > 0) {
+      if (a.t < a.tossAt) {
+        o.x = f.x + f.facing * 48;
+        o.y = FLOOR;
+        o.vx = 0;
+        o.vy = 0;
+        o.stun = Math.max(o.stun, .3);
+        const face = Math.sign(f.x - o.x) || -f.facing;
+        o.facing = face < 0 ? -1 : 1;
+      } else {
+        o.x = f.x - f.facing * 80;
+        o.y = FLOOR;
+        hit(g, f, o, s, a);
+        g.effect('slam', o.x, FLOOR, f.data.color, .45, { radius: 90 });
+        a.tossAt = 0;
+        a.t = Math.max(a.t, s.duration - .35);
+      }
+    }
+  }
+  if (a.hold < 0 && a.t > s.start + .5) a.t = s.duration;
+}
+
+function step_onegai(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (a.hold < 0 && a.t >= s.start && a.t < s.start + .42) {
+    f.x += f.facing * (s.speed ?? 520) * dt;
+    if (Math.floor(a.t * 16) !== Math.floor((a.t - dt) * 16)) {
+      g.effect('ghost', f.x - f.facing * 24, f.y, f.data.color, .3, { fighter: f.id, alpha: .35 });
+    }
+    for (const o of g.opponents(f)) {
+      if (o.hp <= 0 || o.invuln > 0) continue;
+      const front = (o.x - f.x) * f.facing >= -20;
+      if (Math.abs(o.x - f.x) < s.range && front && Math.abs(o.y - f.y) < 112) {
+        a.hold = o.id;
+        a.tossAt = a.t + ONEGAI_PAUSE;
+        // The catch lands with a freeze-frame and a flash, so the pause reads as power, not lag.
+        g.hitstop = Math.max(g.hitstop, .09);
+        g.effect('grab', o.x, o.y - 80, f.data.color, .3, { radius: 55 });
+        o.stun = Math.max(o.stun, .35);
+        o.vx = 0;
+        o.vy = 0;
+        o.knocked = 0;
+        o.attack = null;
+        o.queue = [];
+        break;
+      }
+    }
+  }
+  if (a.hold >= 0 && a.tossAt > 0) {
+    const o = g.fighters.find(p => p.id === a.hold);
+    if (o && o.hp > 0) {
+      if (a.t < a.tossAt) {
+        // Held by the wrist in front of the kneel, turned to face her.
+        o.x = f.x + f.facing * 58;
+        o.y = FLOOR;
+        o.vx = 0;
+        o.vy = 0;
+        o.knocked = 0;
+        o.stun = Math.max(o.stun, .3);
+        o.facing = (-f.facing) as 1 | -1;
+      } else {
+        hit(g, f, o, s, a);
+        g.effect('hit', o.x, o.y - 90, f.data.color, .25, { radius: 60 });
+        a.tossAt = 0;
+        a.t = Math.max(a.t, s.duration - .3);
+      }
+    }
+  }
+  if (a.hold < 0 && a.t >= s.start + .42) a.t = s.duration;
+}
+
+function step_arc_kick(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (a.t >= s.start && a.t < s.start + .34) {
+    const tick = Math.floor((a.t - s.start) * 12);
+    if (tick > a.shots && tick <= 3) {
+      a.shots = tick;
+      g.effect('ghost', f.x - f.facing * (14 + tick * 16), f.y, f.data.color, .2, { fighter: f.id, alpha: .32 });
+    }
+  }
+}
+
+function step_compose(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (a.t >= s.start) {
+    if (!a.emitted) {
+      a.emitted = true;
+      g.effect('compose', a.anchor + f.facing * 148, FLOOR, f.data.color, Math.max(.2, s.duration - s.start), { dir: f.facing, radius: 100, fighter: f.id });
+      g.text(s.name, f.x, f.y - 190, f.data.color, .65, 17);
+    }
+    const near = a.anchor + f.facing * 48;
+    const far = a.anchor + f.facing * 248;
+    const lo = Math.min(near, far), hi = Math.max(near, far);
+    while (a.shots < (s.count ?? 1) && a.t >= s.start + a.shots * (s.interval ?? .12)) {
+      for (const o of g.opponents(f)) {
+        if (o.x >= lo && o.x <= hi) composeTick(g, f, o, s);
+      }
+      a.shots++;
+    }
+  }
+}
+
+function step_wish(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (a.t < s.start) {
+    if (a.shots === 0) {
+      a.shots = 1;
+      const foe = g.opponents(f)
+        .filter(o => o.hp > 0)
+        .sort((p, q) => Math.abs(p.x - f.x) - Math.abs(q.x - f.x))[0];
+      a.anchor = foe ? foe.x : clamp(f.x + f.facing * 240, X_MIN, X_MAX);
+    }
+    let live = g.effects.find(e => e.type === 'wish-mark' && e.fighter === f.id);
+    if (!live) {
+      g.effect('wish-mark', a.anchor, FLOOR - 85, f.data.color, s.start, { fighter: f.id });
+      live = g.effects[g.effects.length - 1];
+    }
+    live.x = a.anchor;
+    live.y = FLOOR - 85;
+    live.max = s.start;
+    live.life = Math.max(.04, s.start - a.t);
+  }
+}
+
+function volley_drums(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  const volley = a.burst || s.count || 1;
+  {
+      while (a.shots < volley && a.t >= drumShotTime(s, a.shots)) {
+        spawnRain(g, f, a, a.shots);
+        a.shots++;
+      }
+    }
+}
+
+function volley_parfait(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  const volley = a.burst || s.count || 1;
+  {
+      // 抹茶大芭菲: one standing zone; the blobs erupt from it on the zone's own clock in stepProjectiles.
+      if (!a.emitted && a.t >= s.start) {
+        a.emitted = true;
+        spawnShot(g, f, a);
+        g.effect('parfait', clamp(f.x + f.facing * PARFAIT_DIST, X_MIN, X_MAX), FLOOR, f.data.color, s.life ?? 6.5);
+      }
+    }
+}
+
+function volley_star(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  const volley = a.burst || s.count || 1;
+  {
+      // 小星星: the stars pour in from the upper left and fall down-right into the lane —
+      // each spawn is backed off up-left by its own flight drift so the landing spots cover
+      // the lane, two staggered sweeps near to far. A missed read chains into the next star.
+      while (a.shots < volley && a.t >= s.start + a.shots * (s.interval ?? .12)) {
+        const i = a.shots;
+        const land = 70 + (i % 5) * STAR_SPACING + (i >= 5 ? STAR_SPACING / 2 : 0);
+        const rise = 250 + (i % 3) * 55;
+        g.projectiles.push({
+          owner: f.id,
+          x: clamp(f.x + f.facing * (land - (STAR_VX / STAR_VY) * rise), X_MIN - 80, X_MAX + 80),
+          y: FLOOR - rise,
+          vx: f.facing * STAR_VX,
+          vy: STAR_VY,
+          life: s.life ?? 1.2,
+          skill: s,
+          color: f.data.color,
+          radius: 11,
+          size: s.size ?? 46,
+          fx: 'star',
+          attack: a,
+          hit: new Set(),
+          trail: [],
+          age: 0,
+        });
+        a.shots++;
+      }
+    }
+}
+
+function swing_riff(g: FightGame, f: Fighter, a: Attack, s: Skill): void {
+  {
+        a.skill = riffShot(s, a.shots);
+        applyMelee(g, f, a);
+        g.effect('riff', f.x, f.y - 85, f.data.color, .4, { radius: a.skill.range });
+      }
+}
+
+function swing_crown(g: FightGame, f: Fighter, a: Attack, s: Skill): void {
+  {
+        // 五冠王的威压: every wave is its own copy — wider, harder, shove-ier.
+        a.skill = crownShot(s, a.shots);
+        applyMelee(g, f, a);
+        g.effect('crown', f.x, f.y - 85, f.data.color, .45, { radius: a.skill.range });
+      }
+}
+
+function swing_groove(g: FightGame, f: Fighter, a: Attack, s: Skill): void {
+  {
+        applyMelee(g, f, a);
+        g.effect('burst', f.x, f.y - 80, f.data.color, .22, { radius: s.range });
+        // The tap is the ring only. Notes start on the second pulse.
+        if (a.shots >= 1) spawnGrooveNote(g, f, a);
+      }
+}
+
+function emit_wish(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  {
+      // 星之鼓动: the tell dies with the prayer and the star drops in from the upper left,
+      // aimed so its diagonal lands exactly on the pinned spot.
+      const mark = g.effects.find(e => e.type === 'wish-mark' && e.fighter === f.id);
+      if (mark) mark.life = 0;
+      const drop = (FLOOR - 70) - -90;
+      g.projectiles.push({
+        owner: f.id, x: a.anchor - WISH_SLANT * drop, y: -90,
+        vx: WISH_SLANT * WISH_FALL, vy: WISH_FALL,
+        life: 3, skill: s, color: f.data.color,
+        radius: 54, size: s.size ?? 480,         fx: 'star-fall',
+        attack: a, hit: new Set(), trail: [], age: 0, solid: s.solid,
+      });
+      g.shake = 6;
+      a.t = Math.max(a.t, s.duration - .4);
+    }
+}
+
+function emit_world(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  {
+      // 此即世界: the chant ends the freeze. The pulse roots every opponent outright — no
+      // damage, nothing to block or dodge; seconds, tier and break rule all come from the skill.
+      for (const o of g.opponents(f)) {
+        if (o.hp <= 0) continue;
+        o.root = s.root ?? 0;
+        o.rootLevel = s.rootLevel ?? 'move';
+        o.rootBreak = s.rootBreak ?? 0;
+        o.rootHits = 0;
+        o.rootFx = s.fx;
+        o.dodge = 0;
+        o.vy = 0;
+        o.knocked = 0;
+        o.stun = Math.max(o.stun, .25);
+        g.effect('world-heart', o.x, o.y - 85, f.data.color, 1.6, { radius: 92 });
+        g.text('定身!', o.x, o.y - 195, '#ffd27a', .6, 20);
+      }
+      g.flash = Math.max(g.flash, .25);
+      g.timeStop = null;
+      a.t = Math.max(a.t, s.duration);
+    }
+}
+
+function emit_snip(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  {
+      // 剪: the tell dies with the lock. The void field plants on the frozen spot, not on the runner.
+      const mark = g.effects.find(e => e.type === 'snip-mark' && e.fighter === f.id);
+      if (mark) mark.life = 0;
+      if (!a.shots) {
+        a.shots = 1;
+        const caught = g.opponents(f)
+          .filter(o => Math.abs(o.x - f.x) <= s.range)
+          .sort((p, q) => Math.abs(p.x - f.x) - Math.abs(q.x - f.x))[0];
+        a.anchor = caught ? caught.x : f.x;
+      }
+      g.projectiles.push({
+        owner: f.id, x: a.anchor, y: FLOOR - 85, vx: 0, vy: 0,
+        life: s.life ?? .8, skill: s, color: f.data.color,
+        radius: 24, size: s.size ?? 105,         fx: 'snip',
+        attack: a, hit: new Set(), trail: [], age: 0, solid: s.solid,
+      });
+    }
+}
+
+function emit_fuga(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  {
+      // 火的故事: the bow dissolves with the release. The arrow flies level until something ends it,
+      // and she is free the moment it leaves — the flight is the recover.
+      const bow = g.effects.find(e => e.type === 'fuga-bow' && e.fighter === f.id);
+      if (bow) bow.life = 0;
+      g.projectiles.push({
+        owner: f.id, x: f.x + f.facing * 53, y: FLOOR - 85,
+        vx: f.facing * (s.speed ?? 200), vy: 0,
+        life: s.life ?? 6, skill: s, color: f.data.color,
+        radius: 30, size: s.size ?? 160,         fx: 'fuga',
+        attack: a, hit: new Set(), trail: [], age: 0, solid: s.solid,
+      });
+      // The draw is protected; the flight is not. Her own blast can catch her the moment it leaves.
+      f.invuln = Math.min(f.invuln, s.start);
+      a.t = Math.max(a.t, s.duration);
+    }
+}
+
+function emit_firebird(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  {
+      // 火鸟: four pillars erupt from the stage floor, two ahead and two behind; each burns
+      // a body twice on its own clock in stepProjectiles.
+      for (const off of [FIREBIRD_OFFSETS[0], FIREBIRD_OFFSETS[1], -FIREBIRD_OFFSETS[0], -FIREBIRD_OFFSETS[1]]) {
+        g.projectiles.push({
+          owner: f.id, x: clamp(f.x + f.facing * off, X_MIN, X_MAX), y: FLOOR, vx: 0, vy: 0,
+          life: s.life ?? .75, skill: s, color: f.data.color,
+          radius: 26, size: s.size ?? 110, fx: 'firebird',
+          attack: a, hit: new Set(), trail: [], age: 0,
+        });
+      }
+      g.shake = Math.max(g.shake, 4);
+    }
+}
+
+function emit_summit(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  {
+      // 顶点: the shout carries through the whole stage. No damage — the wave only hurls
+      // everyone away as hard as the shove toss, and jumping does not clear it. The wave is
+      // a screen-facing ring centred on her body, not a floor ellipse.
+      g.effect('summit', f.x, f.y - 80, f.data.color, .6, { radius: 560 });
+      g.shake = Math.max(g.shake, 8);
+      for (const o of g.opponents(f)) {
+        if (o.hp <= 0 || o.invuln > 0) continue;
+        const dir = Math.sign(o.x - f.x) || f.facing;
+        o.vx = dir * SUMMIT_VX;
+        o.vy = SUMMIT_VY;
+        o.knocked = .9;
+        o.downTime = 0;
+        o.stun = Math.max(o.stun, .4);
+      }
+    }
+}
+
+function after_star_fall(g: FightGame, p: Projectile, _dt: number): boolean {
+  if (p.y < FLOOR - 70) return false;
+  p.life = 0;
+  wishBurst(g, p, g.fighterById(p.owner));
+  return true;
+}
+
+function pulse_smile_wave(g: FightGame, p: Projectile, target: Fighter): void {
+  const h = target.data.view.kind === 'sprite' ? target.data.view.height : 181;
+  g.effect('smile-pulse', target.x, target.y - 83, p.color, .28, { radius: h * 1.5, dir: Math.sign(p.vx) || 1 });
+}
+SCRIPTS['wail'] = { burst: f => wailShots(f.hp, f.data.hp) };
+SCRIPTS['shove'] = Object.assign(SCRIPTS['shove'] ?? {}, { update: step_shove, commit: true });
+SCRIPTS['drums'] = Object.assign(SCRIPTS['drums'] ?? {}, { update: step_drums });
+SCRIPTS['mortis'] = Object.assign(SCRIPTS['mortis'] ?? {}, { update: step_mortis, noStamp: true });
+SCRIPTS['poem'] = Object.assign(SCRIPTS['poem'] ?? {}, { update: step_poem });
+SCRIPTS['wind'] = Object.assign(SCRIPTS['wind'] ?? {}, { update: step_wind, customDash: true });
+SCRIPTS['violet'] = Object.assign(SCRIPTS['violet'] ?? {}, { update: step_violet, customDash: true, hidden: true });
+SCRIPTS['snip'] = Object.assign(SCRIPTS['snip'] ?? {}, { update: step_snip, freeWhenEmitted: true, skipVolley: true, skipCount: true, ownCount: true, mark: 'snip' });
+SCRIPTS['fuga'] = Object.assign(SCRIPTS['fuga'] ?? {}, { update: step_fuga, freeWhenEmitted: true });
+SCRIPTS['slam'] = Object.assign(SCRIPTS['slam'] ?? {}, { update: step_slam, commit: true, noMelee: true });
+SCRIPTS['onegai'] = Object.assign(SCRIPTS['onegai'] ?? {}, { update: step_onegai, noMelee: true });
+SCRIPTS['arc-kick'] = Object.assign(SCRIPTS['arc-kick'] ?? {}, { update: step_arc_kick });
+SCRIPTS['compose'] = Object.assign(SCRIPTS['compose'] ?? {}, { update: step_compose, skipCount: true, noMelee: true });
+SCRIPTS['wish'] = Object.assign(SCRIPTS['wish'] ?? {}, { update: step_wish, skipVolley: true, skipCount: true });
+SCRIPTS['drums'] = Object.assign(SCRIPTS['drums'] ?? {}, { volley: volley_drums });
+SCRIPTS['parfait'] = Object.assign(SCRIPTS['parfait'] ?? {}, { volley: volley_parfait, spawn: 'zone' });
+SCRIPTS['star'] = Object.assign(SCRIPTS['star'] ?? {}, { volley: volley_star });
+SCRIPTS['riff'] = Object.assign(SCRIPTS['riff'] ?? {}, { swing: swing_riff, holdFrom: 1, release: .3, settle: .3, cd: { tap: RIFF_CD_TAP, max: RIFF_CD_MAX, waves: RIFF_WAVES } });
+SCRIPTS['crown'] = Object.assign(SCRIPTS['crown'] ?? {}, { swing: swing_crown });
+SCRIPTS['groove'] = Object.assign(SCRIPTS['groove'] ?? {}, { swing: swing_groove, holdFrom: 1, release: .3, cd: { tap: GROOVE_CD_TAP, max: GROOVE_CD_MAX, waves: GROOVE_WAVES } });
+SCRIPTS['wish'] = Object.assign(SCRIPTS['wish'] ?? {}, { emit: emit_wish, skipVolley: true, skipCount: true });
+SCRIPTS['world'] = Object.assign(SCRIPTS['world'] ?? {}, { emit: emit_world });
+SCRIPTS['snip'] = Object.assign(SCRIPTS['snip'] ?? {}, { emit: emit_snip, freeWhenEmitted: true, skipVolley: true, skipCount: true, ownCount: true, mark: 'snip' });
+SCRIPTS['fuga'] = Object.assign(SCRIPTS['fuga'] ?? {}, { emit: emit_fuga, freeWhenEmitted: true });
+SCRIPTS['firebird'] = Object.assign(SCRIPTS['firebird'] ?? {}, { emit: emit_firebird });
+SCRIPTS['summit'] = Object.assign(SCRIPTS['summit'] ?? {}, { emit: emit_summit });
+SCRIPTS['chord'] = Object.assign(SCRIPTS['chord'] ?? {}, { guitar: 'strum', holdFrom: 3, release: .22, settle: .22, home: 'seek', trail: 14 });
+SCRIPTS['spin'] = Object.assign(SCRIPTS['spin'] ?? {}, { guitar: 'spin', noStamp: true });
+SCRIPTS['sob'] = Object.assign(SCRIPTS['sob'] ?? {}, { noteOff: [45, 70], trail: 14 });
+SCRIPTS['shout'] = Object.assign(SCRIPTS['shout'] ?? {}, { freeOnLast: true });
+SCRIPTS['flurry'] = Object.assign(SCRIPTS['flurry'] ?? {}, { ghostSwing: true });
+SCRIPTS['record'] = Object.assign(SCRIPTS['record'] ?? {}, { noMelee: true, echo: true });
+SCRIPTS['cartwheel'] = Object.assign(SCRIPTS['cartwheel'] ?? {}, { flip: true, sparseGhost: true });
+SCRIPTS['milk'] = Object.assign(SCRIPTS['milk'] ?? {}, { spawn: 'milk' });
+SCRIPTS['bag'] = Object.assign(SCRIPTS['bag'] ?? {}, { spawn: 'bag' });
+SCRIPTS['juggle-ball'] = Object.assign(SCRIPTS['juggle-ball'] ?? {}, { spawn: 'juggle', trail: 'speed', bounce: true });
+SCRIPTS['cucumber'] = Object.assign(SCRIPTS['cucumber'] ?? {}, { boomerang: true });
+SCRIPTS['groove-note'] = Object.assign(SCRIPTS['groove-note'] ?? {}, { home: 'flat' });
+SCRIPTS['mutsumi-note'] = Object.assign(SCRIPTS['mutsumi-note'] ?? {}, { trail: 14 });
+SCRIPTS['wink'] = Object.assign(SCRIPTS['wink'] ?? {}, { trail: 10 });
+SCRIPTS['seal'] = Object.assign(SCRIPTS['seal'] ?? {}, { seal: true, swell: true });
+SCRIPTS['smile-ship'] = Object.assign(SCRIPTS['smile-ship'] ?? {}, { skipVolley: true, skipCount: true, whistle: true, wide: true });
+SCRIPTS['star-fall'] = Object.assign(SCRIPTS['star-fall'] ?? {}, { wide: true, after: after_star_fall });
+SCRIPTS['blackhole'] = Object.assign(SCRIPTS['blackhole'] ?? {}, { spawn: 'well' });
+SCRIPTS['donut'] = Object.assign(SCRIPTS['donut'] ?? {}, { variant: donutVariant });
+SCRIPTS['smile-wave'] = Object.assign(SCRIPTS['smile-wave'] ?? {}, { pulse: pulse_smile_wave });
+SCRIPTS['ripple'] = Object.assign(SCRIPTS['ripple'] ?? {}, { flash(g, f, a) { g.effect('ripple', f.x, FLOOR, f.data.color, .45, { radius: a.skill.range }); } });
+SCRIPTS['huh'] = Object.assign(SCRIPTS['huh'] ?? {}, { flash(g, f, a) { g.effect('huh', f.x, FLOOR, f.data.color, .5, { radius: a.skill.range }); } });
+SCRIPTS['tsun'] = Object.assign(SCRIPTS['tsun'] ?? {}, { flash(g, f, a) { g.effect('tsun', f.x, FLOOR, f.data.color, .5, { radius: a.skill.range }); } });
+SCRIPTS['howl'] = Object.assign(SCRIPTS['howl'] ?? {}, { flash(g, f, a) { g.effect('howl', f.x, f.y - 80, f.data.color, .4, { radius: a.skill.range }); } });
+SCRIPTS['yokan'] = Object.assign(SCRIPTS['yokan'] ?? {}, { flash(g, f, a) { g.effect('yokan', f.x + f.facing * 70, FLOOR, f.data.color, .28, { dir: f.facing, radius: 80 }); } });
+SCRIPTS['rib'] = Object.assign(SCRIPTS['rib'] ?? {}, { flash(g, f, a) { g.effect('slash', f.x + f.facing * 65, f.y - 83, f.data.color, .22, { dir: f.facing, radius: a.skill.range * .5 }); } });
+
+
 export function stepProjectiles(g: FightGame, dt: number): void {
   for (const p of g.projectiles) {
     p.life -= dt;
     p.age += dt;
-    if (p.fx === 'parfait') {
-      // 抹茶大芭菲: the parfait lobs one blob per interval, sides alternating, until the volley runs out.
-      const owner = g.fighterById(p.owner);
-      if (!owner) continue;
-      const tick = Math.floor(p.age / (p.skill.interval ?? .28));
-      if (tick !== p.ticked && tick < (p.skill.count ?? 22)) {
-        p.ticked = tick;
-        spawnMatchaBlob(g, owner, p, tick);
-      }
-      continue;
-    }
-    if (p.fx === 'firebird') {
-      // 火鸟: a standing pillar. Two burns per body on the pillar's own clock; both are
-      // launch hits, so the first floats and the second keeps the victim up there.
-      const owner = g.fighterById(p.owner);
-      if (!owner) continue;
-      if (!p.marks) p.marks = new Map();
-      for (const o of g.opponents(owner)) {
-        if (o.hp <= 0 || o.invuln > 0) continue;
-        const mark = p.marks.get(o.id);
-        if (mark && (mark.n >= 2 || p.age < mark.next)) continue;
-        if (Math.abs(o.x - p.x) >= 30 + p.radius || o.y < FLOOR - 250) continue;
-        if (!hit(g, owner, o, p.skill, { hit: new Set() }, p.x)) continue;
-        if (mark) { mark.n++; mark.next = p.age + FIREBIRD_TICK; }
-        else p.marks.set(o.id, { n: 1, next: p.age + FIREBIRD_TICK });
-      }
-      continue;
-    }
-    if (p.fx === 'blackhole') {
-      // 奇独点: a standing well. It drags bodies toward the centre and ticks the skill's damage on its interval.
-      const owner = g.fighterById(p.owner);
-      if (!owner) continue;
-      for (const o of g.opponents(owner)) {
-        if (o.hp <= 0 || o.invuln > 0) continue;
-        const dx = p.x - o.x;
-        if (Math.abs(dx) < BLACKHOLE_RADIUS) {
-          o.vx = Math.sign(dx) * BLACKHOLE_PULL * (o.y < FLOOR - .5 ? .4 : 1);
-        }
-      }
-      const tick = Math.floor(p.age / (p.skill.interval ?? .2));
-      if (tick !== p.ticked) {
-        p.ticked = tick;
-        p.hit.clear();
-        for (const o of g.opponents(owner)) {
-          if (Math.abs(o.x - p.x) < BLACKHOLE_RADIUS && Math.abs(o.y - 83 - p.y) < 72) {
-            hit(g, owner, o, p.skill, { hit: p.hit }, p.x);
-          }
-        }
-      }
-      continue;
-    }
-    if (p.fx === 'mega') {
-      // 高音量！: a travelling wall of sound. Anyone inside is carried along at its push speed
-      // until the wave passes them — blockers brace against it, jumpers clear it like the hit.
-      const owner = g.fighterById(p.owner);
-      if (!owner) continue;
-      for (const o of g.opponents(owner)) {
-        if (o.hp <= 0 || o.invuln > 0 || o.blocking) continue;
-        if (Math.abs(o.x - p.x) < 38 + p.radius && Math.abs(p.y - (o.y - 83)) < 72) {
-          o.vx = Math.sign(p.vx || 1) * MEGA_PUSH;
-        }
-      }
-    }
-    if (p.fx === 'smile-ship') {
-      // 微笑号出航: the picture is the truth. The strike zone spans the hull itself, narrowed by
-      // the sprite's blank leading margin (SHIP_BLANK of the picture width), so nothing lands
-      // before the visible bow reaches a body and nothing lands after the stern has passed. The
-      // hull carries anyone in the waterline at its own speed — a body shoved into the wall
-      // still has the hull over it, so the full string can land: twelve per body, one per
-      // interval window, segment seven onward at a fifth. Blockers brace (chip only, no ride),
-      // jumpers clear the waterline like any shot.
-      const dir = Math.sign(p.vx) || 1;
-      const u = Math.min(1, Math.max(0, (p.age - SHIP_HOLD) / SHIP_SWEEP));
-      const front = dir > 0 ? u * 2 * W - SHIP_BLANK * W : W - u * 2 * W + SHIP_BLANK * W;
-      const stern = front - dir * (1 - SHIP_BLANK) * W;
-      p.x = front;
-      pushTrail(p, 12);
-      if (p.age >= SHIP_HOLD + SHIP_SWEEP) { p.life = 0; continue; }
-      if (p.age < SHIP_HOLD) continue;
-      const lo = Math.min(front, stern), hi = Math.max(front, stern);
-      const owner = g.fighterById(p.owner);
-      if (owner) {
-        for (const o of g.opponents(owner)) {
-          if (o.hp <= 0 || o.invuln > 0) continue;
-          if (o.x > hi + 38 || o.x < lo - 38 || Math.abs(p.y - (o.y - 83)) >= 72) continue;
-          if (!o.blocking) o.vx = dir * SHIP_PUSH;
-          const mark = p.marks?.get(o.id);
-          let n = 1;
-          if (mark) {
-            if (mark.n >= SHIP_SEGMENTS || p.age < mark.next) continue;
-            mark.n++;
-            mark.next = p.age + (p.skill.interval ?? .12);
-            n = mark.n;
-          } else {
-            if (!p.marks) p.marks = new Map();
-            p.marks.set(o.id, { n: 1, next: p.age + (p.skill.interval ?? .12) });
-          }
-          const seg = n > SHIP_FULL ? { ...p.skill, damage: p.skill.damage * SHIP_TAIL_MUL } : p.skill;
-          if (hit(g, owner, o, seg, { hit: new Set() }, o.x - dir * 40)) {
-            g.effect('burst', o.x, p.y, p.color, .3, { radius: p.size * .45 });
-          }
-        }
-      }
-      continue;
-    }
-    if (p.fx === 'snip') {
-      // 剪: a standing void field. The first body inside commits the whole multi-cut string;
-      // the field keeps waiting for anyone else who steps in before it fades.
-      const owner = g.fighterById(p.owner);
-      if (!owner) continue;
-      if (!p.marks) p.marks = new Map();
-      for (const o of g.opponents(owner)) {
-        if (o.hp <= 0 || p.life <= 0) continue;
-        if (p.marks.has(o.id)) continue;
-        if (Math.abs(p.x - o.x) >= SNIP_BAND_X || Math.abs(p.y - (o.y - 83)) >= SNIP_BAND_Y) continue;
-        const dir = Math.sign(o.x - p.x) || 1;
-        if (!hit(g, owner, o, { ...p.skill, knock: 0 }, { hit: new Set() }, p.x)) continue;
-        p.marks.set(o.id, { n: 1, next: 0 });
-        g.effect('snip', p.x, p.y, p.color, .22, { dir, radius: 56 });
-        g.sealVolleys.push({ owner: owner.id, target: o.id, n: 1, wait: p.skill.interval ?? .15, dir, color: p.color, skill: p.skill });
-      }
-      continue;
-    }
-    if (p.fx === 'fuga') {
-      // 火的故事: level flight, contact or the far edge ends it, and the blast does the talking.
-      p.x += p.vx * dt;
-      // History long enough for the golden afterimages to reach a few body-lengths behind.
-      pushTrail(p, 48);
-      const owner = g.fighterById(p.owner);
-      // The fuse: no detonation for the first stretch of flight, so the arrow visibly leaves
-      // the bow — and a point-blank blast lands just after her cast invuln is gone.
-      let boom = false;
-      if (p.age >= FUGA_FUSE) {
-        if (owner) {
-          for (const o of g.opponents(owner)) {
-            if (o.hp <= 0 || o.invuln > 0) continue;
-            if (Math.abs(p.x - o.x) < 38 + p.radius && Math.abs(p.y - (o.y - 83)) < 72) { boom = true; break; }
-          }
-        }
-        if (!boom && ((p.vx < 0 && p.x <= X_MIN + 6) || (p.vx > 0 && p.x >= X_MAX - 6))) boom = true;
-      }
-      if (boom) {
-        fugaBurst(g, p, owner);
-        p.life = 0;
-      }
-      continue;
-    }
+    if (SCRIPTS[p.fx]?.shot?.(g, p, dt)) continue;
     // Outbound half, then one turn. The hit list clears so the way back can connect again.
-    if (p.fx === 'cucumber' && !p.returned && p.age >= (p.skill.life ?? 2.4) / 2) {
+    if (SCRIPTS[p.fx]?.boomerang && !p.returned && p.age >= (p.skill.life ?? 2.4) / 2) {
       p.vx = -p.vx;
       p.hit.clear();
       p.returned = true;
     }
-    if ((p.fx === 'milk' || p.fx === 'bag' || p.fx === 'matcha') && !p.settled) p.vy += GRAVITY * dt;
+    if ((p.skill.motion === 'fall' || p.floor === 'splash') && !p.settled) p.vy += GRAVITY * dt;
     const owner = g.fighterById(p.owner);
-    if (p.fx === 'groove-note' && owner && owner.hp > 0) {
+    if (SCRIPTS[p.fx]?.home === 'flat' && owner && owner.hp > 0) {
       const foe = g.nearestEnemyTo(owner, p.x);
       if (foe) {
         const dx = foe.x - p.x;
@@ -1983,7 +1948,7 @@ export function stepProjectiles(g: FightGame, dt: number): void {
         p.vy = 0;
       }
     }
-    if (p.fx === 'chord' && owner && owner.hp > 0) {
+    if (SCRIPTS[p.fx]?.home === 'seek' && owner && owner.hp > 0) {
       const foe = g.nearestEnemyTo(owner, p.x);
       if (foe) {
         const dx = foe.x - p.x, dy = (foe.y - 83) - p.y;
@@ -1999,15 +1964,7 @@ export function stepProjectiles(g: FightGame, dt: number): void {
     }
     p.x += p.vx * dt;
     p.y += p.vy * dt;
-    if (p.fx === 'meat') {
-      // Lives until she touches it. The per-frame decay above is undone unless this pass ends it.
-      p.life += dt;
-      if (p.x <= X_MIN && p.vx < 0) { p.x = X_MIN; p.vx = -p.vx; p.hit.clear(); }
-      else if (p.x >= X_MAX && p.vx > 0) { p.x = X_MAX; p.vx = -p.vx; p.hit.clear(); }
-      if (!owner || owner.hp <= 0) p.life = 0;
-      else if (Math.abs(p.x - owner.x) < 38 + p.radius && Math.abs(p.y - (owner.y - 83)) < 72) p.life = 0;
-    }
-    if (p.fx === 'juggle-ball') {
+    if (SCRIPTS[p.fx]?.bounce) {
       // 抛球杂耍: a pinball off three walls. Each bounce reflects the flight, tilts it by up to
       // JUGGLE_JITTER, and speeds it up 20% to at most double the launch speed, and clears the
       // hit list so the next pass can connect. The component floors
@@ -2033,63 +1990,21 @@ export function stepProjectiles(g: FightGame, dt: number): void {
         p.hit.clear();
       }
     }
-    if (p.fx === 'star' && p.y >= FLOOR - 6) {
-      // 小星星: a star that reaches the floor pops where it lands instead of falling through.
-      p.life = 0;
-      g.effect('star-pop', p.x, FLOOR - 8, p.color, .25, { radius: 34 });
-    }
-    if (p.fx === 'star-fall' && p.y >= FLOOR - 70) {
-      // 星之鼓动: ground contact is the detonation.
-      p.life = 0;
-      wishBurst(g, p, g.fighterById(p.owner));
-      continue;
-    }
-    if ((p.fx === 'milk' || p.fx === 'bag' || p.fx === 'matcha') && !p.settled && p.y >= FLOOR) {
-      p.y = FLOOR;
-      if (p.fx === 'matcha') {
-        // 抹茶熔岩 pops where it lands; direct hits only, so the splash is just paint.
-        p.life = 0;
-        g.effect('burst', p.x, FLOOR - 8, p.color, .3, { radius: 44 });
-      } else if (p.fx === 'bag') p.life = 0;
-      else {
-        p.vx = 0;
-        p.vy = 0;
-        p.settled = true;
-        p.life = 3;
-        p.hit.clear();
-      }
-    }
+    if (SCRIPTS[p.fx]?.after?.(g, p, dt)) continue;
+    landProjectile(g, p);
     // 抛球杂耍: the gold trail stretches with the ball — the cap rides the speed from the
     // launch baseline (10 points) up to the 2× speed ceiling (20), so every bounce leaves
     // a longer ribbon behind.
-    const trailCap = p.fx === 'mutsumi-note' || p.fx === 'chord' || p.fx === 'sob' ? 14
-      : p.fx === 'juggle-ball' ? Math.round(10 * clamp(Math.hypot(p.vx, p.vy) / (p.v0 ?? 1), 1, 2))
-      : p.fx === 'wink' ? 10 : 7;
+    const tr = SCRIPTS[p.fx]?.trail;
+    const trailCap = tr === 'speed' ? Math.round(10 * clamp(Math.hypot(p.vx, p.vy) / (p.v0 ?? 1), 1, 2)) : tr ?? 7;
     pushTrail(p, trailCap);
-    if (p.settled && p.fx === 'milk' && owner && owner.hp > 0 && Math.abs(owner.x - p.x) < 40 && owner.y >= FLOOR - 1) {
+    if (p.settled && (p.floor ?? p.skill.floor) === 'stick' && owner && owner.hp > 0 && Math.abs(owner.x - p.x) < 40 && owner.y >= FLOOR - 1) {
       gainEnergy(owner, 26);
       p.life = 0;
       g.text('+26', owner.x, owner.y - 170, owner.data.color, .6, 18);
     }
-    if (owner && p.fx === 'seal') stepSeal(g, p, owner);
-    else if (owner) for (const target of g.opponents(owner)) {
-      if (!p.settled && p.life > 0 && Math.abs(p.x - target.x) < 38 + p.radius && Math.abs(p.y - (target.y - 83)) < 72) {
-        if (hit(g, owner, target, p.skill, { hit: p.hit }, p.x - Math.sign(p.vx) * 40)) {
-          g.effect('burst', p.x, p.y, p.color, .3, { radius: p.size * .8 });
-          // 世界微笑 impact pulse: the wave's own grin swells once off the victim — ghostly,
-          // fast, gone, and ~150% of the victim's height at full swell.
-          if (p.fx === 'smile-wave') {
-            const h = target.data.view.kind === 'sprite' ? target.data.view.height : 181;
-            g.effect('smile-pulse', target.x, target.y - 83, p.color, .28, { radius: h * 1.5, dir: Math.sign(p.vx) || 1 });
-          }
-          // The cucumber stays up on the way out and only pops on the return hit; the mega wave
-          // washes through and keeps carrying whoever it caught; the juggle ball is a bout of
-          // interference, not a shell; the falling wish star punches through to its landing.
-          if (!(p.fx === 'cucumber' && !p.returned) && p.fx !== 'mega' && p.fx !== 'meat' && p.fx !== 'juggle-ball' && p.fx !== 'star-fall') p.life = 0;
-          break;
-        }
-      }
-    }
+    if (owner && SCRIPTS[p.fx]?.seal) stepSeal(g, p, owner);
+    else touchProjectile(g, p);
   }
   // Opposing shots cancel each other. Owner lookups are hoisted: the pair loop ran two linear
   // scans per pair (~10k element visits a second during barrage supers) for the same answer.
@@ -2102,7 +2017,7 @@ export function stepProjectiles(g: FightGame, dt: number): void {
       // 剪 is the same kind of zone, the fuga arrow is a super nobody pecks down, the
       // cruise shrugs pebbles off — but the juggle ball is mortal like any shot — and
       // the falling wish star is the super's own body.
-      if (!p.settled && !q.settled && p.fx !== 'blackhole' && q.fx !== 'blackhole' && p.fx !== 'parfait' && q.fx !== 'parfait' && p.fx !== 'seal' && q.fx !== 'seal' && p.fx !== 'meat' && q.fx !== 'meat' && p.fx !== 'snip' && q.fx !== 'snip' && p.fx !== 'fuga' && q.fx !== 'fuga' && p.fx !== 'smile-ship' && q.fx !== 'smile-ship' && p.fx !== 'star-fall' && q.fx !== 'star-fall' && g.isEnemy(owners[i], owners[j]) && p.life > 0 && q.life > 0 && Math.abs(p.x - q.x) < 25 && Math.abs(p.y - q.y) < 27) {
+      if (!p.settled && !q.settled && p.solid !== false && q.solid !== false && g.isEnemy(owners[i], owners[j]) && p.life > 0 && q.life > 0 && Math.abs(p.x - q.x) < 25 && Math.abs(p.y - q.y) < 27) {
         p.life = q.life = 0;
         g.sparks(p.x, p.y, '#fff', 12);
       }
@@ -2114,7 +2029,7 @@ export function stepProjectiles(g: FightGame, dt: number): void {
     const p = g.projectiles[i];
     // 微笑号的画面比弹丸中心宽一整屏，中心出界时船尾还在画面里。
     // star-fall spawns off the left edge on purpose — its diagonal always carries it back in.
-    const onStage = p.fx === 'smile-ship' || p.fx === 'star-fall' || (p.x > -60 && p.x < W + 60);
+    const onStage = !!SCRIPTS[p.fx]?.wide || (p.x > -60 && p.x < W + 60);
     if (p.life > 0 && onStage && p.y < FLOOR + 60) g.projectiles[w++] = p;
   }
   g.projectiles.length = w;

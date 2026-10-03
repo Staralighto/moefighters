@@ -4,7 +4,9 @@ import { DECAY_TIMERS, gainEnergy, makeFighter } from './fighter.ts';
 import { AIR_SKILLS } from '../data/skills.ts';
 import { ROSTER_BY_ID } from '../data/characters.ts';
 import { advanceAnim } from './animState.ts';
-import { easeSealSwells, effectSettled, BOX_REGEN, FEAST_REGEN, MARATHON_SPEED, SHOUT_PRICE, stepProjectiles, updateAttack, wailShots } from './combat.ts';
+import { easeSealSwells, effectSettled, stepProjectiles, updateAttack } from './combat.ts';
+import { addMod, regenPerSec, speedMul, tickMods } from './mods.ts';
+import { SCRIPTS } from './scripts.ts';
 import { stepAI } from './ai.ts';
 import { COMBO_DECAY, COMBO_ESCAPE, CONTROLS, FLOOR, GRAVITY, INPUT_BUFFER, SIDE, STEP, X_MAX, X_MIN, clamp } from './constants.ts';
 import { clipFor } from '../render/clips.ts';
@@ -84,6 +86,10 @@ export interface Projectile {
   swellTo?: number;
   /** 抛球杂耍: the launch speed, the baseline the bounces accelerate from. */
   v0?: number;
+  /** False when opposing shots should pass through. Unset can be shot down. */
+  solid?: boolean;
+  /** Overrides Skill.floor for a shot whose picture is not the skill (抹茶熔岩). */
+  floor?: 'pop' | 'stick' | 'drop' | 'splash';
 }
 
 /** 九字真言: a committed six-hit string. It outlives the circle, so a late or wall hit still pays in full. */
@@ -387,7 +393,8 @@ export class FightGame {
     if (f.king && index >= 2) return false;
     if (index === 5 && f.energy < 100) return false;
     // 带骨肉之人: one chunk on the field. A second press does nothing until she touches it.
-    if (this.skillFor(f, index).fx === 'meat' && this.projectiles.some(p => p.fx === 'meat' && p.owner === f.id && p.life > 0)) return false;
+    const skillNow = this.skillFor(f, index);
+    if (SCRIPTS[skillNow.fx]?.oneShot && this.projectiles.some(p => p.fx === skillNow.fx && p.owner === f.id && p.life > 0)) return false;
     const a = f.attack;
     // Grounded light attacks that connected can cancel into light or heavy.
     // A counted melee flurry is not a chainable jab; it plays out.
@@ -410,7 +417,7 @@ export class FightGame {
     const skill = this.skillFor(f, slot);
     f.attack = {
       skill, index: slot, serial: ++f.attackSerial, t: 0, emitted: false, shots: 0, hit: new Set(),
-      burst: skill.fx === 'wail' ? wailShots(f.hp, f.data.hp) : 0,
+      burst: SCRIPTS[skill.fx]?.burst?.(f) ?? 0,
       endure: skill.type === 'endure' ? 1 : 0,
       liftAt: 0,
       tossAt: 0,
@@ -450,9 +457,7 @@ export class FightGame {
       f.invuln = .64;
       // 直接无限大: the cast already spent the bar. Lock gains through the windup and the bill window
       // so a hit-string cannot pay for a second cast. 4.4s covers the 0.4s pose plus 4s of debt.
-      if (skill.fx === 'infinite') f.noGain = 4.4;
-      // 此即世界: the chant freezes the world the moment the cast goes through.
-      if (skill.fx === 'world') this.timeStop = f.id;
+      SCRIPTS[skill.fx]?.cast?.(this, f);
       this.flash = .15;
       this.shake = 5;
       this.audio.play('super');
@@ -576,7 +581,7 @@ export class FightGame {
     // other fighters, summons and projectiles all hold. Effects keep animating above.
     if (this.timeStop !== null) {
       const holder = this.fighterById(this.timeStop);
-      if (!holder || holder.hp <= 0 || !holder.attack || holder.attack.skill.fx !== 'world') this.timeStop = null;
+      if (!holder || holder.hp <= 0 || !holder.attack || !SCRIPTS[holder.attack.skill.fx]?.timeStop) this.timeStop = null;
       else { this.stepFighter(holder, dt); advanceAnim(holder, dt); }
       return;
     }
@@ -684,7 +689,7 @@ export class FightGame {
     m.basic = true;
     m.dmgMul = .3;
     m.life = 6;
-    m.noGain = 6;
+    addMod(m, 'noGain', 6);
     while (this.totalHits.length <= m.id) { this.totalHits.push(0); this.maxCombo.push(0); }
     this.fighters.push(m);
     this.sparks(m.x, m.y - 80, m.data.color, 14);
@@ -730,7 +735,7 @@ export class FightGame {
     m.echo = true;
     m.master = owner.id;
     m.dmgMul = ECHO_DMG;
-    m.noGain = RECORD_TIME * 2 + ECHO_FADE + 1;
+    addMod(m, 'noGain', RECORD_TIME * 2 + ECHO_FADE + 1);
     m.tape = { events: owner.recTape, t: 0, total: RECORD_TIME, playing: false, cursor: 0 };
     owner.recLeft = RECORD_TIME;
     owner.recMove = 0;
@@ -813,40 +818,9 @@ export class FightGame {
     // fighter per fixed step (~500-700/s across a match) for no semantic gain.
     const cdRate = f.data.trait === 'beat' ? 1 + f.beatStacks * .06 : 1;
     for (let i = 0; i < f.cooldowns.length; i++) f.cooldowns[i] = Math.max(0, f.cooldowns[i] - dt * cdRate);
-    const debtWas = f.debt;
     const recWas = f.recLeft;
-    const roseWas = f.rose;
-    const shoutWas = f.shout;
     for (const key of DECAY_TIMERS) f[key] = Math.max(0, f[key] - dt);
-    if (debtWas > 0 && f.debt === 0 && f.debtDmg > 0) {
-      const bill = Math.round(f.debtDmg * 1.5);
-      f.debtDmg = 0;
-      f.hp = Math.max(0, f.hp - bill);
-      f.stun = Math.max(f.stun, .35);
-      this.text('-' + bill, f.x, f.y - 170, '#ff4d6a', .8, 28);
-      this.shake = 10;
-    }
-    // 荆棘的蓝蔷薇: the bloom hands the thorns back to whatever held before it.
-    if (roseWas > 0 && f.rose === 0) {
-      f.thorns = f.roseBase;
-      f.roseBase = 0;
-    }
-    if (shoutWas > 0 && f.shout === 0) {
-      // 漆黑呐喊: the seal snaps shut. The price is fixed against max health and can kill.
-      const price = Math.round(f.data.hp * SHOUT_PRICE);
-      f.hp = Math.max(0, f.hp - price);
-      this.text('-' + price, f.x, f.y - 170, '#8fd8ff', .8, 26);
-      this.shake = Math.max(this.shake, 7);
-      this.effect('burst', f.x, f.y - 85, '#3f6fd8', .5, { radius: 90 });
-    }
-    // 荆棘的蓝蔷薇: petals keep falling while the thorns hold, so the buff reads across the stage.
-    if (f.rose > 0 && Math.floor(f.rose * 6) !== Math.floor((f.rose + dt) * 6)) {
-      this.effect('rose-petal', f.x + (this.random() * 2 - 1) * 62, f.y - 168 - this.random() * 54, '#6fa8ff', 1.1);
-    }
-    // 漆黑呐喊: blue flame trails off the eyes while the seal is open.
-    if (f.shout > 0 && Math.floor(f.shout * 12) !== Math.floor((f.shout + dt) * 12)) {
-      this.effect('eye-flame', f.x, f.y - 150, '#5fd0ff', .55, { dir: f.facing });
-    }
+    tickMods(this, f, dt);
     if (recWas > 0 && f.recLeft === 0) this.startEchoPlayback(f);
     if (f.hp <= 0) { this.retire(f); this.fall(f, dt); return; }
     // ponytail: the 7s timer can die mid-swing. Hold a sliver so the king sheet lasts that one staff hit, then drop it.
@@ -854,13 +828,6 @@ export class FightGame {
       const swinging = !!f.attack && f.attack.index <= 1;
       if (swinging) f.frenzy = .05;
       else f.king = false;
-    }
-    // 高肌肉！: a slow pulse while the flex holds, so the buff state reads across the stage.
-    if (f.muscle > 0 && Math.floor(f.muscle) !== Math.floor(f.muscle + dt)) {
-      this.effect('burst', f.x, f.y - 95, f.data.color, .45, { radius: 55 });
-    }
-    if (f.sprint > 0 && Math.floor(f.sprint * 2) !== Math.floor((f.sprint + dt) * 2)) {
-      this.effect('dust', f.x - f.facing * 18, FLOOR, f.data.color, .22, { radius: 16 });
     }
     if (f.root > 0) {
       f.root = Math.max(0, f.root - dt);
@@ -875,9 +842,8 @@ export class FightGame {
     if (!f.comboTime) f.combo = 0;
     gainEnergy(f, dt * 2);
     if (f.regen > 0) f.hp = Math.min(f.data.hp, f.hp + f.data.hp * f.regen * dt);
-    if (f.feast > 0) f.hp = Math.min(f.data.hp, f.hp + FEAST_REGEN * dt);
-    // 无敌仓库大王: the box drips hp back for the whole form; the king flag rides the same clock.
-    if (f.box > 0) f.hp = Math.min(f.data.hp, f.hp + BOX_REGEN * dt);
+    const drip = regenPerSec(f);
+    if (drip) f.hp = Math.min(f.data.hp, f.hp + drip * dt);
     if (this.mode === 'training') {
       f.energy = 100;
       if (f.id === 1 && f.stun === 0 && !this.fighters[0].comboTime) f.hp = Math.min(f.data.hp, f.hp + dt * 350);
@@ -980,7 +946,7 @@ export class FightGame {
       const flurry = !!f.attack && (f.attack.skill.count ?? 0) > 1 && f.attack.skill.type !== 'projectile';
       const factor = !f.attack ? 1 : f.attack.skill.air ? .6 : f.attack.skill.type === 'light' && !flurry ? .25 : 0;
       const beatMove = f.data.trait === 'beat' ? 1 + f.beatStacks * .02 : 1;
-      const sprint = f.sprint > 0 ? MARATHON_SPEED : 1;
+      const sprint = speedMul(f);
       f.x += move * f.data.speed * f.moveMul * beatMove * sprint * factor * dt;
       if (move && factor && grounded) f.walk += dt * 12; else f.walk = 0;
     }

@@ -4,13 +4,14 @@ import { drumShotTime, hit, violetHidden } from '../src/game/combat.ts';
 import { vowBeatTime, VOW_BEATS } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
 import { PLAYABLE, ROSTER } from '../src/data/characters.ts';
-import { AIR_SKILLS } from '../src/data/skills.ts';
+import { AIR_SKILLS, skill } from '../src/data/skills.ts';
 import { STAGES } from '../src/data/stages.ts';
 import { FLOOR, COMBO_DECAY, STEP, X_MAX } from '../src/game/constants.ts';
 import { clipFor, drumRow } from '../src/render/clips.ts';
 import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
 import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell } from '../src/render/fx.ts';
 import { previewFighter } from '../src/game/fighter.ts';
+import { addMod, clearMod } from '../src/game/mods.ts';
 import { easeLoad, nextSrc } from '../src/assets/loader.ts';
 import { isTouchJump, thumbBandTop } from '../src/game/input.ts';
 import { battleFrame } from '../src/ui/battleFrame.ts';
@@ -22,7 +23,10 @@ import { checkSpriteGuard } from './sprite-guard.ts';
 
 /* `npm run check` runs this file through node's type stripping: no bundler, and no @types/node to type
    `import 'node:fs'` with. `process.getBuiltinModule` reaches the same builtin without an import. */
-declare const process: { getBuiltinModule(name: 'fs'): { readFileSync(path: string, encoding: 'utf8'): string } };
+declare const process: { getBuiltinModule(name: 'fs'): {
+  readFileSync(path: string, encoding: 'utf8'): string;
+  readdirSync(path: string, options: { recursive: true }): string[];
+} };
 const readFileSync = process.getBuiltinModule('fs').readFileSync;
 
 checkSpriteGuard();
@@ -1215,7 +1219,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   // grabs ignore the brace, but a plain hit does not flinch it
   {
     const g = newGame(tomori, 2); const [b1, b2] = g.fighters; dummy(g);
-    b1.braced = 6;
+    addMod(b1, 'brace', 6, { v: .67 });
     const hp = b1.hp;
     hit(g, b2, b1, b2.data.skills[0], { hit: new Set() });
     assert.ok(b1.hp < hp, 'the brace takes damage');
@@ -1470,6 +1474,40 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   for (const kept of ['data-pad="atk"', 'data-pad="guard"', 'data-pad="s1"', 'data-pad="s2"', 'data-pad="s3"', 'data-pad="ult"']) {
     assert.ok(html.includes(kept), kept + ' is still on the pad');
   }
+  // Device adaptation contract (docs/device-adaptation.md): capability is ruled by ui/device.ts
+  // with a hardware fallback, CSS owns layout only, viewport units carry old-browser fallbacks, and
+  // wide mode never strips the movement controls from a touch device. A real phone was dropped into
+  // the desktop UI by the pointer media query alone; these locks keep every signal alive.
+  const readdirSync = process.getBuiltinModule('fs').readdirSync;
+  const tsFiles = readdirSync('src', { recursive: true })
+    .map(f => String(f).replaceAll('\\', '/'))
+    .filter(f => f.endsWith('.ts'));
+  for (const f of tsFiles) {
+    const src = readFileSync('src/' + f, 'utf8');
+    for (const cap of ['(pointer:', '(hover:', 'any-pointer']) {
+      if (f !== 'ui/device.ts' && src.includes(cap)) {
+        throw Error(`FAIL: capability media query ${cap} must live only in src/ui/device.ts (src/${f})`);
+      }
+    }
+  }
+  const deviceTs = readFileSync('src/ui/device.ts', 'utf8');
+  assert.ok(deviceTs.includes('(pointer:') && deviceTs.includes('maxTouchPoints'), 'the touch ruling keeps both the media query and the hardware fallback');
+  const cssText = readFileSync('src/style.css', 'utf8');
+  let inComment = false;
+  for (const raw of cssText.split('\n')) {
+    let line = raw;
+    if (inComment) {
+      if (!line.includes('*/')) continue;
+      inComment = false;
+      line = line.slice(line.indexOf('*/') + 2);
+    }
+    line = line.replace(/\/\*.*?\*\//g, '').trim();
+    if (line.startsWith('/*')) { inComment = true; continue; }
+    assert.ok(!line.includes('(pointer:') && !line.includes('(hover:'), 'css owns layout only; capability queries go through body classes');
+    if (line.includes('100dvh')) assert.ok(line.includes('100vh'), 'dvh needs a same-line vh fallback: ' + raw.trim());
+    if (line.includes('cqw')) assert.ok(line.includes('vmin') || /(\d|\.)vw\b/.test(line), 'cqw needs a same-line vmin/vw fallback: ' + raw.trim());
+  }
+  assert.ok(!cssText.includes('body.wide .touchpad .tp-stick') && cssText.includes('body.wide:not(.touch) .touchpad .tp-stick'), 'wide mode must scope control stripping to :not(.touch)');
   assert.equal(ultIcon('gale'), '/icons/ult-gale.png', 'a drawn ultimate keeps its own icon');
   assert.equal(ultIcon('soyo'), DEFAULT_ULT_ICON, 'an ultimate without art uses the shared mark');
   for (const c of ROSTER) {
@@ -1863,7 +1901,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const boosted0 = p2.hp;
     hit(g, p1, p2, p1.data.skills[0], { hit: new Set() });
     const boosted = boosted0 - p2.hp;
-    p1.combo = 0; p1.comboTime = 0; p1.muscle = 0;
+    p1.combo = 0; p1.comboTime = 0; clearMod(p1, 'dmgDealt', 'muscle');
     const base0 = p2.hp;
     hit(g, p1, p2, p1.data.skills[0], { hit: new Set() });
     const base = base0 - p2.hp;
@@ -2022,7 +2060,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const x0 = p1.x;
     g.keyDown('KeyD'); run(g, .4);
     const fast = p1.x - x0;
-    p1.sprint = 0;
+    clearMod(p1, 'speed');
     const x1 = p1.x;
     run(g, .4);
     const slow = p1.x - x1;
@@ -3077,6 +3115,27 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     assert.equal(p1.shout, 0, 'the seal snaps shut');
     assert.equal(hp1 - p1.hp, 100, `the backlash costs 10% max health, lost ${hp1 - p1.hp}`);
   }
+}
+
+// A pin + control move is only data. The kernel does not grow a branch for the new fx name.
+{
+  const g = newGame(); const [p1, p2] = g.fighters; dummy(g);
+  p2.x = p1.x + 80; p2.facing = -1;
+  addMod(p2, 'debt', 2, { acc: 0 });
+  const pin = skill(2, 'heavy', '假钉', {
+    damage: 10, range: 200, fx: 'probe-pin',
+    react: { kind: 'pin', holdStill: true, stun: .3 },
+    control: true,
+  });
+  const hp = p2.hp;
+  hit(g, p1, p2, pin, { hit: new Set() });
+  assert.equal(p2.vy, 0, 'a data pin keeps the body standing');
+  assert.equal(p2.knocked, 0, 'a data pin does not knock down');
+  assert.equal(p2.vx, 0, 'a data pin holds still');
+  assert.ok(p2.hp < hp, 'control damage lands during a debt window');
+  assert.equal(p2.debtDmg, 0, 'control damage is not billed');
+  run(g, 2);
+  assert.equal(g.phase, 'fight', 'the round keeps running after a data-only move');
 }
 
 console.log('selfcheck ok');
