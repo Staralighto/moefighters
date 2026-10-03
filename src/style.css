@@ -181,7 +181,8 @@ body.in-battle { overflow-x: hidden; }
 .game-banner.super-call { transform: translateY(-16%); }
 .game-banner small {
   font: 900 20px "Noto Sans SC", "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
-  font-size: clamp(12px, 2.1cqw, 20px);
+  /* cqw 回退用 vw：老移动浏览器上 arena 即视口宽，vw ≈ cqw；桌面差异被 clamp 上下限兜住。 */
+  font-size: clamp(12px, 2.1vw, 20px); font-size: clamp(12px, 2.1cqw, 20px);
   -webkit-text-stroke: 1px #000;
   paint-order: stroke fill;
   text-shadow: 0 4px 0 #000;
@@ -194,8 +195,8 @@ body.in-battle { overflow-x: hidden; }
   paint-order: stroke fill;
   text-shadow: 0 2px 0 #000, 2px 0 0 #000, -2px 0 0 #000, 0 -2px 0 #000;
 }
-.game-banner strong { font: italic 900 64px Impact, sans-serif; font-size: clamp(22px, 6.7cqw, 64px); text-shadow: 0 4px 0 #000; }
-.game-banner.super-call strong { font: 900 64px "Noto Sans SC", "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif; font-size: clamp(22px, 6.7cqw, 64px); }
+.game-banner strong { font: italic 900 64px Impact, sans-serif; font-size: clamp(22px, 6.7vw, 64px); font-size: clamp(22px, 6.7cqw, 64px); text-shadow: 0 4px 0 #000; }
+.game-banner.super-call strong { font: 900 64px "Noto Sans SC", "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif; font-size: clamp(22px, 6.7vw, 64px); font-size: clamp(22px, 6.7cqw, 64px); }
 .game-banner strong:empty, .game-banner small:empty { display: none; }
 /* 暂停浮层的按钮一律等宽：加什么按钮、写什么文本都一样长，几颗排成一列永远对齐。
    （窄屏媒体查询里 icon-only 时回到 auto。） */
@@ -339,10 +340,10 @@ body.touch.in-battle #battle {
 body.touch .battle-top #fullscreen, body.touch nav #settings { display: none; }
 .rotate-hint { display: none; position: absolute; inset: 0; place-content: center; background: #0b0a12dd; font-weight: 800; font-size: 20px; }
 @media (orientation: landscape) {
-  body.touch.in-battle { position: fixed; inset: 0; height: 100dvh; overflow: hidden; }
+  body.touch.in-battle { position: fixed; inset: 0; height: 100vh; height: 100dvh; overflow: hidden; }
   body.touch.in-battle header, body.touch.in-battle .battle-top, body.touch.in-battle #battle-skills, body.touch.in-battle #battle-skills-bar, body.touch.in-battle #battle footer { display: none; }
-  /* dvh tracks the real viewport, so fullscreen needs no height override of its own. */
-  body.touch.in-battle #battle { width: 100%; height: 100dvh; max-width: none; margin: 0; padding: 0; display: block; }
+  /* dvh tracks the real viewport; the 100vh declaration before it is the fallback for browsers without dvh. */
+  body.touch.in-battle #battle { width: 100%; height: 100vh; height: 100dvh; max-width: none; margin: 0; padding: 0; display: block; }
   /* One box owns the safe area: all four insets land on the same element, so the leftover bars stay symmetric instead of pooling at the top. */
   body.touch.in-battle .arena { position: fixed; inset: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); width: auto; height: auto; max-height: none; aspect-ratio: auto; border: 0; border-radius: 0; }
   /* Width fills the safe box. Height and top come from battleFrame so the floor stays at the desktop ratio. */
@@ -370,9 +371,9 @@ body.touch .battle-top #fullscreen, body.touch nav #settings { display: none; }
 /* 桌面宽屏（战斗顶栏的开关切换）：跟手机横屏同一套铺满逻辑——arena 钉满视口，battleFrame 按宽
    缩放画布、地面钉在桌面比例。右下角是必杀 + 三技能的冷却指示键（同手机布局，去掉摇杆、攻击、
    格挡），点它们照常放技能。不调用 Fullscreen API，地址栏还在。 */
-body.wide.in-battle { position: fixed; inset: 0; height: 100dvh; overflow: hidden; }
+body.wide.in-battle { position: fixed; inset: 0; height: 100vh; height: 100dvh; overflow: hidden; }
 body.wide.in-battle header, body.wide.in-battle #battle-skills, body.wide.in-battle #battle-skills-bar, body.wide.in-battle #battle footer { display: none; }
-body.wide.in-battle #battle { width: 100%; height: 100dvh; max-width: none; margin: 0; padding: 0; display: block; }
+body.wide.in-battle #battle { width: 100%; height: 100vh; height: 100dvh; max-width: none; margin: 0; padding: 0; display: block; }
 body.wide.in-battle .arena { position: fixed; inset: 0; width: auto; height: auto; max-height: none; aspect-ratio: auto; border: 0; border-radius: 0; }
 body.wide.in-battle .arena canvas { position: absolute; left: 0; top: 0; width: 100%; height: auto; object-fit: fill; }
 body.wide.in-battle .touchpad { display: block; }
@@ -393,11 +394,13 @@ body.wide.in-battle .hud-player small { font-size: calc(11px * var(--hud, 1)); }
 body.wide.in-battle .timer { min-width: calc(88px * var(--hud, 1)); }
 body.wide.in-battle .timer small { font-size: calc(11px * var(--hud, 1)); }
 body.wide.in-battle .timer b { font-size: calc(40px * var(--hud, 1)); }
-/* 指示键只留必杀 + 三技能：摇杆、攻击、格挡是手机的东西。 */
-body.wide .touchpad .tp-stick, body.wide .touchpad .tp-actions .atk, body.wide .touchpad .tp-actions .guard { display: none; }
-/* 必杀常驻：没攒满时图标压暗，能量填充（--p）随气量点亮，攒满走 .ready 发光。 */
-body.wide .touchpad .tp-actions .ult { display: grid; }
-body.wide .touchpad .ult:not(.ready) img { opacity: .4; }
+/* 键鼠宽屏只留必杀 + 三技能指示键。必须写成 :not(.touch)：宽屏是布局开关、不是能力信号，
+   能力探测万一再失手，宽屏里也不能收走触屏玩家的摇杆、攻击和格挡。 */
+body.wide:not(.touch) .touchpad .tp-stick, body.wide:not(.touch) .touchpad .tp-actions .atk, body.wide:not(.touch) .touchpad .tp-actions .guard { display: none; }
+/* 必杀常驻只对键鼠成立：没攒满时图标压暗，能量填充（--p）随气量点亮，攒满走 .ready 发光。
+   触屏宽屏里必杀跟手机同一套规则，攒满才出现。 */
+body.wide:not(.touch) .touchpad .tp-actions .ult { display: grid; }
+body.wide:not(.touch) .touchpad .ult:not(.ready) img { opacity: .4; }
 /* 宽屏的指示键略大一号、离右下角留出空隙（桌面 vmin 大，原 clamp 的 86px 上限把键钳在 55px 左右）。
    只覆盖宽屏；手机横屏的 6px 贴边和原尺寸照旧。 */
 body.wide .touchpad.in-tower .tp-actions { --atk: clamp(86px, 16vmin, 106px); right: 16px; bottom: 16px; }
@@ -505,8 +508,8 @@ body.wide .touchpad.in-tower .tp-actions { --atk: clamp(86px, 16vmin, 106px); ri
   main#selection { max-width: none; padding: 8px max(8px, env(safe-area-inset-right)) 20px max(8px, env(safe-area-inset-left)); }
   .select-stage { width: 100%; }
   .select-stage.team .fighter-preview canvas,
-  .select-stage.challenge:not(.solo) .fighter-preview canvas { height: clamp(72px, calc((100dvh - 220px) / 2), 140px); }
-  .select-stage.challenge:not(.solo) .fighter-preview canvas { height: clamp(72px, calc((100dvh - 256px) / 2), 132px); }
+  .select-stage.challenge:not(.solo) .fighter-preview canvas { height: clamp(72px, calc((100vh - 220px) / 2), 140px); height: clamp(72px, calc((100dvh - 220px) / 2), 140px); }
+  .select-stage.challenge:not(.solo) .fighter-preview canvas { height: clamp(72px, calc((100vh - 256px) / 2), 132px); height: clamp(72px, calc((100dvh - 256px) / 2), 132px); }
   .action-bar { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) 14rem; }
   .action-foot { display: contents; }
   .action-start { position: static; width: 100%; font-size: 16px; box-shadow: none; }

@@ -11,6 +11,7 @@ import { matchName, SelectScreen, type MatchSetup } from './ui/select.ts';
 import { bestLabel, challengeName, deckLabel, foeCount, hideBuffPicker, readBest, readRun, rollEnemies, showBuffPicker, stageSetup, writeBest, writeRun, type ChallengeKind, type ChallengeRun } from './ui/challenge.ts';
 import { cycleSkillTier, hideEnd, setBattleGuide, setRoundLabel, showBanner, showEnd, updateHUD } from './ui/hud.ts';
 import { setIconBtn } from './ui/iconBtn.ts';
+import { applyTouchDevice, watchTouch } from './ui/device.ts';
 import { applyTouchLayout, bindBattleFrame } from './ui/touchLayout.ts';
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
@@ -30,9 +31,9 @@ input.attach();
 new TouchInput(() => game, $('touchpad')).attach();
 applyTouchLayout();
 bindBattleFrame();
-/* Phones get one on-screen key set, so body.touch caps the match at one human. */
-const coarse = matchMedia('(hover: none) and (pointer: coarse)');
-document.body.classList.toggle('touch', coarse.matches);
+/* Phones get one on-screen key set, so body.touch caps the match at one human.
+   The ruling itself lives in ui/device.ts: capability is decided in one place, not per call site. */
+applyTouchDevice();
 if (import.meta.env.DEV) {
   void import('./render/propTune.ts').then(m => m.mountPropTune());
   void import('./ui/touchTune.ts').then(m => m.mountTouchTune($('touchpad')));
@@ -154,7 +155,7 @@ select.mount();
     $('roster').querySelectorAll('.character').forEach(el => io.observe(el));
   }
 }
-coarse.addEventListener('change', () => { document.body.classList.toggle('touch', coarse.matches); select.refresh(); });
+watchTouch(() => { applyTouchDevice(); select.refresh(); });
 
 /* A saved run survives a refresh or crash; 激战 wins ties because it is the long-standing mode.
    With the stage's card already picked the fight restarts directly; otherwise the run just sits

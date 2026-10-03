@@ -5,6 +5,7 @@
 ## 热路径（几乎每次相关，直接遵守）
 
 - 改用户看得见的界面（`index.html`、`src/style.css`、`src/ui/**`、`src/render/**`）→ 先读 `docs/AGENT_DEV_CONSTRAINTS.GENERIC.md` §4。用户没说「打开浏览器 / 帮我看效果 / 浏览器里验一下」，不要启动浏览器、不要截图、不要点页面。改完写下入口和怎么复现，交给用户目视。
+- 改触屏判定、媒体查询、视口单位（dvh/cqw）、宽屏或横屏适配 → 先读 `docs/device-adaptation.md`。能力判定只住在 `src/ui/device.ts`，改完跑 `npm run check`（里面有源码锁）。
 
 ## 低频子域（命中才读）
 
