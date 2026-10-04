@@ -109,7 +109,7 @@ export function skillHTML(c: CharacterData, pad = 0, touch = isTouch()): string 
   const swap = (t: string): string => touch ? t.replaceAll('J / K', '轻 / 重') : pad ? t.replaceAll('J / K', '1 / 2') : t;
   return c.skills.map((s, i) => {
     const dmg = (s.count ? s.count + ' × ' : '') + s.damage + ' 基础伤害';
-    const cost = s.super ? ' · 100 气' : s.cd ? ' · ' + s.cd + 's 冷却' : '';
+    const cost = s.super ? ' · ' + (s.cost ?? 100) + ' 气' : s.cd ? ' · ' + s.cd + 's 冷却' : '';
     return `<div class="skill ${s.super ? 'super' : ''}"><kbd>${keys[i]}</kbd><div><b>${s.name}</b><p class="brief">${swap(s.brief)}</p><p class="nums">${dmg}${cost}</p><p class="detail">${swap(s.detail)}</p></div>${s.super ? '<span class="charge" aria-hidden="true"><i></i></span>' : ''}</div>`;
   }).join('');
 }

@@ -1,6 +1,6 @@
 import type { CharacterData, Skill, StageData } from '../data/types.ts';
 import type { Attack, Fighter } from './fighter.ts';
-import { DECAY_TIMERS, gainEnergy, makeFighter } from './fighter.ts';
+import { DECAY_TIMERS, gainEnergy, makeFighter, meterCap } from './fighter.ts';
 import { AIR_SKILLS } from '../data/skills.ts';
 import { ROSTER_BY_ID } from '../data/characters.ts';
 import { advanceAnim } from './animState.ts';
@@ -253,7 +253,7 @@ export class FightGame {
       const f = makeFighter(d, i, {
         ...spawn[i],
         controller: controls ? (controls[i] ?? null) : spawn[i].controller,
-        energy: this.mode === 'training' ? 100 : 20,
+        energy: this.mode === 'training' ? meterCap(d) : 20,
       });
       const m = this.options.mods?.[i];
       f.dmgMul = m?.damage ?? 1;
@@ -391,9 +391,9 @@ export class FightGame {
     }
     if (f.basic && index >= 2) return false;
     if (f.king && index >= 2) return false;
-    if (index === 5 && f.energy < 100) return false;
     // 带骨肉之人: one chunk on the field. A second press does nothing until she touches it.
     const skillNow = this.skillFor(f, index);
+    if (index === 5 && f.energy < (skillNow.cost ?? 100)) return false;
     if (SCRIPTS[skillNow.fx]?.oneShot && this.projectiles.some(p => p.fx === skillNow.fx && p.owner === f.id && p.life > 0)) return false;
     const a = f.attack;
     // Grounded light attacks that connected can cancel into light or heavy.
@@ -453,7 +453,8 @@ export class FightGame {
     const cdBoost = boosted ? (cfg?.cdMul ?? .6) : 1;
     f.cooldowns[slot] = skill.cd * f.cdMul * cdBoost;
     if (slot === 5) {
-      f.energy = 0;
+      // The bar covers the cost: cap == cost for every current character, so this spends it whole.
+      f.energy = clamp(f.energy - (skill.cost ?? 100), 0, f.energyMax);
       f.invuln = .64;
       // 直接无限大: the cast already spent the bar. Lock gains through the windup and the bill window
       // so a hit-string cannot pay for a second cast. 4.4s covers the 0.4s pose plus 4s of debt.
@@ -483,7 +484,7 @@ export class FightGame {
   /** A long cooldown or an empty super meter should not sit in front of a move that can happen now. */
   private staleIntent(f: Fighter, index: number): boolean {
     if (f.cooldowns[index] > INPUT_BUFFER) return true;
-    return index === 5 && f.energy < 100 && this.mode !== 'training';
+    return index === 5 && f.energy < (this.skillFor(f, 5).cost ?? 100) && this.mode !== 'training';
   }
 
   /** Keep a press that is only waiting on a lock, landing, or a cooldown about to end. */
@@ -845,7 +846,7 @@ export class FightGame {
     const drip = regenPerSec(f);
     if (drip) f.hp = Math.min(f.data.hp, f.hp + drip * dt);
     if (this.mode === 'training') {
-      f.energy = 100;
+      f.energy = f.energyMax;
       if (f.id === 1 && f.stun === 0 && !this.fighters[0].comboTime) f.hp = Math.min(f.data.hp, f.hp + dt * 350);
     }
 

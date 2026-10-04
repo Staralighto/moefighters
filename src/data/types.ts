@@ -39,8 +39,10 @@ export interface Skill {
   /** Total seconds the move occupies the fighter. */
   duration: number;
   cd: number;
-  /** Costs 100 energy, no cooldown. */
+  /** Ult: no cooldown; costs `cost` energy, and the meter caps at it. */
   super: boolean;
+  /** Super cost in 气. Default 100; the meter caps at max(100, cost) so a pricier super stays reachable. */
+  cost?: number;
   /** Key into the renderer's FX table. */
   fx: string;
   /** 档二简述：战斗中唯一常显的一档，动作或类型 + 全部影响打法的机制，不带强度数字。

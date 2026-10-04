@@ -326,7 +326,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     gainEnergy(attacker, 4);
     // 远程反制：挡下投掷物按其伤害削减对方的气，静默结算，不跳字。
     // 剪 is a trap and 火的故事 is her own blast: neither siphons meter for being blocked.
-    if (skill.type === 'projectile' && !skill.noSiphon) attacker.energy = clamp(attacker.energy - fullHit * GUARD_DRAIN, 0, 100);
+    if (skill.type === 'projectile' && !skill.noSiphon) attacker.energy = clamp(attacker.energy - fullHit * GUARD_DRAIN, 0, attacker.energyMax);
     g.effect('shield', defender.x - dir * 30, defender.y - 78, '#8df0ff', .22, { radius: 65 });
     g.audio.play('block');
     g.text('格挡', defender.x, defender.y - 170, '#91eaff', .35, 16);
@@ -463,7 +463,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     gainEnergy(attacker, (skill.gain ?? (skill.super ? 2 : 9)) + rushBonus);
     gainEnergy(defender, 7);
     if (skill.drain) {
-      defender.energy = clamp(defender.energy - skill.drain, 0, 100);
+      defender.energy = clamp(defender.energy - skill.drain, 0, defender.energyMax);
       g.text(`-${skill.drain} 气`, defender.x, defender.y - 135, '#ffd27a', .6, 16);
     }
     g.audio.play('hit');
@@ -1331,7 +1331,13 @@ SCRIPTS['infinite'] = {
 };
 SCRIPTS['world'] = {
   timeStop: true,
-  cast(g, f) { g.timeStop = f.id; },
+  cast(g, f) {
+    g.timeStop = f.id;
+    // 此即世界: gains stay locked through the chant and the freeze, so the punish window
+    // cannot pay toward the next cast. One clock covers the cast plus the 3s root.
+    const s = f.attack?.skill;
+    if (s) addMod(f, 'noGain', s.duration + (s.root ?? 0), { max: true });
+  },
 };
 /** Repel pulse while the drums super is up: anyone closing in gets bounced. Returns whether anyone was pushed. */
 function repelPulse(g: FightGame, f: Fighter, power: number): boolean {

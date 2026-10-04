@@ -17,26 +17,35 @@ export interface ChallengeCard {
   stat: string;
   /** Lucide icon name, resolved through ICONS. */
   icon: string;
+  /** Copies that still stack; past this the card leaves the deal and adds nothing. */
+  cap: number;
 }
 
-/** The whole card pool: equal chance, no rarity, no weights. The same card can come back and stack. */
+/** The whole card pool: equal chance, no rarity, no weights. The same card stacks up to `cap`
+    copies, then stops being dealt. Per-copy values are priced against the per-stage enemy growth
+    (+5% health, +3% damage) while the player gains exactly one card per stage: an always-on
+    multiplier sits at that budget line, a conditional effect pays a premium, and one capped card
+    covers roughly 2–5 stages of growth. See aggregatePicks. */
 export const POOL: ChallengeCard[] = [
-  { id: 'lifebuoy', name: '救生', stat: '生命上限 +20%', icon: 'life-buoy' },
-  { id: 'burn', name: '焚音打', stat: '伤害 +20%', icon: 'flame' },
-  { id: 'okay', name: '没问题的哦', stat: '每秒回复 1% 生命上限', icon: 'droplets' },
-  { id: 'sparkle', name: '最喜欢闪闪发光的东西！', stat: '25% 概率造成 1.5 倍伤害', icon: 'sparkles' },
-  { id: 'echo', name: '碧天伴走', stat: '连击窗口 +0.5s · 连击伤害衰减减半', icon: 'repeat' },
-  { id: 'band', name: '来组乐队吧！', stat: '气力获取 +40%', icon: 'battery-charging' },
-  { id: 'walk', name: '就算是迷子也要前进', stat: '移速 +8% · 后闪冷却 −25%', icon: 'wind' },
-  { id: 'again', name: '再来一次', stat: '技能冷却 −15%', icon: 'fast-forward' },
-  { id: 'fall', name: '堕天', stat: '生命低于一半时伤害 +30%', icon: 'moon' },
-  { id: 'ultimatum', name: '这是最后通牒', stat: '敌人生命 <25% 时受到伤害 +50%', icon: 'skull' },
-  { id: 'latent', name: '潜在表明', stat: '造成伤害的 8% 转为治疗', icon: 'heart-pulse' },
-  { id: 'dare', name: '竟敢无视灯', stat: '被近战命中时反伤 15%', icon: 'drum' },
-  { id: 'vain', name: '因为我爱慕虚荣', stat: '击杀一名敌人后：伤害 +15%、气力获取 +25%，直到本关结束', icon: 'crown' },
-  { id: 'protect', name: '我会保护小睦', stat: '受击硬直 −20% · 连段脱离门槛 7→5', icon: 'shield' },
-  { id: 'human', name: '想成为人类', stat: '每关一次：致死伤害改为留 1 点血 + 1.5s 无敌', icon: 'bird' },
+  { id: 'lifebuoy', name: '救生', stat: '生命上限 +4%', icon: 'life-buoy', cap: 5 },
+  { id: 'burn', name: '焚音打', stat: '伤害 +5%', icon: 'flame', cap: 4 },
+  { id: 'okay', name: '没问题的哦', stat: '每秒回复 0.5% 生命上限', icon: 'droplets', cap: 2 },
+  { id: 'sparkle', name: '最喜欢闪闪发光的东西！', stat: '15% 概率造成 1.5 倍伤害', icon: 'sparkles', cap: 3 },
+  { id: 'echo', name: '碧天伴走', stat: '连击窗口 +0.25s · 连击伤害衰减 −25%', icon: 'repeat', cap: 4 },
+  { id: 'band', name: '来组乐队吧！', stat: '气力获取 +25%', icon: 'battery-charging', cap: 3 },
+  { id: 'walk', name: '就算是迷子也要前进', stat: '移速 +6% · 后闪冷却 −20%', icon: 'wind', cap: 3 },
+  { id: 'again', name: '再来一次', stat: '技能冷却 −10%', icon: 'fast-forward', cap: 4 },
+  { id: 'fall', name: '堕天', stat: '生命低于一半时伤害 +15%', icon: 'moon', cap: 3 },
+  { id: 'ultimatum', name: '这是最后通牒', stat: '敌人生命 <25% 时受到伤害 +25%', icon: 'skull', cap: 3 },
+  { id: 'latent', name: '潜在表明', stat: '造成伤害的 5% 转为治疗', icon: 'heart-pulse', cap: 3 },
+  { id: 'dare', name: '竟敢无视灯', stat: '被近战命中时反伤 10%', icon: 'drum', cap: 3 },
+  { id: 'vain', name: '因为我爱慕虚荣', stat: '击杀一名敌人后：伤害 +10%、气力获取 +15%，直到本关结束', icon: 'crown', cap: 4 },
+  { id: 'protect', name: '我会保护小睦', stat: '受击硬直 −15% · 连段脱离门槛 7→3', icon: 'shield', cap: 4 },
+  { id: 'human', name: '想成为人类', stat: '每关一次：致死伤害改为留 1 点血 + 1.5s 无敌', icon: 'bird', cap: 2 },
 ];
+
+/** Stack cap per card id, for the clamps in aggregatePicks and stageSetup. */
+const CAP: Record<string, number> = Object.fromEntries(POOL.map(c => [c.id, c.cap]));
 
 const BEST_MAX_AGE = 31536000; // one year
 /** 无尽激战 keeps the legacy keys, so pre-split saves and records land there untouched. */
@@ -125,9 +134,13 @@ export function rollEnemies(count = 2): CharacterData[] {
   return out;
 }
 
-/** Three distinct cards dealt uniformly from the pool. The bag refills every stage. */
-export function drawThree(): string[] {
-  const bag = POOL.map(c => c.id);
+/** Three distinct cards dealt uniformly from the pool, minus cards already at their stack cap —
+    a capped copy would be a dead pick. When every card is capped the deal falls back to the full
+    pool so a stage can always start; the over-cap pick then adds nothing (aggregatePicks clamps).
+    ponytail: no reroll or pity weighting — capped cards simply leave the bag. */
+export function drawThree(picks: string[] = []): string[] {
+  const open = POOL.filter(c => countPicks(picks, c.id) < c.cap);
+  const bag = (open.length ? open : POOL).map(c => c.id);
   const out: string[] = [];
   while (out.length < 3 && bag.length) out.push(...bag.splice(Math.floor(Math.random() * bag.length), 1));
   return out;
@@ -138,34 +151,40 @@ export function countPicks(picks: string[], id: string): number {
   return picks.reduce((n, p) => p === id ? n + 1 : n, 0);
 }
 
+/** Copies of a card that still count: the stack cap clamps old saves that hold more. */
+function stackOf(picks: string[], id: string): number {
+  return Math.min(countPicks(picks, id), CAP[id] ?? 0);
+}
+
 /** Every card number lives here: stack counts go in, per-fighter mod fields come out.
-    Copies of one card add up inside each field; different cards multiply in the engine. */
+    Copies of one card add up inside each field; different cards multiply in the engine.
+    Pricing rides the pool's per-stage anchor; stackOf clamps every count at the card's cap. */
 export function aggregatePicks(picks: string[]): ChallengeMods {
-  const n = (id: string) => countPicks(picks, id);
+  const n = (id: string) => stackOf(picks, id);
   const mods: ChallengeMods = {};
-  if (n('burn')) mods.damage = 1 + .2 * n('burn');
-  if (n('okay')) mods.regen = Math.min(.01 * n('okay'), .05);
-  if (n('sparkle')) mods.crit = Math.min(.25 * n('sparkle'), .5);
+  if (n('burn')) mods.damage = 1 + .05 * n('burn');
+  if (n('okay')) mods.regen = .005 * n('okay');
+  if (n('sparkle')) mods.crit = .15 * n('sparkle');
   if (n('echo')) {
-    mods.comboTimeBonus = Math.min(.5 * n('echo'), 1);
-    mods.comboDecay = COMBO_DECAY * Math.pow(.5, n('echo'));
+    mods.comboTimeBonus = .25 * n('echo');
+    mods.comboDecay = COMBO_DECAY * Math.pow(.75, n('echo'));
   }
-  if (n('band')) mods.energyMul = Math.min(1 + .4 * n('band'), 1.8);
+  if (n('band')) mods.energyMul = 1 + .25 * n('band');
   if (n('walk')) {
-    mods.moveMul = Math.min(1 + .08 * n('walk'), 1.2);
-    mods.dodgeCdMul = Math.max(Math.pow(.75, n('walk')), .5);
+    mods.moveMul = 1 + .06 * n('walk');
+    mods.dodgeCdMul = Math.pow(.8, n('walk'));
   }
-  if (n('again')) mods.cdMul = Math.max(Math.pow(.85, n('again')), .6);
-  if (n('fall')) mods.lowHpDmg = Math.min(.3 * n('fall'), .6);
-  if (n('ultimatum')) mods.executeDmg = Math.min(.5 * n('ultimatum'), 1);
-  if (n('latent')) mods.lifesteal = Math.min(.08 * n('latent'), .16);
-  if (n('dare')) mods.thorns = Math.min(.15 * n('dare'), .3);
+  if (n('again')) mods.cdMul = Math.pow(.9, n('again'));
+  if (n('fall')) mods.lowHpDmg = .15 * n('fall');
+  if (n('ultimatum')) mods.executeDmg = .25 * n('ultimatum');
+  if (n('latent')) mods.lifesteal = .05 * n('latent');
+  if (n('dare')) mods.thorns = .1 * n('dare');
   if (n('vain')) {
-    mods.vainDamage = Math.min(.15 * n('vain'), .45);
-    mods.vainEnergy = Math.min(.25 * n('vain'), .75);
+    mods.vainDamage = .1 * n('vain');
+    mods.vainEnergy = .15 * n('vain');
   }
   if (n('protect')) {
-    mods.stunMul = Math.max(Math.pow(.8, n('protect')), .6);
+    mods.stunMul = Math.pow(.85, n('protect'));
     mods.escapeCombo = Math.max(COMBO_ESCAPE - n('protect'), 3);
   }
   if (n('human')) mods.deathSave = n('human');
@@ -190,7 +209,7 @@ export function deckLabel(picks: string[]): string {
     the foes grow linearly per stage (+5% health, +3% damage); only the rules text says so. */
 export function stageSetup(kind: ChallengeKind, player: CharacterData, picks: string[], stage: number, enemies: CharacterData[], scene: StageData): MatchSetup {
   const anchor = kind === 'brawl' ? 2 : 1;
-  const data = { ...player, hp: Math.round(player.hp * anchor * (1 + .2 * countPicks(picks, 'lifebuoy'))) };
+  const data = { ...player, hp: Math.round(player.hp * anchor * (1 + .04 * stackOf(picks, 'lifebuoy'))) };
   const growth = stage - 1;
   const grown = growth > 0 ? { damage: 1 + .03 * growth } : {};
   const deck = aggregatePicks(picks);
@@ -217,7 +236,7 @@ export function showBuffPicker(stage: number, enemies: CharacterData[], views: M
   $('buff-title').textContent = `第 ${stage} 关 · 选择一个强化`;
   $('buff-foes').innerHTML = enemies.map(e =>
     `<div class="buff-foe"><canvas width="110" height="140"></canvas><b>${e.name}</b></div>`).join('');
-  $('buff-cards').innerHTML = drawThree().map(id => {
+  $('buff-cards').innerHTML = drawThree(picks).map(id => {
     const card = POOL.find(c => c.id === id)!;
     const held = countPicks(picks, id);
     return `<button type="button" class="buff-card" data-card="${id}">`

@@ -10,7 +10,7 @@ import { FLOOR, COMBO_DECAY, STEP, X_MAX } from '../src/game/constants.ts';
 import { clipFor, drumRow } from '../src/render/clips.ts';
 import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
 import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell } from '../src/render/fx.ts';
-import { previewFighter } from '../src/game/fighter.ts';
+import { previewFighter, gainEnergy } from '../src/game/fighter.ts';
 import { addMod, clearMod } from '../src/game/mods.ts';
 import { easeLoad, nextSrc } from '../src/assets/loader.ts';
 import { isTouchJump, thumbBandTop } from '../src/game/input.ts';
@@ -112,6 +112,22 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   g.keyDown('KeyL'); run(g, .05);
   assert.ok(p1.attack?.skill.super, 'super started');
   assert.ok(p1.energy < 1, 'super spends energy (then trickles back at 2/s)');
+}
+
+// a pricier super caps the meter at its own cost, and the cast spends exactly the bar
+{
+  const anon = ROSTER.findIndex(c => c.id === 'anon');
+  assert.ok(anon >= 0, 'anon is on the roster');
+  assert.equal(ROSTER[anon].skills[5].cost, 130, '爱音 pays 130');
+  const g = newGame(anon, 2); const [p1] = g.fighters; dummy(g);
+  assert.equal(p1.energyMax, 130, 'the meter caps at the super cost');
+  p1.energy = 129;
+  assert.equal(g.canAttack(p1, 5), false, 'the super stays locked below its own cost');
+  gainEnergy(p1, 5);
+  assert.equal(p1.energy, 130, 'gains clamp at the cap');
+  g.keyDown('KeyL'); run(g, .05);
+  assert.ok(p1.attack?.skill.super, 'the expensive super starts');
+  assert.ok(p1.energy < 1, 'the cast spends the bar');
 }
 
 // projectile travels and connects at range
@@ -302,13 +318,15 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(grown3.characters[1].hp, Math.round(ROSTER[1].hp * 1.1), 'enemy growth stacks linearly per stage');
   assert.ok(Math.abs(grown3.mods![2].damage! - 1.06) < 1e-9, 'enemy damage growth stacks linearly per stage');
   const lifebuoy = stageSetup('brawl', ROSTER[0], ['lifebuoy', 'lifebuoy'], 2, [ROSTER[1], ROSTER[2]], STAGES[0]);
-  assert.equal(lifebuoy.characters[0].hp, Math.round(ROSTER[0].hp * 2 * 1.4), 'lifebuoy stacks onto the doubled health');
+  assert.equal(lifebuoy.characters[0].hp, Math.round(ROSTER[0].hp * 2 * 1.08), 'lifebuoy stacks onto the doubled health');
+  const lifebuoyMax = stageSetup('brawl', ROSTER[0], Array(7).fill('lifebuoy'), 2, [ROSTER[1], ROSTER[2]], STAGES[0]);
+  assert.equal(lifebuoyMax.characters[0].hp, Math.round(ROSTER[0].hp * 2 * 1.2), 'lifebuoy stops stacking at its cap');
   assert.equal(stageSetup('brawl', ROSTER[0], [], 2, [ROSTER[1], ROSTER[2]], STAGES[0]).stageNumber, 2);
   const solo = stageSetup('climb', ROSTER[0], ['burn', 'lifebuoy'], 2, [ROSTER[1]], STAGES[0]);
   assert.equal(solo.characters.length, 2, 'a climb stage fields the player plus one enemy');
   assert.deepEqual(solo.controllers, [0, null], 'climb is a plain 1v1');
-  assert.equal(solo.characters[0].hp, Math.round(ROSTER[0].hp * 1.2), 'climb skips the doubled anchor, lifebuoy still stacks');
-  assert.deepEqual(solo.mods![0], { damage: 1.2 }, 'climb arms no base damage boost, only the deck');
+  assert.equal(solo.characters[0].hp, Math.round(ROSTER[0].hp * 1.04), 'climb skips the doubled anchor, lifebuoy still stacks');
+  assert.ok(Math.abs((solo.mods![0].damage ?? 1) - 1.05) < 1e-9, 'climb arms no base damage boost, only the deck');
   assert.equal(solo.characters[1].hp, Math.round(ROSTER[1].hp * 1.05), 'climb enemies grow per stage too');
   assert.ok(Math.abs(solo.mods![1].damage! - 1.03) < 1e-9, 'climb enemy growth rides the same mods slot');
   const solo1 = stageSetup('climb', ROSTER[0], [], 1, [ROSTER[1]], STAGES[0]);
@@ -321,47 +339,53 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(readBest('climb'), 0, 'headless reads no cookie');
 }
 
-// card pool: fifteen unique ids, three-card draws, and the documented layer caps
+// card pool: fifteen unique ids, three-card draws that skip capped cards, caps priced per stage
 {
   assert.equal(POOL.length, 15, 'the pool fields fifteen cards');
   assert.equal(new Set(POOL.map(c => c.id)).size, POOL.length, 'pool ids are unique');
+  assert.ok(POOL.every(c => Number.isInteger(c.cap) && c.cap >= 1), 'every card declares a stack cap');
   for (let i = 0; i < 40; i++) {
     const three = drawThree();
     assert.equal(new Set(three).size, 3, 'a draw deals three distinct cards');
     assert.ok(three.every(id => POOL.some(c => c.id === id)), 'draws come from the pool');
   }
+  const capped = POOL.flatMap(c => Array<string>(c.cap).fill(c.id));
+  assert.ok(drawThree(capped).every(id => POOL.some(c => c.id === id)), 'the all-capped fallback still deals from the pool');
+  assert.deepEqual(drawThree(capped.slice(0, -1)), ['human'], 'with one card left under its cap, the deal is just that card');
   const m = aggregatePicks([
-    'okay', 'okay', 'okay', 'okay', 'okay', 'okay',
-    'sparkle', 'sparkle', 'sparkle',
-    'band', 'band', 'band',
-    'again', 'again', 'again', 'again',
-    'latent', 'latent', 'latent',
-    'dare', 'dare', 'dare',
-    'fall', 'fall', 'fall',
-    'ultimatum', 'ultimatum', 'ultimatum',
-    'protect', 'protect', 'protect',
-    'vain', 'vain', 'vain', 'vain',
-    'human', 'human',
+    ...Array(6).fill('burn'),
+    ...Array(6).fill('okay'),
+    ...Array(4).fill('sparkle'),
+    ...Array(4).fill('band'),
+    ...Array(6).fill('again'),
+    ...Array(4).fill('latent'),
+    ...Array(4).fill('dare'),
+    ...Array(4).fill('fall'),
+    ...Array(4).fill('ultimatum'),
+    ...Array(6).fill('protect'),
+    ...Array(6).fill('vain'),
+    ...Array(3).fill('human'),
   ]);
-  assert.equal(m.regen, .05, 'regen caps at 5%/s');
-  assert.equal(m.crit, .5, 'crit caps at 50%');
-  assert.equal(m.energyMul, 1.8, 'energy gain caps at +80%');
-  assert.equal(m.cdMul, .6, 'cooldowns cap at -40%');
-  assert.equal(m.lifesteal, .16, 'lifesteal caps at 16%');
-  assert.equal(m.thorns, .3, 'thorns cap at 30%');
-  assert.equal(m.lowHpDmg, .6, '堕天 caps at +60%');
-  assert.equal(m.executeDmg, 1, '通牒 caps at +100%');
-  assert.equal(m.stunMul, .6, 'hitstun caps at -40%');
-  assert.equal(m.escapeCombo, 4, 'the escape threshold drops one per stack');
-  assert.equal(m.vainDamage, .45, 'vain damage caps at +45%');
-  assert.equal(m.vainEnergy, .75, 'vain energy caps at +75%');
-  assert.equal(m.deathSave, 2, 'cheat-death charges stack one per copy');
+  assert.ok(Math.abs((m.damage ?? 1) - 1.2) < 1e-9, 'damage caps at +20%');
+  assert.ok(Math.abs((m.regen ?? 0) - .01) < 1e-9, 'regen caps at 1%/s');
+  assert.ok(Math.abs((m.crit ?? 0) - .45) < 1e-9, 'crit caps at 45%');
+  assert.ok(Math.abs((m.energyMul ?? 1) - 1.75) < 1e-9, 'energy gain caps at +75%');
+  assert.ok(Math.abs((m.cdMul ?? 1) - Math.pow(.9, 4)) < 1e-9, 'cooldowns cap at -34%');
+  assert.ok(Math.abs((m.lifesteal ?? 0) - .15) < 1e-9, 'lifesteal caps at 15%');
+  assert.ok(Math.abs((m.thorns ?? 0) - .3) < 1e-9, 'thorns cap at 30%');
+  assert.ok(Math.abs((m.lowHpDmg ?? 0) - .45) < 1e-9, '堕天 caps at +45%');
+  assert.ok(Math.abs((m.executeDmg ?? 0) - .75) < 1e-9, '通牒 caps at +75%');
+  assert.ok(Math.abs((m.stunMul ?? 1) - Math.pow(.85, 4)) < 1e-9, 'hitstun caps at -48%');
+  assert.equal(m.escapeCombo, 3, 'the escape threshold bottoms out at 3');
+  assert.ok(Math.abs((m.vainDamage ?? 0) - .4) < 1e-9, 'vain damage caps at +40%');
+  assert.ok(Math.abs((m.vainEnergy ?? 0) - .6) < 1e-9, 'vain energy caps at +60%');
+  assert.equal(m.deathSave, 2, 'cheat-death charges stop at two');
   const echo = aggregatePicks(['echo', 'echo', 'echo', 'echo', 'echo']);
-  assert.equal(echo.comboTimeBonus, 1, 'the combo window caps at +1s');
-  assert.equal(echo.comboDecay, COMBO_DECAY / 32, 'combo decay halves per stack');
+  assert.ok(Math.abs((echo.comboTimeBonus ?? 0) - 1) < 1e-9, 'the combo window caps at +1s');
+  assert.ok(Math.abs((echo.comboDecay ?? 1) - COMBO_DECAY * Math.pow(.75, 4)) < 1e-9, 'combo decay drops 25% per stack');
   const walk = aggregatePicks(['walk', 'walk', 'walk', 'walk', 'walk', 'walk', 'walk']);
-  assert.equal(walk.moveMul, 1.2, 'move speed caps at +20%');
-  assert.equal(walk.dodgeCdMul, .5, 'the dodge cooldown caps at -50%');
+  assert.ok(Math.abs((walk.moveMul ?? 1) - 1.18) < 1e-9, 'move speed caps at +18%');
+  assert.ok(Math.abs((walk.dodgeCdMul ?? 1) - Math.pow(.8, 3)) < 1e-9, 'the dodge cooldown caps at -49%');
   assert.deepEqual(aggregatePicks([]), {}, 'no picks stays neutral');
 }
 
@@ -646,7 +670,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   p2.x = p1.x + 70; p2.facing = -1;
   g.keyDown('KeyI'); run(g, .8);
   assert.equal(p1.combo, 3, '轮舞 hits three times');
-  p1.energy = 100; p2.x = p1.x + 520;
+  p1.energy = p1.energyMax; p2.x = p1.x + 520;
   g.keyDown('KeyL');
   let notes = 0;
   for (let i = 0; i < Math.round(1.1 / STEP); i++) { g.step(STEP); notes = Math.max(notes, g.projectiles.length); }
@@ -681,7 +705,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(shot.returned && shot.vx === -outbound, '回旋黄瓜 turns around once');
 
   const superGame = newGame(mutsumi, 2); const [s1, s2] = superGame.fighters; dummy(superGame);
-  s1.energy = 100;
+  s1.energy = s1.energyMax;
   s2.x = s1.x + 110; s2.facing = -1;
   superGame.keyDown('KeyL');
   run(superGame, 1.2);
@@ -812,7 +836,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(drumShotTime(super5, 15) < super5.duration, 'the second wave fits in the super');
 
   const g = newGame(nyamu, 2); const [p1, p2] = g.fighters; dummy(g);
-  p1.energy = 100;
+  p1.energy = p1.energyMax;
   p2.x = p1.x + 80; p2.facing = -1;
   const startX = p2.x;
   g.keyDown('KeyL');
@@ -833,7 +857,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(span > 400, `满场 notes span the stage, saw ${span}`);
 
   const beat = newGame(nyamu, 2); dummy(beat);
-  beat.fighters[0].energy = 100;
+  beat.fighters[0].energy = beat.fighters[0].energyMax;
   beat.fighters[1].invuln = 5;
   beat.keyDown('KeyL');
   let strikes = 0;
@@ -931,7 +955,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(d1.attack, null, '恐湖 does not escape a knockdown');
 
   const slam = newGame(umiri, 2); const [s1, s2] = slam.fighters; dummy(slam);
-  s1.energy = 100;
+  s1.energy = s1.energyMax;
   s2.x = s1.x + 70; s2.facing = -1;
   const slamHp = s2.hp;
   slam.keyDown('KeyL');
@@ -1007,7 +1031,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(r2.root, 0, 'the second extra hit clears the root');
 
   const spin = newGame(anon, 2); const [s1, s2] = spin.fighters; dummy(spin);
-  s1.energy = 100;
+  s1.energy = s1.energyMax;
   s2.x = s1.x - 70; s2.facing = 1;
   const spinHp = s2.hp;
   spin.keyDown('KeyL');
@@ -1115,7 +1139,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
   const shout = newGame(soyo, 2); const [w1, w2] = shout.fighters; dummy(shout);
   w2.x = w1.x + 200; w2.facing = -1;
-  w1.energy = 100;
+  w1.energy = w1.energyMax;
   shout.keyDown('KeyL');
   run(shout, .7);
   assert.ok(w2.root > 3, `the shout roots for four seconds, left ${w2.root}`);
@@ -1129,7 +1153,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   // The wave itself dies of range with nothing in the way.
   const far = newGame(soyo, 2); const [f1, f2] = far.fighters; dummy(far);
   f2.x = f1.x + 700; f2.invuln = 5;
-  f1.energy = 100;
+  f1.energy = f1.energyMax;
   far.keyDown('KeyL');
   let waveX0 = -1, waveMax = 0, waveGone = false;
   for (let i = 0; i < Math.round(1.4 / STEP); i++) {
@@ -1248,7 +1272,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   // L: the sing shoves, a teammate answers, fights, dies early, and a new one bows out on time
   {
     const g = newGame(tomori, 2); const [s1, s2] = g.fighters; dummy(g);
-    s1.energy = 100;
+    s1.energy = s1.energyMax;
     s2.x = s1.x + 70; s2.facing = -1;
     const ex = s2.x;
     g.keyDown('KeyL');
@@ -1272,7 +1296,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.equal(g.fighters.length, 2, 'the teammate leaves when defeated');
 
     s2.hp = s2.data.hp; // the master-brain teammate could wear the dummy down; keep the round alive on purpose
-    s1.energy = 100;
+    s1.energy = s1.energyMax;
     g.keyUp('KeyL');
     g.keyDown('KeyL');
     run(g, 1.3);
@@ -1285,7 +1309,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   // the round ends even with a teammate standing
   {
     const g = newGame(tomori, 2); const [r1] = g.fighters; dummy(g);
-    r1.energy = 100;
+    r1.energy = r1.energyMax;
     g.keyDown('KeyL');
     run(g, 1.3);
     assert.equal(g.fighters.length, 3, 'a teammate is up');
@@ -1301,7 +1325,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     });
     run(g, 2.3);
     const lead = g.fighters[0];
-    lead.energy = 100;
+    lead.energy = lead.energyMax;
     assert.ok(g.attack(lead, 5), 'the sing starts in team mode');
     run(g, 1.15);
     assert.equal(g.fighters.length, 5, 'the teammate joins the team fight');
@@ -1530,6 +1554,14 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok((390 - phoneBand) / 390 < .28, 'a phone no longer exempts the bottom half');
 }
 
+// BGM contract: pure Web Audio only. iOS ignores a media element's volume property (the slider
+// goes dead, the default attenuation is lost) and adopts a playing element as a Now Playing
+// session — the Dynamic Island keeps it audible in the background past the page's suspend hooks.
+{
+  const bgm = readFileSync('src/audio/bgm.ts', 'utf8');
+  assert.ok(!/\bnew Audio\b|createMediaElementSource/.test(bgm), 'BGM stays on Web Audio buffers: no media element, no element source node');
+}
+
 {
   const g = newGame(); const [p1] = g.fighters; dummy(g);
   p1.stun = .45;
@@ -1716,7 +1748,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   // L: the vow catches a wrist, says the line, beats seven times and launches
   {
     const g = newGame(taki, 2); const [p1, p2] = g.fighters; dummy(g);
-    p1.energy = 100;
+    p1.energy = p1.energyMax;
     p2.x = p1.x + 70; p2.facing = -1;
     const hp = p2.hp;
     g.keyDown('KeyL');
@@ -1731,7 +1763,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.equal(p1.attack, null, 'the vow plays out');
 
     const low = newGame(taki, 2); const [l1, l2] = low.fighters; dummy(low);
-    l1.energy = 100;
+    l1.energy = l1.energyMax;
     l1.hp = l1.data.hp * .2;
     l2.x = l1.x + 70; l2.facing = -1;
     low.keyDown('KeyL');
@@ -1739,7 +1771,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(low.texts.some(t => t.text.includes('祥子')), 'low health swaps the line');
 
     const miss = newGame(taki, 2); const [m1, m2] = miss.fighters; dummy(miss);
-    m1.energy = 100;
+    m1.energy = m1.energyMax;
     m2.x = m1.x + 900;
     miss.keyDown('KeyL');
     run(miss, 1);
@@ -1811,7 +1843,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
   // L: the parfait stands, she is free right after, and the blobs erupt both ways
   const supe = newGame(rana, 2); const [s1, s2] = supe.fighters; dummy(supe);
-  s1.energy = 100;
+  s1.energy = s1.energyMax;
   s2.x = s1.x + 260; s2.facing = -1;
   supe.keyDown('KeyL');
   run(supe, 1);
@@ -1911,7 +1943,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   // L: the dream frenzies — faster J/K with cloned reach, no cooldown cut, no auto-heavy, gold ghosts
   {
     const g = newGame(arale, 2); const [p1, p2] = g.fighters; dummy(g);
-    p1.energy = 100;
+    p1.energy = p1.energyMax;
     g.keyDown('KeyL'); run(g, .8);
     assert.ok(p1.frenzy > 9, `the dream grants frenzy, left ${p1.frenzy}`);
     assert.ok(p1.braced > 9, 'the brace runs with the frenzy');
@@ -1930,7 +1962,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
       const foe = ROSTER.findIndex(c => c.skills.some(s => s.super && s.type !== 'grab' && !['heart', 'shout', 'ban'].includes(s.fx ?? '')));
       assert.ok(foe >= 0, 'a non-control super exists to test the brace against');
       const bg = newGame(arale, foe); const [b1, b2] = bg.fighters; dummy(bg);
-      b1.energy = 100;
+      b1.energy = b1.energyMax;
       bg.keyDown('KeyL'); run(bg, 1); // cast and the transformation pose
       const superSkill = b2.data.skills.find(s => s.super)!;
       const jab = b2.data.skills[0];
@@ -1950,7 +1982,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     }
 
     const mash = newGame(arale, 2); const [j1] = mash.fighters; dummy(mash);
-    j1.energy = 100;
+    j1.energy = j1.energyMax;
     mash.keyDown('KeyL');
     run(mash, 1.0);
     // the chain is off: four mashes come out as four lights, never the auto-heavy
@@ -2117,7 +2149,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
   {
     const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
-    p1.energy = 100;
+    p1.energy = p1.energyMax;
     p2.x = p1.x + 90; p2.facing = -1;
     const hp = p2.hp;
     g.keyDown('KeyL'); run(g, 1.3);
@@ -2140,7 +2172,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
   {
     const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
-    p1.energy = 100;
+    p1.energy = p1.energyMax;
     p2.x = p1.x + 500;
     g.keyDown('KeyL'); run(g, .7);
     const seal = g.projectiles.find(p => p.fx === 'seal');
@@ -2151,7 +2183,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
   {
     const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
-    p1.energy = 100;
+    p1.energy = p1.energyMax;
     p2.x = p1.x + 400;
     g.keyDown('KeyL'); run(g, .7);
     const seal = g.projectiles.find(p => p.fx === 'seal');
@@ -2175,7 +2207,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
   {
     const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
-    p1.energy = 100;
+    p1.energy = p1.energyMax;
     p1.facing = 1;
     p2.facing = -1;
     p2.x = X_MAX;
@@ -2310,6 +2342,8 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.equal(p1.attack, null, 'the feast pose has finished');
     assert.ok(p1.feast > 5, `the feast lasts 6 seconds, left ${p1.feast}`);
     assert.ok(p1.braced > 5, `the feast braces for 6 seconds, left ${p1.braced}`);
+    assert.ok(p1.noGain > 4, `the feast locks gains for the window, left ${p1.noGain}`);
+    assert.ok(p1.energy < 1, `the lock holds the bar down, got ${p1.energy}`);
     assert.ok(p1.hp > 400, 'the feast has started healing');
     const hp = p1.hp;
     g.keyDown('KeyJ'); run(g, .3);
@@ -2400,7 +2434,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const g = newGame(nonoka, 0); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 100; p2.facing = -1;
     const px = p2.x;
-    p1.energy = 100;
+    p1.energy = p1.energyMax;
     g.keyDown('KeyL');
     run(g, 1.05);
     assert.ok(p1.frenzy > 6, `the king lasts 7 seconds, left ${p1.frenzy}`);
@@ -2800,9 +2834,10 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   // L: the chant freezes the clock and the foe, the pulse roots everyone, two hits shake it off
   {
     const g = newGame(mana, 2); const [p1, p2] = g.fighters; dummy(g);
-    p1.energy = 100;
+    p1.energy = p1.energyMax;
     g.keyDown('KeyL'); run(g, .1);
     assert.ok(g.timeStop !== null, 'the chant freezes the world');
+    assert.ok(p1.noGain > 4, `the chant locks her gains through the freeze, left ${p1.noGain}`);
     assert.equal(p2.root, 0, 'the pulse waits for the chant');
     const clock = g.time;
     run(g, .5);
@@ -2924,7 +2959,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   {
     const g = newGame(kokoro, 2); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 260; p2.facing = -1;
-    p1.energy = 100;
+    p1.energy = p1.energyMax;
     const hp = p2.hp;
     g.keyDown('KeyL'); run(g, .45);
     assert.ok(p1.energy < 1, `the super spends the bar, left ${p1.energy}`);
@@ -3020,7 +3055,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   {
     const g = newGame(kasumi, 2); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 200; p2.facing = -1;
-    p1.energy = 100;
+    p1.energy = p1.energyMax;
     g.keyDown('KeyL'); run(g, .4);
     assert.ok(g.effects.some(e => e.type === 'wish-mark'), 'the prayer pins a landing tell');
     assert.equal(g.projectiles.some(p => p.fx === 'star-fall'), false, 'the star waits for the prayer');
@@ -3104,9 +3139,10 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   // L: the buff boosts the jab, then the backlash bills 10% of max health
   {
     const g = newGame(yukina, 1); const [p1, p2] = g.fighters; dummy(g);
-    p1.energy = 100;
+    p1.energy = p1.energyMax;
     g.keyDown('KeyL'); run(g, .8);
     assert.ok(p1.shout > 6.5, `the buff is running, left ${p1.shout}`);
+    assert.ok(p1.noGain > 6, `the seal locks gains for the window, left ${p1.noGain}`);
     const hp2 = p2.hp;
     hit(g, p1, p2, p1.data.skills[0], { hit: new Set() });
     assert.equal(hp2 - p2.hp, Math.round(26 * 1.5), `the shout boosts the jab, dealt ${hp2 - p2.hp}`);

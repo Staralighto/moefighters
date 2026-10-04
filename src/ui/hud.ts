@@ -92,9 +92,9 @@ export function updateHUD(g: FightGame): void {
     const guard = `防御 ${Math.ceil(f.guard)}%`;
     setText($m('health' + n), f.hp <= 0 ? 'K.O.' : g.mode === 'training' ? `${Math.ceil(f.hp)} / ${f.data.hp}  ·  ${guard}` : guard);
     const mp = $m('mp' + n);
-    const mpPct = f.energy + '%';
+    const mpPct = f.energy / f.energyMax * 100 + '%';
     if (mp.style.width !== mpPct) mp.style.width = mpPct;
-    const mpBg = f.energy >= 100 ? SIDE[f.team] : '#76e7ff';
+    const mpBg = f.energy >= f.energyMax ? SIDE[f.team] : '#76e7ff';
     if (mp.style.background !== mpBg) mp.style.background = mpBg;
     if (score) setText($m('score' + n), g.mode === 'training' ? '' : '●'.repeat(g.wins[f.team]) + '○'.repeat(2 - g.wins[f.team]));
   }
@@ -103,9 +103,10 @@ export function updateHUD(g: FightGame): void {
   setText($m('timer'), g.mode === 'training' ? '∞' : String(Math.max(0, Math.ceil(g.time))));
   setText($m('round'), roundLabel || 'ROUND ' + g.round);
   const me = g.fighters[guideFighter] ?? g.fighters[0];
+  const ultCost = me.data.skills[5]?.cost ?? 100;
   const cdMsg = (i: number) => {
     const cd = me.cooldowns[i];
-    return cd > 0 ? cd.toFixed(1) : i === 5 && me.energy < 100 ? Math.floor(me.energy) + ' / 100' : '';
+    return cd > 0 ? cd.toFixed(1) : i === 5 && me.energy < ultCost ? Math.floor(me.energy) + ' / ' + ultCost : '';
   };
   const paintCd = (b: HTMLElement, cd: number) => {
     if (!(cd > 0)) {
@@ -132,8 +133,8 @@ export function updateHUD(g: FightGame): void {
     }
     touchUlt ??= $m('touchpad').querySelector<HTMLElement>('.ult');
     if (touchUlt) {
-      const ready = me.energy >= 100;
-      touchUlt.style.setProperty('--p', String(Math.min(1, me.energy / 100)));
+      const ready = me.energy >= ultCost;
+      touchUlt.style.setProperty('--p', String(Math.min(1, me.energy / ultCost)));
       touchUlt.classList.toggle('ready', ready);
     }
   }
@@ -141,7 +142,7 @@ export function updateHUD(g: FightGame): void {
     const el = skillRows[i];
     const charge = i === 5 ? skillCharges[i] : null;
     if (charge) {
-      const h = Math.min(100, me.energy) + '%';
+      const h = me.energy / me.energyMax * 100 + '%';
       if (charge.style.height !== h) charge.style.height = h;
       continue;
     }

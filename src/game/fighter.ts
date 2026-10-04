@@ -59,6 +59,8 @@ export interface Fighter {
   x: number; y: number; vx: number; vy: number;
   facing: 1 | -1;
   hp: number; energy: number; guard: number;
+  /** Meter cap: the super's own cost, never below the arcade 100. */
+  energyMax: number;
   blocking: boolean;
   stun: number; invuln: number; comboTime: number; hitFlash: number; landing: number; guardBroken: number;
   knocked: number; downTime: number;
@@ -197,15 +199,21 @@ export interface Fighter {
 
 export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braceFx', 'ban', 'frail', 'recLeft'] as const;
 
+/** Meter cap for a character: the super's cost, but never below the arcade 100. */
+export function meterCap(data: CharacterData): number {
+  return Math.max(100, data.skills[5]?.cost ?? 100);
+}
+
 export function makeFighter(
   data: CharacterData,
   id: number,
   init: { x: number; facing: 1 | -1; controller: number | null; energy: number; team: number },
 ): Fighter {
+  const cap = meterCap(data);
   return {
     data, id, team: init.team, controller: init.controller,
     x: init.x, y: FLOOR, vx: 0, vy: 0, facing: init.facing,
-    hp: data.hp, energy: init.energy, guard: 100, blocking: false,
+    hp: data.hp, energy: Math.min(init.energy, cap), energyMax: cap, guard: 100, blocking: false,
     stun: 0, invuln: 0, comboTime: 0, hitFlash: 0, landing: 0, guardBroken: 0,
     knocked: 0, downTime: 0, hitBySuper: false, root: 0, rootHits: 0, rootBreak: 0, rootFx: '', rootLevel: 'move', ban: 0, beatStacks: 0, frenzy: 0,
     jabChain: 0, jabChainClock: 0, braced: 0, braceFx: 0, noGain: 0, muscle: 0, sprint: 0, poise: 0, purge: 0, frail: 0, frailBonus: 0, feast: 0, box: 0,
@@ -230,7 +238,7 @@ export function makeFighter(
  *  禁回: while the lock holds the fighter cannot gain energy at all. */
 export function gainEnergy(f: Fighter, amount: number): void {
   if (f.mods.some(m => m.kind === 'noGain' && m.left > 0)) return;
-  f.energy = clamp(f.energy + amount * f.energyMul, 0, 100);
+  f.energy = clamp(f.energy + amount * f.energyMul, 0, f.energyMax);
 }
 
 /** Idle stand-in for select-screen portraits. */

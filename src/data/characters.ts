@@ -69,7 +69,7 @@ export const ROSTER: CharacterData[] = [
       skill(3, 'light', '轮舞', { damage: 22, range: 188, start: .08, duration: .64, cd: 3, count: 3, interval: .11, brief: '绕身连打三下', detail: '绕身连打三下' }),
       skill(4, 'launch', '月牙踢', { range: 126, fx: 'crescent', brief: '命中挑空，跳起追打可连段', detail: '命中挑空，跳起追打可连段' }),
       skill(5, 'projectile', '忘却奏鸣', {
-        damage: 40, count: 8, interval: .075, speed: 540, size: 40, start: .3, duration: 1.2, life: 2.2, fx: 'note',
+        cost: 115, damage: 40, count: 8, interval: .075, speed: 540, size: 40, start: .3, duration: 1.2, life: 2.2, fx: 'note',
         brief: '连发八枚音符', detail: '连发八枚音符',
       }),
     ],
@@ -91,7 +91,7 @@ export const ROSTER: CharacterData[] = [
         brief: '向前连发三枚', detail: '向前连发三枚',
       }),
       skill(5, 'grab', '墨缇丝', {
-        damage: 48, range: 280, start: .34, duration: 1.35, count: 4, interval: .12, fx: 'mortis',
+        cost: 105, damage: 48, range: 280, start: .34, duration: 1.35, count: 4, interval: .12, fx: 'mortis',
         brief: '前冲抓取，连打四下', detail: '前冲抓取，连打四下',
       }),
     ],
@@ -140,7 +140,7 @@ export const ROSTER: CharacterData[] = [
         brief: '霸体震开，强击退；跳起可躲，可解控', detail: '霸体震开，强击退；跳起可躲，可解控',
       }),
       skill(5, 'grab', '信用', {
-        damage: 175, range: 110, start: .16, duration: 1.15, speed: 220, fx: 'slam', hitbox: 'front',
+        cost: 110, damage: 175, range: 110, start: .16, duration: 1.15, speed: 220, fx: 'slam', hitbox: 'front',
         knock: 120, shake: 14, hitstop: .09,
         react: { kind: 'knockdown', vy: 0, knocked: 1, stun: .4, snapFloor: true },
         brief: '抓住向后摔', detail: '抓住向后摔',
@@ -161,7 +161,7 @@ export const ROSTER: CharacterData[] = [
       skill(3, 'sweep', '扫膛腿'),
       skill(4, 'heavy', '月牙踢', { range: 190, cd: 5, fx: 'arc-kick', brief: '大范围下砸', detail: '大范围下砸' }),
       skill(5, 'projectile', '满场', {
-        damage: 36, count: 16, interval: .09, size: 36, start: .28, duration: 2.6, life: 2.4, fx: 'drums',
+        cost: 125, damage: 36, count: 16, interval: .09, size: 36, start: .28, duration: 2.6, life: 2.4, fx: 'drums',
         brief: '持续震开近身；音符分两次铺满全场', detail: '持续震开近身；音符分两次铺满全场',
       }),
     ],
@@ -191,7 +191,7 @@ export const ROSTER: CharacterData[] = [
         brief: '命中定身；再受击两次解除', detail: '命中定身 3 秒；再受击两次解除',
       }),
       skill(5, 'light', '不会再逃避了', {
-        damage: 40, range: 300, start: .28, duration: 1.26, count: 6, interval: .14, fx: 'spin',
+        cost: 130, damage: 40, range: 300, start: .28, duration: 1.26, count: 6, interval: .14, fx: 'spin',
         hitbox: 'radial', knock: 0, knockOnBlock: true,
         react: { kind: 'pin', stun: .2 },
         finale: { knock: 340, knockOnBlock: false, react: { kind: 'knockdown', vy: -240, knocked: .72 } },
@@ -230,7 +230,7 @@ export const ROSTER: CharacterData[] = [
         brief: '两枚贴地音符', detail: '两枚贴地音符',
       }),
       skill(5, 'projectile', '为什么要演奏春日影', {
-        damage: 72, speed: 430, size: 150, start: .34, duration: 1.15, life: .56, fx: 'shout', root: 4,
+        cost: 115, damage: 72, speed: 430, size: 150, start: .34, duration: 1.15, life: .56, fx: 'shout', root: 4,
         knock: 110, knockOnBlock: true, control: true,
         brief: '音波推进；出手即可行动，命中定身', detail: '音波推进；出手即可行动；定身 4 秒，受击两次解除',
       }),
@@ -265,7 +265,7 @@ export const ROSTER: CharacterData[] = [
         brief: '黑洞吸住敌人；跳出可躲，冲刺可挣脱', detail: '前方生成黑洞，吸住敌人并多段低伤，1.4 秒后消失；出手后即可行动，跳出可躲伤害、冲刺可挣脱',
       }),
       skill(5, 'endure', '诗超绊', {
-        damage: 0, start: 1.0, duration: 1.35, fx: 'poem',
+        cost: 120, damage: 0, start: 1.0, duration: 1.35, fx: 'poem',
         onActive: [{ op: 'summon', kind: 'ally' }],
         brief: '原地歌唱震退；召唤队友并肩，被击败提前退场', detail: '原地歌唱 1 秒震退对手，随后召唤 1 名 MyGO 队友并肩 12 秒；队友生命只有两成，被击败提前退场',
       }),
@@ -292,7 +292,7 @@ export const ROSTER: CharacterData[] = [
       }),
       skill(4, 'launch', '高踢腿', { damage: 24, range: 180, cd: 4.5 }),
       skill(5, 'projectile', '抹茶大芭菲', {
-        damage: 14, count: 22, interval: .28, start: .45, duration: .85, life: 6.5, size: 56, knock: 90, fx: 'parfait',
+        cost: 130, damage: 14, count: 22, interval: .28, start: .45, duration: .85, life: 6.5, size: 56, knock: 90, fx: 'parfait',
         motion: 'fall', solid: false,
         brief: '放下大芭菲喷发熔岩；自身可自由行动', detail: '放下大芭菲，持续喷发抹茶熔岩；放下后自身可自由行动',
       }),
@@ -319,7 +319,7 @@ export const ROSTER: CharacterData[] = [
         brief: '冲刺拉黑；禁足对方，期间受伤降低', detail: '冲刺拉黑：对方完全禁足 3 秒，期间受伤减半',
       }),
       skill(5, 'grab', '和灯在一起的话，一辈子也可以', {
-        damage: 28, range: 200, start: .3, duration: 2.05, speed: 500, fx: 'vow',
+        cost: 105, damage: 28, range: 200, start: .3, duration: 2.05, speed: 500, fx: 'vow',
         react: { kind: 'pin', stun: .3, holdStill: true },
         finale: { react: { kind: 'knockdown', vy: -240, knocked: .72 } },
         brief: '抓住对方连打七击，末击击倒', detail: '抓住手腕，把对方当鼓由慢到快连打七击，末击击倒；残血时换台词',
@@ -360,7 +360,7 @@ export const ROSTER: CharacterData[] = [
         brief: '震开周围；伤害提高', detail: '震开周围；7 秒内伤害提高 30%',
       }),
       skill(5, 'endure', '梦想即力量！', {
-        damage: 0, range: 220, start: .5, duration: .9, fx: 'dream',
+        cost: 105, damage: 0, range: 220, start: .5, duration: .9, fx: 'dream',
         onActive: [
           { op: 'form' },
           { op: 'mod', kind: 'brace' },
@@ -402,6 +402,7 @@ export const ROSTER: CharacterData[] = [
         brief: '贴身音波，强击退；真霸体，跳到最高可出圈', detail: '贴身圆形音波，强击退；放出时真霸体，跳到最高可出圈',
       }),
       skill(5, 'projectile', '九字真言', {
+        cost: 110,
         // focus multiplies shot speed by 1.15; 366 lands on about 421, and 0.7s of that is ~295px.
         damage: 36, count: 1, speed: 366, size: 140, life: .7, interval: .07,
         start: .55, duration: .9, knock: 0, fx: 'seal', hitstop: .09,
@@ -443,9 +444,10 @@ export const ROSTER: CharacterData[] = [
         onActive: [
           { op: 'mod', kind: 'brace', time: 6 },
           { op: 'mod', kind: 'feast', time: 6 },
+          { op: 'mod', kind: 'noGain', time: 6 },
           { op: 'fx', type: 'burst', life: .4, radius: 80, color: '#9ad4ff' },
         ],
-        brief: '霸体并持续回血；期间不能用 J / K，技能照常', detail: '6 秒内霸体、每秒回复 36；期间不能用 J / K，技能照常',
+        brief: '霸体回血；禁回气，不能用 J / K，技能照常', detail: '6 秒内霸体、每秒回复 36、无法获得气；期间不能用 J / K，技能照常',
       }),
     ],
   },
@@ -481,7 +483,7 @@ export const ROSTER: CharacterData[] = [
         brief: '敌人身后召出影子，只普攻', detail: '敌人身后召出半透明的自己：只普攻，伤害三成、血量两成，6 秒',
       }),
       skill(5, 'endure', 'Nono国王', {
-        damage: 0, range: 160, start: .4, duration: .85, fx: 'king',
+        cost: 115, damage: 0, range: 160, start: .4, duration: .85, fx: 'king',
         onActive: [
           { op: 'form', king: true },
           { op: 'mod', kind: 'noGain' },
@@ -523,7 +525,7 @@ export const ROSTER: CharacterData[] = [
           { op: 'mod', kind: 'noGain', time: 4, max: true },
           { op: 'fx', type: 'burst', life: .7, radius: 120 },
         ],
-        brief: '霸体记账；期间不掉血，结束时一起结算', detail: '4 秒霸体记账且禁回气：期间不掉血，结束时一次承受期间伤害的 150%',
+        brief: '霸体记账；期间不掉血且禁回气，结束时一起结算', detail: '4 秒霸体记账且禁回气：期间不掉血，结束时一次承受期间伤害的 150%',
       }),
     ],
   },
@@ -586,9 +588,9 @@ export const ROSTER: CharacterData[] = [
         brief: '射出超大爱心；飞得很慢，命中定身不受击解除', detail: '射出超大爱心，飞得很慢：命中定身 2.5 秒，不受击解除',
       }),
       skill(5, 'endure', '此即世界', {
-        damage: 0, range: 0, start: 1.2, duration: 1.7, fx: 'world',
+        cost: 125, damage: 0, range: 0, start: 1.2, duration: 1.7, fx: 'world',
         root: 3, rootBreak: 0, rootLevel: 'freeze',
-        brief: '时停全场禁足；无伤害，不受击解除', detail: '时停唱跳 1.2 秒，随后爱心脉冲让全场禁足 3 秒：无伤害，无法闪避，不受击解除',
+        brief: '时停全场禁足；期间禁回气，无伤害，不受击解除', detail: '时停唱跳 1.2 秒，随后爱心脉冲让全场禁足 3 秒：无伤害，无法闪避，不受击解除；期间无法获得气',
       }),
     ],
   },
@@ -617,7 +619,7 @@ export const ROSTER: CharacterData[] = [
         brief: '红白球全场乱飞，越弹越快；可格挡，可被弹幕击落', detail: '红白球高速反弹乱飞 6 秒，每次弹开都换方向并提速两成，至多翻倍；可格挡，可被弹幕击落',
       }),
       skill(5, 'projectile', '世界微笑', {
-        damage: 26, count: 3, interval: .16, speed: 520, size: 100, life: 1.1, start: .3, duration: 1.2, knock: 350, root: 3, rootPin: true, fx: 'smile-wave',
+        cost: 110, damage: 26, count: 3, interval: .16, speed: 520, size: 100, life: 1.1, start: .3, duration: 1.2, knock: 350, root: 3, rootPin: true, fx: 'smile-wave',
         control: true,
         brief: '连发三枚笑脸波；命中定身，可格挡', detail: '连发三枚笑脸波击退；命中定身 3 秒，受击两次解除，可格挡',
       }),
@@ -652,7 +654,7 @@ export const ROSTER: CharacterData[] = [
         brief: '抱住贴脸连蹭；结束定身，受击两次解除', detail: '冲上去抱住贴脸六连蹭；最后一蹭定身 2 秒',
       }),
       skill(5, 'projectile', '星之鼓动', {
-        damage: 195, size: 480, start: 1.0, duration: 1.4, life: 3, knock: 0, gain: 0, fx: 'wish',
+        cost: 125, damage: 195, size: 480, start: 1.0, duration: 1.4, life: 3, knock: 0, gain: 0, fx: 'wish',
         contact: 'pass', solid: false,
         root: 3, rootBreak: 0, rootPin: true,
         brief: '祈愿召下半屏宽的巨星砸落；命中眩晕，不受击解除', detail: '双手合十祈愿 1 秒并标记落点，巨星从画面左上斜落砸在标记点上：落点附近巨额伤害并眩晕 3 秒',
@@ -694,13 +696,14 @@ export const ROSTER: CharacterData[] = [
         detail: '前摇被打中则作废；以自身为中心的 360 度音波贯穿全场，把所有敌人轰飞出去',
       }),
       skill(5, 'endure', '漆黑呐喊', {
-        damage: 0, range: 0, start: .55, duration: 1.1, fx: 'black-shout',
+        cost: 115, damage: 0, range: 0, start: .55, duration: 1.1, fx: 'black-shout',
         onActive: [
           { op: 'mod', kind: 'shout', time: 8 },
+          { op: 'mod', kind: 'noGain', time: 8 },
           { op: 'fx', life: .8, radius: 130, flash: .3, announce: { color: '#8fd8ff', life: .9, size: 19, y: -240 } },
         ],
-        brief: '解除封印：攻击力大幅提升，结束后反噬自伤',
-        detail: '8 秒内攻击力提高 50%；结束时固定受到 10% 最大生命值的反噬伤害，可以致死',
+        brief: '解除封印：攻击力大幅提升且禁回气，结束后反噬自伤',
+        detail: '8 秒内攻击力提高 50% 且无法获得气；结束时固定受到 10% 最大生命值的反噬伤害，可以致死',
       }),
     ],
   },
