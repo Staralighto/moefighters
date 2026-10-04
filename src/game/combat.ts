@@ -1913,12 +1913,12 @@ SCRIPTS['star-fall'] = Object.assign(SCRIPTS['star-fall'] ?? {}, { wide: true, a
 SCRIPTS['blackhole'] = Object.assign(SCRIPTS['blackhole'] ?? {}, { spawn: 'well' });
 SCRIPTS['donut'] = Object.assign(SCRIPTS['donut'] ?? {}, { variant: donutVariant });
 SCRIPTS['smile-wave'] = Object.assign(SCRIPTS['smile-wave'] ?? {}, { pulse: pulse_smile_wave });
-SCRIPTS['ripple'] = Object.assign(SCRIPTS['ripple'] ?? {}, { flash(g, f, a) { g.effect('ripple', f.x, FLOOR, f.data.color, .45, { radius: a.skill.range }); } });
-SCRIPTS['huh'] = Object.assign(SCRIPTS['huh'] ?? {}, { flash(g, f, a) { g.effect('huh', f.x, FLOOR, f.data.color, .5, { radius: a.skill.range }); } });
-SCRIPTS['tsun'] = Object.assign(SCRIPTS['tsun'] ?? {}, { flash(g, f, a) { g.effect('tsun', f.x, FLOOR, f.data.color, .5, { radius: a.skill.range }); } });
-SCRIPTS['howl'] = Object.assign(SCRIPTS['howl'] ?? {}, { flash(g, f, a) { g.effect('howl', f.x, f.y - 80, f.data.color, .4, { radius: a.skill.range }); } });
-SCRIPTS['yokan'] = Object.assign(SCRIPTS['yokan'] ?? {}, { flash(g, f, a) { g.effect('yokan', f.x + f.facing * 70, FLOOR, f.data.color, .28, { dir: f.facing, radius: 80 }); } });
-SCRIPTS['rib'] = Object.assign(SCRIPTS['rib'] ?? {}, { flash(g, f, a) { g.effect('slash', f.x + f.facing * 65, f.y - 83, f.data.color, .22, { dir: f.facing, radius: a.skill.range * .5 }); } });
+SCRIPTS['ripple'] = Object.assign(SCRIPTS['ripple'] ?? {}, { flash(g: FightGame, f: Fighter, a: Attack) { g.effect('ripple', f.x, FLOOR, f.data.color, .45, { radius: a.skill.range }); } });
+SCRIPTS['huh'] = Object.assign(SCRIPTS['huh'] ?? {}, { flash(g: FightGame, f: Fighter, a: Attack) { g.effect('huh', f.x, FLOOR, f.data.color, .5, { radius: a.skill.range }); } });
+SCRIPTS['tsun'] = Object.assign(SCRIPTS['tsun'] ?? {}, { flash(g: FightGame, f: Fighter, a: Attack) { g.effect('tsun', f.x, FLOOR, f.data.color, .5, { radius: a.skill.range }); } });
+SCRIPTS['howl'] = Object.assign(SCRIPTS['howl'] ?? {}, { flash(g: FightGame, f: Fighter, a: Attack) { g.effect('howl', f.x, f.y - 80, f.data.color, .4, { radius: a.skill.range }); } });
+SCRIPTS['yokan'] = Object.assign(SCRIPTS['yokan'] ?? {}, { flash(g: FightGame, f: Fighter, a: Attack) { g.effect('yokan', f.x + f.facing * 70, FLOOR, f.data.color, .28, { dir: f.facing, radius: 80 }); } });
+SCRIPTS['rib'] = Object.assign(SCRIPTS['rib'] ?? {}, { flash(g: FightGame, f: Fighter, a: Attack) { g.effect('slash', f.x + f.facing * 65, f.y - 83, f.data.color, .22, { dir: f.facing, radius: a.skill.range * .5 }); } });
 
 
 export function stepProjectiles(g: FightGame, dt: number): void {
