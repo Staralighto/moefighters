@@ -1,4 +1,5 @@
 import type { CharacterData, StageData } from '../data/types.ts';
+import { STAGES } from '../data/stages.ts';
 import type { ChallengeMods, Mode } from '../game/game.ts';
 import type { FighterView } from '../render/view.ts';
 import { previewFighter, type Fighter } from '../game/fighter.ts';
@@ -10,6 +11,8 @@ export interface MatchSetup {
   mode: Mode;
   difficulty: number;
   controllers: (number | null)[];
+  /** The scene this match fights on; resolved from the picker, random rolls at click time. */
+  stage: StageData;
   /** Challenge only: the player's aggregated deck in slot 0; the other slots stay neutral. */
   mods?: ChallengeMods[];
   /** Challenge only: 1-based stage number for the HUD and the battle title. */
@@ -30,6 +33,8 @@ interface SavedSelect {
   selected: number[];
   who: ('player' | 'cpu')[];
   side: number;
+  /** Scene the picker points at; 'random' rolls a fresh one on every start. Absent in pre-stage saves. */
+  stageId?: string;
 }
 const KEYS_1P = 'A D 移动 · W / 空格 跳跃 · 长按 S 格挡 · 点按 S 后闪 · J K 轻 / 重击（跳中为空击） · U I O 技能 · L 必杀';
 const KEYS_2P = '玩家二：方向键移动 · 上跳 · 下格挡 · 小键盘 1 / 2 轻重击 · 4 / 5 / 6 技能 · 3 必杀';
@@ -83,12 +88,12 @@ export function assignSlotWho(who: readonly ('player' | 'cpu')[], lead: number, 
   return copy;
 }
 
-/** Backdrop that covers the panel. `idealFromBottom` is where the image bottom would sit to put the floor on the portrait feet; it is clamped so neither edge can slip inside the panel. */
-export function stageCover(panelW: number, panelH: number, idealFromBottom: number): { width: number; height: number; fromBottom: number } {
+/** Backdrop that covers the panel. `idealFromBottom` is where the image bottom would sit to put the floor on the portrait feet; it is clamped so neither edge can slip inside the panel. `groundY` is the art's own ground line in canvas space (StageData.groundY), FLOOR when the art has none declared. */
+export function stageCover(panelW: number, panelH: number, idealFromBottom: number, groundY: number = FLOOR): { width: number; height: number; fromBottom: number } {
   const cover = Math.max(panelW / W, panelH / H);
   const width = Math.ceil(W * cover);
   const height = Math.ceil(H * cover);
-  const fromBottom = Math.min(0, Math.max(panelH - height, idealFromBottom - (H - FLOOR) * cover));
+  const fromBottom = Math.min(0, Math.max(panelH - height, idealFromBottom - (H - groundY) * cover));
   return { width, height, fromBottom };
 }
 
@@ -114,9 +119,10 @@ export class SelectScreen {
   difficulty = 1;
   /** Which challenge sub-mode the challenge UI currently points at; its run and record are read per kind. */
   challengeKind: ChallengeKind = 'brawl';
+  /** Scene picker: 'random' or a STAGES id. Default rolls on every start, like the reference. */
+  stageId: string = 'random';
   private readonly roster: CharacterData[];
   private readonly views: Map<string, FighterView>;
-  private readonly stage: StageData;
   private readonly onStart: (setup: MatchSetup) => void;
   private readonly onPick: () => void;
   private readonly onShown: (shown: CharacterData[]) => void;
@@ -134,20 +140,36 @@ export class SelectScreen {
   /** One idle stand-in per portrait canvas, rebuilt only when the slot switches character. */
   private readonly previewCache = new WeakMap<HTMLCanvasElement, { id: string; facing: number; f: Fighter }>();
 
-  constructor(roster: CharacterData[], views: Map<string, FighterView>, stage: StageData, onStart: (setup: MatchSetup) => void, onPick: () => void, onShown: (shown: CharacterData[]) => void = () => {}) {
+  constructor(roster: CharacterData[], views: Map<string, FighterView>, onStart: (setup: MatchSetup) => void, onPick: () => void, onShown: (shown: CharacterData[]) => void = () => {}) {
     this.roster = roster;
     this.views = views;
-    this.stage = stage;
     this.onStart = onStart;
     this.onPick = onPick;
     this.onShown = onShown;
     this.restore();
   }
 
+  /** The stage the picker points at; 'random' previews the first one, like the reference's backdrop. */
+  get stage(): StageData {
+    return STAGES.find(s => s.id === this.stageId) ?? STAGES[0];
+  }
+
+  /** The stage a match actually fights on: a pointed-at stage plays itself, 'random' rolls fresh. */
+  resolveStage(): StageData {
+    return this.stageId === 'random' ? STAGES[Math.floor(Math.random() * STAGES.length)] : this.stage;
+  }
+
   mount(): void {
     $('roster').innerHTML = this.roster.map((c, i) =>
       `<button class="character" data-index="${i}" title="${c.name} · ${c.title}" aria-label="选择${c.name}"><canvas width="96" height="96" aria-hidden="true"></canvas><span class="slot-tag" hidden></span><span class="char-name">${c.name}</span></button>`).join('');
     $('roster').querySelectorAll<HTMLButtonElement>('button').forEach(b => b.onclick = () => this.pick(Number(b.dataset.index)));
+    $('stage-grid').innerHTML = '<button type="button" class="stage-card stage-random" data-stage="random" aria-pressed="false"><span class="stage-random-art" aria-hidden="true">?</span><b>随机场景</b></button>'
+      + STAGES.map(s => `<button type="button" class="stage-card" data-stage="${s.id}" aria-pressed="false">${s.image ? `<img src="${s.image}" loading="lazy" alt="${s.name}场景预览">` : ''}<b>${s.name}</b></button>`).join('');
+    $('stage-grid').querySelectorAll<HTMLButtonElement>('button').forEach(b => b.onclick = () => {
+      this.stageId = b.dataset.stage ?? 'random';
+      this.onPick();
+      this.refresh();
+    });
     this.rosterCanvases = [...$('roster').querySelectorAll<HTMLCanvasElement>('canvas')];
     // The backdrop geometry only changes with the viewport; per-frame restyling did a
     // read-then-write layout pass 60 times a second for the same output.
@@ -194,6 +216,7 @@ export class SelectScreen {
       mode: this.mode,
       difficulty: this.mode === 'challenge' ? 2 : this.difficulty,
       controllers: this.controllers(),
+      stage: this.resolveStage(),
       challengeKind: this.mode === 'challenge' ? this.challengeKind : undefined,
     };
   }
@@ -261,10 +284,11 @@ export class SelectScreen {
       : [...saved.who];
     this.side = Number.isInteger(saved.side) && saved.side >= 0 && saved.side < need ? saved.side : 0;
     if (this.mode === 'challenge') this.side = 0;
+    if (saved.stageId === 'random' || STAGES.some(s => s.id === saved.stageId)) this.stageId = saved.stageId!;
   }
 
   private save(): void {
-    const saved: SavedSelect = { mode: this.mode, difficulty: this.difficulty, challengeKind: this.challengeKind, selected: this.selected, who: this.who, side: this.side };
+    const saved: SavedSelect = { mode: this.mode, difficulty: this.difficulty, challengeKind: this.challengeKind, selected: this.selected, who: this.who, side: this.side, stageId: this.stageId };
     try { localStorage.setItem(STATE_KEY, JSON.stringify(saved)); } catch { /* private mode */ }
   }
 
@@ -466,7 +490,14 @@ export class SelectScreen {
           ? '两胜制 · 一方全灭或超时比血量 · 60 秒 / 回合'
           : '两胜制 · 60 秒 / 回合';
     $('abandon').hidden = !(challenge && run);
-    $('stage-caption').textContent = '练武场';
+    document.querySelectorAll<HTMLButtonElement>('#stage-grid .stage-card').forEach(b => {
+      const on = b.dataset.stage === this.stageId;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+    const stage = this.stage;
+    $('stage-choice').textContent = this.stageId === 'random' ? '默认随机' : '已选 · ' + stage.name;
+    $('stage-caption').textContent = this.stageId === 'random' ? '随机场景 · 开打时揭晓' : stage.name;
     $('start').innerHTML = this.startLabel();
     const humans = this.controllers().filter(x => x !== null).length;
     $('select-keys').textContent = humans === 0
@@ -538,7 +569,7 @@ export class SelectScreen {
     const fit = Math.min(box.width / canvas.width, box.height / canvas.height);
     const drawnH = canvas.height * fit;
     const footScreen = box.top + (box.height - drawnH) + PORTRAIT_FOOT * fit;
-    const cover = stageCover(panel.clientWidth, panel.clientHeight, panelBox.bottom - footScreen);
+    const cover = stageCover(panel.clientWidth, panel.clientHeight, panelBox.bottom - footScreen, this.stage.groundY ?? FLOOR);
     panel.style.backgroundImage = `url("${this.stage.image}")`;
     panel.style.backgroundRepeat = 'no-repeat';
     panel.style.backgroundSize = `${cover.width}px ${cover.height}px`;

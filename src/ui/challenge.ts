@@ -1,4 +1,4 @@
-import type { CharacterData } from '../data/types.ts';
+import type { CharacterData, StageData } from '../data/types.ts';
 import { PLAYABLE } from '../data/characters.ts';
 import type { ChallengeMods } from '../game/game.ts';
 import { COMBO_DECAY, COMBO_ESCAPE } from '../game/constants.ts';
@@ -188,7 +188,7 @@ export function deckLabel(picks: string[]): string {
     无尽闯关 fields one foe and no opening buffs; 无尽激战 anchors on doubled health and the ×2 base
     damage boost, and 救生 stacks onto that anchor. Every other card rides the mods. From stage 2
     the foes grow linearly per stage (+5% health, +3% damage); only the rules text says so. */
-export function stageSetup(kind: ChallengeKind, player: CharacterData, picks: string[], stage: number, enemies: CharacterData[]): MatchSetup {
+export function stageSetup(kind: ChallengeKind, player: CharacterData, picks: string[], stage: number, enemies: CharacterData[], scene: StageData): MatchSetup {
   const anchor = kind === 'brawl' ? 2 : 1;
   const data = { ...player, hp: Math.round(player.hp * anchor * (1 + .2 * countPicks(picks, 'lifebuoy'))) };
   const growth = stage - 1;
@@ -199,6 +199,7 @@ export function stageSetup(kind: ChallengeKind, player: CharacterData, picks: st
     mode: 'challenge',
     difficulty: 2,
     controllers: [0, ...enemies.map(() => null)],
+    stage: scene,
     mods: [kind === 'brawl' ? { ...deck, baseDamage: 2 } : deck, ...enemies.map(() => grown)],
     stageNumber: stage,
   };

@@ -1,12 +1,12 @@
 import { PLAYABLE } from './data/characters.ts';
-import { STAGES } from './data/stages.ts';
-import type { CharacterData } from './data/types.ts';
+import type { CharacterData, StageData } from './data/types.ts';
 import { FightGame, MINION_POOL } from './game/game.ts';
 import { KeyboardInput, TouchInput } from './game/input.ts';
 import { Renderer } from './render/renderer.ts';
 import { createViews } from './render/view.ts';
 import { assetsFor, easeLoad, imageQueue, loadKujiFont, missingImages, preload, type ImageCache } from './assets/loader.ts';
 import { Sfx } from './audio/sfx.ts';
+import { musicEnabled, musicVolume, pokeMusic, setMusicEnabled, setMusicSuspended, setMusicVolume } from './audio/bgm.ts';
 import { matchName, SelectScreen, type MatchSetup } from './ui/select.ts';
 import { bestLabel, challengeName, deckLabel, foeCount, hideBuffPicker, readBest, readRun, rollEnemies, showBuffPicker, stageSetup, writeBest, writeRun, type ChallengeKind, type ChallengeRun } from './ui/challenge.ts';
 import { cycleSkillTier, hideEnd, setBattleGuide, setRoundLabel, showBanner, showEnd, updateHUD } from './ui/hud.ts';
@@ -15,7 +15,6 @@ import { applyTouchDevice, watchTouch } from './ui/device.ts';
 import { applyTouchLayout, bindBattleFrame } from './ui/touchLayout.ts';
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
-const stage = STAGES[0];
 const sfx = new Sfx();
 const images: ImageCache = new Map();
 
@@ -50,7 +49,7 @@ function commonOf(list: CharacterData[]): string[] {
 }
 
 /** 诗超绊 calls a teammate who is not on the match card. Their sheets ride the fight load. */
-function fightSources(characters: CharacterData[]): string[] {
+function fightSources(characters: CharacterData[], stage: StageData): string[] {
   const mates = characters.some(c => c.skills.some(s => s.fx === 'poem'))
     ? MINION_POOL.flatMap(id => PLAYABLE.filter(c => c.id === id))
     : [];
@@ -111,7 +110,7 @@ function tickBoot(now: number): void {
   window.setTimeout(() => { el.hidden = true; el.classList.remove('is-out'); }, 400);
 }
 
-const select = new SelectScreen(PLAYABLE, previewViews, stage, setup => {
+const select = new SelectScreen(PLAYABLE, previewViews, setup => {
   queue.soon(commonOf(setup.characters));
   if (setup.mode === 'challenge') {
     // Each sub-mode keeps its own run: switching kinds here reloads the other one from storage,
@@ -139,7 +138,7 @@ const select = new SelectScreen(PLAYABLE, previewViews, stage, setup => {
 });
 select.mount();
 {
-  const first = [...new Set([...(stage.image ? [stage.image] : []), ...commonOf(select.cast())])];
+  const first = [...new Set([...(select.stage.image ? [select.stage.image] : []), ...commonOf(select.cast())])];
   beginWait(first);
   queue.pin(first);
   // The rest of the roster loads on scroll (the observer below) or at fight start — not up front:
@@ -197,7 +196,7 @@ function leaveBattleFullscreen(): void {
 
 async function startGame(setup: MatchSetup): Promise<void> {
   sfx.unlock();
-  const srcs = fightSources(setup.characters);
+  const srcs = fightSources(setup.characters, setup.stage);
   if (srcs.some(s => !images.has(s) && !missingImages.has(s))) beginWait(srcs);
   $('start').setAttribute('disabled', '');
   // The fight's own sheets take the link; the background roster queue waits so the
@@ -226,7 +225,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
   hideBuffPicker();
   $('battle-mode').textContent = setup.mode === 'challenge'
     ? challengeName(setup.challengeKind ?? 'brawl') + ' · 第 ' + setup.stageNumber + ' 关'
-    : matchName(setup) + ' · ' + stage.name;
+    : matchName(setup) + ' · ' + setup.stage.name;
   setRoundLabel(setup.mode === 'challenge' ? '第 ' + setup.stageNumber + ' 关' : '');
   setBattleGuide(setup.characters, setup.controllers);
   setIconBtn($('pause'), '暂停 ESC');
@@ -242,7 +241,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
     controllers: setup.controllers,
     mods: setup.mods,
     roundsToWin: setup.mode === 'challenge' ? 1 : undefined,
-    stage,
+    stage: setup.stage,
     audio: sfx,
     onHUD: updateHUD,
     onBanner: showBanner,
@@ -260,7 +259,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
     },
   });
   // previewViews covers the whole roster: a 诗超绊 teammate borrows anon/soyo sheets mid-match.
-  renderer = new Renderer($('game') as HTMLCanvasElement, previewViews, stage, images);
+  renderer = new Renderer($('game') as HTMLCanvasElement, previewViews, setup.stage, images);
   raf = requestAnimationFrame(frame);
   if (!document.body.classList.contains('touch')) {
     $('game').focus();
@@ -277,7 +276,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
 function startChallengeStage(): void {
   if (!challenge) return;
   writeRun(challenge.kind, challenge);
-  void startGame(stageSetup(challenge.kind, challenge.char, challenge.picks, challenge.stage, challenge.enemies));
+  void startGame(stageSetup(challenge.kind, challenge.char, challenge.picks, challenge.stage, challenge.enemies, select.resolveStage()));
 }
 
 function onFightEnd(title: string, stats: string): void {
@@ -440,6 +439,52 @@ $('sound').onclick = () => {
   if (!sfx.muted) sfx.unlock();
 };
 
+/* 音乐与音效各自独立，这条只管 BGM。做法对齐参考站的 music-settings：开关是同步布尔，
+   点击立即翻转并刷 UI，点击路径上不 await 任何东西，关闭永远跟手；面板用原生 details
+   展开，点外面或 ESC 收起，音乐状态不变。
+   UI 写入做 rAF 节流：拖音量时 input 事件比帧快，直接逐事件写 DOM 会抖；每帧合并成
+   一次写入，且内容没变的文本不重写。 */
+let musicUiRaf = 0;
+function syncMusicUi(): void {
+  if (musicUiRaf) return;
+  musicUiRaf = requestAnimationFrame(() => {
+    musicUiRaf = 0;
+    const on = musicEnabled();
+    const label = on ? '♫ 音乐开' : '♫ 音乐关';
+    const btn = $('music-toggle');
+    if (btn.textContent !== label) btn.textContent = label;
+    btn.setAttribute('aria-pressed', String(on));
+    const out = $('music-volume-value') as HTMLOutputElement;
+    const text = ($('music-volume') as HTMLInputElement).value + '%';
+    if (out.textContent !== text) out.textContent = text;
+  });
+}
+$('music-toggle').onclick = () => { setMusicEnabled(!musicEnabled()); syncMusicUi(); };
+$('music-volume').oninput = () => {
+  setMusicVolume(Number(($('music-volume') as HTMLInputElement).value) / 100);
+  syncMusicUi();
+};
+/* 开关与音量从 sessionStorage 恢复（关掉标签页才重置）：滑条回到上次的档位，开关若上次
+   是开的，第一次点击/按键时 pokeMusic 会把音乐接上。 */
+($('music-volume') as HTMLInputElement).value = String(Math.round(musicVolume() * 100));
+syncMusicUi();
+document.addEventListener('pointerdown', e => {
+  const settings = $('music-settings') as HTMLDetailsElement;
+  if (settings.open && e.target instanceof Node && !settings.contains(e.target)) settings.open = false;
+}, { capture: true });
+document.addEventListener('keydown', e => {
+  const settings = $('music-settings') as HTMLDetailsElement;
+  if (e.key === 'Escape' && settings.open) {
+    settings.open = false;
+    ($('music') as HTMLElement).focus();
+    e.stopImmediatePropagation();
+    e.preventDefault();
+  }
+}, { capture: true });
+document.addEventListener('visibilitychange', () => setMusicSuspended(document.hidden));
+window.addEventListener('blur', () => setMusicSuspended(true));
+window.addEventListener('focus', () => setMusicSuspended(false));
+
 document.addEventListener('pointerdown', e => {
   const t = e.target;
   /* Start/rematch spend the tap on fullscreen. Audio unlock here would consume it first, and Chrome then rejects requestFullscreen. */
@@ -448,8 +493,9 @@ document.addEventListener('pointerdown', e => {
     return;
   }
   sfx.unlock();
+  pokeMusic();
 }, { capture: true });
-document.addEventListener('keydown', e => { if (!e.repeat) sfx.unlock(); }, { capture: true });
+document.addEventListener('keydown', e => { if (!e.repeat) { sfx.unlock(); pokeMusic(); } }, { capture: true });
 for (const type of ['contextmenu', 'selectstart', 'dragstart', 'dblclick', 'gesturestart']) {
   $('arena').addEventListener(type, e => e.preventDefault());
 }

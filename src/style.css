@@ -38,7 +38,20 @@ header { display: flex; justify-content: space-between; align-items: center; pad
 .brand { display: flex; gap: 10px; align-items: center; text-decoration: none; color: inherit; font-weight: 800; letter-spacing: .06em; }
 .brand small { display: block; font-weight: 400; color: var(--muted); letter-spacing: 0; }
 .brand-icon { display: grid; place-items: center; width: 34px; height: 34px; background: var(--p1); color: #14140c; border-radius: 8px; font-size: 20px; }
-nav { display: flex; gap: 8px; }
+nav { display: flex; gap: 8px; align-items: center; }
+/* 音乐设置浮层：summary 是导航里的音符按钮，点开下方面板。开/关与音量都在面板里；
+   面板收起靠点外面或 ESC（main.ts），原生 details 只管展开。 */
+.music-wrap { position: relative; }
+/* summary 不是 button，吃不到全局按钮规则，这里逐项抄同一个 DNA（底色、描边、圆角、hover）。 */
+.music-wrap summary { list-style: none; font: inherit; color: inherit; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.music-wrap summary:hover { border-color: var(--muted); }
+.music-wrap summary::-webkit-details-marker { display: none; }
+.music-pop { position: absolute; top: calc(100% + 10px); right: 0; z-index: 30; display: flex; flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 14px; width: max-content; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 18px rgb(0 0 0 / 45%); user-select: none; }
+.music-pop-row { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+/* output 默认是 inline，min-width 不生效，百分比进位会把面板撑宽；inline-block + 4ch 预留
+   加等宽数字，宽度在任何数值下都不变。 */
+.music-pop-row output { display: inline-block; min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
+#music-volume { width: 110px; accent-color: var(--p1); touch-action: none; }
 
 main { max-width: 1080px; margin: 0 auto; padding: 18px 22px 40px; }
 #selection { display: flex; flex-direction: column; }
@@ -109,6 +122,16 @@ canvas.pending { background: linear-gradient(90deg, var(--panel) 25%, var(--pane
 .character.p1.p2.ally { box-shadow: inset 0 0 0 2px var(--p1), inset 0 0 0 4px var(--cyan), inset 0 0 0 6px var(--p2); }
 .slot-tag { position: absolute; top: 6px; left: 6px; font-size: 11px; font-weight: 800; background: #0d0c14; border-radius: 5px; padding: 1px 6px; }
 .char-name { font-weight: 700; }
+
+/* 场景选择：结构对齐参考站的「02 选择场景」区；卡片底色、描边、选中态走本站的 token，
+   选中态直接吃全局 button.active 的 1P 黄。 */
+.stage-select { margin-top: 22px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+.stage-select .sectionline { margin-bottom: 10px; }
+.stage-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.stage-card { padding: 0; overflow: hidden; display: flex; flex-direction: column; text-align: left; min-width: 0; }
+.stage-card img, .stage-random-art { width: 100%; height: 78px; object-fit: cover; image-rendering: pixelated; pointer-events: none; }
+.stage-card b { font-size: 14px; padding: 7px 9px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stage-random-art { display: grid; place-items: center; background: repeating-linear-gradient(135deg, var(--panel-2) 0 12px, var(--panel) 12px 24px); font-weight: 800; font-size: 40px; color: var(--p1); }
 
 .bottom-grid { margin-top: 22px; }
 .movelist { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
@@ -420,6 +443,7 @@ body.wide .touchpad.in-tower .tp-actions { --atk: clamp(86px, 16vmin, 106px); ri
   .brand small { display: none; }
   .brand > span:last-child { white-space: nowrap; }
   nav { gap: 6px; flex: none; }
+  #music-volume { width: 84px; }
   nav button { white-space: nowrap; padding: .3em .55em; font-size: 13px; line-height: 1.2; }
 
   #selection > .sectionline { margin: 2px 0 8px; }
@@ -476,6 +500,10 @@ body.wide .touchpad.in-tower .tp-actions { --atk: clamp(86px, 16vmin, 106px); ri
   .character canvas { width: 100%; height: auto; aspect-ratio: 1; }
   .char-name { max-width: 100%; font-size: 11px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .slot-tag { top: 3px; left: 3px; font-size: 10px; padding: 0 4px; }
+
+  .stage-select { margin-top: 14px; padding: 10px; }
+  .stage-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .stage-card img, .stage-random-art { height: 74px; }
 
   #skills { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   #skills .skill p { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; height: calc(1.45em * 3); }

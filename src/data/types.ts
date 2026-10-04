@@ -199,4 +199,9 @@ export interface StageData {
   accent: string;
   /** Optional backdrop; when present it replaces the flat colours. */
   image?: string;
+  /** Y of the art's standing-ground line in canvas space (image stretched to 960×540).
+      The renderer anchors this line onto FLOOR with a covering zoom; absent = full stretch. */
+  groundY?: number;
+  /** Darkening layer baked over the backdrop; defaults to the shared #10101b20. */
+  shade?: string;
 }

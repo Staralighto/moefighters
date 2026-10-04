@@ -97,6 +97,15 @@ export class Renderer {
     if (g.shake > 0) c.translate((g.random() - .5) * g.shake, (g.random() - .5) * g.shake);
     this.drawStage();
 
+    // 圆形地面影子：跳得越高影越小；中心比脚线高 7px（FLOOR+3 再上移 10），对齐成图的实际脚线。
+    for (const f of g.fighters) {
+      if (violetHidden(f)) continue;
+      c.fillStyle = '#05050c40';
+      c.beginPath();
+      c.ellipse(f.x, FLOOR - 7, Math.max(0, 50 - (FLOOR - f.y) * .09), 9, 0, 0, Math.PI * 2);
+      c.fill();
+    }
+
     for (const e of g.effects) {
       if (e.type !== 'ghost' || e.fighter === undefined) continue;
       // By id: a summoned teammate can leave mid-effect, so index lookups would alias or miss.
@@ -245,20 +254,38 @@ export class Renderer {
       buf.height = H;
       const g = buf.getContext('2d');
       if (g) {
-        if (bg) g.drawImage(bg, 0, 0, W, H);
-        else {
-          g.fillStyle = s.sky; g.fillRect(0, 0, W, FLOOR + 4);
-          g.fillStyle = s.ground; g.fillRect(0, FLOOR + 4, W, H - FLOOR - 4);
-          g.fillStyle = s.accent + '30';
-          for (let x = 40; x < W; x += 120) g.fillRect(x, 60 + (x % 240) / 4, 6, 6);
-        }
-        g.fillStyle = '#10101b20'; g.fillRect(0, 0, W, H);
+        if (bg) this.paintBackdrop(g, bg);
+        else this.paintFlat(g);
+        g.fillStyle = s.shade ?? '#10101b20'; g.fillRect(0, 0, W, H);
         this.stageBuf = buf;
       }
     }
     if (this.stageBuf) { c.drawImage(this.stageBuf, 0, 0); return; }
     // The sheet has not arrived yet: repaint frame by frame until it has, then bake once.
-    if (bg && bg.naturalWidth) c.drawImage(bg, 0, 0, W, H);
-    c.fillStyle = '#10101b20'; c.fillRect(0, 0, W, H);
+    if (bg && bg.naturalWidth) this.paintBackdrop(c, bg);
+    else this.paintFlat(c);
+    c.fillStyle = s.shade ?? '#10101b20'; c.fillRect(0, 0, W, H);
+  }
+
+  /** No art on the stage — none declared, or the file 404'd (the loader drops it from the cache).
+      The flat sky/ground arena is the fallback the stage data always carries. */
+  private paintFlat(g: CanvasRenderingContext2D): void {
+    const s = this.stage;
+    g.fillStyle = s.sky; g.fillRect(0, 0, W, FLOOR + 4);
+    g.fillStyle = s.ground; g.fillRect(0, FLOOR + 4, W, H - FLOOR - 4);
+    g.fillStyle = s.accent + '30';
+    for (let x = 40; x < W; x += 120) g.fillRect(x, 60 + (x % 240) / 4, 6, 6);
+  }
+
+  /** Cover the canvas with the art, anchoring its own ground line (`stage.groundY`, canvas space)
+      onto FLOOR so fighters stand on the painted pavement. A 960×540 stage without `groundY`
+      reduces to the plain full stretch; an off line zooms just enough to keep the canvas covered. */
+  private paintBackdrop(g: CanvasRenderingContext2D, bg: HTMLImageElement): void {
+    const fy = (this.stage.groundY ?? FLOOR) / H;
+    const iw = bg.naturalWidth, ih = bg.naturalHeight;
+    const scale = Math.max(W / iw, FLOOR / (ih * fy), (H - FLOOR) / (ih * (1 - fy)));
+    const dx = (W - iw * scale) / 2;
+    const dy = FLOOR - ih * fy * scale;
+    g.drawImage(bg, dx, dy, iw * scale, ih * scale);
   }
 }

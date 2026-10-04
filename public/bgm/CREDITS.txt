@@ -1,0 +1,4 @@
+garupa-pico-instrumental.m4a
+Source: 《ピコっと!パピっと!!ガルパ☆ピコ!!!》（《BanG Dream! 少女乐团派对！☆PICO》第一季 ED）的伴奏分离轨（no vocals），由项目使用者提供。
+License: 词曲及录音权利归原权利方（Craft Egg / Bushiroad 及各权利人）所有。本项目为非官方同人游戏，仅供非商业学习交流，不纳入本项目代码的授权范围。
+Changes: 由使用者提供的 AAC 源（约 196 kbps）重编码为 128 kbps AAC，衰减 6 dB 增益，加 faststart 便于网页流式播放。
