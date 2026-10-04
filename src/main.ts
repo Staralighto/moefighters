@@ -22,7 +22,9 @@ let game: FightGame | null = null;
 let renderer: Renderer | null = null;
 let raf = 0;
 let lastSetup: MatchSetup | null = null;
-/** Live endless run of whichever sub-mode is being played: null whenever the player is not inside challenge mode. */
+/** Live endless run of whichever sub-mode is being played: set when a challenge fight starts,
+    cleared the moment its battle screen closes. A parked (card-not-yet-picked) run lives in
+    storage only — holding it here would make other modes' end screens read as "in challenge". */
 let challenge: ChallengeRun | null = null;
 
 const input = new KeyboardInput(() => game);
@@ -156,13 +158,14 @@ select.mount();
 }
 watchTouch(() => { applyTouchDevice(); select.refresh(); });
 
-/* A saved run survives a refresh or crash; 激战 wins ties because it is the long-standing mode.
-   With the stage's card already picked the fight restarts directly; otherwise the run just sits
-   parked and the select screen renders its continue entry from storage on its own. */
-const saved = [readRun('brawl'), readRun('climb')].find(r => r?.armed) ?? readRun('brawl') ?? readRun('climb');
+/* An armed run survives a refresh or crash: with the stage's card already picked, the fight was
+   the next thing the player was about to see, so it restarts directly. A parked run (stage won,
+   next card not picked) stays in storage only — seeding it here would leak challenge state into
+   other modes' end screens. The select screen renders a parked run's 继续挑战 entry from storage. */
+const saved = [readRun('brawl'), readRun('climb')].find(r => r?.armed);
 if (saved) {
   challenge = saved;
-  if (saved.armed) startChallengeStage();
+  startChallengeStage();
 }
 
 let selectRaf = 0;
@@ -329,6 +332,9 @@ function restBack(): void {
   cancelAnimationFrame(raf);
   game = null;
   renderer = null;
+  // The fight's run stays parked in storage; the variable itself must not outlive the battle
+  // screen, or a later match in any other mode would read it as "we are inside challenge".
+  challenge = null;
   $('battle').hidden = true;
   $('selection').hidden = false;
   selectRaf = requestAnimationFrame(selectLoop);
@@ -366,7 +372,11 @@ function battleExit(): void {
 $('back').onclick = battleExit;
 $('reselect').onclick = battleExit;
 $('rematch').onclick = () => {
-  if (challenge) {
+  // What 再来一局 does is decided by the fight that just ended, not by whether some run happens
+  // to be parked: a challenge end screen reopens the picker for its next stage, any other mode
+  // restarts its own lastSetup. Inside an end screen game is still that fight, so the mode gate
+  // is exact; the challenge check only guards the callbacks below.
+  if (game?.mode === 'challenge' && challenge) {
     // Endless run: the button is either 下一关 (won) or 再来一次 (lost); both show the foe(s), then a card.
     // The cast locks here too, so a refresh out of the picker keeps it.
     writeRun(challenge.kind, challenge);
