@@ -74,23 +74,49 @@ function stageVeil(gx: number, sway: number): HTMLCanvasElement | null {
 /* Reads game state, writes pixels. Never mutates the game. */
 export class Renderer {
   private readonly ctx: CanvasRenderingContext2D;
+  private readonly canvas: HTMLCanvasElement;
   private readonly views: Map<string, FighterView>;
   private readonly stage: StageData;
   private readonly images: ImageCache;
-  /** The backdrop + dim overlay never change once the sheet is in, so they bake to one blit. */
-  private stageBuf: HTMLCanvasElement | undefined;
+  /** World → raster scale: the backing store is device sized, the world stays 960×540. */
+  private sx = 1;
+  private sy = 1;
 
   constructor(canvas: HTMLCanvasElement, views: Map<string, FighterView>, stage: StageData, images: ImageCache) {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw Error('Canvas 2D 不可用');
     this.ctx = ctx;
+    this.canvas = canvas;
     this.views = views;
     this.stage = stage;
     this.images = images;
+    this.resize();
+  }
+
+  /** Size the backing store to the on-screen box × devicePixelRatio, so the compositor blits
+      the canvas 1:1 (the CSS `image-rendering: pixelated` stretch never resamples it) and the
+      fixed 960×540 world rasterises at screen resolution instead. Cheap to call every frame:
+      a no-op unless the box, the zoom or the monitor's scale moved. */
+  resize(): void {
+    const cw = this.canvas.clientWidth, ch = this.canvas.clientHeight;
+    if (!cw || !ch) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(1, Math.round(cw * dpr));
+    const h = Math.max(1, Math.round(ch * dpr));
+    if (this.canvas.width !== w || this.canvas.height !== h) {
+      this.canvas.width = w;
+      this.canvas.height = h;
+    }
+    this.sx = w / W;
+    this.sy = h / H;
   }
 
   draw(g: FightGame): void {
     const c = this.ctx;
+    // Refit before painting: a ResizeObserver would fire after this rAF and clearing the
+    // bitmap there would flash a blank frame on every window change.
+    this.resize();
+    c.setTransform(this.sx, 0, 0, this.sy, 0, 0);
     c.imageSmoothingEnabled = false;
     c.clearRect(0, 0, W, H);
     c.save();
@@ -248,22 +274,19 @@ export class Renderer {
   private drawStage(): void {
     const c = this.ctx, s = this.stage;
     const bg = s.image ? this.images.get(s.image) : undefined;
-    if (!this.stageBuf && (!s.image || (bg && bg.naturalWidth))) {
-      const buf = document.createElement('canvas');
-      buf.width = W;
-      buf.height = H;
-      const g = buf.getContext('2d');
-      if (g) {
-        if (bg) this.paintBackdrop(g, bg);
-        else this.paintFlat(g);
-        g.fillStyle = s.shade ?? '#10101b20'; g.fillRect(0, 0, W, H);
-        this.stageBuf = buf;
-      }
+    // The art is world-sized (960×540), so painting it straight onto the transformed canvas
+    // each frame is the same single resample a bake would produce, with no buffer to size or
+    // rebake on window changes. Smoothing stays on for the upscale and off for the rest of
+    // the frame.
+    // ponytail: no backdrop bake — drawImage allocates nothing, so this only costs one scaled
+    // quad per frame. Re-add a bake if phone profiling ever blames this line.
+    if (bg && bg.naturalWidth) {
+      c.imageSmoothingEnabled = true;
+      this.paintBackdrop(c, bg);
+      c.imageSmoothingEnabled = false;
+    } else {
+      this.paintFlat(c);
     }
-    if (this.stageBuf) { c.drawImage(this.stageBuf, 0, 0); return; }
-    // The sheet has not arrived yet: repaint frame by frame until it has, then bake once.
-    if (bg && bg.naturalWidth) this.paintBackdrop(c, bg);
-    else this.paintFlat(c);
     c.fillStyle = s.shade ?? '#10101b20'; c.fillRect(0, 0, W, H);
   }
 

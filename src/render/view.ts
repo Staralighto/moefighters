@@ -11,6 +11,9 @@ import { SpriteView } from './spriteView.ts';
 export interface FrozenPose { sheet: string; col: number; row: number; facing: number }
 
 export interface FighterView {
+  /** Draws in world coordinates under the caller's entry transform, which defines the raster
+      density (device pixels for the arena, a portrait's own scale for its canvas); the sprite
+      path reads that scale back to bake cells at raster resolution. */
   draw(ctx: CanvasRenderingContext2D, f: Fighter, x: number, y: number, alpha: number, tint?: string, outline?: string, pose?: FrozenPose): void;
   /** False while the idle sheet is still downloading. Select portraits hold their box instead of drawing the block figure. */
   idleReady?(): boolean;

@@ -7,9 +7,10 @@ const rimCache = new Map<string, HTMLCanvasElement>();
 const cellCache = new Map<string, HTMLCanvasElement>();
 const tintCache = new Map<string, HTMLCanvasElement>();
 
-/** ponytail: LRU cap per baked-cell cache. A cell is h×h (~181px ≈ 130KB), the working set is
- *  the fielded cast's cells, and 256 keeps a roster crawl bounded at ~34MB; eviction rebuilds
- *  on demand, so the worst case is a one-frame bake. Raise only with a memory reason. */
+/** ponytail: LRU cap per baked-cell cache. A cell is h×h (181px ≈ 130KB on a dpr-1 canvas,
+ *  ~240KB at the arena's usual device scale), the working set is the fielded cast's cells,
+ *  and 256 keeps the worst case bounded at ~60MB; eviction rebuilds on demand, so the worst
+ *  case is a one-frame bake. Raise only with a memory reason. */
 const CELL_CACHE_MAX = 256;
 const RIM_CACHE_MAX = 128;
 
@@ -30,8 +31,8 @@ function cacheCell(cache: Map<string, HTMLCanvasElement>, max: number, key: stri
   return made;
 }
 
-/** The 256px cell pre-scaled to draw height with the flash filter baked in, so the per-draw
- *  cost is a 1:1 blit instead of a high-quality resample of the whole sheet. */
+/** The 256px cell pre-scaled to the raster size it is blitted at (with the flash filter baked
+ *  in), so the per-draw cost is a 1:1 blit instead of a high-quality resample of the whole sheet. */
 function prescaledCell(im: HTMLImageElement, sx: number, sy: number, h: number, filter: string): HTMLCanvasElement {
   return cacheCell(cellCache, CELL_CACHE_MAX, im.src + '|' + sx + '|' + sy + '|' + h + '|' + filter, () => {
     const c = document.createElement('canvas');
@@ -105,28 +106,28 @@ function hardRim(im: HTMLImageElement, sx: number, sy: number, h: number, color:
   });
 }
 
-/** Flat colour wash over the opaque pixels, baked per (sheet, cell, height, tint).
- *  Same trick as the 墨缇丝 afterimage. */
-function drawTint(ctx: CanvasRenderingContext2D, im: HTMLImageElement, sx: number, sy: number, h: number, tint: string): void {
+/** Flat colour wash over the opaque pixels, baked per (sheet, cell, raster size, tint).
+ *  Same trick as the 墨缇丝 afterimage. `h` is the logical draw size, `hs` the raster size. */
+function drawTint(ctx: CanvasRenderingContext2D, im: HTMLImageElement, sx: number, sy: number, h: number, hs: number, tint: string): void {
   if (typeof document === 'undefined') {
-    ctx.drawImage(im, sx, sy, CELL, CELL, -h / 2, -h, h, h);
+    ctx.drawImage(im, sx, sy, CELL, CELL, -Math.round(h / 2), -h, h, h);
     return;
   }
-  const baked = cacheCell(tintCache, CELL_CACHE_MAX, im.src + '|' + sx + '|' + sy + '|' + h + '|' + tint, () => {
+  const baked = cacheCell(tintCache, CELL_CACHE_MAX, im.src + '|' + sx + '|' + sy + '|' + hs + '|' + tint, () => {
     const c = document.createElement('canvas');
-    c.width = h;
-    c.height = h;
+    c.width = hs;
+    c.height = hs;
     const g = c.getContext('2d');
     if (!g) return c;
     g.imageSmoothingEnabled = true;
     g.imageSmoothingQuality = 'high';
-    g.drawImage(im, sx, sy, CELL, CELL, 0, 0, h, h);
+    g.drawImage(im, sx, sy, CELL, CELL, 0, 0, hs, hs);
     g.globalCompositeOperation = 'source-atop';
     g.fillStyle = tint;
-    g.fillRect(0, 0, h, h);
+    g.fillRect(0, 0, hs, hs);
     return c;
   });
-  ctx.drawImage(baked, -h / 2, -h, h, h);
+  ctx.drawImage(baked, -Math.round(h / 2), -h, h, h);
 }
 
 /* Looks up the cache every frame so a late-loaded sheet replaces the geometry fallback without rebuilding views. */
@@ -167,6 +168,14 @@ export class SpriteView implements FighterView {
     const im = src ? this.images.get(src) : undefined;
     if (!im || !im.naturalWidth) { this.fallback.draw(ctx, f, x, y, alpha, undefined, outline); return; }
     const h = src === this.king ? this.height * this.kingScale : this.height;
+    // Bake the cell at the resolution this canvas rasterises at (device pixels in the arena,
+    // the portrait's own scale on the select screen), so the blit below is 1:1 instead of a
+    // resample. hypot of the x basis is the scale under any entry rotation or skew; the entry
+    // transform only — the facing flip and the cartwheel rotate after this. The cap bounds
+    // bake memory on huge canvases.
+    const m = ctx.getTransform();
+    const hs = Math.min(512, Math.max(1, Math.round(h * Math.hypot(m.a, m.b))));
+    const ax = -Math.round(h / 2);
     const cell = boxed ? { sx: 0, sy: 0 } : clip;
     ctx.save();
     try {
@@ -188,19 +197,18 @@ export class SpriteView implements FighterView {
       // 无敌仓库大王: sink the one-picture box onto the floor line (see BOX_SINK).
       if (boxed) ctx.translate(0, BOX_SINK);
       // Undo the body offset baked into the cell so only the prop hangs off the fighter origin.
-      if (!boxed && clip.ox) ctx.translate(-clip.ox * h / CELL, 0);
+      if (!boxed && clip.ox) ctx.translate(-Math.round(clip.ox * h / CELL), 0);
       ctx.globalAlpha = alpha;
       if (outline && typeof document !== 'undefined') {
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(hardRim(im, cell.sx, cell.sy, h, outline), -h / 2 - RIM_PAD, -h - RIM_PAD);
+        ctx.drawImage(hardRim(im, cell.sx, cell.sy, h, outline), ax - RIM_PAD, -h - RIM_PAD);
       }
-      // Source cell is 256, drawn near 181. The prescale cache bakes the high-quality
-      // downscale (and the flash filter) once; the per-draw cost is a 1:1 blit.
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      if (tint) drawTint(ctx, im, cell.sx, cell.sy, h, tint);
-      else ctx.drawImage(prescaledCell(im, cell.sx, cell.sy, h, spriteFilter(f)), -h / 2, -h, h, h);
+      // Source cell is 256, baked once per raster size (see hs); the per-draw cost is a
+      // nearest-neighbour 1:1 blit. Smoothing stays off so the blit cannot soften the pixels.
+      ctx.imageSmoothingEnabled = false;
+      if (tint) drawTint(ctx, im, cell.sx, cell.sy, h, hs, tint);
+      else ctx.drawImage(prescaledCell(im, cell.sx, cell.sy, hs, spriteFilter(f)), ax, -h, h, h);
     } finally {
       ctx.restore();
     }
