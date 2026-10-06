@@ -5,7 +5,7 @@ import { AIR_SKILLS } from '../data/skills.ts';
 import { ROSTER_BY_ID } from '../data/characters.ts';
 import { advanceAnim } from './animState.ts';
 import { easeSealSwells, effectSettled, stepProjectiles, updateAttack } from './combat.ts';
-import { addMod, regenPerSec, speedMul, tickMods } from './mods.ts';
+import { addMod, jumpMul, regenPerSec, speedMul, tickMods } from './mods.ts';
 import { SCRIPTS } from './scripts.ts';
 import { stepAI } from './ai.ts';
 import { COMBO_DECAY, COMBO_ESCAPE, CONTROLS, FLOOR, GRAVITY, INPUT_BUFFER, SIDE, STEP, X_MAX, X_MIN, clamp } from './constants.ts';
@@ -913,7 +913,7 @@ export class FightGame {
     if (jumpHeld && canHop && f.vy >= 0 && !(f.attack && f.attack.index > 1)) {
       const convert = f.attack && !f.attack.skill.air && f.attack.index <= 1 ? f.attack.index : -1;
       if (convert >= 0) { f.cooldowns[convert] = 0; f.attack = null; }
-      f.vy = -600;
+      f.vy = -600 * jumpMul(f);
       f.jumpBuffer = 0;
       if (f.recLeft > 0) f.recTape.push({ t: RECORD_TIME - f.recLeft, kind: 'jump' });
       this.audio.play('jump');
@@ -925,7 +925,7 @@ export class FightGame {
     else if (f.jumpBuffer > 0) {
       if (canHop && !f.attack) {
         f.jumpBuffer = 0;
-        f.vy = -600;
+        f.vy = -600 * jumpMul(f);
         if (f.recLeft > 0) f.recTape.push({ t: RECORD_TIME - f.recLeft, kind: 'jump' });
         this.audio.play('jump');
         this.effect('dust', f.x, FLOOR, '#afa1c1', .3, { radius: 25 });

@@ -104,6 +104,8 @@ export interface Fighter {
   muscle: number;
   /** 秋叶原马拉松: seconds of faster walking left. Stacks on top of moveMul. */
   sprint: number;
+  /** 花道·缠: seconds of 减速 left. Walk and jump both run through it (mods.speedMul / jumpMul). */
+  slow: number;
   /** 秋叶原马拉松: seconds of no-flinch. Damage and knockback stay full; grabs and supers ignore it. */
   poise: number;
   /** 九字真言: seconds the fighter cannot block or back-dodge. Walking and jumping stay open. */
@@ -216,7 +218,7 @@ export function makeFighter(
     hp: data.hp, energy: Math.min(init.energy, cap), energyMax: cap, guard: 100, blocking: false,
     stun: 0, invuln: 0, comboTime: 0, hitFlash: 0, landing: 0, guardBroken: 0,
     knocked: 0, downTime: 0, hitBySuper: false, root: 0, rootHits: 0, rootBreak: 0, rootFx: '', rootLevel: 'move', ban: 0, beatStacks: 0, frenzy: 0,
-    jabChain: 0, jabChainClock: 0, braced: 0, braceFx: 0, noGain: 0, muscle: 0, sprint: 0, poise: 0, purge: 0, frail: 0, frailBonus: 0, feast: 0, box: 0,
+    jabChain: 0, jabChainClock: 0, braced: 0, braceFx: 0, noGain: 0, muscle: 0, sprint: 0, slow: 0, poise: 0, purge: 0, frail: 0, frailBonus: 0, feast: 0, box: 0,
     dodge: 0, dodgeCd: 0, dodgeRequest: false, dodgeBuffer: 0, blockTap: -1, blockBuffer: 0, blockLeft: 0,
     debt: 0, debtDmg: 0,
     attack: null, attackSerial: 0, cooldowns: [0, 0, 0, 0, 0, 0], queue: [],

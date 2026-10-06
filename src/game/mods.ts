@@ -3,7 +3,7 @@ import type { FightGame } from './game.ts';
 
 /** Scalar buffs. root, ban, frenzy and king stay on the fighter: they stop clocks and swap moves. */
 export type ModKind =
-  | 'brace' | 'poise' | 'dmgDealt' | 'dmgTaken' | 'speed' | 'regen'
+  | 'brace' | 'poise' | 'dmgDealt' | 'dmgTaken' | 'speed' | 'slow' | 'regen'
   | 'noGain' | 'lockNormals' | 'lockGuard' | 'thorns' | 'debt';
 
 /**
@@ -15,6 +15,8 @@ export interface Mod {
   kind: ModKind;
   left: number;
   v?: number;
+  /** 花道·缠: jump launch-velocity multiplier carried by a 'slow' mod. */
+  jump?: number;
   tag?: string;
   acc?: number;
   onExpire?: (g: FightGame, f: Fighter) => void;
@@ -32,6 +34,7 @@ export function addMod(f: Fighter, kind: ModKind, time: number, opt: Partial<Mod
   if (tag) m.tag = tag;
   m.left = opt.max ? Math.max(m.left, time) : time;
   if (opt.v != null) m.v = opt.v;
+  if (opt.jump != null) m.jump = opt.jump;
   if (opt.acc != null) m.acc = opt.acc;
   if (opt.onExpire) m.onExpire = opt.onExpire;
   if (opt.pulse) m.pulse = opt.pulse;
@@ -70,10 +73,18 @@ export function dmgTakenMul(f: Fighter, opt: { grab: boolean; superHit: boolean;
   return m;
 }
 
-/** Walk multiplier. 1 when no speed mod is up. */
+/** Walk multiplier. 1 when nothing changes the pace. Sprint speeds up, 减速 slows down. */
 export function speedMul(f: Fighter): number {
-  const m = f.mods.find(x => x.kind === 'speed' && x.left > 0);
-  return m?.v ?? 1;
+  let m = 1;
+  for (const mod of f.mods) if ((mod.kind === 'speed' || mod.kind === 'slow') && mod.left > 0) m *= mod.v ?? 1;
+  return m;
+}
+
+/** Jump launch-velocity multiplier. 1 when no 减速 is up; the height scales with the square. */
+export function jumpMul(f: Fighter): number {
+  let m = 1;
+  for (const mod of f.mods) if (mod.kind === 'slow' && mod.left > 0) m *= mod.jump ?? 1;
+  return m;
 }
 
 export function addDebt(f: Fighter, amount: number): void {
@@ -123,6 +134,7 @@ function project(f: Fighter): void {
   f.feast = left(f, 'lockNormals', 'feast');
   f.box = left(f, 'dmgTaken', 'box');
   f.sprint = left(f, 'speed');
+  f.slow = left(f, 'slow');
   f.noGain = left(f, 'noGain');
   f.purge = left(f, 'lockGuard');
   f.rose = left(f, 'thorns', 'rose');

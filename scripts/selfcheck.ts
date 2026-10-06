@@ -11,7 +11,7 @@ import { clipFor, drumRow } from '../src/render/clips.ts';
 import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
 import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell } from '../src/render/fx.ts';
 import { previewFighter, gainEnergy } from '../src/game/fighter.ts';
-import { addMod, clearMod } from '../src/game/mods.ts';
+import { addMod, clearMod, jumpMul, speedMul } from '../src/game/mods.ts';
 import { easeLoad, nextSrc } from '../src/assets/loader.ts';
 import { isTouchJump, thumbBandTop } from '../src/game/input.ts';
 import { battleFrame } from '../src/ui/battleFrame.ts';
@@ -3172,6 +3172,86 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.equal(p2.debtDmg, 0, 'control damage is not billed');
   run(g, 2);
   assert.equal(g.phase, 'fight', 'the round keeps running after a data-only move');
+}
+
+// mitake: 花道·缠 slows walk and jump, 不良主唱 is a radial ground smash, 像以前一样 breaks out
+// into a shove + brace, and 宣战布告 opens the frenzy sheet without locking the specials
+{
+  const mitake = ROSTER.findIndex(c => c.id === 'mitake');
+  assert.ok(mitake >= 0, 'mitake is on the roster');
+  assert.ok(PLAYABLE.some(c => c.id === 'mitake'), 'mitake is playable');
+  const data = ROSTER[mitake];
+  assert.equal(data.skills[2].slow, 4, '花道·缠 slows for 4s');
+  assert.equal(data.skills[2].slowMul, .6, '花道·缠 dulls the walk to 60%');
+  assert.equal(data.skills[2].slowJump, .75, '花道·缠 dulls the jump to 75%');
+  assert.equal(data.skills[3].hitbox, 'radial', '不良主唱 is radial');
+  assert.equal(data.skills[3].hitAll, true, '不良主唱 hits everyone in the ring');
+  assert.equal(data.skills[3].reach, 'ground', '不良主唱 stays on the ground');
+  assert.equal(data.skills[4].breakout, true, '像以前一样 is a breakout');
+  assert.equal(data.skills[5].cost, 115, '宣战布告 costs 115');
+  assert.ok(data.frenzy && data.frenzy.time === 8, 'the form runs 8s');
+
+  // U: the blossom lands, the victim is slowed, and the debuff lifts on its own clock
+  {
+    const g = newGame(mitake, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 300; p2.facing = -1;
+    g.keyDown('KeyU');
+    let saw = false;
+    for (let i = 0; i < Math.round(1 / STEP); i++) {
+      g.step(STEP);
+      if (g.projectiles.some(p => p.fx === 'hana')) saw = true;
+    }
+    assert.ok(saw, '花道·缠 spawns a blossom');
+    assert.ok(p2.slow > 0, '花道·缠 slows the victim');
+    assert.ok(speedMul(p2) < 1, 'the slow dulls the walk');
+    assert.ok(jumpMul(p2) < 1, 'the slow dulls the jump');
+    run(g, 4.2);
+    assert.equal(p2.slow, 0, 'the slow expires');
+    assert.equal(speedMul(p2), 1, 'the walk returns to normal');
+    assert.equal(jumpMul(p2), 1, 'the jump returns to normal');
+  }
+  // I: a radial ground smash hits in front and behind, and deals damage
+  {
+    const g = newGame(mitake, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 150; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyI'); run(g, .6);
+    assert.ok(hp - p2.hp > 0, `不良主唱 deals damage, dealt ${hp - p2.hp}`);
+    assert.ok(p2.knocked > 0 || p2.y < FLOOR - 1, 'the smash knocks down');
+    const behind = newGame(mitake, 2); const [q1, q2] = behind.fighters; dummy(behind);
+    q2.x = q1.x - 150; q2.facing = 1;
+    const hp2 = q2.hp;
+    behind.keyDown('KeyI'); run(behind, .6);
+    assert.ok(hp2 - q2.hp > 0, 'the smash reaches behind her too');
+  }
+  // O: no damage, a shove, and a brace armed for the window
+  {
+    const g = newGame(mitake, 2); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 120; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyO'); run(g, .4);
+    assert.equal(p2.hp, hp, '像以前一样 deals no damage');
+    assert.ok(Math.abs(p2.x - p1.x) > 120, `像以前一样 shoves the ring, gap ${Math.abs(p2.x - p1.x)}`);
+    assert.ok(p1.braced > 4, `the brace is armed, left ${p1.braced}`);
+  }
+  // L: the form boosts the jab, locks gains, and swaps the common sheet without a king lock
+  {
+    const g = newGame(mitake, 2); const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = p1.energyMax;
+    g.keyDown('KeyL'); run(g, .8);
+    assert.ok(p1.frenzy > 6, `宣战布告 opens the form, left ${p1.frenzy}`);
+    assert.ok(p1.noGain > 6, `the form locks gains, left ${p1.noGain}`);
+    assert.ok(!p1.king, 'the form does not lock the specials');
+    p2.x = p1.x + 60; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyJ'); run(g, .3);
+    // boosted jab is round(26 * 1.25) = 33, and the armor dummy takes 90% → 29.7
+    assert.ok(hp - p2.hp > 25, `the form boosts the jab, dealt ${hp - p2.hp}`);
+    const pf = previewFighter(data, 0);
+    pf.frenzy = 8;
+    pf.attack = { skill: data.skills[0], index: 0, serial: 1, t: .2, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 };
+    assert.equal(clipFor(pf).sheet, 'frenzy', 'the form reads the frenzy sheet');
+  }
 }
 
 console.log('selfcheck ok');

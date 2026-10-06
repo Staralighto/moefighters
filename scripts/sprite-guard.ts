@@ -82,25 +82,31 @@ function chromeBin(): string {
 export function rasterSheet(pngPath: string, svg: string, w: number, h: number): void {
   assertWritable(pngPath);
   const scratch = mkdtempSync(join(tmpdir(), 'sheet-'));
-  const svgPath = join(scratch, 'sheet.svg');
-  const shot = join(scratch, 'sheet.png');
-  writeFileSync(svgPath, svg);
-  const url = 'file:///' + svgPath.replaceAll('\\', '/');
-  const run = spawnSync(chromeBin(), [
-    '--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=1',
-    '--default-background-color=00000000',
-    `--user-data-dir=${join(scratch, 'profile')}`, `--window-size=${w},${h}`, `--screenshot=${shot}`, url,
-  ], { stdio: 'pipe' });
-  if (run.status !== 0 || !existsSync(shot)) {
+  try {
+    const svgPath = join(scratch, 'sheet.svg');
+    const shot = join(scratch, 'sheet.png');
+    writeFileSync(svgPath, svg);
+    const url = 'file:///' + svgPath.replaceAll('\\', '/');
+    const run = spawnSync(chromeBin(), [
+      '--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=1',
+      '--default-background-color=00000000',
+      `--user-data-dir=${join(scratch, 'profile')}`, `--window-size=${w},${h}`, `--screenshot=${shot}`, url,
+    ], { stdio: 'ignore' });
+    if (run.status !== 0 || !existsSync(shot)) {
+      // stdio stays 'ignore': piping a Windows Chrome child trips EBUSY in spawnSync, so the
+      // exit code and the missing file are the signal; `run.error` carries the spawn failure.
+      throw new Error(`raster ${pngPath} failed (exit ${run.status}${run.error ? ': ' + run.error.message : ''})`);
+    }
+    const buf = readFileSync(shot);
+    const pw = buf.readUInt32BE(16), ph = buf.readUInt32BE(20);
+    if (pw !== w || ph !== h) throw new Error(`${pngPath} raster is ${pw}x${ph}, wanted ${w}x${h}`);
+    mkdirSync(dirname(pngPath), { recursive: true });
+    writeFileSync(pngPath, stampPlaceholder(buf));
+  } finally {
+    // Clean up on every exit path — including chromeBin() throwing above the spawn or a failed
+    // write, which the old post-spawn rmSync missed and left %TEMP%\sheet-* behind.
     rmSync(scratch, { recursive: true, force: true });
-    throw new Error(`raster ${pngPath} failed\n${run.stderr?.toString() ?? ''}`);
   }
-  const buf = readFileSync(shot);
-  rmSync(scratch, { recursive: true, force: true });
-  const pw = buf.readUInt32BE(16), ph = buf.readUInt32BE(20);
-  if (pw !== w || ph !== h) throw new Error(`${pngPath} raster is ${pw}x${ph}, wanted ${w}x${h}`);
-  mkdirSync(dirname(pngPath), { recursive: true });
-  writeFileSync(pngPath, stampPlaceholder(buf));
 }
 
 /** Every rasterSheet caller shares SHEET_SCALE; a private literal is how the 128-era

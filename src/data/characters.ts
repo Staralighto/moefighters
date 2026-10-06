@@ -752,9 +752,58 @@ export const ROSTER: CharacterData[] = [
       }),
     ],
   },
+  {
+    id: 'mitake', name: '美竹兰', title: '主唱 / 挑染', quote: 'いつも通り、行こう。', color: '#EE0022',
+    ...stats('rush'),
+    // 宣战布告: the frenzy clock drives the aggressive sheet swap; no king flag, so U I O L stay open.
+    frenzy: { rate: 1.4, rangeMul: 1.15, cdMul: .6, damageMul: 1.25, chain: false, time: 8, tint: '#EE0022' },
+    view: {
+      kind: 'sprite', common: '/sprites/mitake/common.png', special: '/sprites/mitake/special.png', height: 181,
+      frenzy: '/sprites/mitake/frenzy.png',
+    },
+    skills: [
+      skill(0, 'light', '拨弦'),
+      skill(1, 'heavy', '横踢'),
+      skill(2, 'projectile', '花道·缠', {
+        damage: 22, speed: 520, size: 46, life: 1.8, start: .3, duration: .7, cd: 6, fx: 'hana',
+        slow: 4, slowMul: .6, slowJump: .75,
+        knock: 120, knockOnBlock: true,
+        brief: '掷出花枝；命中后减速，移动与跳跃变钝',
+        detail: '花枝命中后 4 秒内对方移动降为六成、跳跃高度约减半；可格挡、可跳过',
+      }),
+      skill(3, 'sweep', '不良主唱', {
+        damage: 58, range: 170, start: .3, duration: .75, cd: 6.5, fx: 'guitar-smash',
+        hitbox: 'radial', hitAll: true, reach: 'ground', knock: 480,
+        brief: '抡起吉他砸地；范围大，击倒',
+        detail: '吉他从上往下砸，震开身周地面：半径 170 内全部击倒；打不到空中的对手',
+      }),
+      skill(4, 'endure', '像以前一样', {
+        damage: 0, range: 250, start: .26, duration: .85, cd: 8, breakout: true, fx: 'as-usual',
+        holdEndure: true,
+        onActive: [
+          { op: 'fx', life: .55, radius: 250, dir: true },
+          { op: 'repel', range: 250, push: 620, stun: .3 },
+          { op: 'mod', kind: 'brace', time: 5 },
+        ],
+        brief: '震开周围并解除受控；随后霸体',
+        detail: '以自身为中心的红音波震退周围敌人；可解控；随后 5 秒霸体（受伤降低 33%）',
+      }),
+      skill(5, 'endure', '宣战布告', {
+        cost: 115, damage: 0, range: 200, start: .5, duration: 1.0, fx: 'declaration',
+        onActive: [
+          { op: 'form' },
+          { op: 'mod', kind: 'noGain' },
+          { op: 'fx', type: 'declaration', life: .9, radius: 200, announce: { color: '#EE0022', life: .9, size: 19, y: -240 } },
+          { op: 'repel', push: 420 },
+        ],
+        brief: '挑染燃红；普攻变强变快，禁回气',
+        detail: '挑染亮起红光，进入 8 秒觉醒：普攻更快更强、红色残影；期间无法获得气',
+      }),
+    ],
+  },
 ];
 
 /** Select screen. gale, ember and boulder stay on ROSTER for the headless checks. */
-export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki' || c.id === 'rana' || c.id === 'arale' || c.id === 'miyako' || c.id === 'ritsu' || c.id === 'nonoka' || c.id === 'yuno' || c.id === 'viola' || c.id === 'mana' || c.id === 'kokoro' || c.id === 'kasumi' || c.id === 'yukina' || c.id === 'arisa');
+export const PLAYABLE = ROSTER.filter(c => c.id === 'sakiko' || c.id === 'mutsumi' || c.id === 'uika' || c.id === 'nyamu' || c.id === 'umiri' || c.id === 'anon' || c.id === 'soyo' || c.id === 'tomori' || c.id === 'taki' || c.id === 'rana' || c.id === 'arale' || c.id === 'miyako' || c.id === 'ritsu' || c.id === 'nonoka' || c.id === 'yuno' || c.id === 'viola' || c.id === 'mana' || c.id === 'kokoro' || c.id === 'kasumi' || c.id === 'yukina' || c.id === 'arisa' || c.id === 'mitake');
 
 export const ROSTER_BY_ID = new Map(ROSTER.map(c => [c.id, c]));
