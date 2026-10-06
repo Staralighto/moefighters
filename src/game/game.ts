@@ -915,10 +915,11 @@ export class FightGame {
     // 跳取消: a skill can name the second a jump press drops the move and hops. No cooldown refund —
     // the cast was paid. The cancel binds to that one attack instance, so a move queued on the same
     // frame is not eaten by the buffered hop. Jabs keep their own convert path below.
-    const skillHold = f.attack && f.attack.index > 1;
-    const cancelTarget = skillHold && f.attack.skill.jumpCancel != null && f.attack.t >= (f.attack.skill.jumpCancel ?? 0)
-      ? f.attack
-      : null;
+    // Snapshot the swing. `skillHold` is only a boolean, so it does not keep `f.attack` narrowed.
+    const attack = f.attack;
+    const skillHold = !!attack && attack.index > 1;
+    const cancelAt = attack && attack.index > 1 ? attack.skill.jumpCancel : null;
+    const cancelTarget = attack && attack.index > 1 && cancelAt != null && attack.t >= cancelAt ? attack : null;
     // A held jump leaves the ground during a jab and comes back out on landing. Skills stay put unless they say otherwise.
     if (jumpHeld && canHop && f.vy >= 0 && (!skillHold || cancelTarget)) {
       const convert = f.attack && !f.attack.skill.air && f.attack.index <= 1 ? f.attack.index : -1;
