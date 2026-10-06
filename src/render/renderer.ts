@@ -152,6 +152,7 @@ export class Renderer {
       view.draw(c, f, f.x, f.hp <= 0 ? FLOOR : f.y, f.hp <= 0 ? .3 : f.basic ? .55 : f.echo ? .45 : 1, undefined, outline);
       if (f.blocking) drawEffect(c, { type: 'shield', x: f.x + f.facing * 28, y: f.y - 80, color: '#a6eeff', life: .14, max: .22, radius: 58 });
       if (f.root > 0 && f.hp > 0) drawRootFx(c, f, g.age);
+      if (f.slow > 0 && f.hp > 0) drawEffect(c, { type: 'petal-aura', x: f.x, y: f.y - 105, color: '#EE0022', life: 1, max: 1, radius: 44, age: g.age });
       drawGauge(c, f);
       if (f.feast > 0 && f.hp > 0) drawEffect(c, { type: 'feast', x: f.x, y: f.y - 92, color: '#9ad4ff', life: 1, max: 1, radius: 40 });
       if (f.debt > 0 && f.hp > 0) {

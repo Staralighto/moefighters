@@ -403,6 +403,11 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       defender.blockBuffer = 0;
       defender.blockLeft = 0;
       defender.blocking = false;
+      // 花道·缠: a soft control that rides the same clean-hit gate as the root — braced and
+      // poised bodies never reach this branch, so they shrug it off too.
+      if (skill.slow) {
+        addMod(defender, 'slow', skill.slow, { v: skill.slowMul ?? .6, jump: skill.slowJump ?? .75 });
+      }
       if (skill.root && !wasRooted) {
         // 定身: the parameterized control. root seconds and the tier come from the skill,
         // rootBreak clean hits shake it off early (default 2, 0 holds to the clock),

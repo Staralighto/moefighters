@@ -1357,6 +1357,82 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.restore();
       break;
     }
+    case 'petal-aura': {
+      // 花道·缠: petals orbit the slowed body for as long as the debuff holds (drawn every frame
+      // with life === max, so the motion reads off e.age, never off the fade clock).
+      const t = e.age ?? 0;
+      const rx = (e.radius ?? 44) * .9;
+      ctx.translate(e.x, e.y);
+      for (let i = 0; i < 6; i++) {
+        const a = t * 1.6 + (i / 6) * Math.PI * 2;
+        ctx.save();
+        ctx.globalAlpha = .5 + .4 * Math.sin(t * 3 + i);
+        ctx.translate(Math.cos(a) * rx, Math.sin(a) * 18 - 6 + Math.sin(t * 2 + i) * 4);
+        ctx.rotate(a * 1.3);
+        ctx.fillStyle = i % 2 ? '#ffb8cf' : e.color;
+        ctx.beginPath(); ctx.ellipse(0, 0, 6.5, 3.2, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+      break;
+    }
+    case 'guitar-smash': {
+      // 不良主唱: a guitar silhouette snaps down and a ground shock ring spreads from the feet.
+      const rad = (e.radius ?? 90) * 1.7;
+      ctx.translate(e.x, e.y);
+      ctx.save();
+      ctx.globalAlpha = (1 - p) * .95;
+      ctx.rotate((e.dir ?? 1) * (.55 - p * .9));
+      ctx.fillStyle = '#2a2230';
+      ctx.beginPath(); ctx.ellipse(0, 0, 25, 17, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = e.color;
+      ctx.beginPath(); ctx.ellipse(0, 0, 20, 13, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#151222';
+      ctx.beginPath(); ctx.arc(0, 0, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#2a2230';
+      ctx.lineWidth = 7;
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(0, -11); ctx.lineTo(5, -68); ctx.stroke();
+      ctx.restore();
+      ctx.globalAlpha *= 1 - p;
+      ctx.strokeStyle = e.color;
+      ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.ellipse(0, 0, rad * (.3 + p * .7), 15 + p * 13, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = '#ffd6e0';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(0, 0, rad * (.3 + p * .7) * .6, 9 + p * 7, 0, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
+    case 'as-usual': {
+      // 像以前一样: a red sonic ring bursts out of the chest in the screen plane.
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= 1 - p;
+      ctx.strokeStyle = e.color;
+      ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(0, 0, (e.radius ?? 250) * Math.max(p, .12), 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = '#ffd6e0';
+      ctx.lineWidth = 2;
+      ctx.globalAlpha *= .7;
+      ctx.beginPath(); ctx.arc(0, 0, (e.radius ?? 250) * Math.max(p, .12) * .66, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
+    case 'declaration': {
+      // 宣战布告: a red pillar of light under a spreading burst ring.
+      const rad = e.radius ?? 200;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= 1 - p;
+      ctx.fillStyle = e.color;
+      ctx.beginPath();
+      ctx.moveTo(-28, 150); ctx.lineTo(-11, -rad * 1.05); ctx.lineTo(11, -rad * 1.05); ctx.lineTo(28, 150);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = e.color;
+      ctx.lineWidth = 6 * (1 - p) + 1;
+      ctx.beginPath(); ctx.arc(0, 0, rad * p, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = '#fff0f2';
+      ctx.lineWidth = 2;
+      ctx.globalAlpha *= .8;
+      ctx.beginPath(); ctx.arc(0, 0, rad * p * .6, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
     case 'super':
     default:
       ctx.translate(e.x, e.y); ctx.rotate(p * 1.5);
@@ -1954,6 +2030,25 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
       ctx.stroke();
       ctx.fillStyle = '#fffbe0';
       ctx.beginPath(); ctx.arc(-r * .16, -r * .2, r * .14, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case 'hana': {
+      // 花道·缠: a spinning blossom. The trail dots behind it come from the stock loop.
+      const s = (p.size ?? 46) * .3;
+      ctx.rotate(p.age * 7 * Math.sign(p.vx || 1));
+      for (let i = 0; i < 5; i++) {
+        ctx.save();
+        ctx.rotate((i / 5) * Math.PI * 2);
+        ctx.fillStyle = '#2a2230';
+        ctx.beginPath(); ctx.ellipse(0, -s * .8, s * .42, s * .8, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = p.color;
+        ctx.beginPath(); ctx.ellipse(0, -s * .8, s * .32, s * .7, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+      ctx.fillStyle = '#ffe6f0';
+      ctx.beginPath(); ctx.arc(0, 0, s * .34, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffd257';
+      ctx.beginPath(); ctx.arc(0, 0, s * .16, 0, Math.PI * 2); ctx.fill();
       break;
     }
     case 'wail':

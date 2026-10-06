@@ -24,3 +24,9 @@ docs/*
 
 # 本地出图工具、密钥和上次上传的图
 local/
+
+# AI 工作区数据（记忆 / 排查记录），不进 git
+.workbuddy-ai/
+
+# 出图脚本本地试跑目录，不进 git
+scripts/__probe/

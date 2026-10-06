@@ -84,6 +84,12 @@ export interface Skill {
   rootPin?: boolean;
   /** How completely the 定身 holds the body. Default 'move'. 'freeze' is the time-stop tier. */
   rootLevel?: RootLevel;
+  /** 花道·缠: seconds of 减速 on a clean hit. A soft control — the body still acts, just duller. */
+  slow?: number;
+  /** Walk multiplier while 减速 holds. Default .6. */
+  slowMul?: number;
+  /** Jump launch-velocity multiplier while 减速 holds. Default .75 (height ≈ .56 of normal). */
+  slowJump?: number;
   /** Clean-hit pose. Stun-only (no kind) just overrides hitstun. */
   react?: HitReact;
   /** Screen shake on a clean hit. Block and juggle keep their own numbers. */
