@@ -1,14 +1,12 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assertAllWritable, rasterSheet } from './sprite-guard.ts';
 import { CELL, COMMON_COLS, COMMON_LABELS, COMMON_ROWS, PHASES, SPECIAL_COLS, SPECIAL_KEYS, SPECIAL_ROWS } from '../src/render/clips.ts';
 import { DIMS, NECK, torsoPoints, torsoRadii, type Pt, SHEET_SCALE } from '../src/render/proportions.ts';
 
 /* Colour-block 美竹兰 (mitake). Do not import write-sheets.ts — that script redraws the whole cast.
    Three tables: common 8×3, special 4×3 (U 花道·缠 / I 不良主唱 / O 像以前一样 / L 宣战布告),
    and the frenzy sheet 4×3 the 宣战布告 form swaps in (row 0 light flurry, row 1 kicks, row 2 idle).
-   The guitar stays out of the block — held props are drawn into the special column cells by the
-   img2img pass, never into the pose rails (SOP). Hair, costume and face stay out too. */
+   The guitar is a separate picture. Column I is the downward smash: lean back, then drive both arms down. Hair and costume stay out. */
 
 type Limb = [number, number];
 interface Pose {
@@ -32,15 +30,16 @@ const AIR_KICK_HIT: Pose = { lean: -.15, crouch: 0, armF: [-.8, -.6], armB: [2.2
 /* U 花道·缠: draw the branch back, then fling it forward. */
 const HANA_W: Pose = { lean: -.08, crouch: 3, look: .1, armF: [-.7, -1.3], armB: [.6, -1.0], legF: [.3, 0], legB: [-.3, 0] };
 const HANA_H: Pose = { lean: .2, crouch: 2, look: .55, armF: [1.5, -.1], armB: [-.6, -.8], legF: [.45, 0], legB: [-.35, 0] };
-/* I 不良主唱: both arms overhead with the guitar, then slam straight down. */
-const SMASH_W: Pose = { lean: -.22, crouch: 2, look: -.1, armF: [1.15, 1.5], armB: [1.0, 1.6], legF: [.25, 0], legB: [-.25, 0] };
-const SMASH_H: Pose = { lean: .42, crouch: 16, look: .5, armF: [1.35, -.35], armB: [1.2, -.3], legF: [.5, -.1], legB: [-.45, .1] };
+/* I 不良主唱: lean back to load, then hinge forward and drive both arms down. No guitar on the sheet. */
+const SMASH_W: Pose = { lean: -.48, crouch: 2, look: -.45, armF: [3.55, .2], armB: [3.35, .25], legF: [.15, 0], legB: [-.45, .05] };
+const SMASH_H: Pose = { lean: .62, crouch: 20, look: .62, armF: [.42, -.08], armB: [.32, -.05], legF: [.7, -.25], legB: [-.2, .05] };
+const SMASH_R: Pose = { lean: .22, crouch: 8, look: .4, armF: [.85, -.1], armB: [.7, -.08], legF: [.45, -.05], legB: [-.25, 0] };
 /* O 像以前一样: fold in, then a wide red ring. */
 const USUAL_W: Pose = { lean: -.12, crouch: 13, look: -.05, armF: [.85, -1.5], armB: [.6, -1.4], legF: [.4, 0], legB: [-.35, 0] };
 const USUAL_H: Pose = { lean: .06, crouch: 2, look: .5, armF: [1.95, .25], armB: [-1.95, .25], legF: [.5, 0], legB: [-.4, 0] };
-/* L 宣战布告: hands gathered at the chest, then thrown wide as the streak lights. */
-const DECL_W: Pose = { lean: .1, crouch: 6, look: -.2, armF: [1.3, 2.0], armB: [1.1, 2.1], legF: [.25, 0], legB: [-.25, 0] };
-const DECL_H: Pose = { lean: -.14, crouch: 2, look: -.35, armF: [1.9, -.2], armB: [-1.9, .2], legF: [.4, 0], legB: [-.4, 0] };
+/* L 宣战布告: fists gathered at the chest, then both arms thrown straight up. Not the O ring. */
+const DECL_W: Pose = { lean: .06, crouch: 10, look: -.2, armF: [.7, 2.15], armB: [.45, 2.25], legF: [.32, 0], legB: [-.28, 0] };
+const DECL_H: Pose = { lean: -.2, crouch: 0, look: -.5, armF: [2.85, .12], armB: [3.15, -.08], legF: [.26, 0], legB: [-.26, 0] };
 
 /* 狂化 J/K on the frenzy sheet. Row 0 is the light flurry, row 1 the kicks, row 2 the idle stance
    at column 0 only — that is the cell layout soyoFrenzyFrame reads. */
@@ -49,8 +48,8 @@ const FRZ_PUNCH_1: Pose = { lean: .14, crouch: 2, look: .5, armF: [1.45, -.05], 
 const FRZ_PUNCH_2: Pose = { lean: .18, crouch: 2, look: .5, armF: [1.2, -.5], armB: [1.4, -.4], legF: [.45, 0], legB: [-.4, 0] };
 const FRZ_PUNCH_R: Pose = { lean: .1, crouch: 4, look: .45, armF: [.9, -1.0], armB: [.6, -1.2], legF: [.35, 0], legB: [-.3, 0] };
 const FRZ_KICK_W: Pose = { lean: -.08, crouch: 4, armF: [.5, -1.5], armB: [.8, -1.3], legF: [-.5, .8], legB: [0, 0] };
-const FRZ_KICK_1: Pose = { lean: -.22, crouch: 1, look: .5, armF: [-.2, -1.2], armB: [1.0, -1.1], legF: [1.35, .2], legB: [-.1, 0] };
-const FRZ_KICK_2: Pose = { lean: -.28, crouch: 0, look: .5, armF: [-.4, -1.0], armB: [1.1, -1.0], legF: [1.5, -.1], legB: [-.15, .1] };
+const FRZ_KICK_1: Pose = { lean: -.32, crouch: 0, look: .5, armF: [-.5, -1.0], armB: [1.1, -.9], legF: [1.9, .1], legB: [-.12, 0] };
+const FRZ_KICK_2: Pose = { lean: -.08, crouch: 0, look: .5, armF: [-.9, -.5], armB: [1.35, -.4], legF: [1.45, .55], legB: [-.15, 0] };
 const FRZ_KICK_R: Pose = { lean: -.12, crouch: 5, look: .4, armF: [.4, -1.2], armB: [.9, -1.1], legF: [.7, .3], legB: [-.3, 0] };
 const FRZ_IDLE: Pose = { lean: -.06, crouch: 3, look: .4, armF: [1.1, -1.0], armB: [-.9, -.9], legF: [.4, 0], legB: [-.4, 0] };
 
@@ -197,7 +196,7 @@ function commonPose(label: string): Pose | null {
 
 const SPECIAL: Pose[][] = [
   [HANA_W, HANA_H, mix(HANA_H, IDLE, .55)],
-  [SMASH_W, SMASH_H, mix(SMASH_H, IDLE, .5)],
+  [SMASH_W, SMASH_H, SMASH_R],
   [USUAL_W, USUAL_H, mix(USUAL_H, IDLE, .55)],
   [DECL_W, DECL_H, mix(DECL_H, IDLE, .4)],
 ];
@@ -211,13 +210,55 @@ const FRENZY_LABELS = ['frzL0', 'frzL1', 'frzL2', 'frzL3', 'frzH0', 'frzH1', 'fr
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'sprites', 'mitake');
 
-const common = sheet(COMMON_COLS, COMMON_ROWS, (c, r) => commonPose(COMMON_LABELS[r][c]), (c, r) => COMMON_LABELS[r][c]);
-const special = sheet(SPECIAL_COLS, SPECIAL_ROWS, (c, r) => SPECIAL[c][r], (c, r) => `${SPECIAL_KEYS[c]}-${PHASES[r]}`);
-const frenzy = sheet(SPECIAL_COLS, SPECIAL_ROWS, (c, r) => FRENZY[r][c], (c, r) => FRENZY_LABELS[r * SPECIAL_COLS + c]);
+/* Grip sits on the image center. Local +y is the round bout and points right; the neck stays in the left half. */
+function guitarSvg(): string {
+  const S = 4.2;
+  const ox = 256;
+  const oy = 128;
+  const GRIP_Y = -36;
+  const at = (x: number, y: number) => ({ x: ox + (y - GRIP_Y) * S, y: oy + x * S });
+  const pts = (list: Pt[]) => list.map(p => { const q = at(p.x, p.y); return `${q.x.toFixed(1)},${q.y.toFixed(1)}`; }).join(' ');
+  const body: Pt[] = [
+    { x: -3.2, y: -13 }, { x: -8, y: -8 }, { x: -13.5, y: -12 }, { x: -15, y: -5 }, { x: -12.5, y: 2 }, { x: -14, y: 11 },
+    { x: -7, y: 16.5 }, { x: 1, y: 18 }, { x: 10, y: 15 }, { x: 14.5, y: 7 }, { x: 15, y: 0 }, { x: 12.5, y: -6 }, { x: 8, y: -11 }, { x: 4.2, y: -7 }, { x: 3.2, y: -13 },
+  ];
+  const guard: Pt[] = [
+    { x: -1, y: -9 }, { x: 3.2, y: -11 }, { x: 9, y: -6 }, { x: 11.5, y: 2 }, { x: 10, y: 12 }, { x: 3, y: 15.2 }, { x: -5, y: 13 }, { x: -9, y: 5 }, { x: -6, y: -2 },
+  ];
+  const box = (x: number, y: number, w: number, h: number) => [
+    { x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h },
+  ];
+  const neck = box(-2.2, -38, 4.4, 26);
+  const head: Pt[] = [
+    { x: -2.2, y: -38 }, { x: -6.2, y: -41.5 }, { x: -6, y: -47 }, { x: 3.8, y: -47 }, { x: 2.2, y: -38 },
+  ];
+  const frets = [-18, -24, -30].map(y => {
+    const a = at(-2, y);
+    const b = at(2, y);
+    return `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" stroke="${MAPLE}" stroke-width="2"/>`;
+  }).join('');
+  const tuners = [-41.2, -43.4, -45.4].map(y => {
+    const c = at(-5.6, y);
+    return `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="5" fill="${PICKUP}"/>`;
+  }).join('');
+  const fill = (list: Pt[], color: string, stroke = '') =>
+    `<polygon points="${pts(list)}" fill="${color}"${stroke}/>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="256" viewBox="0 0 512 256">${[
+    fill(body, COLOR, ` stroke="${OUTLINE}" stroke-width="3" stroke-linejoin="round"`),
+    fill(guard, GUARD),
+    fill(box(-1.4, -5, 7, 3.2), PICKUP),
+    fill(box(-1.4, 2.2, 7, 3.2), PICKUP),
+    fill(neck, MAPLE, ` stroke="${OUTLINE}" stroke-width="2"`),
+    fill(head, MAPLE, ` stroke="${OUTLINE}" stroke-width="2" stroke-linejoin="round"`),
+    frets,
+    tuners,
+  ].join('')}</svg>\n`;
+}
 
-const targets = ['common.png', 'special.png', 'frenzy.png'].map(name => join(dir, name));
-assertAllWritable(targets);
-rasterSheet(join(dir, 'common.png'), common, COMMON_COLS * CELL, COMMON_ROWS * CELL);
-rasterSheet(join(dir, 'special.png'), special, SPECIAL_COLS * CELL, SPECIAL_ROWS * CELL);
-rasterSheet(join(dir, 'frenzy.png'), frenzy, SPECIAL_COLS * CELL, SPECIAL_ROWS * CELL);
-console.log('wrote mitake common/special/frenzy sheets');
+const GUARD = '#f3e6d0';
+const PICKUP = '#2a2230';
+const MAPLE = '#c4a36a';
+
+/* common/special/frenzy/guitar are finished art (mark gone) and left the raster list, per SOP.
+   sheet() and guitarSvg() stay for a future re-run. guitar.png is the 2048×1024 picture. */
+console.log('mitake sheets are finished art; nothing rasterized (builders kept)', dir);

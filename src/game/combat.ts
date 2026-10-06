@@ -3,6 +3,7 @@ import { gainEnergy, gainGauge, type Attack, type Fighter } from './fighter.ts';
 import { addDebt, addMod, dmgDealtMul, dmgTakenMul, has } from './mods.ts';
 import type { FightGame, Projectile, SealVolley } from './game.ts';
 import { CONTROLS, FLOOR, GRAVITY, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
+import { attackPhase } from './animState.ts';
 import { clipFor, drumRow } from '../render/clips.ts';
 import { SCRIPTS } from './scripts.ts';
 
@@ -215,6 +216,8 @@ function syncGuitar(g: FightGame, f: Fighter, a: Attack): void {
   live.age = a.t;
   live.max = s.duration;
   live.life = Math.max(.04, s.duration - a.t);
+  const phase = attackPhase(a).phase;
+  live.col = phase === 'windup' ? 0 : phase === 'recover' ? 2 : 1;
 }
 
 export function wailShots(hp: number, max: number): number {
@@ -1938,6 +1941,13 @@ SCRIPTS['fuga'] = Object.assign(SCRIPTS['fuga'] ?? {}, { emit: emit_fuga, freeWh
 SCRIPTS['firebird'] = Object.assign(SCRIPTS['firebird'] ?? {}, { emit: emit_firebird });
 SCRIPTS['summit'] = Object.assign(SCRIPTS['summit'] ?? {}, { emit: emit_summit });
 SCRIPTS['chord'] = Object.assign(SCRIPTS['chord'] ?? {}, { guitar: 'strum', holdFrom: 3, release: .22, settle: .22, home: 'seek', trail: 14 });
+SCRIPTS['guitar-smash'] = Object.assign(SCRIPTS['guitar-smash'] ?? {}, {
+  guitar: 'mitake-guitar',
+  // Default sweep stamp sits at facing*65, y-22. This ripple is 60 ahead and 30 lower.
+  flash(g: FightGame, f: Fighter, a: Attack) {
+    g.effect('guitar-smash', f.x + f.facing * 125, f.y + 8, f.data.color, .22, { dir: f.facing, radius: a.skill.range * .5 });
+  },
+});
 SCRIPTS['spin'] = Object.assign(SCRIPTS['spin'] ?? {}, { guitar: 'spin', noStamp: true });
 SCRIPTS['sob'] = Object.assign(SCRIPTS['sob'] ?? {}, { noteOff: [45, 70], trail: 14 });
 SCRIPTS['shout'] = Object.assign(SCRIPTS['shout'] ?? {}, { freeOnLast: true });

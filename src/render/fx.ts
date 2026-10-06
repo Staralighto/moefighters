@@ -1,7 +1,7 @@
 import type { Effect, FightGame, FloatingText, Particle, Projectile } from '../game/game.ts';
 import { SHIP_HOLD, SHIP_SWEEP } from '../game/combat.ts';
 import type { Fighter } from '../game/fighter.ts';
-import { clamp, H, SIDE, W } from '../game/constants.ts';
+import { clamp, FLOOR, H, SIDE, W } from '../game/constants.ts';
 import type { ImageCache } from '../assets/loader.ts';
 import { CELL, pillarFrame } from './clips.ts';
 import { watchProp } from './propLayout.ts';
@@ -16,6 +16,16 @@ const GUITAR_SRC = '/sprites/anon/guitar.png';
 /** Headstock on the current guitar sheet. The body is the far end, so the pivot is not the image center. */
 const GUITAR_HEAD_X = 438 / 512;
 const GUITAR_HEAD_Y = 122 / 256;
+const MITAKE_GUITAR_SRC = '/sprites/mitake/guitar.png';
+/** Grip and round-body center on the 2048×1024 sheet, after the tuned gx offset. */
+const MITAKE_GRIP = { x: 462, y: 597 };
+const MITAKE_BODY_ANG = Math.atan2(569 - 597, 1617 - 462);
+/** Windup, hit, recover. deg: 0 is forward, positive is up. rot is added on top. */
+const MITAKE_POSES = [
+  { x: -38, y: -150, rot: 4.56, size: 160, deg: 45 },
+  { x: 35, y: -45, rot: 0.3, size: 160, deg: 0 },
+  { x: 0, y: 0, rot: 0, size: 0, deg: -20 },
+] as const;
 const ANON_NOTE_SRC = '/sprites/anon/note.png';
 const SOYO_NOTE_SRC = '/sprites/soyo/note.png';
 const HEART_SRC = '/sprites/anon/heart.png';
@@ -245,6 +255,14 @@ export function drawGauge(ctx: CanvasRenderingContext2D, f: Fighter): void {
     ctx.fillStyle = k >= 1 ? '#ffffff' : spec.color;
     ctx.fillRect(x, y, Math.max(3, Math.round(w * k)), 4);
   }
+}
+
+/** One rose petal: a body plus a lighter lobe. 友希那用蓝，花道·缠把同一笔改成红。 */
+function drawPetal(ctx: CanvasRenderingContext2D, body: string, lobe: string): void {
+  ctx.fillStyle = body;
+  ctx.beginPath(); ctx.ellipse(0, 0, 6.5, 3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = lobe;
+  ctx.beginPath(); ctx.ellipse(-1.5, -1, 3, 1.4, -.4, 0, 0, Math.PI * 2); ctx.fill();
 }
 
 export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: ImageCache): void {
@@ -688,10 +706,7 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.translate(e.x + sway, e.y + fall);
       ctx.rotate(Math.sin(p * 9) * .9 + p * 3);
       ctx.globalAlpha = (1 - p) * .9;
-      ctx.fillStyle = '#6fa8ff';
-      ctx.beginPath(); ctx.ellipse(0, 0, 6.5, 3, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#9cc4ff';
-      ctx.beginPath(); ctx.ellipse(-1.5, -1, 3, 1.4, -.4, 0, Math.PI * 2); ctx.fill();
+      drawPetal(ctx, '#6fa8ff', '#9cc4ff');
       break;
     }
     case 'summit': {
@@ -1358,41 +1373,47 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       break;
     }
     case 'petal-aura': {
-      // 花道·缠: petals orbit the slowed body for as long as the debuff holds (drawn every frame
-      // with life === max, so the motion reads off e.age, never off the fade clock).
+      // 花道·缠: 友希那的落瓣原样改红。减速期间按 1.1 秒一轮循环，运动读 e.age，不读淡出时钟。
       const t = e.age ?? 0;
-      const rx = (e.radius ?? 44) * .9;
-      ctx.translate(e.x, e.y);
+      const cycle = 1.1;
       for (let i = 0; i < 6; i++) {
-        const a = t * 1.6 + (i / 6) * Math.PI * 2;
+        const u = (t / cycle + i / 6) % 1;
+        const fall = u * 150;
+        const sway = Math.sin(u * 9) * 14;
+        const x = ((i * 41) % 125) - 62;
+        const y0 = -63 - (i % 3) * 18;
         ctx.save();
-        ctx.globalAlpha = .5 + .4 * Math.sin(t * 3 + i);
-        ctx.translate(Math.cos(a) * rx, Math.sin(a) * 18 - 6 + Math.sin(t * 2 + i) * 4);
-        ctx.rotate(a * 1.3);
-        ctx.fillStyle = i % 2 ? '#ffb8cf' : e.color;
-        ctx.beginPath(); ctx.ellipse(0, 0, 6.5, 3.2, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.translate(e.x + x + sway, e.y + y0 + fall);
+        ctx.rotate(Math.sin(u * 9) * .9 + u * 3);
+        ctx.globalAlpha = (1 - u) * .9;
+        drawPetal(ctx, e.color, '#ffb8cf');
         ctx.restore();
       }
       break;
     }
+    case 'mitake-guitar': {
+      // 不良主唱: three poses on her forward side. Numbers are the tuned layout.
+      const pose = MITAKE_POSES[e.col ?? 0] ?? MITAKE_POSES[0];
+      const im = images?.get(MITAKE_GUITAR_SRC);
+      const dir = e.dir ?? 1;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = 1;
+      ctx.translate(0, pose.y);
+      ctx.scale(dir, 1);
+      ctx.translate(pose.x, 0);
+      ctx.rotate(-(pose.deg * Math.PI / 180) - MITAKE_BODY_ANG + pose.rot);
+      if (!im?.naturalWidth || pose.size <= 0) break;
+      const dw = pose.size;
+      const dh = dw * (im.naturalHeight / im.naturalWidth);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(keyed(im), -MITAKE_GRIP.x / im.naturalWidth * dw, -MITAKE_GRIP.y / im.naturalHeight * dh, dw, dh);
+      break;
+    }
     case 'guitar-smash': {
-      // 不良主唱: a guitar silhouette snaps down and a ground shock ring spreads from the feet.
+      // 不良主唱: the ground shock. The guitar itself is mitake-guitar.
       const rad = (e.radius ?? 90) * 1.7;
       ctx.translate(e.x, e.y);
-      ctx.save();
-      ctx.globalAlpha = (1 - p) * .95;
-      ctx.rotate((e.dir ?? 1) * (.55 - p * .9));
-      ctx.fillStyle = '#2a2230';
-      ctx.beginPath(); ctx.ellipse(0, 0, 25, 17, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = e.color;
-      ctx.beginPath(); ctx.ellipse(0, 0, 20, 13, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#151222';
-      ctx.beginPath(); ctx.arc(0, 0, 5, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#2a2230';
-      ctx.lineWidth = 7;
-      ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(0, -11); ctx.lineTo(5, -68); ctx.stroke();
-      ctx.restore();
       ctx.globalAlpha *= 1 - p;
       ctx.strokeStyle = e.color;
       ctx.lineWidth = 5;
@@ -1416,21 +1437,39 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       break;
     }
     case 'declaration': {
-      // 宣战布告: a red pillar of light under a spreading burst ring.
-      const rad = e.radius ?? 200;
-      ctx.translate(e.x, e.y);
+      // 宣战布告: 此即世界那盏半透明光，改成从画面顶上直落的一根红光。基础色 #EE0022。
+      const x = e.x;
+      ctx.globalCompositeOperation = 'lighter';
       ctx.globalAlpha *= 1 - p;
-      ctx.fillStyle = e.color;
+      const beam = ctx.createLinearGradient(0, 0, 0, FLOOR);
+      beam.addColorStop(0, 'rgba(238, 0, 34, .3)');
+      beam.addColorStop(1, 'rgba(238, 0, 34, .06)');
+      ctx.fillStyle = beam;
       ctx.beginPath();
-      ctx.moveTo(-28, 150); ctx.lineTo(-11, -rad * 1.05); ctx.lineTo(11, -rad * 1.05); ctx.lineTo(28, 150);
-      ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = e.color;
-      ctx.lineWidth = 6 * (1 - p) + 1;
-      ctx.beginPath(); ctx.arc(0, 0, rad * p, 0, Math.PI * 2); ctx.stroke();
-      ctx.strokeStyle = '#fff0f2';
-      ctx.lineWidth = 2;
-      ctx.globalAlpha *= .8;
-      ctx.beginPath(); ctx.arc(0, 0, rad * p * .6, 0, Math.PI * 2); ctx.stroke();
+      ctx.moveTo(x - 22, 0);
+      ctx.lineTo(x + 22, 0);
+      ctx.lineTo(x + 100, FLOOR);
+      ctx.lineTo(x - 100, FLOOR);
+      ctx.closePath();
+      ctx.fill();
+      const glow = ctx.createRadialGradient(x, FLOOR - 88, 6, x, FLOOR - 88, 90);
+      glow.addColorStop(0, 'rgba(255, 214, 224, .26)');
+      glow.addColorStop(1, 'rgba(238, 0, 34, 0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(x, FLOOR - 88, 90, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.save();
+      ctx.translate(x, FLOOR);
+      ctx.scale(1, .3);
+      const pool = ctx.createRadialGradient(0, 0, 8, 0, 0, 105);
+      pool.addColorStop(0, 'rgba(238, 0, 34, .38)');
+      pool.addColorStop(1, 'rgba(238, 0, 34, 0)');
+      ctx.fillStyle = pool;
+      ctx.beginPath();
+      ctx.arc(0, 0, 105, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
       break;
     }
     case 'super':

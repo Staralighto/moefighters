@@ -72,7 +72,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const g = c.bands?.[0] ?? 'none';
     if (runs[runs.length - 1] !== g) runs.push(g);
   }
-  assert.deepEqual(runs, ['ave-mujica', 'mygo', 'yumemita', 'poppin-party', 'roselia', 'hello-happy', 'sumimi', 'pastel-palettes', 'none'], 'roster order is the select-screen band order');
+  assert.deepEqual(runs, ['ave-mujica', 'mygo', 'yumemita', 'poppin-party', 'roselia', 'hello-happy', 'sumimi', 'pastel-palettes', 'afterglow', 'none'], 'roster order is the select-screen band order');
   assert.deepEqual(ROSTER[at('uika')].bands, ['ave-mujica', 'sumimi'], '初华 sings for two units');
   assert.deepEqual(bandMembers('mygo', 'tomori').map(c => c.id), ['anon', 'rana', 'soyo', 'taki'], 'the sing calls her bandmates, never herself');
   for (const id of ['gale', 'ember', 'boulder']) {
@@ -3351,6 +3351,8 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.equal(data.skills[3].reach, 'ground', '不良主唱 stays on the ground');
   assert.equal(data.skills[4].breakout, true, '像以前一样 is a breakout');
   assert.equal(data.skills[5].cost, 115, '宣战布告 costs 115');
+  assert.deepEqual(data.bands, ['afterglow'], 'mitake fronts Afterglow');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/mitake/guitar.png'), 'the guitar is preloaded');
   assert.ok(data.frenzy && data.frenzy.time === 8, 'the form runs 8s');
 
   // U: the blossom lands, the victim is slowed, and the debuff lifts on its own clock

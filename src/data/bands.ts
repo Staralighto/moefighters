@@ -5,7 +5,7 @@
 
 export type BandId =
   | 'mygo' | 'ave-mujica' | 'sumimi' | 'yumemita' | 'pastel-palettes'
-  | 'poppin-party' | 'roselia' | 'hello-happy';
+  | 'poppin-party' | 'afterglow' | 'roselia' | 'hello-happy';
 
 export interface BandData {
   id: BandId;
@@ -18,7 +18,8 @@ export interface BandData {
 export const BANDS: readonly BandData[] = [
   // Select-screen order. Ave Mujica > MyGO!!!!! > 夢限大みゅーたいぷ is the user's pick; the rest
   // follows the franchise debut order (Poppin'Party 2015 → Roselia → Hello, Happy World!), and
-  // sumimi sits last among units since it is the anime's idol duo, not an official band.
+  // sumimi follows the gig bands (idol duo, not an official band). Afterglow is appended after
+  // that; on the select screen she sits after Pastel*Palettes, ahead of the bandless.
   { id: 'ave-mujica', name: 'Ave Mujica', color: '#7799CC' },
   { id: 'mygo', name: 'MyGO!!!!!', color: '#77BBDD' },
   { id: 'yumemita', name: '梦限大MewType', color: '#FFEE55' },
@@ -27,6 +28,7 @@ export const BANDS: readonly BandData[] = [
   { id: 'roselia', name: 'Roselia', color: '#4455BB' },
   { id: 'hello-happy', name: 'Hello, Happy World!', color: '#FFEE22' },
   { id: 'sumimi', name: 'sumimi', color: '#BB9955' },
+  { id: 'afterglow', name: 'Afterglow', color: '#EE0022' },
 ];
 
 export const BAND_BY_ID: ReadonlyMap<BandId, BandData> = new Map(BANDS.map(b => [b.id, b]));
