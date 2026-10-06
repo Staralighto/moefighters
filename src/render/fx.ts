@@ -262,7 +262,7 @@ function drawPetal(ctx: CanvasRenderingContext2D, body: string, lobe: string): v
   ctx.fillStyle = body;
   ctx.beginPath(); ctx.ellipse(0, 0, 6.5, 3, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = lobe;
-  ctx.beginPath(); ctx.ellipse(-1.5, -1, 3, 1.4, -.4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-1.5, -1, 3, 1.4, -.4, 0, Math.PI * 2); ctx.fill();
 }
 
 export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: ImageCache): void {
