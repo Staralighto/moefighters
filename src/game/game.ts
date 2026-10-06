@@ -2,10 +2,11 @@ import type { CharacterData, Skill, StageData } from '../data/types.ts';
 import type { Attack, Fighter } from './fighter.ts';
 import { DECAY_TIMERS, gainEnergy, makeFighter, meterCap } from './fighter.ts';
 import { AIR_SKILLS } from '../data/skills.ts';
-import { ROSTER_BY_ID } from '../data/characters.ts';
+import { bandMembers, ROSTER_BY_ID } from '../data/characters.ts';
+import type { BandId } from '../data/bands.ts';
 import { advanceAnim } from './animState.ts';
 import { easeSealSwells, effectSettled, stepProjectiles, updateAttack } from './combat.ts';
-import { addMod, regenPerSec, speedMul, tickMods } from './mods.ts';
+import { addMod, has, regenPerSec, speedMul, tickMods } from './mods.ts';
 import { SCRIPTS } from './scripts.ts';
 import { stepAI } from './ai.ts';
 import { COMBO_DECAY, COMBO_ESCAPE, CONTROLS, FLOOR, GRAVITY, INPUT_BUFFER, SIDE, STEP, X_MAX, X_MIN, clamp } from './constants.ts';
@@ -50,8 +51,9 @@ const FRENZY_CHAIN_WINDOW = .6;
 /** 诗超绊: the teammate's health CAP is this slice of the borrowed sheet, for this long. The brain is the master AI (stepAI). */
 const MINION_HP_RATIO = .2;
 const MINION_LIFE = 12;
-/** Who can answer the call. ponytail: roster ids only, so a teammate is always a finished character. */
-export const MINION_POOL = ['anon', 'soyo'] as const;
+/** Whose bandmates answer the call. The pool itself derives from the band at cast time
+ *  (bandMembers minus the caller), so the roster stays the single place members are listed. */
+export const MINION_BAND: BandId = 'mygo';
 /** 录音: the window the master's actions are captured for, how hard the echo hits, and the fade after the replay. */
 export const RECORD_TIME = 3.5;
 const ECHO_DMG = .5;
@@ -378,7 +380,7 @@ export class FightGame {
 
   canAttack(f: Fighter, index: number): boolean {
     if (this.paused || this.phase !== 'fight') return false;
-    if (f.hp <= 0 || f.blocking || f.dodge > 0 || f.cooldowns[index] > 0) return false;
+    if (f.hp <= 0 || f.blocking || f.dodge > 0 || (f.cooldowns[index] > 0 && !has(f, 'nocd'))) return false;
     if (f.feast > 0 && index <= 1) return false;
     const breakout = !!f.data.skills[index]?.breakout;
     const downed = f.y >= FLOOR - .1 && f.knocked > 0 && f.vy >= 0;
@@ -652,7 +654,8 @@ export class FightGame {
   summonAlly(owner: Fighter): void {
     const old = this.fighters.find(f => f.minion && f.team === owner.team);
     if (old) this.dismissMinion(old, false);
-    const data = ROSTER_BY_ID.get(MINION_POOL[Math.floor(this.random() * MINION_POOL.length)]);
+    const pool = bandMembers(MINION_BAND, owner.data.id);
+    const data = pool[Math.floor(this.random() * pool.length)];
     if (!data) return;
     const m = makeFighter({ ...data, hp: Math.round(data.hp * MINION_HP_RATIO) }, this.minionSeq++, {
       x: clamp(owner.x - owner.facing * 46, X_MIN, X_MAX),
@@ -909,10 +912,18 @@ export class FightGame {
     if (f.jumpRequest) { f.jumpBuffer = INPUT_BUFFER; f.jumpRequest = false; }
     const jumpHeld = human && !!c && c.jump.some(code => this.keys.has(code));
     const canHop = grounded && f.stun <= 0 && f.knocked <= 0 && f.dodge <= 0 && !f.blocking && f.root <= 0 && f.ban <= 0;
-    // A held jump leaves the ground during a jab and comes back out on landing. Skills stay put.
-    if (jumpHeld && canHop && f.vy >= 0 && !(f.attack && f.attack.index > 1)) {
+    // 跳取消: a skill can name the second a jump press drops the move and hops. No cooldown refund —
+    // the cast was paid. The cancel binds to that one attack instance, so a move queued on the same
+    // frame is not eaten by the buffered hop. Jabs keep their own convert path below.
+    const skillHold = f.attack && f.attack.index > 1;
+    const cancelTarget = skillHold && f.attack.skill.jumpCancel != null && f.attack.t >= (f.attack.skill.jumpCancel ?? 0)
+      ? f.attack
+      : null;
+    // A held jump leaves the ground during a jab and comes back out on landing. Skills stay put unless they say otherwise.
+    if (jumpHeld && canHop && f.vy >= 0 && (!skillHold || cancelTarget)) {
       const convert = f.attack && !f.attack.skill.air && f.attack.index <= 1 ? f.attack.index : -1;
       if (convert >= 0) { f.cooldowns[convert] = 0; f.attack = null; }
+      else if (cancelTarget) f.attack = null;
       f.vy = -600;
       f.jumpBuffer = 0;
       if (f.recLeft > 0) f.recTape.push({ t: RECORD_TIME - f.recLeft, kind: 'jump' });
@@ -923,8 +934,9 @@ export class FightGame {
     const fired = this.releaseQueue(f, dt);
     if (fired && !jumpHeld) { f.jumpBuffer = 0; f.jumpRequest = false; }
     else if (f.jumpBuffer > 0) {
-      if (canHop && !f.attack) {
+      if (canHop && (!f.attack || f.attack === cancelTarget)) {
         f.jumpBuffer = 0;
+        f.attack = null;
         f.vy = -600;
         if (f.recLeft > 0) f.recTape.push({ t: RECORD_TIME - f.recLeft, kind: 'jump' });
         this.audio.play('jump');

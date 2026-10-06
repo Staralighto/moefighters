@@ -1,5 +1,5 @@
 import type { HitReact, Op, Skill } from '../data/types.ts';
-import { gainEnergy, type Attack, type Fighter } from './fighter.ts';
+import { gainEnergy, gainGauge, type Attack, type Fighter } from './fighter.ts';
 import { addDebt, addMod, dmgDealtMul, dmgTakenMul, has } from './mods.ts';
 import type { FightGame, Projectile, SealVolley } from './game.ts';
 import { CONTROLS, FLOOR, GRAVITY, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
@@ -107,6 +107,9 @@ const RIFF_K0 = 240, RIFF_K1 = 380;
 /** 吉他激奏: the tap cools from 2s; every extra wave adds its share of the rest, so a full
  *  10-wave channel sits at 7s from cast — about 2.5s left once the strum plays out. */
 const RIFF_CD_TAP = 2, RIFF_CD_MAX = 7;
+/** 这次是真的在唱！: fixed-radius waves; the gauge spent on the first swing sets the tempo
+ *  between the empty-bar and full-bar intervals. */
+const SING_I_EMPTY = .30, SING_I_FULL = .13;
 /** 韵律直觉: tap is one ring at the base cooldown; a full six-pulse channel sits at 7.5s. */
 const GROOVE_WAVES = 6;
 const GROOVE_CD_TAP = 3, GROOVE_CD_MAX = 7.5;
@@ -324,6 +327,8 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     defender.blockTap = 1;
     gainEnergy(defender, 5);
     gainEnergy(attacker, 4);
+    // 打气: blocking taps the gauge per the defender's own spec.
+    if (defender.data.gauge?.onBlock) gainGauge(defender, defender.data.gauge.onBlock);
     // 远程反制：挡下投掷物按其伤害削减对方的气，静默结算，不跳字。
     // 剪 is a trap and 火的故事 is her own blast: neither siphons meter for being blocked.
     if (skill.type === 'projectile' && !skill.noSiphon) attacker.energy = clamp(attacker.energy - fullHit * GUARD_DRAIN, 0, attacker.energyMax);
@@ -462,6 +467,10 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     const rushBonus = attacker.data.trait === 'rush' && attacker.hitCount % 3 === 0 ? 14 : 0;
     gainEnergy(attacker, (skill.gain ?? (skill.super ? 2 : 9)) + rushBonus);
     gainEnergy(defender, 7);
+    // 打气: clean hits charge both sides per the gauge spec. The composer's quiet ticks skip it,
+    // and a move can opt itself out (the song must not refill the bar it spent).
+    if (attacker.data.gauge?.onHitDealt && !skill.noGauge) gainGauge(attacker, attacker.data.gauge.onHitDealt);
+    if (defender.data.gauge?.onHitTaken) gainGauge(defender, defender.data.gauge.onHitTaken);
     if (skill.drain) {
       defender.energy = clamp(defender.energy - skill.drain, 0, defender.energyMax);
       g.text(`-${skill.drain} 气`, defender.x, defender.y - 135, '#ffd27a', .6, 16);
@@ -828,6 +837,15 @@ function runOps(g: FightGame, f: Fighter, s: Skill, ops: Op[]): void {
       } else if (op.kind === 'sprint') addMod(f, 'speed', time, {
         v: MARATHON_SPEED, pulseEvery: 2,
         pulse: (game, who) => game.effect('dust', who.x - who.facing * 18, FLOOR, who.data.color, .22, { radius: 16 }),
+      });
+      else if (op.kind === 'encore') addMod(f, 'nocd', time, {
+        pulseEvery: 2,
+        pulse: (game, who) => game.effect('burst', who.x, who.y - 130, '#ffb0d8', .45, { radius: 70 }),
+        // 安可结束: every skill starts its full cooldown, as if all of them were just cast.
+        onExpire: (game, who) => {
+          who.data.skills.forEach((sk, i) => { who.cooldowns[i] = sk.cd * who.cdMul; });
+          game.text('冷却开始', who.x, who.y - 215, '#ffb0d8', .8, 16);
+        },
       });
       else if (op.kind === 'rose') {
         f.roseBase = f.thorns;
@@ -1720,6 +1738,20 @@ function swing_riff(g: FightGame, f: Fighter, a: Attack, s: Skill): void {
       }
 }
 
+/** 这次是真的在唱！: every wave is the same copy — fixed reach; the whole gauge spent on the
+ *  first swing buys a faster tempo for this cast, and the move ends with the last wave plus a
+ *  short settle tail instead of sitting out the data duration. */
+function swing_sing(g: FightGame, f: Fighter, a: Attack, s: Skill): void {
+  if (a.shots === 0 && f.data.gauge) {
+    const k = clamp(f.gauge / f.data.gauge.max, 0, 1);
+    f.gauge = 0;
+    const interval = SING_I_EMPTY + (SING_I_FULL - SING_I_EMPTY) * k;
+    a.skill = { ...s, interval, duration: s.start + ((s.count ?? 1) - 1) * interval + .4 };
+  }
+  applyMelee(g, f, a);
+  g.effect('sing', f.x, f.y - 85, f.data.color, .4, { radius: a.skill.range });
+}
+
 function swing_crown(g: FightGame, f: Fighter, a: Attack, s: Skill): void {
   {
         // 五冠王的威压: every wave is its own copy — wider, harder, shove-ier.
@@ -1891,6 +1923,7 @@ SCRIPTS['drums'] = Object.assign(SCRIPTS['drums'] ?? {}, { volley: volley_drums 
 SCRIPTS['parfait'] = Object.assign(SCRIPTS['parfait'] ?? {}, { volley: volley_parfait, spawn: 'zone' });
 SCRIPTS['star'] = Object.assign(SCRIPTS['star'] ?? {}, { volley: volley_star });
 SCRIPTS['riff'] = Object.assign(SCRIPTS['riff'] ?? {}, { swing: swing_riff, holdFrom: 1, release: .3, settle: .3, cd: { tap: RIFF_CD_TAP, max: RIFF_CD_MAX, waves: RIFF_WAVES } });
+SCRIPTS['sing'] = Object.assign(SCRIPTS['sing'] ?? {}, { swing: swing_sing });
 SCRIPTS['crown'] = Object.assign(SCRIPTS['crown'] ?? {}, { swing: swing_crown });
 SCRIPTS['groove'] = Object.assign(SCRIPTS['groove'] ?? {}, { swing: swing_groove, holdFrom: 1, release: .3, cd: { tap: GROOVE_CD_TAP, max: GROOVE_CD_MAX, waves: GROOVE_WAVES } });
 SCRIPTS['wish'] = Object.assign(SCRIPTS['wish'] ?? {}, { emit: emit_wish, skipVolley: true, skipCount: true });

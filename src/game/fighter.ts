@@ -187,6 +187,8 @@ export interface Fighter {
   recTape: RecEvent[];
   /** 录音: the last move direction written to the tape, so only changes are recorded. */
   recMove: number;
+  /** 打气 (GaugeSpec): the second meter. Charged through gainGauge, spent by moves directly. */
+  gauge: number;
   /** 录音: this fighter is a recorded echo — unhittable, bodyless, and it replays its tape once. */
   echo?: boolean;
   /** 录音: the master this echo answers to. Echoes only. */
@@ -230,6 +232,7 @@ export function makeFighter(
     lowHpDmg: 0, executeDmg: 0, lifesteal: 0, thorns: 0, rose: 0, roseBase: 0, shout: 0,
     stunMul: 1, escapeCombo: COMBO_ESCAPE, deathSave: 0, vainDmg: 0, vainEnergy: 0,
     recLeft: 0, recTape: [], recMove: 0,
+    gauge: 0,
     mods: [],
   };
 }
@@ -239,6 +242,13 @@ export function makeFighter(
 export function gainEnergy(f: Fighter, amount: number): void {
   if (f.mods.some(m => m.kind === 'noGain' && m.left > 0)) return;
   f.energy = clamp(f.energy + amount * f.energyMul, 0, f.energyMax);
+}
+
+/** The second meter. No multipliers yet — the spec carries flat amounts; clamp at the declared cap. */
+export function gainGauge(f: Fighter, amount: number): void {
+  const max = f.data.gauge?.max;
+  if (!max) return;
+  f.gauge = clamp(f.gauge + amount, 0, max);
 }
 
 /** Idle stand-in for select-screen portraits. */

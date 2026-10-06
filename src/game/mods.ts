@@ -4,7 +4,7 @@ import type { FightGame } from './game.ts';
 /** Scalar buffs. root, ban, frenzy and king stay on the fighter: they stop clocks and swap moves. */
 export type ModKind =
   | 'brace' | 'poise' | 'dmgDealt' | 'dmgTaken' | 'speed' | 'regen'
-  | 'noGain' | 'lockNormals' | 'lockGuard' | 'thorns' | 'debt';
+  | 'noGain' | 'lockNormals' | 'lockGuard' | 'thorns' | 'debt' | 'nocd';
 
 /**
  * One running buff.

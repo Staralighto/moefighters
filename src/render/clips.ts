@@ -99,6 +99,13 @@ export function riffRow(t: number, duration: number): number {
   return Math.floor(Math.max(0, t) / .14) % 3;
 }
 
+/** 这次是真的在唱！: the channel holds the singing (hit) cell the whole way through —
+ *  the generic phase mapping would park it on the settle row for five seconds. */
+export function singRow(t: number, start: number, duration: number): number {
+  if (t >= duration - .3) return 2;
+  return t < start ? 0 : 1;
+}
+
 /** 韵律直觉: wind and hit alternate once per pulse. Release lands on the recover cell. */
 export function grooveRow(t: number, duration: number): number {
   if (t >= duration - .3) return 2;
@@ -136,6 +143,14 @@ export function heartRow(t: number, start: number): number {
   if (t < start) return 0;
   if (t < start + .32) return 1;
   return 2;
+}
+
+/** 丸山闪光: the wink raise holds an extra beat and the まんまるお山 circle plays the last .6s
+ *  (the generic phase split would park the settle cell for a full second). */
+export function flashRow(t: number, start: number, duration: number): number {
+  if (t < start) return 0;
+  if (t >= duration - .6) return 2;
+  return 1;
 }
 
 /** 诗超绊: a short breath, a 0.6s sung note that lands right on the summon, then the bow. */
@@ -210,9 +225,11 @@ export function clipFor(f: Fighter): Clip {
     if (f.attack.skill.fx === 'drums') return at('special', f.attack.index - 2, drumRow(f.attack.t, f.attack.skill.duration));
     if (f.attack.skill.fx === 'chord') return at('special', f.attack.index - 2, chordRow(f.attack.t, f.attack.skill.duration));
     if (f.attack.skill.fx === 'riff') return at('special', f.attack.index - 2, riffRow(f.attack.t, f.attack.skill.duration));
+    if (f.attack.skill.fx === 'sing') return at('special', f.attack.index - 2, singRow(f.attack.t, f.attack.skill.start, f.attack.skill.duration));
     if (f.attack.skill.fx === 'groove') return at('special', f.attack.index - 2, grooveRow(f.attack.t, f.attack.skill.duration));
     if (f.attack.skill.fx === 'compose') return at('special', f.attack.index - 2, composeRow(f.attack.t, f.attack.skill.start, f.attack.skill.duration));
     if (f.attack.skill.fx === 'parfait') return at('special', f.attack.index - 2, parfaitRow(f.attack.t, f.attack.skill.start, f.attack.skill.duration));
+    if (f.attack.skill.fx === 'flash') return at('special', f.attack.index - 2, flashRow(f.attack.t, f.attack.skill.start, f.attack.skill.duration));
     if (f.attack.skill.fx === 'heart') return at('special', f.attack.index - 2, heartRow(f.attack.t, f.attack.skill.start));
     if (f.attack.skill.fx === 'wink') return at('special', f.attack.index - 2, heartRow(f.attack.t, f.attack.skill.start));
     if (f.attack.skill.fx === 'crown') return at('special', f.attack.index - 2, volleyRow(f.attack.t, f.attack.skill));

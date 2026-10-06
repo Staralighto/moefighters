@@ -1,5 +1,7 @@
 /* Pure data shapes. Nothing here knows about pixels or the DOM. */
 
+import type { BandId } from './bands.ts';
+
 export type SkillType =
   | 'light' | 'heavy' | 'dash' | 'projectile' | 'grab'
   | 'upper' | 'sweep' | 'endure' | 'launch';
@@ -94,10 +96,14 @@ export interface Skill {
   friendly?: boolean;
   /** A blocked projectile does not siphon the attacker's energy (剪, 火的故事). */
   noSiphon?: boolean;
+  /** Clean hits with this move do not charge the attacker's gauge (这次是真的在唱！ self-feed guard). */
+  noGauge?: boolean;
   /** No hit sparks (剪 draws its own burst). */
   noSparks?: boolean;
   /** Endure lasts the whole move, not only the windup (恐湖, 哈？). */
   holdEndure?: boolean;
+  /** A jump press this many seconds into the move hops and drops it (这次是真的在唱！). */
+  jumpCancel?: number;
   /** Active frames are true super armour (满月嚎叫). */
   superArmor?: boolean;
   /** Melee shape. Grabs default to radial unless this is 'front'. */
@@ -125,7 +131,7 @@ export interface Skill {
 }
 
 /** Scalar buffs a move can arm. The kernel still stores these on Fighter until mods.ts folds them. */
-export type BuffKind = 'brace' | 'poise' | 'muscle' | 'shout' | 'feast' | 'box' | 'sprint' | 'noGain' | 'rose' | 'debt';
+export type BuffKind = 'brace' | 'poise' | 'muscle' | 'shout' | 'feast' | 'box' | 'sprint' | 'noGain' | 'rose' | 'debt' | 'encore';
 
 /** No clock of its own. Runs at one of the three gates the attack clock already has. */
 export type Op =
@@ -159,6 +165,13 @@ export interface CharacterData {
   title: string;
   quote: string;
   color: string;
+  /** Units the character belongs to, ids from bands.ts. Unset = no band (薇欧拉, the
+   *  headless dummies). Multiple entries only for dual-affiliation members (初华:
+   *  Ave Mujica first, sumimi second — bands[0] is the select-screen group). */
+  bands?: BandId[];
+  /** False keeps the entry off the select screen: headless-check dummies (gale, ember,
+   *  boulder). Unset means playable — new characters need no roster of ids to join. */
+  playable?: boolean;
   trait: Trait;
   hp: number;
   speed: number;
@@ -169,6 +182,9 @@ export interface CharacterData {
   view: ViewSpec;
   /** Key of the while-rooted status effect shown at the torso. Unset draws the default pink heart. */
   rootFx?: string;
+  /** 二号资源条 (打气): declared per character, charged by the kernel's hit gates, spent by moves.
+   *  Absent means the fighter has no gauge and nothing is drawn or charged. */
+  gauge?: GaugeSpec;
   /** 狂化 (夢はパワー！): how this character's frenzy behaves. Soyo stays on the arcade defaults
    *  (rate 1.55, J/K cooldowns ×.6, the jab-chain auto-heavy) by leaving this unset. */
   frenzy?: {
@@ -191,6 +207,23 @@ export interface CharacterData {
     /** U I O L stay locked for the form. The fighter's `king` flag is what the move sets. */
     lock?: boolean;
   };
+}
+
+/** The reusable second meter. Charge amounts are per character; the bar's home (head-floating
+ *  vs HUD) is a declaration so a future character picks a style without touching the kernel. */
+export interface GaugeSpec {
+  max: number;
+  /** Clean unblocked hits: granted to the defender (taking) and attacker (dealing). */
+  onHitTaken?: number;
+  onHitDealt?: number;
+  /** Blocked hits: granted to the defender. */
+  onBlock?: number;
+  /** Bar label for the training readout. */
+  label: string;
+  /** Fill colour of the head-floating bar. */
+  color: string;
+  /** True: the bar floats over the fighter's head in the arena. */
+  head?: boolean;
 }
 
 export interface StageData {

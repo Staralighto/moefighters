@@ -3,7 +3,8 @@ import { FightGame } from '../src/game/game.ts';
 import { drumShotTime, hit, violetHidden } from '../src/game/combat.ts';
 import { vowBeatTime, VOW_BEATS } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
-import { PLAYABLE, ROSTER } from '../src/data/characters.ts';
+import { PLAYABLE, ROSTER, bandMembers } from '../src/data/characters.ts';
+import { BANDS, BAND_BY_ID } from '../src/data/bands.ts';
 import { AIR_SKILLS, skill } from '../src/data/skills.ts';
 import { STAGES } from '../src/data/stages.ts';
 import { FLOOR, COMBO_DECAY, STEP, X_MAX } from '../src/game/constants.ts';
@@ -39,7 +40,14 @@ const assert = {
 
 const silent = { play() {} };
 function rng(seed: number) { return () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32; }; }
-function newGame(p1 = 0, p2 = 2, mode: 'cpu' | 'training' = 'cpu') {
+/** Roster position by id. Checks pick subjects by id, so reordering ROSTER (band order) cannot
+ *  silently swap the characters a test drills on. */
+function at(id: string): number {
+  const i = ROSTER.findIndex(c => c.id === id);
+  if (i < 0) throw Error('FAIL: ' + id + ' is on the roster');
+  return i;
+}
+function newGame(p1 = at('gale'), p2 = at('boulder'), mode: 'cpu' | 'training' = 'cpu') {
   const g = new FightGame([ROSTER[p1], ROSTER[p2]], { mode, difficulty: 1, stage: STAGES[0], audio: silent, random: rng(7) });
   run(g, 2.3);
   assert.equal(g.phase, 'fight', 'intro ends in fight');
@@ -48,6 +56,30 @@ function newGame(p1 = 0, p2 = 2, mode: 'cpu' | 'training' = 'cpu') {
 function run(g: FightGame, seconds: number) { for (let i = 0; i < Math.round(seconds / STEP); i++) g.step(STEP); }
 /** Turn the CPU slot into a dummy human with no keys so the AI leaves it alone. */
 function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1]; }
+
+// band registry: ids resolve, no orphan bands, dual affiliation and the sing's bandmate pool hold
+{
+  for (const c of ROSTER) for (const b of c.bands ?? []) {
+    assert.ok(BAND_BY_ID.has(b), c.id + ': band ' + b + ' is registered');
+  }
+  for (const b of BANDS) {
+    assert.ok(ROSTER.some(c => c.bands?.includes(b.id)), 'band ' + b.id + ' has at least one member');
+  }
+  // Primary bands run down the roster in the display order (bands.ts): Ave Mujica > MyGO!!!!!
+  // > 夢限大みゅーたいぷ > franchise debut order > sumimi > the bandless.
+  const runs: string[] = [];
+  for (const c of ROSTER) {
+    const g = c.bands?.[0] ?? 'none';
+    if (runs[runs.length - 1] !== g) runs.push(g);
+  }
+  assert.deepEqual(runs, ['ave-mujica', 'mygo', 'yumemita', 'poppin-party', 'roselia', 'hello-happy', 'sumimi', 'pastel-palettes', 'none'], 'roster order is the select-screen band order');
+  assert.deepEqual(ROSTER[at('uika')].bands, ['ave-mujica', 'sumimi'], '初华 sings for two units');
+  assert.deepEqual(bandMembers('mygo', 'tomori').map(c => c.id), ['anon', 'rana', 'soyo', 'taki'], 'the sing calls her bandmates, never herself');
+  for (const id of ['gale', 'ember', 'boulder']) {
+    assert.ok(!PLAYABLE.some(c => c.id === id), id + ' stays off the select screen');
+  }
+  assert.ok(PLAYABLE.some(c => c.id === 'viola'), 'viola plays without a band');
+}
 
 // light attack lands and builds energy
 {
@@ -79,7 +111,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
 // blocking a projectile siphons the attacker's energy in proportion to the shot, silently
 {
-  const g = newGame(1, 2); const [p1, p2] = g.fighters; dummy(g); // 星火 U = 火球
+  const g = newGame(at('ember'), at('boulder')); const [p1, p2] = g.fighters; dummy(g); // 星火 U = 火球
   p2.x = p1.x + 300; p2.facing = -1;
   g.keyDown('ArrowDown'); run(g, .1);
   p1.energy = 50;
@@ -119,7 +151,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const anon = ROSTER.findIndex(c => c.id === 'anon');
   assert.ok(anon >= 0, 'anon is on the roster');
   assert.equal(ROSTER[anon].skills[5].cost, 130, '爱音 pays 130');
-  const g = newGame(anon, 2); const [p1] = g.fighters; dummy(g);
+  const g = newGame(anon, at('boulder')); const [p1] = g.fighters; dummy(g);
   assert.equal(p1.energyMax, 130, 'the meter caps at the super cost');
   p1.energy = 129;
   assert.equal(g.canAttack(p1, 5), false, 'the super stays locked below its own cost');
@@ -132,7 +164,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
 // projectile travels and connects at range
 {
-  const g = newGame(1, 2); const [p1, p2] = g.fighters; dummy(g);
+  const g = newGame(at('ember'), at('boulder')); const [p1, p2] = g.fighters; dummy(g);
   p2.x = p1.x + 400; p2.facing = -1;
   const hp = p2.hp;
   g.keyDown('KeyU'); run(g, 1.5); // 星火 U = 火球
@@ -161,7 +193,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
 // both slots CPU: nobody holds a pad, and both sides still walk in
 {
-  const g = new FightGame([ROSTER[0], ROSTER[1]], {
+  const g = new FightGame([ROSTER[at('gale')], ROSTER[at('ember')]], {
     mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(11),
     controllers: [null, null],
   });
@@ -176,7 +208,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const opts = { mode: 'cpu' as const, stage: STAGES[0], audio: silent, random: () => 0, controllers: [0, null] as (number | null)[] };
   function windup(difficulty: number) {
-    const g = new FightGame([ROSTER[0], ROSTER[1]], { ...opts, difficulty });
+    const g = new FightGame([ROSTER[at('gale')], ROSTER[at('ember')]], { ...opts, difficulty });
     g.phase = 'fight';
     const [human, cpu] = g.fighters;
     human.x = 400; cpu.x = 570;
@@ -196,7 +228,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
 // 2v2: ally takes no damage, one enemy down keeps the round, a wipe scores
 {
-  const g = new FightGame([ROSTER[0], ROSTER[1], ROSTER[2], ROSTER[3]], {
+  const g = new FightGame([ROSTER[at('gale')], ROSTER[at('ember')], ROSTER[at('boulder')], ROSTER[at('sakiko')]], {
     mode: 'team', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(7),
   });
   const [p1, ally, e1, e2] = g.fighters;
@@ -234,7 +266,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
 // challenge: solo human vs a master CPU pair on the right, single round decides, buffs arm
 {
-  const g = new FightGame([ROSTER[0], ROSTER[1], ROSTER[2]], {
+  const g = new FightGame([ROSTER[at('gale')], ROSTER[at('ember')], ROSTER[at('boulder')]], {
     mode: 'challenge', difficulty: 2, stage: STAGES[0], audio: silent, random: rng(7),
     controllers: [0, null, null], roundsToWin: 1,
     mods: [{ baseDamage: 2, damage: 2.2, regen: .03 }, {}, {}],
@@ -301,36 +333,36 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const [a, b] = rollEnemies(2);
   assert.ok(a !== b, 'the two rolled enemies are distinct');
   assert.equal(rollEnemies(1).length, 1, '闯关 rolls a single foe');
-  const setup = stageSetup('brawl', ROSTER[0], [], 1, [ROSTER[1], ROSTER[2]], STAGES[0]);
+  const setup = stageSetup('brawl', ROSTER[at('gale')], [], 1, [ROSTER[at('ember')], ROSTER[at('boulder')]], STAGES[0]);
   assert.equal(setup.characters.length, 3, 'a brawl stage fields the player plus two enemies');
-  assert.equal(setup.characters[0].hp, ROSTER[0].hp * 2, 'brawl doubles base health');
-  assert.equal(setup.characters[1].id, ROSTER[1].id, 'the pair shown before the fight joins the stage');
-  assert.equal(setup.characters[2].id, ROSTER[2].id, 'the pair shown before the fight joins the stage');
-  assert.equal(setup.characters[1].hp, ROSTER[1].hp, 'stage 1 enemies are ungrown');
+  assert.equal(setup.characters[0].hp, ROSTER[at('gale')].hp * 2, 'brawl doubles base health');
+  assert.equal(setup.characters[1].id, ROSTER[at('ember')].id, 'the pair shown before the fight joins the stage');
+  assert.equal(setup.characters[2].id, ROSTER[at('boulder')].id, 'the pair shown before the fight joins the stage');
+  assert.equal(setup.characters[1].hp, ROSTER[at('ember')].hp, 'stage 1 enemies are ungrown');
   assert.equal(setup.difficulty, 2, 'challenge locks master');
   assert.deepEqual(setup.controllers, [0, null, null], 'solo human, CPU pair');
   assert.deepEqual(setup.mods, [{ baseDamage: 2 }, {}, {}], 'no picks keeps the pair neutral, the player carries only the mode base boost');
   assert.equal(setup.stageNumber, 1, 'the first stage is stage 1');
-  const grown2 = stageSetup('brawl', ROSTER[0], [], 2, [ROSTER[1], ROSTER[2]], STAGES[0]);
-  assert.equal(grown2.characters[1].hp, Math.round(ROSTER[1].hp * 1.05), 'stage 2 enemies gain one step of health');
+  const grown2 = stageSetup('brawl', ROSTER[at('gale')], [], 2, [ROSTER[at('ember')], ROSTER[at('boulder')]], STAGES[0]);
+  assert.equal(grown2.characters[1].hp, Math.round(ROSTER[at('ember')].hp * 1.05), 'stage 2 enemies gain one step of health');
   assert.ok(Math.abs(grown2.mods![1].damage! - 1.03) < 1e-9, 'stage 2 enemies gain one step of damage');
-  const grown3 = stageSetup('brawl', ROSTER[0], [], 3, [ROSTER[1], ROSTER[2]], STAGES[0]);
-  assert.equal(grown3.characters[1].hp, Math.round(ROSTER[1].hp * 1.1), 'enemy growth stacks linearly per stage');
+  const grown3 = stageSetup('brawl', ROSTER[at('gale')], [], 3, [ROSTER[at('ember')], ROSTER[at('boulder')]], STAGES[0]);
+  assert.equal(grown3.characters[1].hp, Math.round(ROSTER[at('ember')].hp * 1.1), 'enemy growth stacks linearly per stage');
   assert.ok(Math.abs(grown3.mods![2].damage! - 1.06) < 1e-9, 'enemy damage growth stacks linearly per stage');
-  const lifebuoy = stageSetup('brawl', ROSTER[0], ['lifebuoy', 'lifebuoy'], 2, [ROSTER[1], ROSTER[2]], STAGES[0]);
-  assert.equal(lifebuoy.characters[0].hp, Math.round(ROSTER[0].hp * 2 * 1.08), 'lifebuoy stacks onto the doubled health');
-  const lifebuoyMax = stageSetup('brawl', ROSTER[0], Array(7).fill('lifebuoy'), 2, [ROSTER[1], ROSTER[2]], STAGES[0]);
-  assert.equal(lifebuoyMax.characters[0].hp, Math.round(ROSTER[0].hp * 2 * 1.2), 'lifebuoy stops stacking at its cap');
-  assert.equal(stageSetup('brawl', ROSTER[0], [], 2, [ROSTER[1], ROSTER[2]], STAGES[0]).stageNumber, 2);
-  const solo = stageSetup('climb', ROSTER[0], ['burn', 'lifebuoy'], 2, [ROSTER[1]], STAGES[0]);
+  const lifebuoy = stageSetup('brawl', ROSTER[at('gale')], ['lifebuoy', 'lifebuoy'], 2, [ROSTER[at('ember')], ROSTER[at('boulder')]], STAGES[0]);
+  assert.equal(lifebuoy.characters[0].hp, Math.round(ROSTER[at('gale')].hp * 2 * 1.08), 'lifebuoy stacks onto the doubled health');
+  const lifebuoyMax = stageSetup('brawl', ROSTER[at('gale')], Array(7).fill('lifebuoy'), 2, [ROSTER[at('ember')], ROSTER[at('boulder')]], STAGES[0]);
+  assert.equal(lifebuoyMax.characters[0].hp, Math.round(ROSTER[at('gale')].hp * 2 * 1.2), 'lifebuoy stops stacking at its cap');
+  assert.equal(stageSetup('brawl', ROSTER[at('gale')], [], 2, [ROSTER[at('ember')], ROSTER[at('boulder')]], STAGES[0]).stageNumber, 2);
+  const solo = stageSetup('climb', ROSTER[at('gale')], ['burn', 'lifebuoy'], 2, [ROSTER[at('ember')]], STAGES[0]);
   assert.equal(solo.characters.length, 2, 'a climb stage fields the player plus one enemy');
   assert.deepEqual(solo.controllers, [0, null], 'climb is a plain 1v1');
-  assert.equal(solo.characters[0].hp, Math.round(ROSTER[0].hp * 1.04), 'climb skips the doubled anchor, lifebuoy still stacks');
+  assert.equal(solo.characters[0].hp, Math.round(ROSTER[at('gale')].hp * 1.04), 'climb skips the doubled anchor, lifebuoy still stacks');
   assert.ok(Math.abs((solo.mods![0].damage ?? 1) - 1.05) < 1e-9, 'climb arms no base damage boost, only the deck');
-  assert.equal(solo.characters[1].hp, Math.round(ROSTER[1].hp * 1.05), 'climb enemies grow per stage too');
+  assert.equal(solo.characters[1].hp, Math.round(ROSTER[at('ember')].hp * 1.05), 'climb enemies grow per stage too');
   assert.ok(Math.abs(solo.mods![1].damage! - 1.03) < 1e-9, 'climb enemy growth rides the same mods slot');
-  const solo1 = stageSetup('climb', ROSTER[0], [], 1, [ROSTER[1]], STAGES[0]);
-  assert.equal(solo1.characters[0].hp, ROSTER[0].hp, 'climb stage 1 is raw values both ways');
+  const solo1 = stageSetup('climb', ROSTER[at('gale')], [], 1, [ROSTER[at('ember')]], STAGES[0]);
+  assert.equal(solo1.characters[0].hp, ROSTER[at('gale')].hp, 'climb stage 1 is raw values both ways');
   assert.deepEqual(solo1.mods, [{}, {}], 'climb stage 1 is raw values both ways');
   assert.equal(bestLabel(0), '0');
   assert.equal(bestLabel(99), '99');
@@ -442,7 +474,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
 // training: no clock, energy pinned, target heals
 {
-  const g = newGame(0, 2, 'training'); const [p1, p2] = g.fighters;
+  const g = newGame(at('gale'), at('boulder'), 'training'); const [p1, p2] = g.fighters;
   p1.energy = 10; p2.hp = 500; run(g, 1);
   assert.equal(g.time, 60, 'training clock frozen');
   assert.equal(p1.energy, 100, 'training energy pinned');
@@ -500,7 +532,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
 // holding S still blocks, and releasing after a hold is not a dodge
 {
-  const g = newGame(2, 1); const [p1, p2] = g.fighters; dummy(g); // 磐石 vs 星火
+  const g = newGame(at('boulder'), at('ember')); const [p1, p2] = g.fighters; dummy(g); // 磐石 vs 星火
   p2.x = p1.x + 300; p2.facing = -1;
   g.keyDown('KeyS'); run(g, .3);
   assert.ok(p1.blocking && p1.dodge === 0, 'holding S blocks, no dodge');
@@ -560,12 +592,12 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const g = newGame(); const [p1, p2] = g.fighters; dummy(g);
   p2.x = p1.x + 140; p2.facing = -1;
   g.keyDown('Numpad6'); g.keyDown('KeyW'); run(g, .4);
-  assert.equal(p1.hp, ROSTER[0].hp, 'sweep misses an airborne target');
+  assert.equal(p1.hp, ROSTER[at('gale')].hp, 'sweep misses an airborne target');
 }
 
 // launch floats the target high and a jump attack juggles into a combo
 {
-  const g = newGame(1, 2); const [p1, p2] = g.fighters; dummy(g); // 星火 I = 焰柱上挑
+  const g = newGame(at('ember'), at('boulder')); const [p1, p2] = g.fighters; dummy(g); // 星火 I = 焰柱上挑
   p2.x = p1.x + 60; p2.facing = -1;
   g.keyDown('KeyI'); run(g, .2);
   assert.ok(p2.vy < -300 && g.airborne(p2), 'launch floats the target');
@@ -585,13 +617,13 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
 // CPU slips out of sustained block pressure instead of guard-breaking
 {
-  const g = newGame(0, 2); const [p1, cpu] = g.fighters; // fighters[1] is the AI
+  const g = newGame(at('gale'), at('boulder')); const [p1, cpu] = g.fighters; // fighters[1] is the AI
   cpu.guard = 10;
   let escaped = false;
   for (let i = 0; i < Math.round(2 / STEP); i++) {
     cpu.x = p1.x + 120; cpu.facing = -1; // pinned: threatened but out of light range
     if (!p1.attack) p1.attack = {
-      skill: ROSTER[0].skills[0], index: 0, serial: ++p1.attackSerial,
+      skill: ROSTER[at('gale')].skills[0], index: 0, serial: ++p1.attackSerial,
       t: 0, emitted: false, shots: 0, hit: new Set(), burst: 0,
       endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0,
     };
@@ -603,7 +635,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
 // CPU jumps up to meet a floated victim with an air normal
 {
-  const g = newGame(2, 0); const [vic, cpu] = g.fighters; // fighters[1] is the AI
+  const g = newGame(at('boulder'), at('gale')); const [vic, cpu] = g.fighters; // fighters[1] is the AI
   cpu.x = 400; cpu.facing = -1;
   let jumped = false, airFired = false;
   for (let i = 0; i < Math.round(1.5 / STEP); i++) {
@@ -619,10 +651,10 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
 // sprite clip routing: loco / normals / air / special stay on the intended sheet
 {
-  const idle = clipFor(previewFighter(ROSTER[0], 0));
+  const idle = clipFor(previewFighter(ROSTER[at('gale')], 0));
   assert.equal(idle.sheet, 'common', 'idle uses common sheet');
   assert.deepEqual([idle.col, idle.row], [0, 0], 'idle cell');
-  const runner = previewFighter(ROSTER[0], 0);
+  const runner = previewFighter(ROSTER[at('gale')], 0);
   runner.walk = 1;
   const run0 = clipFor(runner);
   assert.deepEqual([run0.sheet, run0.col, run0.row], ['common', 1, 0], 'run0');
@@ -655,7 +687,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(galeU.col, 0, 'U is column 0');
 }
 {
-  const g = newGame(1, 2); dummy(g);
+  const g = newGame(at('ember'), at('boulder')); dummy(g);
   g.keyDown('KeyU'); run(g, STEP);
   const emberU = clipFor(g.fighters[0]);
   assert.equal(emberU.sheet, 'special', 'ember U uses special');
@@ -666,7 +698,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const sakiko = ROSTER.findIndex(c => c.id === 'sakiko');
   assert.ok(sakiko >= 0, 'sakiko is on the roster');
-  const g = newGame(sakiko, 2); const [p1, p2] = g.fighters; dummy(g);
+  const g = newGame(sakiko, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
   p2.x = p1.x + 70; p2.facing = -1;
   g.keyDown('KeyI'); run(g, .8);
   assert.equal(p1.combo, 3, '轮舞 hits three times');
@@ -686,7 +718,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(data.skills[5].type, 'grab', '墨缇丝 is a grab');
   assert.equal(data.skills[5].count, 4, '墨缇丝 hits four times');
 
-  const notes = newGame(mutsumi, 2); dummy(notes);
+  const notes = newGame(mutsumi, at('boulder')); dummy(notes);
   const [n1, n2] = notes.fighters;
   n2.x = n1.x + 640;
   notes.keyDown('KeyO');
@@ -694,7 +726,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   for (let i = 0; i < Math.round(.8 / STEP); i++) { notes.step(STEP); volley = Math.max(volley, notes.projectiles.length); }
   assert.ok(volley >= 3, `三音 volley, saw ${volley}`);
 
-  const g = newGame(mutsumi, 2); const [p1, p2] = g.fighters; dummy(g);
+  const g = newGame(mutsumi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
   p2.x = 80;
   g.keyDown('KeyU');
   run(g, .4);
@@ -704,7 +736,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   run(g, 1.3);
   assert.ok(shot.returned && shot.vx === -outbound, '回旋黄瓜 turns around once');
 
-  const superGame = newGame(mutsumi, 2); const [s1, s2] = superGame.fighters; dummy(superGame);
+  const superGame = newGame(mutsumi, at('boulder')); const [s1, s2] = superGame.fighters; dummy(superGame);
   s1.energy = s1.energyMax;
   s2.x = s1.x + 110; s2.facing = -1;
   superGame.keyDown('KeyL');
@@ -721,7 +753,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const data = ROSTER[mutsumi];
   assert.equal(data.skills[3].breakout, true, '轮奏 is a breakout');
 
-  const escape = newGame(mutsumi, 2); const [e1, e2] = escape.fighters; dummy(escape);
+  const escape = newGame(mutsumi, at('boulder')); const [e1, e2] = escape.fighters; dummy(escape);
   e1.queue.push({ index: 3, ttl: .18 });
   hit(escape, e2, e1, e2.data.skills[5], { hit: new Set() });
   assert.equal(e1.hitBySuper, true, 'a super marks the combo');
@@ -734,7 +766,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(escaped, '轮奏 comes out during the super');
   assert.ok(invuln > .7, `the breakout is invulnerable for 0.8s, saw ${invuln}`);
 
-  const normal = newGame(mutsumi, 2); const [n1] = normal.fighters; dummy(normal);
+  const normal = newGame(mutsumi, at('boulder')); const [n1] = normal.fighters; dummy(normal);
   normal.keyDown('KeyI');
   run(normal, .05);
   assert.equal(n1.attack?.skill.name, '轮奏', '轮奏 casts normally');
@@ -747,14 +779,14 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(uika >= 0, 'uika is on the roster');
   const FLOOR_Y = 443;
 
-  const full = newGame(uika, 2); dummy(full);
+  const full = newGame(uika, at('boulder')); dummy(full);
   full.fighters[1].x = full.fighters[0].x + 700;
   full.keyDown('KeyI');
   let one = 0;
   for (let i = 0; i < Math.round(.9 / STEP); i++) { full.step(STEP); one = Math.max(one, full.projectiles.length); }
   assert.equal(one, 1, '满血悲鸣 fires one');
 
-  const low = newGame(uika, 2); dummy(low);
+  const low = newGame(uika, at('boulder')); dummy(low);
   low.fighters[0].hp = 200;
   low.fighters[1].x = low.fighters[0].x + 700;
   low.keyDown('KeyI');
@@ -766,13 +798,13 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(crawlSkill.damage, 18, '爬行 damage');
   assert.equal(crawlSkill.cd, 1.2, '爬行 cooldown');
 
-  const crawl = newGame(uika, 2); const [c1, c2] = crawl.fighters; dummy(crawl);
+  const crawl = newGame(uika, at('boulder')); const [c1, c2] = crawl.fighters; dummy(crawl);
   c2.x = c1.x + 70; c2.facing = -1;
   const standHp = c2.hp;
   crawl.keyDown('KeyU'); run(crawl, .5);
   assert.ok(c2.hp < standHp, '爬行 hits a standing target');
 
-  const hop = newGame(uika, 2); const [h1, h2] = hop.fighters; dummy(hop);
+  const hop = newGame(uika, at('boulder')); const [h1, h2] = hop.fighters; dummy(hop);
   h2.x = h1.x + 70; h2.facing = -1;
   const hopHp = h2.hp;
   hop.keyDown('KeyU');
@@ -782,7 +814,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
   assert.equal(h2.hp, hopHp, '爬行 misses a jump near the apex');
 
-  const shove = newGame(uika, 2); const [s1, s2] = shove.fighters; dummy(shove);
+  const shove = newGame(uika, at('boulder')); const [s1, s2] = shove.fighters; dummy(shove);
   s1.energy = 100;
   s2.x = s1.x + 180; s2.facing = 1;
   const startX = s2.x;
@@ -808,7 +840,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const thrown = 3200 * Math.exp(-9 * STEP);
   assert.ok(Math.abs(peak - thrown) < 1, `推落 throws hard, saw ${peak}`);
 
-  const whiff = newGame(uika, 2); const [w1] = whiff.fighters; dummy(whiff);
+  const whiff = newGame(uika, at('boulder')); const [w1] = whiff.fighters; dummy(whiff);
   w1.energy = 100;
   whiff.fighters[1].x = w1.x + 900;
   whiff.keyDown('KeyL');
@@ -835,7 +867,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(drumShotTime(super5, 8) - drumShotTime(super5, 7) > .4, '满场 falls in two waves');
   assert.ok(drumShotTime(super5, 15) < super5.duration, 'the second wave fits in the super');
 
-  const g = newGame(nyamu, 2); const [p1, p2] = g.fighters; dummy(g);
+  const g = newGame(nyamu, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
   p1.energy = p1.energyMax;
   p2.x = p1.x + 80; p2.facing = -1;
   const startX = p2.x;
@@ -856,7 +888,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
   assert.ok(span > 400, `满场 notes span the stage, saw ${span}`);
 
-  const beat = newGame(nyamu, 2); dummy(beat);
+  const beat = newGame(nyamu, at('boulder')); dummy(beat);
   beat.fighters[0].energy = beat.fighters[0].energyMax;
   beat.fighters[1].invuln = 5;
   beat.keyDown('KeyL');
@@ -889,13 +921,13 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(data.skills[4].fx, 'ripple', '恐湖 is the ripple');
   assert.equal(data.skills[5].fx, 'slam', '信用 is the slam');
 
-  const close = newGame(umiri, 2); const [c1, c2] = close.fighters; dummy(close);
+  const close = newGame(umiri, at('boulder')); const [c1, c2] = close.fighters; dummy(close);
   c2.x = c1.x + 55; c2.facing = -1;
   const closeHp = c2.hp;
   close.keyDown('KeyU'); run(close, .3);
   assert.ok(c2.hp < closeHp, '报价 hits point-blank');
 
-  const mid = newGame(umiri, 2); const [m1, m2] = mid.fighters; dummy(mid);
+  const mid = newGame(umiri, at('boulder')); const [m1, m2] = mid.fighters; dummy(mid);
   m2.x = m1.x + 220; m2.facing = -1;
   const midHp = m2.hp;
   mid.keyDown('KeyU'); run(mid, 1.2);
@@ -907,36 +939,36 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   mid.step(STEP);
   assert.ok(m1.energy >= before + 26, 'picking up the milk restores 26 energy');
 
-  const far = newGame(umiri, 2); const [f1, f2] = far.fighters; dummy(far);
+  const far = newGame(umiri, at('boulder')); const [f1, f2] = far.fighters; dummy(far);
   f2.x = f1.x + 480; f2.facing = -1;
   const farHp = f2.hp;
   far.keyDown('KeyU'); run(far, 1.1);
   assert.ok(f2.hp < farHp, '报价 hits on the way down');
 
-  const bags = newGame(umiri, 2); const [b1, b2] = bags.fighters; dummy(bags);
+  const bags = newGame(umiri, at('boulder')); const [b1, b2] = bags.fighters; dummy(bags);
   b2.x = b1.x + 55; b2.facing = -1;
   bags.keyDown('KeyI');
   run(bags, .8);
   assert.equal(b1.combo, 6, '扫货 connects all six up close');
-  const whiff = newGame(umiri, 2); const [w1, w2] = whiff.fighters; dummy(whiff);
+  const whiff = newGame(umiri, at('boulder')); const [w1, w2] = whiff.fighters; dummy(whiff);
   w2.x = w1.x - 200;
   whiff.keyDown('KeyI'); run(whiff, 1.6);
   assert.equal(whiff.projectiles.filter(p => p.fx === 'bag').length, 0, 'bags vanish on landing');
 
-  const behind = newGame(umiri, 2); const [r1, r2] = behind.fighters; dummy(behind);
+  const behind = newGame(umiri, at('boulder')); const [r1, r2] = behind.fighters; dummy(behind);
   r2.x = r1.x - 180;
   const behindX = r2.x, behindHp = r2.hp;
   behind.keyDown('KeyO'); run(behind, .5);
   assert.ok(r2.hp < behindHp, '恐湖 hits behind her');
   assert.ok(r2.x < behindX - 40, `恐湖 knocks back, moved ${behindX - r2.x}`);
 
-  const hop = newGame(umiri, 2); const [h1, h2] = hop.fighters; dummy(hop);
+  const hop = newGame(umiri, at('boulder')); const [h1, h2] = hop.fighters; dummy(hop);
   h2.x = h1.x + 80; h2.y = 443 - 100;
   const hopHp = h2.hp;
   hop.keyDown('KeyO'); run(hop, .5);
   assert.equal(h2.hp, hopHp, '恐湖 misses a jump');
 
-  const escape = newGame(umiri, 2); const [e1, e2] = escape.fighters; dummy(escape);
+  const escape = newGame(umiri, at('boulder')); const [e1, e2] = escape.fighters; dummy(escape);
   e1.queue.push({ index: 4, ttl: .18 });
   hit(escape, e2, e1, e2.data.skills[5], { hit: new Set() });
   assert.equal(e1.hitBySuper, true, 'a super marks the combo');
@@ -949,12 +981,12 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(escaped, '恐湖 comes out during the super');
   assert.ok(invuln > .3, 'the escape is invulnerable');
 
-  const down = newGame(umiri, 2); const [d1] = down.fighters; dummy(down);
+  const down = newGame(umiri, at('boulder')); const [d1] = down.fighters; dummy(down);
   d1.stun = .4; d1.knocked = 1; d1.vy = 0; d1.hitBySuper = true;
   down.keyDown('KeyO'); down.step(STEP);
   assert.equal(d1.attack, null, '恐湖 does not escape a knockdown');
 
-  const slam = newGame(umiri, 2); const [s1, s2] = slam.fighters; dummy(slam);
+  const slam = newGame(umiri, at('boulder')); const [s1, s2] = slam.fighters; dummy(slam);
   s1.energy = s1.energyMax;
   s2.x = s1.x + 70; s2.facing = -1;
   const slamHp = s2.hp;
@@ -978,14 +1010,14 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(data.skills[5].count, 6, '不会再逃避了 swings six times');
   assert.equal(data.skills[5].fx, 'spin', 'the super is the guitar spin');
 
-  const dash = newGame(anon, 2); const [d1, d2] = dash.fighters; dummy(dash);
+  const dash = newGame(anon, at('boulder')); const [d1, d2] = dash.fighters; dummy(dash);
   d2.x = 900; d2.invuln = 5;
   const x0 = d1.x;
   dash.keyDown('KeyU');
   run(dash, .5);
   assert.ok(d1.x - x0 > 400 && d1.x - x0 < 480, `羽丘跑女 crosses about half the stage, moved ${d1.x - x0}`);
 
-  const tap = newGame(anon, 2); const [t1, t2] = tap.fighters; dummy(tap);
+  const tap = newGame(anon, at('boulder')); const [t1, t2] = tap.fighters; dummy(tap);
   t2.invuln = 5; t2.x = t1.x + 400;
   tap.keyDown('KeyI'); tap.keyUp('KeyI');
   let tapped = 0;
@@ -995,7 +1027,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
   assert.equal(tapped, 3, 'a tap strums three notes');
 
-  const held = newGame(anon, 2); const [h1, h2] = held.fighters; dummy(held);
+  const held = newGame(anon, at('boulder')); const [h1, h2] = held.fighters; dummy(held);
   h2.invuln = 5; h2.x = h1.x + 400;
   held.keyDown('KeyI');
   let full = 0;
@@ -1006,7 +1038,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   held.keyUp('KeyI');
   assert.equal(full, 12, 'holding the key strums twelve notes');
 
-  const home = newGame(anon, 2); const [n1, n2] = home.fighters; dummy(home);
+  const home = newGame(anon, at('boulder')); const [n1, n2] = home.fighters; dummy(home);
   n2.invuln = 5; n2.x = n1.x - 220;
   home.keyDown('KeyI'); home.keyUp('KeyI');
   run(home, .3);
@@ -1016,7 +1048,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const turned = home.projectiles.find(p => p.fx === 'chord');
   assert.ok(turned && turned.vx < 0, `notes steer toward a target behind her, vx ${turned?.vx}`);
 
-  const root = newGame(anon, 2); const [r1, r2] = root.fighters; dummy(root);
+  const root = newGame(anon, at('boulder')); const [r1, r2] = root.fighters; dummy(root);
   r2.x = r1.x + 90; r2.facing = -1;
   root.keyDown('KeyO');
   run(root, .8);
@@ -1030,7 +1062,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   hit(root, r1, r2, r1.data.skills[0], { hit: new Set() });
   assert.equal(r2.root, 0, 'the second extra hit clears the root');
 
-  const spin = newGame(anon, 2); const [s1, s2] = spin.fighters; dummy(spin);
+  const spin = newGame(anon, at('boulder')); const [s1, s2] = spin.fighters; dummy(spin);
   s1.energy = s1.energyMax;
   s2.x = s1.x - 70; s2.facing = 1;
   const spinHp = s2.hp;
@@ -1059,7 +1091,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok((data.skills[5].life ?? 0) * (data.skills[5].speed ?? 0) < 260, 'the shout wave covers about a quarter of the stage');
   assert.ok(data.view.kind === 'sprite' && !!data.view.frenzy, 'soyo preloads a frenzy sheet');
 
-  const grab = newGame(soyo, 2); const [c1, c2] = grab.fighters; dummy(grab);
+  const grab = newGame(soyo, at('boulder')); const [c1, c2] = grab.fighters; dummy(grab);
   c2.x = c1.x + 100; c2.facing = -1;
   const grabHp = c2.hp;
   grab.keyDown('KeyU');
@@ -1078,21 +1110,21 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(peakShake >= 8, `the launch shakes the screen, saw ${peakShake}`);
   assert.equal(c1.attack, null, 'onegai plays out and ends');
 
-  const miss = newGame(soyo, 2); const [m1, m2] = miss.fighters; dummy(miss);
+  const miss = newGame(soyo, at('boulder')); const [m1, m2] = miss.fighters; dummy(miss);
   m2.x = m1.x + 420;
   miss.keyDown('KeyU');
   run(miss, .8);
   assert.equal(m1.attack, null, 'a whiffed onegai ends early');
   assert.equal(m2.hp, m2.data.hp, 'the whiff deals nothing');
 
-  const repel = newGame(soyo, 2); const [r1, r2] = repel.fighters; dummy(repel);
+  const repel = newGame(soyo, at('boulder')); const [r1, r2] = repel.fighters; dummy(repel);
   r2.x = r1.x + 90; r2.facing = -1;
   const rx = r2.x;
   repel.keyDown('KeyI');
   run(repel, .6);
   assert.ok(r2.x > rx + 30, `resolve shoves nearby foes, moved ${r2.x - rx}`);
 
-  const fren = newGame(soyo, 2); const [g1, g2] = fren.fighters; dummy(fren);
+  const fren = newGame(soyo, at('boulder')); const [g1, g2] = fren.fighters; dummy(fren);
   fren.keyDown('KeyI');
   run(fren, .55);
   assert.ok(g1.frenzy > 7, `resolve grants frenzy, left ${g1.frenzy}`);
@@ -1105,7 +1137,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(g1.frenzy, 0, 'frenzy expires after eight seconds');
 
   // 狂化连招: mashing J loops light ×3 into an automatic heavy, and a pause beyond the window cools the chain
-  const mash = newGame(soyo, 2); const [j1] = mash.fighters; dummy(mash);
+  const mash = newGame(soyo, at('boulder')); const [j1] = mash.fighters; dummy(mash);
   j1.energy = 100;
   mash.keyDown('KeyI');
   run(mash, 1.0);
@@ -1128,7 +1160,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   jab(); jab(); jab(); jab();
   assert.deepEqual(presses, [0, 0, 0, 1, 0, 0, 0, 0, 1], 'a pause beyond the window cools the chain, then it rebuilds');
 
-  const sob = newGame(soyo, 2); const [b1, b2] = sob.fighters; dummy(sob);
+  const sob = newGame(soyo, at('boulder')); const [b1, b2] = sob.fighters; dummy(sob);
   b2.x = 980;
   sob.keyDown('KeyO');
   run(sob, 1.5);
@@ -1137,7 +1169,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(notes.every(p => p.y > FLOOR - 60), 'the notes hug the floor');
   assert.ok(Math.abs(notes[0].y - notes[1].y) > 10, 'the two notes ride different heights');
 
-  const shout = newGame(soyo, 2); const [w1, w2] = shout.fighters; dummy(shout);
+  const shout = newGame(soyo, at('boulder')); const [w1, w2] = shout.fighters; dummy(shout);
   w2.x = w1.x + 200; w2.facing = -1;
   w1.energy = w1.energyMax;
   shout.keyDown('KeyL');
@@ -1151,7 +1183,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(shout.attack(w1, 0), 'she acts immediately after the wave');
 
   // The wave itself dies of range with nothing in the way.
-  const far = newGame(soyo, 2); const [f1, f2] = far.fighters; dummy(far);
+  const far = newGame(soyo, at('boulder')); const [f1, f2] = far.fighters; dummy(far);
   f2.x = f1.x + 700; f2.invuln = 5;
   f1.energy = f1.energyMax;
   far.keyDown('KeyL');
@@ -1195,7 +1227,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
   // U: the stone flies and shoves the dummy
   {
-    const g = newGame(tomori, 2); const [t1, t2] = g.fighters; dummy(g);
+    const g = newGame(tomori, at('boulder')); const [t1, t2] = g.fighters; dummy(g);
     t2.x = t1.x + 260; t2.facing = -1;
     const sx = t2.x;
     g.keyDown('KeyU');
@@ -1206,7 +1238,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
   // I: the plaster shoves the crowd and braces her; a hit during the brace does not stop a move
   {
-    const g = newGame(tomori, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(tomori, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 90; p2.facing = -1;
     const px = p2.x;
     g.keyDown('KeyI');
@@ -1233,7 +1265,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
   // I is a breakout: buffered through a super like 轮奏
   {
-    const g = newGame(tomori, 2); const [e1, e2] = g.fighters; dummy(g);
+    const g = newGame(tomori, at('boulder')); const [e1, e2] = g.fighters; dummy(g);
     e1.queue.push({ index: 3, ttl: .18 });
     hit(g, e2, e1, e2.data.skills[5], { hit: new Set() });
     assert.equal(e1.hitBySuper, true, 'a super marks the combo');
@@ -1242,7 +1274,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
   // grabs ignore the brace, but a plain hit does not flinch it
   {
-    const g = newGame(tomori, 2); const [b1, b2] = g.fighters; dummy(g);
+    const g = newGame(tomori, at('boulder')); const [b1, b2] = g.fighters; dummy(g);
     addMod(b1, 'brace', 6, { v: .67 });
     const hp = b1.hp;
     hit(g, b2, b1, b2.data.skills[0], { hit: new Set() });
@@ -1254,7 +1286,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
   // O: the well spawns ahead, drags the dummy to its centre and ticks low damage
   {
-    const g = newGame(tomori, 2); const [h1, h2] = g.fighters; dummy(g);
+    const g = newGame(tomori, at('boulder')); const [h1, h2] = g.fighters; dummy(g);
     h2.x = h1.x + 300; h2.facing = -1;
     g.keyDown('KeyO');
     run(g, .5);
@@ -1271,7 +1303,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
   // L: the sing shoves, a teammate answers, fights, dies early, and a new one bows out on time
   {
-    const g = newGame(tomori, 2); const [s1, s2] = g.fighters; dummy(g);
+    const g = newGame(tomori, at('boulder')); const [s1, s2] = g.fighters; dummy(g);
     s1.energy = s1.energyMax;
     s2.x = s1.x + 70; s2.facing = -1;
     const ex = s2.x;
@@ -1308,7 +1340,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
   // the round ends even with a teammate standing
   {
-    const g = newGame(tomori, 2); const [r1] = g.fighters; dummy(g);
+    const g = newGame(tomori, at('boulder')); const [r1] = g.fighters; dummy(g);
     r1.energy = r1.energyMax;
     g.keyDown('KeyL');
     run(g, 1.3);
@@ -1320,7 +1352,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
   // team mode: the teammate id never collides with a real fighter slot
   {
-    const g = new FightGame([ROSTER[tomori], ROSTER[0], ROSTER[2], ROSTER[1]], {
+    const g = new FightGame([ROSTER[tomori], ROSTER[at('gale')], ROSTER[at('boulder')], ROSTER[at('ember')]], {
       mode: 'team', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(7),
     });
     run(g, 2.3);
@@ -1361,12 +1393,12 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(data.skills[3].knock, 0, '气泡 does not knock the victim away');
   assert.equal(data.skills[4].breakout, true, '傲娇音波 is a breakout');
 
-  const pose = newGame(arisa, 2); const [s1] = pose.fighters; dummy(pose);
+  const pose = newGame(arisa, at('boulder')); const [s1] = pose.fighters; dummy(pose);
   pose.keyDown('KeyU');
   run(pose, .5);
   assert.ok(s1.muscle > 0 && s1.poise > 0, '认真模式 arms damage and poise once the pose lands');
 
-  const hitWind = newGame(arisa, 2); const [w1, w2] = hitWind.fighters; dummy(hitWind);
+  const hitWind = newGame(arisa, at('boulder')); const [w1, w2] = hitWind.fighters; dummy(hitWind);
   w2.x = w1.x + 60; w2.facing = -1;
   hitWind.keyDown('KeyU');
   run(hitWind, .1);
@@ -1374,7 +1406,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   run(hitWind, .5);
   assert.equal(w1.muscle, 0, '被打断则失效: a hit during the windup cancels the buff');
 
-  const bubble = newGame(arisa, 2); const [b1, b2] = bubble.fighters; dummy(bubble);
+  const bubble = newGame(arisa, at('boulder')); const [b1, b2] = bubble.fighters; dummy(bubble);
   b2.x = b1.x + 320; b2.facing = -1;
   bubble.keyDown('KeyI');
   let saw = false;
@@ -1385,14 +1417,14 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(saw, '气泡 spawns');
   assert.ok(b2.root > 0, '气泡 roots the victim');
 
-  const wave = newGame(arisa, 2); const [v1] = wave.fighters; dummy(wave);
+  const wave = newGame(arisa, at('boulder')); const [v1] = wave.fighters; dummy(wave);
   wave.keyDown('KeyO');
   run(wave, .4);
   assert.ok(v1.attack && clipFor(v1).row === 1, '傲娇音波 holds the scream cell past the generic .1s active window');
   run(wave, .4);
   assert.ok(v1.attack && clipFor(v1).row === 2, '傲娇音波 settles on the recover cell in the tail');
 
-  const boxGame = newGame(arisa, 2); const [k1, k2] = boxGame.fighters; dummy(boxGame);
+  const boxGame = newGame(arisa, at('boulder')); const [k1, k2] = boxGame.fighters; dummy(boxGame);
   k1.energy = 100;
   boxGame.keyDown('KeyL');
   run(boxGame, .6);
@@ -1421,12 +1453,12 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(guideIndex([0, 1]), 0, 'earlier player wins when both are human');
   assert.equal(guideIndex([null, null, 1, 0]), 2, 'team uses the earliest player slot');
   assert.equal(guideIndex([null, null]), 0, 'all CPU stays on 1P');
-  const first = skillHTML(ROSTER[3]);
-  const second = skillHTML(ROSTER[3], 1);
+  const first = skillHTML(ROSTER[at('sakiko')]);
+  const second = skillHTML(ROSTER[at('sakiko')], 1);
   assert.ok(first.includes('<kbd>J</kbd>') && first.includes('<kbd>L</kbd>'), 'cpu and first player show letter keys');
   assert.ok(second.includes('<kbd>1</kbd>') && second.includes('<kbd>3</kbd>') && !second.includes('<kbd>J</kbd>'), 'later player shows numpad keys');
   assert.ok(second.includes('1 / 2') && !second.includes('J / K'), 'combo hint follows the numpad set');
-  const touch = skillHTML(ROSTER[3], 0, true);
+  const touch = skillHTML(ROSTER[at('sakiko')], 0, true);
   assert.ok(touch.includes('<kbd>轻</kbd>') && touch.includes('<kbd>必</kbd>') && !touch.includes('<kbd>J</kbd>'), 'phone shows on-screen pad labels');
   assert.ok(touch.includes('轻 / 重') && !touch.includes('J / K'), 'combo hint follows the pad labels');
   assert.ok(
@@ -1491,6 +1523,17 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.deepEqual(Object.keys(TOUCH_LAYOUT), ['stick'], 'only the stick keeps a hand-placed spot; the keys are laid out');
   assert.ok(TOUCH_LAYOUT.stick.x < 20 && TOUCH_LAYOUT.stick.y > 70, 'the stick stays in the bottom-left thumb zone');
   const html = readFileSync('index.html', 'utf8');
+  // Settings dialog shows control names and option names only. Extra sentences fail this lock.
+  {
+    const start = html.indexOf('<dialog id="settings-dialog">');
+    const end = html.indexOf('</dialog>', start);
+    assert.ok(start >= 0 && end > start, 'settings dialog exists');
+    const visible = html.slice(start, end).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    assert.equal(visible, '设置 × 名册显示 直接排开 按乐队分组', 'settings dialog shows names only, no explanation');
+    const css = readFileSync('src/style.css', 'utf8');
+    assert.ok(css.includes('min-width: max-content'), 'settings options keep their full label');
+    assert.ok(!css.includes('100vw'), 'dialog width must not use 100vw; it includes the scrollbar and shifts the page');
+  }
   for (const gone of ['data-pad="jump"']) {
     assert.ok(!html.includes(gone), gone + ' is gone: jumping is the stick edge');
   }
@@ -1646,7 +1689,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(blocks >= 12, `a block tap during the light comes out, frames ${blocks}`);
 
   const sakiko = ROSTER.findIndex(c => c.id === 'sakiko');
-  const flurry = newGame(sakiko, 2); const [f1, f2] = flurry.fighters; dummy(flurry);
+  const flurry = newGame(sakiko, at('boulder')); const [f1, f2] = flurry.fighters; dummy(flurry);
   f2.x = f1.x + 50; f2.facing = -1;
   flurry.keyDown('KeyI');
   flurry.step(STEP);
@@ -1685,7 +1728,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
   // beat: a clean jab stacks one, taking a hit shakes two
   {
-    const g = newGame(taki, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(taki, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 60; p2.facing = -1;
     g.keyDown('KeyJ'); run(g, .3);
     assert.equal(p1.beatStacks, 1, 'a clean hit adds a beat');
@@ -1695,7 +1738,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
   // U: the bubble pops, drains meter and says so out loud
   {
-    const g = newGame(taki, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(taki, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 260; p2.facing = -1;
     p2.energy = 50;
     g.keyDown('KeyU'); run(g, 1);
@@ -1706,14 +1749,14 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
   // I: 哈？shoves a fighter standing behind her, and breaks out of a super
   {
-    const g = newGame(taki, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(taki, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p1.x = 400; p2.x = p1.x - 180;
     const hp = p2.hp, bx = p2.x;
     g.keyDown('KeyI'); run(g, .5);
     assert.ok(p2.hp < hp, '哈？hits behind her');
     assert.ok(p2.x < bx - 40, `哈？knocks back, moved ${bx - p2.x}`);
 
-    const escape = newGame(taki, 2); const [e1, e2] = escape.fighters; dummy(escape);
+    const escape = newGame(taki, at('boulder')); const [e1, e2] = escape.fighters; dummy(escape);
     e1.queue.push({ index: 3, ttl: .18 });
     hit(escape, e2, e1, e2.data.skills[5], { hit: new Set() });
     assert.equal(e1.hitBySuper, true, 'a super marks the combo');
@@ -1728,7 +1771,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
   // O: the ban dash freezes the body — no action, no knockback, half damage, and only time lifts it
   {
-    const g = newGame(taki, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(taki, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 90; p2.facing = -1;
     g.keyDown('KeyO'); run(g, .5);
     assert.ok(p2.ban > 2.5, `the ban applied, left ${p2.ban}`);
@@ -1747,7 +1790,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
   // L: the vow catches a wrist, says the line, beats seven times and launches
   {
-    const g = newGame(taki, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(taki, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p1.energy = p1.energyMax;
     p2.x = p1.x + 70; p2.facing = -1;
     const hp = p2.hp;
@@ -1762,7 +1805,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(hp - p2.hp > 120, `the solo dealt damage, ${hp - p2.hp}`);
     assert.equal(p1.attack, null, 'the vow plays out');
 
-    const low = newGame(taki, 2); const [l1, l2] = low.fighters; dummy(low);
+    const low = newGame(taki, at('boulder')); const [l1, l2] = low.fighters; dummy(low);
     l1.energy = l1.energyMax;
     l1.hp = l1.data.hp * .2;
     l2.x = l1.x + 70; l2.facing = -1;
@@ -1770,7 +1813,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     run(low, .5);
     assert.ok(low.texts.some(t => t.text.includes('祥子')), 'low health swaps the line');
 
-    const miss = newGame(taki, 2); const [m1, m2] = miss.fighters; dummy(miss);
+    const miss = newGame(taki, at('boulder')); const [m1, m2] = miss.fighters; dummy(miss);
     m1.energy = m1.energyMax;
     m2.x = m1.x + 900;
     miss.keyDown('KeyL');
@@ -1794,7 +1837,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(data.skills[5].fx, 'parfait', 'the super is the parfait');
 
   // U: a tap strums one wave; holding the key keeps them coming
-  const tap = newGame(rana, 2); const [t1, t2] = tap.fighters; dummy(tap);
+  const tap = newGame(rana, at('boulder')); const [t1, t2] = tap.fighters; dummy(tap);
   t2.invuln = 5; t2.x = t1.x + 120; t2.facing = -1;
   tap.keyDown('KeyU'); tap.keyUp('KeyU');
   let tapped = 0;
@@ -1802,7 +1845,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(tapped, 1, 'a tap strums one wave');
   assert.ok(Math.abs(t1.cooldowns[2] - 1) < .05, `a tap cools from 2s, saw ${t1.cooldowns[2].toFixed(2)}`);
 
-  const held = newGame(rana, 2); const [h1, h2] = held.fighters; dummy(held);
+  const held = newGame(rana, at('boulder')); const [h1, h2] = held.fighters; dummy(held);
   h2.invuln = 5; h2.x = h1.x + 120; h2.facing = -1;
   held.keyDown('KeyU');
   run(held, 4.5);
@@ -1811,7 +1854,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(Math.abs(h1.cooldowns[2] - 2.5) < .05, `a full channel cools from 7s — about 2.5s left, saw ${h1.cooldowns[2].toFixed(2)}`);
 
   // later waves reach past the first radius
-  const far = newGame(rana, 2); const [f1, f2] = far.fighters; dummy(far);
+  const far = newGame(rana, at('boulder')); const [f1, f2] = far.fighters; dummy(far);
   f2.x = f1.x + 210; f2.facing = -1;
   const fhp = f2.hp;
   far.keyDown('KeyU');
@@ -1820,7 +1863,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(f2.hp < fhp, 'later waves reach past the first radius');
 
   // I: she vanishes and steps out ahead, through a body, touching nothing
-  const blink = newGame(rana, 2); const [b1, b2] = blink.fighters; dummy(blink);
+  const blink = newGame(rana, at('boulder')); const [b1, b2] = blink.fighters; dummy(blink);
   b2.x = b1.x + 90; b2.facing = -1;
   const bx = b1.x, bhp = b2.hp;
   blink.keyDown('KeyI');
@@ -1830,7 +1873,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(b2.hp, bhp, 'the blink deals nothing');
 
   // the disc hits a jumper — the wave is a screen-facing circle, not a ground ring
-  const air = newGame(rana, 2); const [a1, a2] = air.fighters; dummy(air);
+  const air = newGame(rana, at('boulder')); const [a1, a2] = air.fighters; dummy(air);
   a2.x = a1.x + 100; a2.facing = -1;
   const ahp = a2.hp;
   air.keyDown('KeyU');
@@ -1842,7 +1885,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(a2.hp < ahp, 'the wave disc hits a jumper');
 
   // L: the parfait stands, she is free right after, and the blobs erupt both ways
-  const supe = newGame(rana, 2); const [s1, s2] = supe.fighters; dummy(supe);
+  const supe = newGame(rana, at('boulder')); const [s1, s2] = supe.fighters; dummy(supe);
   s1.energy = s1.energyMax;
   s2.x = s1.x + 260; s2.facing = -1;
   supe.keyDown('KeyL');
@@ -1899,7 +1942,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
   // U: seven punches pin the victim, the eighth is the shove — and the meter barely moves
   {
-    const g = newGame(arale, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(arale, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 70; p2.facing = -1;
     const hp = p2.hp, e0 = p1.energy, x0 = p2.x;
     g.keyDown('KeyU'); run(g, 1.15);
@@ -1912,7 +1955,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
   // I: the slow wave reaches far and carries the victim with it
   {
-    const g = newGame(arale, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(arale, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 400; p2.facing = -1;
     const x0 = p2.x, hp = p2.hp;
     g.keyDown('KeyI'); run(g, 2.2);
@@ -1922,7 +1965,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
   // O: the flex shoves the crowd and boosts damage ×1.3 while it holds
   {
-    const g = newGame(arale, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(arale, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 90; p2.facing = -1;
     const px = p2.x;
     g.keyDown('KeyO'); run(g, .5);
@@ -1942,7 +1985,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
   // L: the dream frenzies — faster J/K with cloned reach, no cooldown cut, no auto-heavy, gold ghosts
   {
-    const g = newGame(arale, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(arale, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p1.energy = p1.energyMax;
     g.keyDown('KeyL'); run(g, .8);
     assert.ok(p1.frenzy > 9, `the dream grants frenzy, left ${p1.frenzy}`);
@@ -1959,7 +2002,8 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
     // the true brace: supers and jabs never stagger her, the escape never fires, grabs still bite
     {
-      const foe = ROSTER.findIndex(c => c.skills.some(s => s.super && s.type !== 'grab' && !['heart', 'shout', 'ban'].includes(s.fx ?? '')));
+      const foe = ROSTER.findIndex(c => c.skills.some(s => s.type === 'grab')
+        && c.skills.some(s => s.super && s.type !== 'grab' && !['heart', 'shout', 'ban'].includes(s.fx ?? '')));
       assert.ok(foe >= 0, 'a non-control super exists to test the brace against');
       const bg = newGame(arale, foe); const [b1, b2] = bg.fighters; dummy(bg);
       b1.energy = b1.energyMax;
@@ -1981,7 +2025,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
       assert.ok(b1.energy < 2, `the gain lock holds the meter down while trading hits, got ${b1.energy}`);
     }
 
-    const mash = newGame(arale, 2); const [j1] = mash.fighters; dummy(mash);
+    const mash = newGame(arale, at('boulder')); const [j1] = mash.fighters; dummy(mash);
     j1.energy = j1.energyMax;
     mash.keyDown('KeyL');
     run(mash, 1.0);
@@ -2024,14 +2068,14 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(KUJI_STEP * KUJI.length < data.skills[5].duration, 'the nine flashes finish during the cast');
 
   {
-    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(miyako, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 150; p2.y = FLOOR - 8; p2.vy = -500;
     const hp = p2.hp;
     g.keyDown('KeyU'); run(g, .5);
     assert.equal(p2.hp, hp, 'the smash misses a jump');
   }
   {
-    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(miyako, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 150; p2.facing = -1;
     const hp = p2.hp;
     g.keyDown('KeyU'); run(g, .5);
@@ -2042,7 +2086,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.equal(p2.frailBonus, .2, 'the smash frail is +20%');
   }
   {
-    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(miyako, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 40; p2.facing = -1; p2.blocking = true;
     hit(g, p1, p2, p1.data.skills[2], { hit: new Set() });
     assert.equal(p2.frail, 0, 'a blocked smash does not leave them frail');
@@ -2075,7 +2119,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.equal(p2.frail, 0, 'frail lasts 2 seconds');
   }
   {
-    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(miyako, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 50; p2.facing = -1;
     g.keyDown('KeyI'); run(g, .15);
     assert.ok(p1.attack, 'the pose is playing');
@@ -2085,7 +2129,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.equal(p1.poise, 0, 'an interrupted pose grants no poise');
   }
   {
-    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(miyako, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     g.keyDown('KeyI'); run(g, .75);
     assert.ok(p1.sprint > 4, `the marathon speeds her up, left ${p1.sprint}`);
     assert.ok(p1.poise > 4, `the marathon keeps her from flinching, left ${p1.poise}`);
@@ -2107,7 +2151,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(taken > 20, `poise does not cut damage, took ${taken}`);
   }
   {
-    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(miyako, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 60; p2.facing = -1;
     const x0 = p2.x, hp = p2.hp;
     g.keyDown('KeyO'); run(g, .6);
@@ -2116,14 +2160,14 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.equal(p2.knocked, 0, 'the howl does not knock down');
   }
   {
-    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(miyako, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 130; p2.facing = -1;
     const hp = p2.hp;
     g.keyDown('KeyO'); run(g, .6);
     assert.equal(p2.hp, hp, 'the howl misses past its radius');
   }
   {
-    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(miyako, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 40; p2.facing = -1;
     const jab = p2.data.skills[0];
     const hp0 = p1.hp;
@@ -2148,7 +2192,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(p1.stun > 0 || p1.knocked > 0, 'a grab still breaks the howl');
   }
   {
-    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(miyako, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p1.energy = p1.energyMax;
     p2.x = p1.x + 90; p2.facing = -1;
     const hp = p2.hp;
@@ -2161,7 +2205,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.equal(p2.blocking, false, 'purge eats the block');
   }
   {
-    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(miyako, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.blocking = true; p2.facing = -1; p2.x = p1.x + 40;
     hit(g, p1, p2, p1.data.skills[5], { hit: new Set() }, p1.x);
     assert.equal(p2.purge, 0, 'a blocked circle does not seal');
@@ -2171,7 +2215,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.equal(p2.knocked, 0, 'even the last tick stays on their feet');
   }
   {
-    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(miyako, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p1.energy = p1.energyMax;
     p2.x = p1.x + 500;
     g.keyDown('KeyL'); run(g, .7);
@@ -2182,7 +2226,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(g.projectiles.some(p => p.fx === 'seal' && p.life > 0), 'a shot does not break the circle');
   }
   {
-    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(miyako, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p1.energy = p1.energyMax;
     p2.x = p1.x + 400;
     g.keyDown('KeyL'); run(g, .7);
@@ -2206,7 +2250,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.equal(sealSwell(size, 400, 0).shift, 0, 'at rest the circle is centred');
   }
   {
-    const g = newGame(miyako, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(miyako, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p1.energy = p1.energyMax;
     p1.facing = 1;
     p2.facing = -1;
@@ -2254,7 +2298,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(data.skills[5].super, true, 'L is the super');
 
   {
-    const g = newGame(ritsu, 0); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(ritsu, at('gale')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = 80;
     g.keyDown('KeyU'); run(g, .1);
     assert.equal(clipFor(p1).ox, RIB_OX[0], 'the slam windup shifts back out');
@@ -2271,7 +2315,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
 
   {
-    const g = newGame(ritsu, 0); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(ritsu, at('gale')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 80; p2.facing = -1;
     const hp = p2.hp;
     g.keyDown('KeyU'); run(g, .7);
@@ -2279,7 +2323,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(p2.knocked > 0, 'the slam knocks down');
   }
   {
-    const g = newGame(ritsu, 0); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(ritsu, at('gale')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 70; p2.facing = -1;
     p2.y = FLOOR - 1; p2.vy = -600;
     const hp = p2.hp;
@@ -2287,7 +2331,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.equal(p2.hp, hp, 'a jump clears the slam');
   }
   {
-    const g = newGame(ritsu, 0); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(ritsu, at('gale')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = 80;
     const x0 = p1.x;
     g.keyDown('KeyI'); run(g, .9);
@@ -2295,7 +2339,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(moved > 370 && moved < 400, `the skewer travels about 384px, moved ${moved}`);
   }
   {
-    const g = newGame(ritsu, 0); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(ritsu, at('gale')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 70; p2.facing = -1;
     const hp = p2.hp;
     g.keyDown('KeyI'); run(g, .9);
@@ -2305,7 +2349,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(p1.x > p2.x, 'the dash keeps going after the hit');
   }
   {
-    const g = newGame(ritsu, 0); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(ritsu, at('gale')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 50; p2.facing = -1;
     p2.y = FLOOR - 1; p2.vy = -600;
     const hp = p2.hp;
@@ -2313,7 +2357,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.equal(p2.hp, hp, 'a jump clears the skewer');
   }
   {
-    const g = newGame(ritsu, 0); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(ritsu, at('gale')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 50; p2.facing = -1;
     p1.hp = 400;
     g.keyDown('KeyO'); run(g, .15);
@@ -2324,7 +2368,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.equal(p1.attack, null, 'the hit cancels the bite');
   }
   {
-    const g = newGame(ritsu, 0); const [p1] = g.fighters; dummy(g);
+    const g = newGame(ritsu, at('gale')); const [p1] = g.fighters; dummy(g);
     p1.hp = 400;
     g.keyDown('KeyO'); run(g, .5);
     assert.equal(p1.hp, 460, 'the bite heals 60');
@@ -2335,7 +2379,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.equal(p1.stun, 0, 'the steak brace does not flinch');
   }
   {
-    const g = newGame(ritsu, 0); const [p1] = g.fighters; dummy(g);
+    const g = newGame(ritsu, at('gale')); const [p1] = g.fighters; dummy(g);
     p1.energy = 100;
     p1.hp = 400;
     g.keyDown('KeyL'); run(g, 1);
@@ -2371,7 +2415,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(data.view.kind === 'sprite' && data.view.kingScale, 1.1, 'the king sheet is drawn 1.1× so the body matches');
 
   {
-    const g = newGame(nonoka, 0); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(nonoka, at('gale')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 120; p2.facing = -1;
     const hp = p2.hp;
     g.keyDown('KeyU');
@@ -2384,7 +2428,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(p1.x > x + 20, `she can walk after the bite, moved ${p1.x - x}`);
   }
   {
-    const g = newGame(nonoka, 0); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(nonoka, at('gale')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 50; p2.facing = -1;
     const hp = p2.hp;
     g.keyDown('KeyI');
@@ -2406,7 +2450,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(p1.x > x + 20, `she can walk after the kiss, moved ${p1.x - x}`);
   }
   {
-    const g = newGame(nonoka, 0); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(nonoka, at('gale')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 280; p2.facing = -1;
     g.keyDown('KeyO');
     run(g, .6);
@@ -2431,7 +2475,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(p1.x > x + 20, `she can walk after the summon, moved ${p1.x - x}`);
   }
   {
-    const g = newGame(nonoka, 0); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(nonoka, at('gale')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 100; p2.facing = -1;
     const px = p2.x;
     p1.energy = p1.energyMax;
@@ -2468,7 +2512,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(!g.effects.some(e => e.type === 'ghost'), 'walking in the king form leaves no afterimage');
   }
   {
-    const g = newGame(nonoka, 0); const [p1] = g.fighters; dummy(g);
+    const g = newGame(nonoka, at('gale')); const [p1] = g.fighters; dummy(g);
     g.keyDown('KeyJ'); run(g, .5);
     assert.equal(p1.attack, null, 'the jab lets go');
     const x = p1.x;
@@ -2490,7 +2534,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(data.skills[5].fx, 'infinite', '直接无限大 is the bill');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/yuno/meat.png'), 'the meat is preloaded');
 
-  const tap = newGame(yuno, 2); const [t1] = tap.fighters; dummy(tap);
+  const tap = newGame(yuno, at('boulder')); const [t1] = tap.fighters; dummy(tap);
   tap.fighters[1].x = 80;
   tap.keyDown('KeyU');
   run(tap, .05);
@@ -2499,7 +2543,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(tap.projectiles.filter(p => p.fx === 'groove-note').length, 0, 'a tap throws no notes');
   assert.ok(t1.cooldowns[2] > 1 && t1.cooldowns[2] < 3, `tap cooldown stays near 3s, left ${t1.cooldowns[2]}`);
 
-  const held = newGame(yuno, 2); dummy(held);
+  const held = newGame(yuno, at('boulder')); dummy(held);
   held.fighters[1].invuln = 9;
   held.fighters[1].x = 80;
   held.keyDown('KeyU');
@@ -2507,7 +2551,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const notes = held.projectiles.filter(p => p.fx === 'groove-note').length;
   assert.ok(notes >= 4, `holding the groove fires notes, saw ${notes}`);
 
-  const g = newGame(yuno, 2); const [p1, p2] = g.fighters; dummy(g);
+  const g = newGame(yuno, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
   const hp = p2.hp;
   g.keyDown('KeyI');
   run(g, .4);
@@ -2529,7 +2573,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   run(g, .05);
   assert.equal(g.projectiles.filter(p => p.fx === 'meat' && p.life > 0).length, 0, 'touching the meat picks it up');
 
-  const rain = newGame(yuno, 2); const [r1, r2] = rain.fighters; dummy(rain);
+  const rain = newGame(yuno, at('boulder')); const [r1, r2] = rain.fighters; dummy(rain);
   r2.x = r1.x + 140;
   r2.facing = -1;
   const before = r2.hp;
@@ -2540,7 +2584,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(r2.stun, 0, 'the lane does not stun');
   assert.ok(r1.energy - energy < 4, `the lane grants no hit energy, gained ${r1.energy - energy}`);
 
-  const supe = newGame(yuno, 2); const [s1, s2] = supe.fighters; dummy(supe);
+  const supe = newGame(yuno, at('boulder')); const [s1, s2] = supe.fighters; dummy(supe);
   s1.energy = 100;
   s2.x = 80;
   supe.keyDown('KeyL');
@@ -2576,7 +2620,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
   // U: standing in the marked spot pays the whole string; the finale shoves without a knockdown
   {
-    const g = newGame(viola, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(viola, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 200; p2.facing = -1;
     const hp = p2.hp, x0 = p2.x;
     g.keyDown('KeyU'); run(g, 1.5);
@@ -2587,7 +2631,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
   // U: leave the marked spot during the wind-up — the field plants on the frozen spot and misses
   {
-    const g = newGame(viola, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(viola, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 200; p2.facing = -1;
     const hp = p2.hp;
     g.keyDown('KeyU');
@@ -2602,7 +2646,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
   // U: the lock reaches across the whole stage
   {
-    const g = newGame(viola, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(viola, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = X_MAX; p2.facing = -1;
     const hp = p2.hp;
     g.keyDown('KeyU'); run(g, 1.5);
@@ -2611,7 +2655,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
   // U: blocking the cuts chips and grinds the guard, but her meter stays put
   {
-    const g = newGame(viola, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(viola, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 200; p2.facing = -1;
     g.keyDown('ArrowDown'); run(g, .1);
     assert.ok(p2.blocking, 'holding block');
@@ -2624,7 +2668,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
   // I: the departure burst catches a close foe and she reappears on the far edge
   {
-    const g = newGame(viola, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(viola, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p1.x = 300; p2.x = p1.x + 90; p2.facing = -1;
     const hp = p2.hp;
     g.keyDown('KeyI'); run(g, .35);
@@ -2635,13 +2679,13 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(!violetHidden(p1), 'she is visible again');
   }
   {
-    const g = newGame(viola, 2); const [p1] = g.fighters; dummy(g);
+    const g = newGame(viola, at('boulder')); const [p1] = g.fighters; dummy(g);
     g.keyDown('KeyI'); run(g, .4);
     assert.ok(violetHidden(p1), 'she is gone mid-warp');
   }
   // O: cast, walk, jab — the echo replays the walk and the jab, and nothing can touch it
   {
-    const g = newGame(viola, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(viola, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 220; p2.facing = -1;
     p2.invuln = 99;
     g.keyDown('KeyO'); run(g, .5);
@@ -2662,7 +2706,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
   // O: a recorded hop and jab replay exactly once — the tape never loops back on itself
   {
-    const g = newGame(viola, 2); const [p1] = g.fighters; dummy(g);
+    const g = newGame(viola, at('boulder')); const [p1] = g.fighters; dummy(g);
     g.fighters[1].invuln = 99;
     g.keyDown('KeyO'); run(g, .6);
     g.keyDown('KeyW'); run(g, .15); g.keyUp('KeyW');
@@ -2684,7 +2728,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
   // L: the arrow flies level, she is free at once, and the blast eats a quarter of the stage
   {
-    const g = newGame(viola, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(viola, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p1.energy = 100;
     p1.x = 200; p2.x = 700; p2.facing = -1;
     const hp = p2.hp;
@@ -2701,7 +2745,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
   // L: a full jump clears the arrow and stands outside the edge blast
   {
-    const g = newGame(viola, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(viola, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p1.energy = 100;
     p1.x = 200; p2.x = 640; p2.facing = -1;
     const hp = p2.hp;
@@ -2714,7 +2758,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
   // L: the blast reads friends too — a mid-range catch blows her up along with the foe
   {
-    const g = newGame(viola, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(viola, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p1.energy = 100;
     p1.x = 200; p2.x = 400; p2.facing = -1;
     const hp1 = p1.hp, hp2 = p2.hp;
@@ -2724,7 +2768,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
   // L: point-blank burns her as well — the fuse outlives the cast invuln
   {
-    const g = newGame(viola, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(viola, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p1.energy = 100;
     p2.x = p1.x + 60; p2.facing = -1;
     const hp1 = p1.hp, hp2 = p2.hp;
@@ -2771,7 +2815,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 
   // U: the rolled flavour decides the payoff — strawberry roots, chocolate frails
   {
-    const g = newGame(mana, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(mana, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 300; p2.facing = -1;
     const hp = p2.hp;
     g.keyDown('KeyU'); run(g, 1.4);
@@ -2782,7 +2826,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   }
   // U: direct hits pin the exact control numbers (the variant copies the root fields at the cast)
   {
-    const g = newGame(mana, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(mana, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     const straw = { ...data.skills[2], fx: 'donut-straw', knock: 0, root: 2, rootBreak: 0, rootPin: true };
     hit(g, p1, p2, straw, { hit: new Set() });
     assert.ok(p2.root > 1.9 && p2.root <= 2.01, `the strawberry roots two seconds, left ${p2.root}`);
@@ -2792,7 +2836,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     assert.ok(p2.root > 1.9, 'clean hits never break the strawberry root');
   }
   {
-    const g = newGame(mana, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(mana, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     hit(g, p1, p2, { ...data.skills[2], fx: 'donut-choc', frail: 3.5, frailBonus: .25, knock: 150 }, { hit: new Set() });
     assert.equal(p2.root, 0, 'the chocolate never roots');
     assert.ok(p2.frail > 3, `the chocolate frails 3.5s, left ${p2.frail}`);
@@ -2800,11 +2844,11 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   }
   // the frail bonus really boosts damage by its fraction
   {
-    const clean = newGame(2, 2); const [c1, c2] = clean.fighters; dummy(clean);
+    const clean = newGame(at('boulder'), at('boulder')); const [c1, c2] = clean.fighters; dummy(clean);
     const hp = c2.hp;
     hit(clean, c1, c2, c1.data.skills[0], { hit: new Set() });
     const base = hp - c2.hp;
-    const frailed = newGame(2, 2); const [f1, f2] = frailed.fighters; dummy(frailed);
+    const frailed = newGame(at('boulder'), at('boulder')); const [f1, f2] = frailed.fighters; dummy(frailed);
     f2.frail = 3; f2.frailBonus = .25;
     const hp2 = f2.hp;
     hit(frailed, f1, f2, f1.data.skills[0], { hit: new Set() });
@@ -2812,7 +2856,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   }
   // I: five waves connect point-blank for medium damage and shove the victim out
   {
-    const g = newGame(mana, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(mana, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 60; p2.facing = -1;
     const hp = p2.hp, x0 = p2.x;
     g.keyDown('KeyI'); run(g, 2.6);
@@ -2822,7 +2866,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   }
   // O: the wink crawls across the stage and roots on contact
   {
-    const g = newGame(mana, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(mana, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 420; p2.facing = -1;
     g.keyDown('KeyO'); run(g, 1.0);
     const shot = g.projectiles.find(p => p.fx === 'wink');
@@ -2833,7 +2877,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   }
   // L: the chant freezes the clock and the foe, the pulse roots everyone, two hits shake it off
   {
-    const g = newGame(mana, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(mana, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p1.energy = p1.energyMax;
     g.keyDown('KeyL'); run(g, .1);
     assert.ok(g.timeStop !== null, 'the chant freezes the world');
@@ -2878,6 +2922,105 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   }
 }
 
+// aya: the gauge charges per the spec and the song spends it for tempo; the chop roots against
+// one clean hit, the wrench dash knocks down, and the flash super refreshes cooldowns and halves them
+{
+  const aya = ROSTER.findIndex(c => c.id === 'aya');
+  assert.ok(aya >= 0, 'aya is on the roster');
+  const data = ROSTER[aya];
+  assert.equal(data.trait, 'rush', 'aya is rush');
+  assert.deepEqual(data.bands, ['pastel-palettes'], 'aya fronts Pastel*Palettes');
+  assert.ok(data.gauge && data.gauge.max === 100 && data.gauge.head === true, 'the gauge floats over her head');
+  assert.equal(data.skills[2].fx, 'chop', 'U is the chop');
+  assert.equal(data.skills[2].rootBreak, 1, 'the chop root breaks on one clean hit');
+  assert.equal(data.skills[3].fx, 'sing', 'I is the song');
+  assert.equal(data.skills[4].fx, 'dash', 'O is the wrench dash');
+  assert.equal(data.skills[5].fx, 'flash', 'the super is the flash');
+  assert.equal(data.skills[5].cost, 150, 'the flash costs 150');
+  const ayaGame = newGame(aya, at('boulder'));
+  assert.equal(ayaGame.fighters[0].energyMax, 150, 'the meter caps at the super cost');
+
+  // gauge: taking and blocking charge the defender, dealing charges the attacker
+  {
+    const g = newGame(aya, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 90;
+    hit(g, p2, p1, { ...data.skills[0], damage: 10 }, { hit: new Set() });
+    assert.equal(p1.gauge, 5, `taking a hit charges 5, got ${p1.gauge}`);
+    assert.equal(p2.gauge, 0, 'the attacker without a spec gains nothing');
+  }
+  {
+    const g = newGame(aya, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x - 90; p1.facing = -1;
+    g.keyDown('KeyS'); run(g, .1);
+    hit(g, p2, p1, { ...data.skills[1], damage: 10 }, { hit: new Set() });
+    assert.ok(p1.gauge === .75, `blocking charges .75, got ${p1.gauge}`);
+    g.keyUp('KeyS');
+  }
+  {
+    const g = newGame(aya, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 90; p2.facing = 1;
+    hit(g, p1, p2, { ...data.skills[0], damage: 10 }, { hit: new Set() });
+    assert.equal(p1.gauge, 1.5, `dealing a hit charges 1.5, got ${p1.gauge}`);
+    hit(g, p1, p2, { ...data.skills[3], damage: 10 }, { hit: new Set() });
+    assert.equal(p1.gauge, 1.5, `the song itself never charges the gauge, got ${p1.gauge}`);
+  }
+  // the song: an empty bar keeps the slow tempo, a full bar doubles it; the bar is spent on the first swing
+  {
+    const g = newGame(aya, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 500;
+    g.keyDown('KeyI'); run(g, .45);
+    assert.ok(p1.attack?.skill.fx === 'sing', 'the song started');
+    const emptyInterval = p1.attack?.skill.interval;
+    assert.ok(Math.abs((emptyInterval ?? 0) - .30) < .001, `empty bar sings at .30, got ${emptyInterval}`);
+    assert.equal(p1.gauge, 0, 'the song spends the whole gauge');
+    run(g, 4.9);
+    assert.ok(p1.attack === null, `the song releases with the last wave, t=5.35 attack=${p1.attack ? 'live' : 'done'}`);
+    g.keyUp('KeyI');
+  }
+  {
+    const g = newGame(aya, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.gauge = 100;
+    p2.x = p1.x + 500;
+    g.keyDown('KeyI'); run(g, .45);
+    assert.ok(Math.abs((p1.attack?.skill.interval ?? 1) - .13) < .001, `a full bar sings at .13, got ${p1.attack?.skill.interval}`);
+    g.keyUp('KeyI'); run(g, 6);
+  }
+  // the song can be jump-cancelled one second in, not before
+  {
+    const g = newGame(aya, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 500;
+    g.keyDown('KeyI'); run(g, .8);
+    g.keyDown('KeyW'); run(g, .1); g.keyUp('KeyW');
+    assert.ok(p1.attack !== null && p1.attack.skill.fx === 'sing', 'a jump before one second does not cancel');
+    run(g, .4);
+    g.keyDown('KeyW'); run(g, .1); g.keyUp('KeyW');
+    assert.ok(p1.attack === null, 'the jump past one second cancels the song');
+    assert.ok(p1.vy < 0 || p1.y < FLOOR, 'the cancel hops');
+  }
+  // the flash: repel, a no-cooldown window that bans energy gains, full cooldowns when it ends
+  {
+    const g = newGame(aya, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = 150;
+    p2.x = p1.x + 120;
+    p1.cooldowns[2] = 3;
+    g.keyDown('KeyL'); run(g, 1.8); g.keyUp('KeyL');
+    assert.ok(p1.attack === null || p1.attack.skill.fx !== 'flash', 'the flash played out');
+    assert.ok(p2.x > p1.x + 150, `the flash repelled, foe at ${p2.x}`);
+    assert.ok(p1.cooldowns[2] > 0, 'the window does not wipe cooldowns');
+    assert.ok(g.canAttack(p1, 2), 'skills ignore cooldowns inside the window');
+    assert.ok(p1.braced > 0, 'the encore braces her');
+    assert.ok(g.flash < .4, `the flash is a blink, got ${g.flash}`);
+    assert.ok(p1.energy < 5, `the cast spends the bar, got ${p1.energy}`);
+    const banked = p1.energy;
+    gainEnergy(p1, 30);
+    assert.equal(p1.energy, banked, 'the window bans energy gains');
+    g.keyDown('KeyU'); run(g, .3); g.keyUp('KeyU');
+    assert.ok(p1.cooldowns[2] > 5.5, `a window cast still lands on its full cd, got ${p1.cooldowns[2]}`);
+    run(g, 4.9);
+    assert.ok(p1.cooldowns[2] > 5.4, `the window end starts full cooldowns, got ${p1.cooldowns[2]}`);
+  }
+}
+
 // kokoro: the cartwheel flips once, the cruise caps at twelve segments with the tail at a
 // fifth strength, the juggle ball is a
 // mortal pinball that flies on two axes, and the smile waves root against two clean hits
@@ -2901,7 +3044,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 
   // U: holding the cast key keeps the line, the opposite key flips once, a second reversal is refused
   {
-    const g = newGame(kokoro, 2); const [p1] = g.fighters; dummy(g);
+    const g = newGame(kokoro, at('boulder')); const [p1] = g.fighters; dummy(g);
     const facing = p1.facing;
     g.keyDown('KeyD'); g.keyDown('KeyU'); run(g, .25);
     assert.equal(p1.facing, facing, 'the cartwheel holds its line with the cast direction held');
@@ -2913,7 +3056,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   }
   // I: the cruise rides across, shoves the body along, and stops at twelve segments
   {
-    const g = newGame(kokoro, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(kokoro, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 240; p2.facing = -1;
     const hp = p2.hp, x0 = p2.x;
     g.keyDown('KeyI'); run(g, .4);
@@ -2929,7 +3072,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   }
   // O: the toss leaves at an angle, a wall sends it back faster, and an enemy shot pops it
   {
-    const g = newGame(kokoro, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(kokoro, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     g.keyDown('KeyO'); run(g, .35);
     const ball = g.projectiles.find(p => p.fx === 'juggle-ball');
     assert.ok(ball, 'the ball is tossed');
@@ -2957,7 +3100,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   }
   // L: three waves hit, root, and the default break rule lifts the root on the second clean hit
   {
-    const g = newGame(kokoro, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(kokoro, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 260; p2.facing = -1;
     p1.energy = p1.energyMax;
     const hp = p2.hp;
@@ -3008,7 +3151,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 
   // U: the lane catches a standing target many times — the stars chain, they do not knock back
   {
-    const g = newGame(kasumi, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(kasumi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 180; p2.facing = -1;
     const hp = p2.hp;
     g.keyDown('KeyU'); run(g, 2.0);
@@ -3020,7 +3163,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   }
   // I: the beckon connects point-blank and shoves the victim far out
   {
-    const g = newGame(kasumi, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(kasumi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 80; p2.facing = -1;
     const hp = p2.hp, x0 = p2.x;
     g.keyDown('KeyI'); run(g, 1.4);
@@ -3029,7 +3172,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   }
   // O: the hug pins six nuzzles, then roots for two seconds that two clean hits shake off
   {
-    const g = newGame(kasumi, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(kasumi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 90; p2.facing = -1;
     const hp = p2.hp;
     g.keyDown('KeyO'); run(g, 1.6);
@@ -3041,7 +3184,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   // the hug root itself shakes off after two clean hits (measured away from the cast, whose
   // seventh hit hands the victim the combo escape instead)
   {
-    const g = newGame(kasumi, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(kasumi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 90; p2.facing = -1;
     hit(g, p1, p2, { ...data.skills[4], root: 2, rootPin: true }, { hit: new Set() });
     run(g, 1.4);
@@ -3053,7 +3196,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   }
   // L: the prayer marks the spot, then the star stuns without a hit counter
   {
-    const g = newGame(kasumi, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(kasumi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 200; p2.facing = -1;
     p1.energy = p1.energyMax;
     g.keyDown('KeyL'); run(g, .4);
@@ -3099,7 +3242,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   const data = ROSTER[yukina];
   // U: four pillars, two ahead and two behind, each burning a standing body twice
   {
-    const g = newGame(yukina, 1); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(yukina, at('ember')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 170; p2.facing = -1;
     const hp = p2.hp;
     g.keyDown('KeyU'); run(g, .5);
@@ -3113,7 +3256,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   }
   // I: the bloom shoves, arms the thorns, melee comes back at the attacker, then lifts
   {
-    const g = newGame(yukina, 1); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(yukina, at('ember')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 120; p2.facing = -1;
     g.keyDown('KeyI'); run(g, .55);
     assert.ok(p1.rose > 5, `the thorn window is armed, left ${p1.rose}`);
@@ -3128,7 +3271,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   }
   // O: the wave flings everyone to the wall and deals nothing
   {
-    const g = newGame(yukina, 2); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(yukina, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 400; p2.facing = -1;
     const hp = p2.hp;
     g.keyDown('KeyO'); run(g, .7);
@@ -3138,7 +3281,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   }
   // L: the buff boosts the jab, then the backlash bills 10% of max health
   {
-    const g = newGame(yukina, 1); const [p1, p2] = g.fighters; dummy(g);
+    const g = newGame(yukina, at('ember')); const [p1, p2] = g.fighters; dummy(g);
     p1.energy = p1.energyMax;
     g.keyDown('KeyL'); run(g, .8);
     assert.ok(p1.shout > 6.5, `the buff is running, left ${p1.shout}`);

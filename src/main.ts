@@ -1,6 +1,6 @@
-import { PLAYABLE } from './data/characters.ts';
+import { PLAYABLE, bandMembers } from './data/characters.ts';
 import type { CharacterData, StageData } from './data/types.ts';
-import { FightGame, MINION_POOL } from './game/game.ts';
+import { FightGame, MINION_BAND } from './game/game.ts';
 import { KeyboardInput, TouchInput } from './game/input.ts';
 import { Renderer } from './render/renderer.ts';
 import { createViews } from './render/view.ts';
@@ -50,10 +50,10 @@ function commonOf(list: CharacterData[]): string[] {
   return list.flatMap(c => c.view.kind === 'sprite' ? [c.view.common] : []);
 }
 
-/** 诗超绊 calls a teammate who is not on the match card. Their sheets ride the fight load. */
+/** 诗超绊 calls a bandmate who is not on the match card. Their sheets ride the fight load. */
 function fightSources(characters: CharacterData[], stage: StageData): string[] {
   const mates = characters.some(c => c.skills.some(s => s.fx === 'poem'))
-    ? MINION_POOL.flatMap(id => PLAYABLE.filter(c => c.id === id))
+    ? bandMembers(MINION_BAND)
     : [];
   return assetsFor([...characters, ...mates], stage);
 }
@@ -63,6 +63,21 @@ let bootAt = 0;
 let bootDisplay = 0;
 let bootShown = false;
 let bootDone = true;
+
+/** Roster thumbnails load as they approach the viewport. Re-runs after the roster re-renders
+ *  (the settings popover swaps layouts), since the old observed nodes are gone. */
+let rosterObserver: IntersectionObserver | null = null;
+function observeRoster(): void {
+  rosterObserver?.disconnect();
+  if (typeof IntersectionObserver === 'undefined') return;
+  rosterObserver = new IntersectionObserver(entries => {
+    for (const e of entries) if (e.isIntersecting) {
+      const c = PLAYABLE[Number((e.target as HTMLElement).dataset.index)];
+      if (c) queue.soon(commonOf([c]));
+    }
+  }, { rootMargin: '240px' });
+  $('roster').querySelectorAll('.character').forEach(el => rosterObserver!.observe(el));
+}
 
 function noteMissing(): void {
   const miss = bootPins.filter(s => missingImages.has(s));
@@ -144,17 +159,9 @@ select.mount();
   beginWait(first);
   queue.pin(first);
   // The rest of the roster loads on scroll (the observer below) or at fight start — not up front:
-  // eager-fetching all 17 sheets spends ~13MB of bandwidth most sessions never use.
+  // eager-fetching every sheet spends ~13MB of bandwidth most sessions never use.
   followCast = true;
-  if (typeof IntersectionObserver !== 'undefined') {
-    const io = new IntersectionObserver(entries => {
-      for (const e of entries) if (e.isIntersecting) {
-        const c = PLAYABLE[Number((e.target as HTMLElement).dataset.index)];
-        if (c) queue.soon(commonOf([c]));
-      }
-    }, { rootMargin: '240px' });
-    $('roster').querySelectorAll('.character').forEach(el => io.observe(el));
-  }
+  observeRoster();
 }
 watchTouch(() => { applyTouchDevice(); select.refresh(); });
 
@@ -261,7 +268,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
       $('deck-label').textContent = deck;
     },
   });
-  // previewViews covers the whole roster: a 诗超绊 teammate borrows anon/soyo sheets mid-match.
+  // previewViews covers the whole roster: a 诗超绊 bandmate borrows their sheets mid-match.
   renderer = new Renderer($('game') as HTMLCanvasElement, previewViews, setup.stage, images);
   raf = requestAnimationFrame(frame);
   if (!document.body.classList.contains('touch')) {
@@ -409,6 +416,29 @@ $('pause-quit').onclick = battleExit;
 const quitDialog = $('quit-dialog') as HTMLDialogElement;
 let quitAction: (() => void) | null = null;
 
+/** Native modal, with the scrollbar's width held as padding so the page does not shift. Measured before the lock, or the gap is already gone. */
+let modalDepth = 0;
+function lockScroll(): void {
+  if (modalDepth++) return;
+  const gap = window.innerWidth - document.documentElement.clientWidth;
+  document.documentElement.style.setProperty('--scrollbar-gap', gap + 'px');
+  document.documentElement.classList.add('modal-open');
+}
+function unlockScroll(): void {
+  if (modalDepth === 0) return;
+  if (--modalDepth > 0) return;
+  document.documentElement.classList.remove('modal-open');
+  document.documentElement.style.removeProperty('--scrollbar-gap');
+}
+function openDialog(dialog: HTMLDialogElement): void {
+  if (dialog.open) return;
+  lockScroll();
+  dialog.showModal();
+}
+for (const dialog of [$('quit-dialog'), $('help-dialog'), $('settings-dialog')] as HTMLDialogElement[]) {
+  dialog.addEventListener('close', unlockScroll);
+}
+
 /** One confirm dialog for both destructive exits; pauses the fight the way the help dialog does. */
 function openQuit(title: string, text: string, yes: string, cancel: string, action: () => void): void {
   $('quit-title').textContent = title;
@@ -417,7 +447,7 @@ function openQuit(title: string, text: string, yes: string, cancel: string, acti
   $('quit-cancel').textContent = cancel;
   quitAction = action;
   if (game && !game.paused) game.togglePause(true);
-  quitDialog.showModal();
+  openDialog(quitDialog);
 }
 
 $('quit-close').onclick = () => quitDialog.close();
@@ -439,7 +469,7 @@ $('abandon').onclick = () => {
 };
 
 const helpDialog = $('help-dialog') as HTMLDialogElement;
-$('help').onclick = () => { if (game && !game.paused) game.togglePause(true); helpDialog.showModal(); };
+$('help').onclick = () => { if (game && !game.paused) game.togglePause(true); openDialog(helpDialog); };
 $('close-help').onclick = () => helpDialog.close();
 helpDialog.addEventListener('click', e => { if (e.target === helpDialog) helpDialog.close(); });
 
@@ -491,6 +521,35 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
   }
 }, { capture: true });
+
+/* 设置弹窗目前只有名册显示。战斗中打开会像帮助弹窗一样先暂停；ESC 与原生 dialog 行为一致。 */
+const settingsDialog = $('settings-dialog') as HTMLDialogElement;
+$('settings').onclick = () => {
+  if (game && !game.paused) game.togglePause(true);
+  openDialog(settingsDialog);
+};
+$('close-settings').onclick = () => settingsDialog.close();
+settingsDialog.addEventListener('click', e => { if (e.target === settingsDialog) settingsDialog.close(); });
+
+/* 名册显示设置：直接排开是默认，按乐队分组时每段乐队前插一条分组头。切换后名册重渲染，
+   滚动预加载观察器跟着重挂。 */
+const rosterLayoutButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-roster-layout]')];
+function syncRosterLayoutUi(): void {
+  for (const b of rosterLayoutButtons) {
+    const on = (b.dataset.rosterLayout === 'band') === select.isGrouped;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', String(on));
+  }
+}
+for (const b of rosterLayoutButtons) {
+  b.onclick = () => {
+    select.setRosterGrouped(b.dataset.rosterLayout === 'band');
+    observeRoster();
+    syncRosterLayoutUi();
+  };
+}
+syncRosterLayoutUi();
+
 document.addEventListener('visibilitychange', () => setMusicSuspended(document.hidden));
 window.addEventListener('blur', () => setMusicSuspended(true));
 window.addEventListener('focus', () => setMusicSuspended(false));

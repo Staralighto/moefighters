@@ -1,7 +1,7 @@
 import type { Effect, FightGame, FloatingText, Particle, Projectile } from '../game/game.ts';
 import { SHIP_HOLD, SHIP_SWEEP } from '../game/combat.ts';
 import type { Fighter } from '../game/fighter.ts';
-import { H, SIDE, W } from '../game/constants.ts';
+import { clamp, H, SIDE, W } from '../game/constants.ts';
 import type { ImageCache } from '../assets/loader.ts';
 import { CELL, pillarFrame } from './clips.ts';
 import { watchProp } from './propLayout.ts';
@@ -229,6 +229,22 @@ export function drawRootFx(ctx: CanvasRenderingContext2D, f: Fighter, time: numb
     }
   }
   ctx.restore();
+}
+
+/** 打气: the declared second meter floats over the fighter's head; full is a colour change only. */
+export function drawGauge(ctx: CanvasRenderingContext2D, f: Fighter): void {
+  const spec = f.data.gauge;
+  if (!spec?.head || f.hp <= 0) return;
+  const w = 46;
+  const x = Math.round(f.x) - w / 2;
+  const y = Math.round(f.y) - 208;
+  const k = clamp(f.gauge / spec.max, 0, 1);
+  ctx.fillStyle = '#171120aa';
+  ctx.fillRect(x - 1, y - 1, w + 2, 6);
+  if (k > 0) {
+    ctx.fillStyle = k >= 1 ? '#ffffff' : spec.color;
+    ctx.fillRect(x, y, Math.max(3, Math.round(w * k)), 4);
+  }
 }
 
 export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: ImageCache): void {
@@ -556,17 +572,59 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       }
       break;
     }
-    case 'riff': {
-      // 吉他激奏: screen-facing sound rings race out from her chest and fade as they widen.
-      const r = e.radius ?? 240;
+    case 'riff':
+    case 'sing': {
+      // 吉他激奏 / 这次是真的在唱！: sound rings race out from her chest and fade as they
+      // widen; the sing's script keeps the reach flat, so its rings hold one fixed radius.
+      const r = e.radius ?? (e.type === 'riff' ? 240 : 260);
+      const alt = e.type === 'riff' ? '#d8f7e2' : '#ffe3f1';
       ctx.translate(e.x, e.y);
       for (let i = 0; i < 3; i++) {
         const ring = Math.min(1, p * 1.5 - i * .18);
         if (ring <= 0) continue;
         ctx.globalAlpha = Math.min(1, e.life * 6) * (1 - ring * .8) * .9;
-        ctx.strokeStyle = i === 0 ? e.color : '#d8f7e2';
+        ctx.strokeStyle = i === 0 ? e.color : alt;
         ctx.lineWidth = (5 - i) * (1 - p) + 1;
         ctx.beginPath(); ctx.arc(0, 0, Math.max(6, r * ring), 0, Math.PI * 2); ctx.stroke();
+      }
+      break;
+    }
+    case 'chop': {
+      // 劈瓦手刀: the chop arc slams down and a spray of pink tile shards bursts forward,
+      // fanning up from the strike point and dropping under gravity.
+      ctx.translate(e.x, e.y); ctx.scale(e.dir ?? 1, 1);
+      ctx.globalAlpha *= 1 - p;
+      ctx.lineWidth = 8 * (1 - p) + 2;
+      ctx.beginPath(); ctx.arc(-16, -10, Math.max(10, r), -2.4, -.2); ctx.stroke();
+      for (let i = 0; i < 12; i++) {
+        const t = p * 1.7 - i * .13;
+        if (t <= 0 || t >= 1) continue;
+        const ang = -.85 - (i % 4) * .38;
+        const dist = t * r * (1.3 + (i % 3) * .4);
+        const size = 6 + (i % 3) * 5;
+        ctx.save();
+        ctx.translate(Math.cos(ang) * dist, Math.sin(ang) * dist + t * t * 150);
+        ctx.rotate(t * 10 + i);
+        ctx.fillStyle = i % 2 ? '#ffb3d9' : e.color;
+        ctx.fillRect(-size / 2, -size / 2, size, size);
+        ctx.restore();
+      }
+      break;
+    }
+    case 'flashbulbs': {
+      // 丸山闪光: camera bulbs pop across the arena; each one is a white starburst.
+      for (let i = 0; i < 7; i++) {
+        const t = p * 2.2 - i * .28;
+        if (t <= 0 || t >= 1) continue;
+        const bx = e.x + Math.sin(i * 12.9898) * 420;
+        const by = e.y - 60 - Math.abs(Math.cos(i * 7.233)) * 150 + i * 24;
+        ctx.save();
+        ctx.translate(bx, by);
+        ctx.globalAlpha = (1 - t) * .9;
+        ctx.fillStyle = '#fffdf4';
+        starPath(ctx, 9 + (1 - t) * 15);
+        ctx.fill();
+        ctx.restore();
       }
       break;
     }

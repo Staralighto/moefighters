@@ -52,6 +52,18 @@ nav { display: flex; gap: 8px; align-items: center; }
    加等宽数字，宽度在任何数值下都不变。 */
 .music-pop-row output { display: inline-block; min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
 #music-volume { width: 110px; accent-color: var(--p1); touch-action: none; }
+/* 设置弹窗跟帮助/确认共用原生 dialog：按内容收缩，上限用百分比。
+   视口宽度单位含滚动条，会把页面撑出横向滚动再跳回来。选项保持文字固有宽度，不收缩、不省略；
+   一行放不下时整组换到下一行，字仍然完整。 */
+#settings-dialog { max-width: min(560px, calc(100% - 2rem)); max-height: calc(100% - 2rem); overflow: auto; overscroll-behavior: contain; }
+#settings-dialog .setting-row { flex-wrap: wrap; margin-top: 14px; border-top: 0; padding-top: 2px; }
+#settings-dialog .setting-row > b { flex: none; white-space: nowrap; }
+#settings-dialog .seg { flex: none; width: max-content; }
+#settings-dialog .seg button { flex: 0 0 auto; min-width: max-content; overflow: visible; text-overflow: clip; }
+.setting-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 0; border-top: 1px solid var(--line); }
+/* 模态打开时收走页面滚动条，用等宽留白补上，背后的页面和居中的弹窗都不再横跳。 */
+html.modal-open, html.modal-open body { overflow: hidden; }
+html.modal-open body { padding-right: var(--scrollbar-gap, 0px); }
 
 main { max-width: 1080px; margin: 0 auto; padding: 18px 22px 40px; }
 #selection { display: flex; flex-direction: column; }
@@ -110,6 +122,12 @@ canvas.pending { background: linear-gradient(90deg, var(--panel) 25%, var(--pane
 .rules-summary { min-width: 0; color: var(--muted); font-weight: 400; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .roster { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
+/* 乐队分组头：横跨整行的说明行，跟 .sectionline 同一 DNA（加粗正文色 + 弱化计数），
+   点色来自 bands.ts 注册表（--band 内联写入），没注册到的组回落描边色。 */
+.band-head { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; margin-top: 6px; font-weight: 700; }
+.band-head:first-child { margin-top: 0; }
+.band-head i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--band, var(--line)); }
+.band-head span { font-weight: 400; color: var(--muted); font-size: 13px; }
 .character { position: relative; display: grid; justify-items: center; padding: 8px 6px; background: var(--panel); border-color: transparent; }
 .character:hover { border-color: var(--line); }
 .character canvas { width: 96px; height: 96px; }
@@ -358,9 +376,9 @@ body.touch.in-battle #battle {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
-/* 宽屏 is the desktop wide-mode toggle (body.wide); 设置 is still a placeholder. The phone keeps
-   the bar's 返回选人 + 暂停 pair and the header nav's existing two controls. */
-body.touch .battle-top #fullscreen, body.touch nav #settings { display: none; }
+/* 宽屏 is the desktop wide-mode toggle (body.wide). The phone keeps
+   the bar's 返回选人 + 暂停 pair; 宽屏 stays off the phone bar. */
+body.touch .battle-top #fullscreen { display: none; }
 .rotate-hint { display: none; position: absolute; inset: 0; place-content: center; background: #0b0a12dd; font-weight: 800; font-size: 20px; }
 @media (orientation: landscape) {
   body.touch.in-battle { position: fixed; inset: 0; height: 100vh; height: 100dvh; overflow: hidden; }

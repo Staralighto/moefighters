@@ -1,4 +1,5 @@
 import type { CharacterData, StageData } from '../data/types.ts';
+import { BAND_BY_ID, type BandId } from '../data/bands.ts';
 import { STAGES } from '../data/stages.ts';
 import type { ChallengeMods, Mode } from '../game/game.ts';
 import type { FighterView } from '../render/view.ts';
@@ -35,6 +36,8 @@ interface SavedSelect {
   side: number;
   /** Scene the picker points at; 'random' rolls a fresh one on every start. Absent in pre-stage saves. */
   stageId?: string;
+  /** Roster layout: true shows band group headers. Absent in pre-setting saves reads as flat. */
+  grouped?: boolean;
 }
 const KEYS_1P = 'A D 移动 · W / 空格 跳跃 · 长按 S 格挡 · 点按 S 后闪 · J K 轻 / 重击（跳中为空击） · U I O 技能 · L 必杀';
 const KEYS_2P = '玩家二：方向键移动 · 上跳 · 下格挡 · 小键盘 1 / 2 轻重击 · 4 / 5 / 6 技能 · 3 必杀';
@@ -160,9 +163,7 @@ export class SelectScreen {
   }
 
   mount(): void {
-    $('roster').innerHTML = this.roster.map((c, i) =>
-      `<button class="character" data-index="${i}" title="${c.name} · ${c.title}" aria-label="选择${c.name}"><canvas width="96" height="96" aria-hidden="true"></canvas><span class="slot-tag" hidden></span><span class="char-name">${c.name}</span></button>`).join('');
-    $('roster').querySelectorAll<HTMLButtonElement>('button').forEach(b => b.onclick = () => this.pick(Number(b.dataset.index)));
+    this.renderRoster();
     $('stage-grid').innerHTML = '<button type="button" class="stage-card stage-random" data-stage="random" aria-pressed="false"><span class="stage-random-art" aria-hidden="true">?</span><b>随机场景</b></button>'
       + STAGES.map(s => `<button type="button" class="stage-card" data-stage="${s.id}" aria-pressed="false">${s.image ? `<img src="${s.image}" loading="lazy" alt="${s.name}场景预览">` : ''}<b>${s.name}</b></button>`).join('');
     $('stage-grid').querySelectorAll<HTMLButtonElement>('button').forEach(b => b.onclick = () => {
@@ -170,7 +171,7 @@ export class SelectScreen {
       this.onPick();
       this.refresh();
     });
-    this.rosterCanvases = [...$('roster').querySelectorAll<HTMLCanvasElement>('canvas')];
+    this.renderRoster();
     // The backdrop geometry only changes with the viewport; per-frame restyling did a
     // read-then-write layout pass 60 times a second for the same output.
     window.addEventListener('resize', () => this.placeStage(), { passive: true });
@@ -204,6 +205,49 @@ export class SelectScreen {
     document.querySelectorAll<HTMLButtonElement>('[data-challenge-kind]').forEach(b => b.onclick = () => this.setChallengeKind(b.dataset.challengeKind as ChallengeKind));
     $('start').onclick = () => this.onStart(this.setup());
     this.refresh();
+  }
+
+  /** Roster layout: false (default) is the flat run of portraits, true prepends a band
+   *  group header to each run of same-band entries. Either way DOM order — and every
+   *  data-index — follows this.roster exactly; thumbnails and the scroll-observer rely on it. */
+  private grouped = false;
+
+  get isGrouped(): boolean { return this.grouped; }
+
+  /** Roster layout switch from the header settings popover. Re-renders the roster in place;
+   *  main.ts re-attaches the scroll observer afterwards. */
+  setRosterGrouped(grouped: boolean): void {
+    if (grouped === this.grouped) return;
+    this.grouped = grouped;
+    this.save();
+    this.renderRoster();
+  }
+
+  private renderRoster(): void {
+    $('roster').innerHTML = this.rosterHTML();
+    $('roster').querySelectorAll<HTMLButtonElement>('button').forEach(b => b.onclick = () => this.pick(Number(b.dataset.index)));
+    this.rosterCanvases = [...$('roster').querySelectorAll<HTMLCanvasElement>('canvas')];
+  }
+
+  private rosterHTML(): string {
+    const group = (c: CharacterData): string => c.bands?.[0] ?? 'none';
+    let html = '';
+    let open: string | null = null;
+    this.roster.forEach((c, i) => {
+      const key = group(c);
+      if (key !== open) {
+        open = key;
+        const meta = BAND_BY_ID.get(key as BandId);
+        if (this.grouped) {
+          const count = this.roster.filter(x => group(x) === key).length;
+          html += meta
+            ? `<div class="band-head" style="--band:${meta.color}"><i aria-hidden="true"></i><b>${meta.name}</b><span>${count} 人</span></div>`
+            : `<div class="band-head"><b>无所属</b><span>${count} 人</span></div>`;
+        }
+      }
+      html += `<button class="character" data-index="${i}" title="${c.name} · ${c.title}" aria-label="选择${c.name}"><canvas width="96" height="96" aria-hidden="true"></canvas><span class="slot-tag" hidden></span><span class="char-name">${c.name}</span></button>`;
+    });
+    return html;
   }
 
   setup(): MatchSetup {
@@ -285,10 +329,11 @@ export class SelectScreen {
     this.side = Number.isInteger(saved.side) && saved.side >= 0 && saved.side < need ? saved.side : 0;
     if (this.mode === 'challenge') this.side = 0;
     if (saved.stageId === 'random' || STAGES.some(s => s.id === saved.stageId)) this.stageId = saved.stageId!;
+    if (typeof saved.grouped === 'boolean') this.grouped = saved.grouped;
   }
 
   private save(): void {
-    const saved: SavedSelect = { mode: this.mode, difficulty: this.difficulty, challengeKind: this.challengeKind, selected: this.selected, who: this.who, side: this.side, stageId: this.stageId };
+    const saved: SavedSelect = { mode: this.mode, difficulty: this.difficulty, challengeKind: this.challengeKind, selected: this.selected, who: this.who, side: this.side, stageId: this.stageId, grouped: this.grouped };
     try { localStorage.setItem(STATE_KEY, JSON.stringify(saved)); } catch { /* private mode */ }
   }
 
