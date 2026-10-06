@@ -336,9 +336,10 @@ body.touch .touch-only { display: block; }
   background: linear-gradient(to top, #ffffffd0 calc(var(--cd, 0) * 100%), transparent calc(var(--cd, 0) * 100%));
 }
 .tp-stick { --x: 12%; --y: 82%; width: calc(var(--ring) * 1.25); height: calc(var(--ring) * 1.25); pointer-events: auto; touch-action: none; }
+/* 环和旋钮都不能当命中目标。旋钮跟着手指走到盒子外缘，命中点一旦离开摇杆，松手就送不回来，旋钮会卡在外圈。 */
 .tp-ring { position: absolute; left: 50%; top: 50%; width: var(--ring); height: var(--ring); transform: translate(-50%, -50%); border-radius: 50%; background: #ffffff1c; border: 2px solid #ffffff66; pointer-events: none; }
-.tp-knob-move { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
-.tp-knob { position: absolute; left: 0; top: 0; width: calc(var(--ring) * .4); height: calc(var(--ring) * .4); margin-left: calc(var(--ring) * -.2); margin-top: calc(var(--ring) * -.2); border-radius: 50%; background: #ffffff8c; border: 2px solid #fff; display: block; }
+.tp-knob-move { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; }
+.tp-knob { position: absolute; left: 0; top: 0; width: calc(var(--ring) * .4); height: calc(var(--ring) * .4); margin-left: calc(var(--ring) * -.2); margin-top: calc(var(--ring) * -.2); border-radius: 50%; background: #ffffff8c; border: 2px solid #fff; display: block; pointer-events: none; }
 body.touch.in-battle .timer { pointer-events: auto; padding: 6px 12px; margin: -6px -12px; }
 .touchpad .tp-tune { position: absolute; z-index: 6; top: max(8px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left)); width: auto; height: 32px; padding: 0 10px; border-radius: 8px; font-size: 12px; pointer-events: auto; }
 body.pad-tune .touchpad [data-pad] { outline: 2px dashed var(--p1); outline-offset: 3px; }

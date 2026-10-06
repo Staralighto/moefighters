@@ -14,7 +14,7 @@ import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell } from '../src/
 import { previewFighter, gainEnergy } from '../src/game/fighter.ts';
 import { addMod, clearMod } from '../src/game/mods.ts';
 import { easeLoad, nextSrc } from '../src/assets/loader.ts';
-import { isTouchJump, thumbBandTop } from '../src/game/input.ts';
+import { isTouchJump, matchStickTouch, stickFingerGone, thumbBandTop, touchRelease } from '../src/game/input.ts';
 import { battleFrame } from '../src/ui/battleFrame.ts';
 import { TOUCH_LAYOUT } from '../src/ui/touchLayout.data.ts';
 import { DEFAULT_ULT_ICON, ultIcon } from '../src/ui/touchIcons.ts';
@@ -1591,6 +1591,25 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(isTouchJump(up(.8), true), 'holding at the edge does not cancel the jump');
   assert.ok(isTouchJump(up(.65), true), 'still out of the re-arm zone, the jump holds');
   assert.ok(!isTouchJump(up(.4), true), 'back inside the ring the jump re-arms');
+  // A thumb at the rim leaves the stick box, and some phones never deliver pointerup. The lift still has to drop it.
+  assert.equal(matchStickTouch(10, 10, { id: 3, x: 12, y: 11, t: 100 }, 130), 3, 'the touch that starts with the stick pairs by contact');
+  assert.equal(matchStickTouch(10, 10, { id: 3, x: 12, y: 11, t: 100 }, 150), null, 'a leftover touch does not claim the next press');
+  assert.equal(matchStickTouch(10, 10, { id: 3, x: 80, y: 10, t: 100 }, 110), null, 'a different finger does not claim the stick');
+  assert.equal(touchRelease(3, [3], 1), 'stick', 'lifting the stick finger leaves another finger alone');
+  assert.equal(touchRelease(3, [9], 0), 'all', 'the last finger up releases a stick whose pointerup never arrived');
+  assert.equal(touchRelease(null, [1], 0), 'all', 'an unpaired stick still drops when the screen is clear');
+  assert.equal(touchRelease(3, [9], 2), 'none', 'another finger lifting does not drop the stick');
+  assert.equal(stickFingerGone(3, [3, 8]), false, 'a second finger does not retire the stick');
+  assert.equal(stickFingerGone(3, [8]), true, 'a touch list without the stick finger means it already lifted');
+  assert.equal(stickFingerGone(null, [8]), false, 'an unpaired stick is not cleared from a partial list');
+  assert.equal(stickFingerGone(3, []), false, 'an empty touch list is not proof the finger lifted');
+  const inputTs = readFileSync('src/game/input.ts', 'utf8');
+  assert.ok(inputTs.includes("window.addEventListener('pointerup'") && inputTs.includes("window.addEventListener('pointercancel'"), 'a lift outside the stick still reaches the page');
+  assert.ok(inputTs.includes("window.addEventListener('touchend'") && inputTs.includes("window.addEventListener('touchcancel'"), 'a touch the pointer stream dropped still releases the stick');
+  assert.ok(inputTs.includes("window.addEventListener('blur'") && inputTs.includes('visibilitychange'), 'leaving the page cannot leave the stick latched');
+  assert.ok(/\.tp-ring \{[^}]*pointer-events:\s*none/.test(cssText), 'the ring must not be the hit target');
+  assert.ok(/\.tp-knob-move \{[^}]*pointer-events:\s*none/.test(cssText), 'knob travel must not move the hit target');
+  assert.ok(/\.tp-knob \{[^}]*pointer-events:\s*none/.test(cssText), 'the knob face must not be the hit target');
   // Band starts just below the attack top, so a ~390px phone exempts about the bottom fifth.
   const phoneBand = thumbBandTop(297, 87);
   assert.ok(phoneBand > 297 && phoneBand - 297 < 87 * .15, 'the band starts just below the attack top');
