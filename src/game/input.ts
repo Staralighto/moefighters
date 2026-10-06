@@ -1,3 +1,4 @@
+import { assignImage } from '../assets/loader.ts';
 import type { FightGame } from './game.ts';
 import { atkIcon } from '../ui/touchIcons.ts';
 
@@ -155,7 +156,7 @@ export class TouchInput {
           if (!this.held.has(id)) return;
           this.atkHeavy.add(id);
           const mark = b.querySelector('img');
-          if (mark) mark.src = atkIcon(true);
+          if (mark) assignImage(mark, atkIcon(true));
           this.getGame()?.keyDown('KeyK');
         }, HEAVY_HOLD));
       } else if (b.hasAttribute('data-guard')) g.keyDown('KeyS');
@@ -269,7 +270,7 @@ export class TouchInput {
     this.atkTimer.delete(id);
     const heavy = this.atkHeavy.delete(id);
     const mark = b.querySelector('img');
-    if (mark) mark.src = atkIcon(false);
+    if (mark) assignImage(mark, atkIcon(false));
     const g = this.getGame();
     if (!g) return;
     if (heavy) this.upKey('KeyK');

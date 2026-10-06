@@ -1,3 +1,4 @@
+import { applyImageUrl, assignImage } from '../assets/loader.ts';
 import type { CharacterData, SkillType } from '../data/types.ts';
 
 /** Phosphor fill icons, MIT. See public/icons/LICENSE-phosphor.txt. */
@@ -34,7 +35,7 @@ export function applyTouchIcons(c: CharacterData): void {
   const put = (sel: string, src: string, label?: string) => {
     const el = pad.querySelector<HTMLElement>(sel);
     const img = el?.querySelector('img');
-    if (img) img.src = src;
+    if (img) assignImage(img, src);
     if (label && el) el.setAttribute('aria-label', label);
   };
   put('[data-pad="s1"]', typeIcon[c.skills[2].type], c.skills[2].name);
@@ -42,6 +43,13 @@ export function applyTouchIcons(c: CharacterData): void {
   put('[data-pad="s3"]', typeIcon[c.skills[4].type], c.skills[4].name);
   const ult = ultIcon(c.id);
   put('[data-pad="ult"]', ult, c.skills[5].name);
-  pad.querySelector<HTMLElement>('[data-pad="ult"]')?.style.setProperty('--ico', `url("${ult}")`);
+  const ultEl = pad.querySelector<HTMLElement>('[data-pad="ult"]');
+  if (ultEl) {
+    ultEl.dataset.ico = ult;
+    applyImageUrl(ult, url => {
+      if (ultEl.dataset.ico !== ult) return;
+      ultEl.style.setProperty('--ico', `url("${url}")`);
+    });
+  }
   put('[data-pad="atk"]', typeIcon.light);
 }

@@ -2,7 +2,19 @@ import type { CharacterData, StageData } from '../data/types.ts';
 
 export type ImageCache = Map<string, HTMLImageElement>;
 
-export function loadImage(src: string): Promise<HTMLImageElement> {
+/** 1×1 WebP. One decode decides the browser can use the format, so a no is not N failed sheet requests. */
+const WEBP_PROBE = 'data:image/webp;base64,UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA';
+
+/**
+ * Production lists the built WebP, then the PNG. Dev, and a browser that cannot decode
+ * WebP, get the PNG only — one request, no fallback storm.
+ */
+export function imageSources(src: string, prod = import.meta.env.PROD, webpOk = true): readonly string[] {
+  if (prod && webpOk && src.endsWith('.png')) return [src.slice(0, -4) + '.webp', src];
+  return [src];
+}
+
+function fetchImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const im = new Image();
     im.onload = () => {
@@ -14,6 +26,54 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
     im.onerror = () => reject(Error('图片加载失败：' + src));
     im.src = src;
   });
+}
+
+let webpOk: Promise<boolean> | null = null;
+function supportsWebp(): Promise<boolean> {
+  if (!import.meta.env.PROD) return Promise.resolve(false);
+  webpOk ??= fetchImage(WEBP_PROBE).then(() => true, () => false);
+  return webpOk;
+}
+
+/** One in-flight load per logical path. A later caller joins it instead of starting a second download. */
+const loaded = new Map<string, Promise<HTMLImageElement>>();
+
+async function fetchFirst(src: string): Promise<HTMLImageElement> {
+  const sources = imageSources(src, import.meta.env.PROD, src.endsWith('.png') ? await supportsWebp() : false);
+  let err: unknown;
+  for (const url of sources) {
+    try { return await fetchImage(url); }
+    catch (e) { err = e; }
+  }
+  throw err instanceof Error ? err : Error('图片加载失败：' + src);
+}
+
+export function loadImage(src: string): Promise<HTMLImageElement> {
+  let pending = loaded.get(src);
+  if (!pending) {
+    pending = fetchFirst(src).catch(err => {
+      loaded.delete(src);
+      throw err;
+    });
+    loaded.set(src, pending);
+  }
+  return pending;
+}
+
+/** Paint the URL that already loaded. A swapped icon does not treat the aborted request as a PNG fallback. */
+export function assignImage(img: HTMLImageElement, src: string): void {
+  const gen = String((Number(img.dataset.imgGen) || 0) + 1);
+  img.dataset.imgGen = gen;
+  img.onerror = null;
+  void loadImage(src).then(im => {
+    if (img.dataset.imgGen !== gen) return;
+    if (img.src !== im.src) img.src = im.src;
+  }).catch(() => {});
+}
+
+/** CSS has no error event. The url is applied only after loadImage picked WebP or PNG, so the sheet is not fetched twice. */
+export function applyImageUrl(src: string, apply: (url: string) => void): void {
+  void loadImage(src).then(im => apply(im.src)).catch(() => {});
 }
 
 /** Every image a match needs: sprite views plus the stage backdrop. */

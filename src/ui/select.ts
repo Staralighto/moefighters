@@ -1,3 +1,4 @@
+import { applyImageUrl, assignImage } from '../assets/loader.ts';
 import type { CharacterData, StageData } from '../data/types.ts';
 import { BAND_BY_ID, type BandId } from '../data/bands.ts';
 import { STAGES } from '../data/stages.ts';
@@ -165,7 +166,11 @@ export class SelectScreen {
   mount(): void {
     this.renderRoster();
     $('stage-grid').innerHTML = '<button type="button" class="stage-card stage-random" data-stage="random" aria-pressed="false"><span class="stage-random-art" aria-hidden="true">?</span><b>随机场景</b></button>'
-      + STAGES.map(s => `<button type="button" class="stage-card" data-stage="${s.id}" aria-pressed="false">${s.image ? `<img src="${s.image}" loading="lazy" alt="${s.name}场景预览">` : ''}<b>${s.name}</b></button>`).join('');
+      + STAGES.map(s => `<button type="button" class="stage-card" data-stage="${s.id}" aria-pressed="false">${s.image ? `<img data-src="${s.image}" alt="${s.name}场景预览">` : ''}<b>${s.name}</b></button>`).join('');
+    $('stage-grid').querySelectorAll<HTMLImageElement>('img[data-src]').forEach(img => {
+      const src = img.dataset.src;
+      if (src) assignImage(img, src);
+    });
     $('stage-grid').querySelectorAll<HTMLButtonElement>('button').forEach(b => b.onclick = () => {
       this.stageId = b.dataset.stage ?? 'random';
       this.onPick();
@@ -615,7 +620,12 @@ export class SelectScreen {
     const drawnH = canvas.height * fit;
     const footScreen = box.top + (box.height - drawnH) + PORTRAIT_FOOT * fit;
     const cover = stageCover(panel.clientWidth, panel.clientHeight, panelBox.bottom - footScreen, this.stage.groundY ?? FLOOR);
-    panel.style.backgroundImage = `url("${this.stage.image}")`;
+    const image = this.stage.image;
+    panel.dataset.stageSrc = image;
+    applyImageUrl(image, url => {
+      if (panel.dataset.stageSrc !== image) return;
+      panel.style.backgroundImage = `url("${url}")`;
+    });
     panel.style.backgroundRepeat = 'no-repeat';
     panel.style.backgroundSize = `${cover.width}px ${cover.height}px`;
     panel.style.backgroundPosition = `center bottom ${cover.fromBottom}px`;
