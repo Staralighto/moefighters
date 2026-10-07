@@ -206,6 +206,8 @@ function leaveBattleFullscreen(): void {
 
 async function startGame(setup: MatchSetup): Promise<void> {
   sfx.unlock();
+  /* pointerdown 上的开始/重开把这次手势让给了全屏，音乐改在这条仍处于点击里的路径接上。 */
+  pokeMusic();
   const srcs = fightSources(setup.characters, setup.stage);
   if (srcs.some(s => !images.has(s) && !missingImages.has(s))) beginWait(srcs);
   $('start').setAttribute('disabled', '');
@@ -504,8 +506,8 @@ $('music-volume').oninput = () => {
   setMusicVolume(Number(($('music-volume') as HTMLInputElement).value) / 100);
   syncMusicUi();
 };
-/* 开关与音量从 sessionStorage 恢复（关掉标签页才重置）：滑条回到上次的档位，开关若上次
-   是开的，第一次点击/按键时 pokeMusic 会把音乐接上。 */
+/* 开关与音量从 localStorage 恢复（关掉标签页也在）：滑条回到上次的档位。开关若上次是开的，
+   浏览器允许就会自己响；不允许的话仍显示为开，第一次点击或按键时 pokeMusic 才把音乐接上。 */
 ($('music-volume') as HTMLInputElement).value = String(Math.round(musicVolume() * 100));
 syncMusicUi();
 document.addEventListener('pointerdown', e => {

@@ -20,6 +20,8 @@ import { battleFrame } from '../src/ui/battleFrame.ts';
 import { TOUCH_LAYOUT } from '../src/ui/touchLayout.data.ts';
 import { DEFAULT_ULT_ICON, ultIcon } from '../src/ui/touchIcons.ts';
 import { assignSlotWho, guideIndex, skillHTML, stageCover } from '../src/ui/select.ts';
+import { resolveMusicPrefs } from '../src/audio/bgm.ts';
+import { migrateLinearSlider, musicGain, MUSIC_CAP } from '../src/audio/mix.ts';
 import { POOL, aggregatePicks, bestLabel, drawThree, readBest, rollEnemies, stageSetup } from '../src/ui/challenge.ts';
 import { checkSpriteGuard } from './sprite-guard.ts';
 
@@ -1740,6 +1742,39 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const bgm = readFileSync('src/audio/bgm.ts', 'utf8');
   assert.ok(!/\bnew Audio\b|createMediaElementSource/.test(bgm), 'BGM stays on Web Audio buffers: no media element, no element source node');
+  assert.ok(bgm.includes('localStorage'), 'BGM prefs persist in localStorage');
+  assert.ok(!/sessionStorage\.setItem/.test(bgm), 'BGM does not keep writing the old session key');
+  const on = resolveMusicPrefs('{"enabled":true,"volume":0.4,"curve":"db"}', '{"enabled":false,"volume":0.9}');
+  assert.deepEqual(on, { enabled: true, volume: 0.4, writeLocal: null, dropSession: true }, 'a log-fader record wins over a stale session');
+  const moved = resolveMusicPrefs(null, '{"enabled":true,"volume":0.4}');
+  assert.equal(moved.enabled, true, 'an old session record still turns music on');
+  assert.equal(moved.volume, migrateLinearSlider(0.4), 'an old linear slider moves to the log detent with the same amplitude');
+  assert.equal(moved.writeLocal, JSON.stringify({ enabled: true, volume: moved.volume, curve: 'db' }), 'the migrated record is what gets stored');
+  assert.equal(moved.dropSession, true, 'the session record is dropped after the copy');
+  const broken = resolveMusicPrefs('{', '{"enabled":true,"volume":0.5}');
+  assert.equal(broken.enabled, true, 'broken local JSON falls through to the session record');
+  assert.equal(broken.volume, migrateLinearSlider(0.5), 'broken local JSON does not drop the session volume');
+  const junk = resolveMusicPrefs('null', 'nope');
+  assert.deepEqual(junk, { enabled: false, volume: migrateLinearSlider(0.15), writeLocal: null, dropSession: false }, 'unreadable prefs fall back to defaults without throwing');
+  const coerced = resolveMusicPrefs('{"enabled":"true","volume":"x"}', null);
+  assert.equal(coerced.enabled, false, 'a non-boolean switch stays off');
+  assert.equal(coerced.volume, migrateLinearSlider(0.15), 'a bad volume uses the default detent');
+  assert.equal(coerced.writeLocal, JSON.stringify({ enabled: false, volume: coerced.volume, curve: 'db' }), 'a legacy record is rewritten instead of thrown');
+  const step = 20 * Math.log10(musicGain(0.6) / musicGain(0.55));
+  assert.ok(Math.abs(step - 2) < 1e-9, `one slider detent is 2 dB, got ${step}`);
+  assert.equal(musicGain(1), MUSIC_CAP, 'full scale stays at the old linear cap');
+  for (let p = 5; p <= 100; p += 5) {
+    const t = p / 100;
+    const next = musicGain(migrateLinearSlider(t));
+    const prev = t * MUSIC_CAP;
+    const err = Math.abs(20 * Math.log10(next / prev));
+    assert.ok(err < 1, `migrated ${p}% stays within 1 dB of the old gain, got ${err}`);
+  }
+  const sfx = readFileSync('src/audio/sfx.ts', 'utf8');
+  assert.ok(sfx.includes('setValueAtTime(.06, t)') && sfx.includes('exponentialRampToValueAtTime(.0001, t + duration)'), 'combat blips keep the original click envelope');
+  assert.ok(!sfx.includes('sfxAmp'), 'sfx loudness is not reshaped by the music fader');
+  const main = readFileSync('src/main.ts', 'utf8');
+  assert.ok(/sfx\.unlock\(\);\s*\/\*[\s\S]*?\*\/\s*pokeMusic\(\)/.test(main), 'a fight start pokes music on the click, after pointerdown already requested fullscreen');
 }
 
 {
