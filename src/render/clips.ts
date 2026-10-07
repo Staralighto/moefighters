@@ -187,6 +187,28 @@ export function vowBeatTime(k: number): number {
   return t;
 }
 
+/** 全力碰撞: row 0 hoists, row 1 drives them into the floor, row 2 settles.
+ *  tossAt 0 is still reaching; tossAt < 0 is a miss. Each beat splits in half. */
+export function crashRow(t: number, tossAt: number, shots: number, start: number, duration: number, interval: number): number {
+  if (t < start || tossAt === 0) return 0;
+  if (tossAt < 0 || t >= duration - .3) return 2;
+  const u = (t - tossAt - shots * interval) / Math.max(.05, interval);
+  return u < .5 ? 0 : 1;
+}
+
+/** 大闹一场: seven hits, then the follow-through. The combo escape fires on the seventh
+ *  clean hit, so the route stops there; cells 7–11 are the slam settling, not more damage. */
+export const RIOT_HITS = 7;
+export const RIOT_GAP = .16;
+
+/** Cell 0–6 are the strikes, one per gap. After the last strike the tail walks 7–11. */
+export function riotCell(t: number, caughtAt: number): number {
+  const bt = Math.max(0, t - caughtAt);
+  const hitSpan = (RIOT_HITS - 1) * RIOT_GAP;
+  if (bt <= hitSpan + 1e-4) return Math.min(RIOT_HITS - 1, Math.floor(bt / RIOT_GAP + 1e-4));
+  return Math.min(11, RIOT_HITS + Math.floor((bt - hitSpan) / .11));
+}
+
 /** 一辈子: cell 0 is the lunge and the catch; after the catch the loop coils (1) through most of
  *  each gap and slams (2) on the beat, faster every beat. Row 2 holds through the recover. */
 export function vowRow(t: number, tossAt: number): number {
@@ -242,6 +264,12 @@ export function clipFor(f: Fighter): Clip {
       return at('special', f.attack.index - 2, row);
     }
     if (f.attack.skill.fx === 'vow') return at('special', f.attack.index - 2, vowRow(f.attack.t, f.attack.tossAt));
+    if (f.attack.skill.fx === 'riot') {
+      const s = f.attack.skill;
+      if (f.attack.t < s.start) return at('special', 3, 0);
+      const cell = riotCell(f.attack.t, s.start);
+      return at('world', cell % 4, Math.floor(cell / 4));
+    }
     if (f.attack.skill.fx === 'spin') {
       const t = f.attack.t, s = f.attack.skill;
       const row = t < s.start ? 0 : t >= s.duration - .26 ? 2 : 1;
@@ -252,6 +280,17 @@ export function clipFor(f: Fighter): Clip {
     if (f.attack.skill.fx === 'tsun') {
       const t = f.attack.t, s = f.attack.skill;
       const row = t < s.start ? 0 : t >= s.duration - .3 ? 2 : 1;
+      return at('special', f.attack.index - 2, row);
+    }
+    if (f.attack.skill.fx === 'crash') {
+      const a = f.attack, s = a.skill;
+      return at('special', a.index - 2, crashRow(a.t, a.tossAt, a.shots, s.start, s.duration, s.interval ?? .22));
+    }
+    // 燃尽: the generic active window is capped at .1s. Hold the slam cell half again as long.
+    if (f.attack.skill.fx === 'burnout') {
+      const t = f.attack.t, s = f.attack.skill;
+      const activeLen = Math.min(.1, (s.duration - s.start) * .4) * 1.5;
+      const row = t < s.start ? 0 : t < s.start + activeLen ? 1 : 2;
       return at('special', f.attack.index - 2, row);
     }
     const phase = PHASE_COL[attackPhase(f.attack).phase];

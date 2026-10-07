@@ -795,6 +795,44 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'layer', name: 'LAYER', title: '主唱 / 近战', quote: '准备好大闹一场了吗？', color: '#CC0000',
+    bands: ['raise-a-suilen'],
+    ...stats('rush'),
+    view: {
+      kind: 'sprite', common: '/sprites/layer/common.png', special: '/sprites/layer/special.png', height: 190,
+      world: '/sprites/layer/riot.png',
+      extras: ['/sprites/layer/bass.png'],
+    },
+    skills: [
+      skill(0, 'light', '大姐头', { damage: 38, range: 110, start: .11, duration: .46 }),
+      skill(1, 'heavy', '不败', { damage: 76, range: 148, start: .26, duration: .82, knock: 440 }),
+      skill(2, 'dash', '入侵秀', {
+        damage: 86, range: 70, start: .2, duration: .9, cd: 6, speed: 640, knock: 400, fx: 'invade',
+        brief: '肩撞前冲；撞上收势，击退随距离，远段击倒',
+        detail: '肩撞前冲；撞上就原地收势，打实击退随距离增加，最远一段才击倒，打空则跑完',
+      }),
+      skill(3, 'heavy', '燃尽', {
+        damage: 100, range: 255, start: .48, duration: 1.1, cd: 8, knock: 520, fx: 'burnout',
+        brief: '高举琴身砸下；被挡或空挥是大破绽',
+        detail: '琴身从头顶砸下并击退；前摇很长，被格挡或空挥都是大破绽',
+      }),
+      skill(4, 'grab', '全力碰撞', {
+        damage: 24, range: 100, start: .36, duration: 1.95, cd: 8, count: 5, interval: .22, gain: 3, fx: 'crash',
+        brief: '近身连摔五次；释放期间不受普攻打断，跳开则空',
+        detail: '近身抓住往地上连摔；释放期间受击不掉招，伤害和击退照常，抓取和必杀仍能打断。出手慢，跳开则打空',
+      }),
+      skill(5, 'grab', '大闹一场', {
+        cost: 120,
+        damage: 28, range: 120, speed: 55, start: .42, duration: 2.05, count: 7, interval: .16, fx: 'riot',
+        knock: 0,
+        react: { kind: 'pin', stun: .25, holdStill: true },
+        finale: { damage: 48, knock: 420, react: { kind: 'knockdown', vy: -260, knocked: .75 } },
+        brief: '每击向前一步并带走；禁回气，空挥走完，末击击倒',
+        detail: '七下各向前踏一步，打中后钉在身前带走，末击击倒；打空也把步子走完，期间无法获得气',
+      }),
+    ],
+  },
+  {
     id: 'viola', name: '薇欧拉', title: '队长 / 恶德', quote: '火种燃尽之后会怎么样呢？', color: '#8E5AC8',
     ...stats('armor'),
     view: {

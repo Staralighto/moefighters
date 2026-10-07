@@ -5,7 +5,7 @@
 
 export type BandId =
   | 'mygo' | 'ave-mujica' | 'sumimi' | 'yumemita' | 'pastel-palettes'
-  | 'poppin-party' | 'afterglow' | 'roselia' | 'hello-happy';
+  | 'poppin-party' | 'afterglow' | 'roselia' | 'hello-happy' | 'raise-a-suilen';
 
 export interface BandData {
   id: BandId;
@@ -29,6 +29,8 @@ export const BANDS: readonly BandData[] = [
   { id: 'hello-happy', name: 'Hello, Happy World!', color: '#FFEE22' },
   { id: 'sumimi', name: 'sumimi', color: '#BB9955' },
   { id: 'afterglow', name: 'Afterglow', color: '#EE0022' },
+  // 成员显示代号，不用本名。
+  { id: 'raise-a-suilen', name: 'RAISE A SUILEN', color: '#CC0000' },
 ];
 
 export const BAND_BY_ID: ReadonlyMap<BandId, BandData> = new Map(BANDS.map(b => [b.id, b]));

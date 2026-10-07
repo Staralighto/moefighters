@@ -3,7 +3,7 @@ import { SHIP_HOLD, SHIP_SWEEP } from '../game/combat.ts';
 import type { Fighter } from '../game/fighter.ts';
 import { clamp, FLOOR, H, SIDE, W } from '../game/constants.ts';
 import type { ImageCache } from '../assets/loader.ts';
-import { CELL, pillarFrame } from './clips.ts';
+import { CELL, clipFor, pillarFrame } from './clips.ts';
 import { watchProp } from './propLayout.ts';
 
 const CUCUMBER_SRC = '/sprites/mutsumi/cucumber.png';
@@ -16,6 +16,15 @@ const GUITAR_SRC = '/sprites/anon/guitar.png';
 /** Headstock on the current guitar sheet. The body is the far end, so the pivot is not the image center. */
 const GUITAR_HEAD_X = 438 / 512;
 const GUITAR_HEAD_Y = 122 / 256;
+const LAYER_BASS_SRC = '/sprites/layer/bass.png';
+/** Neck/body joint on the 512×256 bass. Rotation pivots here. */
+const LAYER_BASS_GRIP = { x: 212, y: 122 };
+/** 燃尽 windup, hit, recover. Recover size 0 leaves the hands empty. */
+const LAYER_BASS_POSES = [
+  { x: -60, y: -242, rot: 1.18, size: 220 },
+  { x: 136, y: -54, rot: 3.24, size: 220 },
+  { x: 0, y: 0, rot: 0, size: 0 },
+] as const;
 const MITAKE_GUITAR_SRC = '/sprites/mitake/guitar.png';
 /** Grip and round-body center on the 2048×1024 sheet, after the tuned gx offset. */
 const MITAKE_GRIP = { x: 462, y: 597 };
@@ -265,6 +274,29 @@ function drawPetal(ctx: CanvasRenderingContext2D, body: string, lobe: string): v
   ctx.beginPath(); ctx.ellipse(-1.5, -1, 3, 1.4, -.4, 0, Math.PI * 2); ctx.fill();
 }
 
+/** Layer's bass on 燃尽. Places are baked; size 0 hides that phase. */
+export function drawLayerBass(ctx: CanvasRenderingContext2D, f: Fighter, images: ImageCache | undefined, alpha: number): void {
+  if (alpha <= 0 || f.attack?.skill.fx !== 'burnout') return;
+  const clip = clipFor(f);
+  if (clip.row > 2) return;
+  const place = LAYER_BASS_POSES[clip.row];
+  if (place.size <= 0) return;
+  const im = images?.get(LAYER_BASS_SRC);
+  if (!im?.naturalWidth) return;
+  const dw = place.size;
+  const dh = dw * (im.naturalHeight / im.naturalWidth);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(f.x, f.hp <= 0 ? FLOOR : f.y);
+  ctx.scale(f.facing, 1);
+  ctx.translate(place.x, place.y);
+  ctx.rotate(place.rot);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(keyed(im), -LAYER_BASS_GRIP.x / im.naturalWidth * dw, -LAYER_BASS_GRIP.y / im.naturalHeight * dh, dw, dh);
+  ctx.restore();
+}
+
 export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: ImageCache): void {
   const p = 1 - e.life / e.max, r = e.radius ?? 50;
   const square = (x: number, y: number, w: number, h: number) => ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
@@ -294,6 +326,24 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.beginPath(); ctx.arc(-22, 12, r * (.8 + p * .4), -1.5, .7); ctx.stroke();
       ctx.strokeStyle = '#fff7de'; ctx.lineWidth = 3; ctx.stroke();
       break;
+    case 'bass-burst': {
+      // 燃尽: small red blocks flying out of the bass body where it lands.
+      ctx.translate(e.x, e.y);
+      ctx.fillStyle = '#CC0000';
+      const n = 12;
+      for (let i = 0; i < n; i++) {
+        const ang = (i / n) * Math.PI * 2;
+        const dist = 4 + p * r;
+        const w = Math.max(4, 18 * (1 - p * .4));
+        const h = Math.max(3, 9 * (1 - p * .35));
+        ctx.save();
+        ctx.translate(Math.cos(ang) * dist, Math.sin(ang) * dist);
+        ctx.rotate(ang);
+        square(-w / 2, -h / 2, w, h);
+        ctx.restore();
+      }
+      break;
+    }
     case 'shove':
     case 'grab':
       ctx.translate(e.x, e.y);

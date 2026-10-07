@@ -58,7 +58,7 @@ export const MINION_BAND: BandId = 'mygo';
 export const RECORD_TIME = 3.5;
 const ECHO_DMG = .5;
 const ECHO_FADE = .4;
-export type SfxKind = 'light' | 'heavy' | 'hit' | 'block' | 'super' | 'select' | 'jump' | 'ko' | 'cast' | 'key' | 'whistle';
+export type SfxKind = 'light' | 'heavy' | 'hit' | 'block' | 'super' | 'select' | 'jump' | 'ko' | 'cast' | 'key' | 'whistle' | 'slam';
 
 export interface Effect {
   type: string; x: number; y: number; color: string; life: number; max: number;

@@ -4,7 +4,7 @@ import type { SfxKind } from '../game/game.ts';
 const TONES: Record<SfxKind, [number, number]> = {
   light: [380, .07], heavy: [140, .18], hit: [180, .1], block: [680, .055], super: [780, .55],
   select: [650, .06], jump: [260, .12], ko: [105, .65], cast: [470, .17], key: [880, .05],
-  whistle: [310, .55],
+  whistle: [310, .55], slam: [95, .16],
 };
 
 /** 微笑号的汽笛: a real recording, not a synth — qubodup's "Fog Horn" from Freesound,
@@ -35,6 +35,7 @@ export class Sfx {
   play(kind: SfxKind): void {
     if (this.muted || !this.ctx) return;
     if (kind === 'whistle') { this.whistle(); return; }
+    if (kind === 'slam') { this.slam(); return; }
     const [freq, duration] = TONES[kind];
     const t = this.ctx.currentTime, o = this.ctx.createOscillator(), g = this.ctx.createGain();
     o.type = 'square';
@@ -45,6 +46,28 @@ export class Sfx {
     o.connect(g).connect(this.ctx.destination);
     o.start(t);
     o.stop(t + duration);
+  }
+
+  /** 燃尽: a click over a dropping thud, so the impact does not sound like the cast swoop. */
+  private slam(): void {
+    const ctx = this.ctx!;
+    const t = ctx.currentTime;
+    const body = ctx.createOscillator(), click = ctx.createOscillator();
+    const gb = ctx.createGain(), gc = ctx.createGain();
+    body.type = 'square';
+    body.frequency.setValueAtTime(160, t);
+    body.frequency.exponentialRampToValueAtTime(42, t + .14);
+    gb.gain.setValueAtTime(.09, t);
+    gb.gain.exponentialRampToValueAtTime(.0001, t + .16);
+    click.type = 'square';
+    click.frequency.setValueAtTime(980, t);
+    click.frequency.exponentialRampToValueAtTime(180, t + .04);
+    gc.gain.setValueAtTime(.05, t);
+    gc.gain.exponentialRampToValueAtTime(.0001, t + .045);
+    body.connect(gb).connect(ctx.destination);
+    click.connect(gc).connect(ctx.destination);
+    body.start(t); body.stop(t + .16);
+    click.start(t); click.stop(t + .05);
   }
 
   /** The recorded horn when it is on hand — the sample loads in the background after the

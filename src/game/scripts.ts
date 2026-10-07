@@ -28,6 +28,8 @@ export interface MoveScript {
   burst?: (f: Fighter) => number;
   /** Stay committed until the move ends (推落、信用). */
   commit?: boolean;
+  /** While this pose is up, hits do not drop it (全力碰撞). Full damage and knockback. Grabs and supers still do. */
+  poise?: boolean;
   /** Once the payload is away, the pose is done (剪、火的故事). */
   freeWhenEmitted?: boolean;
   /** Seconds before the end that a released hold counts as finished. */

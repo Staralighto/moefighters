@@ -8,7 +8,7 @@ import { BANDS, BAND_BY_ID } from '../src/data/bands.ts';
 import { AIR_SKILLS, skill } from '../src/data/skills.ts';
 import { STAGES } from '../src/data/stages.ts';
 import { FLOOR, COMBO_DECAY, STEP, X_MAX, X_MIN } from '../src/game/constants.ts';
-import { clipFor, drumRow } from '../src/render/clips.ts';
+import { clipFor, crashRow, drumRow, riotCell } from '../src/render/clips.ts';
 import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
 import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell } from '../src/render/fx.ts';
 import { teamGlowOn } from '../src/render/renderer.ts';
@@ -76,7 +76,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const g = c.bands?.[0] ?? 'none';
     if (runs[runs.length - 1] !== g) runs.push(g);
   }
-  assert.deepEqual(runs, ['ave-mujica', 'mygo', 'yumemita', 'poppin-party', 'roselia', 'hello-happy', 'sumimi', 'pastel-palettes', 'afterglow', 'none'], 'roster order is the select-screen band order');
+  assert.deepEqual(runs, ['ave-mujica', 'mygo', 'yumemita', 'poppin-party', 'roselia', 'hello-happy', 'sumimi', 'pastel-palettes', 'afterglow', 'raise-a-suilen', 'none'], 'roster order is the select-screen band order');
   assert.deepEqual(ROSTER[at('uika')].bands, ['ave-mujica', 'sumimi'], '初华 sings for two units');
   assert.deepEqual(bandMembers('mygo', 'tomori').map(c => c.id), ['anon', 'rana', 'soyo', 'taki'], 'the sing calls her bandmates, never herself');
   for (const id of ['gale', 'ember', 'boulder']) {
@@ -3647,6 +3647,156 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.equal(teamGlowOn({ fighters: [body('tomori', 0), body('anon', 0, true), body('anon', 1)] }), true, 'a summon that copies the foe rims both sides');
   assert.equal(teamGlowOn({ fighters: [body('anon', 0), body('soyo', 0), body('taki', 1), body('rana', 1)] }), true, 'two real fighters on a side rims the match');
   assert.equal(teamGlowOn({ fighters: [body('anon', 0), body('soyo', 1), body('taki', 1)] }), true, 'one side of two rims the match');
+}
+
+// layer: seven-hit super. Each strike steps forward, so a round-start gap still gets hit.
+{
+  assert.equal(crashRow(.2, 0, 0, .36, 1.95, .22), 0, '全力碰撞 reaches upright');
+  assert.equal(crashRow(.45, .4, 0, .36, 1.95, .22), 0, 'the hoist is the upright cell');
+  assert.equal(crashRow(.56, .4, 0, .36, 1.95, .22), 1, 'the drop is the slam cell');
+  assert.equal(crashRow(.63, .4, 1, .36, 1.95, .22), 0, 'the next beat hoists again');
+  assert.equal(crashRow(.5, -1, 0, .36, 1.95, .22), 2, 'a miss settles');
+  assert.equal(riotCell(1, 1), 0, 'riot opens on the straight punch');
+  assert.equal(riotCell(1.16, 1), 1, 'riot steps one cell per hit');
+  assert.equal(riotCell(1.96, 1), 6, 'the seventh strike is the bass smash');
+  assert.ok(riotCell(2.2, 1) >= 7 && riotCell(2.2, 1) <= 11, 'the tail walks the follow-through');
+  const layer = at('layer');
+  const data = ROSTER[layer];
+  assert.equal(data.name, 'LAYER', 'layer displays the stage name');
+  assert.equal(data.skills[3].fx, 'burnout', '燃尽 owns its fx');
+  assert.equal(data.skills[5].cost, 120, '大闹一场 costs 120');
+  assert.equal(data.skills[5].fx, 'riot', 'the super is the riot');
+  assert.equal(data.skills[5].count, 7, 'the riot is seven hits');
+  assert.deepEqual(data.bands, ['raise-a-suilen'], 'layer fronts RAISE A SUILEN');
+  assert.ok(data.view.kind === 'sprite' && data.view.world === '/sprites/layer/riot.png', 'the combo sheet is preloaded');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/layer/bass.png'), 'the bass picture is preloaded');
+
+  const g = newGame(layer, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+  p1.energy = p1.energyMax;
+  p2.x = p1.x + 70; p2.facing = -1;
+  const hp = p2.hp;
+  g.keyDown('KeyL');
+  run(g, .6);
+  assert.equal(p1.attack?.hold, p2.id, '大闹一场 caught them');
+  let hits = 0;
+  let downed = false;
+  let locked = -1;
+  let ghost = false;
+  for (let i = 0; i < Math.round(2.6 / STEP); i++) {
+    g.step(STEP);
+    if (p1.attack && p1.combo >= 3 && locked < 0) locked = p1.energy;
+    if (g.effects.some(e => e.type === 'ghost' && e.tint === p1.data.color)) ghost = true;
+    hits = Math.max(hits, p1.combo);
+    if (p2.knocked > 0) downed = true;
+  }
+  assert.equal(hits, 7, '大闹一场 hits seven times');
+  assert.ok(ghost, 'a cell change leaves the flat afterimage');
+  assert.ok(downed, 'the last strike knocks down');
+  assert.ok(hp - p2.hp > 140, `the route dealt damage, ${hp - p2.hp}`);
+  assert.equal(p1.attack, null, '大闹一场 plays out');
+  assert.equal(locked, p1.energyMax - (p1.data.skills[5].cost ?? 100), 'the combo grants no energy');
+  assert.equal(p1.noGain, 0, '禁回气 ends with the pose');
+
+  // Round-start spacing is about 430px. The steps have to arrive without a manual approach.
+  const far = newGame(layer, at('boulder')); const [f1, f2] = far.fighters; dummy(far);
+  f1.energy = f1.energyMax;
+  f2.x = f1.x + 430;
+  f2.facing = -1;
+  const x0 = f1.x;
+  const farHp = f2.hp;
+  far.keyDown('KeyL');
+  run(far, .5);
+  const mid = f1.x - x0;
+  assert.ok(mid > 20 && mid < 80, `the first stride is mid-slide, moved ${mid}`);
+  run(far, 1.9);
+  assert.ok(f1.x > x0 + 250, `the route stepped in, moved ${f1.x - x0}`);
+  assert.ok(farHp - f2.hp > 40, `a round-start gap still took damage, ${farHp - f2.hp}`);
+
+  const miss = newGame(layer, at('boulder')); const [m1, m2] = miss.fighters; dummy(miss);
+  m1.energy = m1.energyMax;
+  m2.x = X_MIN;
+  m2.facing = 1;
+  const mx = m1.x;
+  const missHp = m2.hp;
+  miss.keyDown('KeyL');
+  run(miss, .8);
+  assert.ok(m1.attack, 'a whiffed 大闹一场 keeps walking');
+  assert.ok(m1.x > mx, 'the whiff still steps forward');
+  run(miss, 1.6);
+  assert.equal(m1.attack, null, 'the whiff route ends');
+  assert.equal(m2.hp, missHp, 'someone behind takes nothing');
+
+  const burn = newGame(layer, at('boulder')); const [n1] = burn.fighters; dummy(burn);
+  burn.keyDown('KeyI');
+  run(burn, .55);
+  assert.equal(clipFor(n1).row, 1, '燃尽 holds the slam past the generic window');
+  assert.ok(burn.effects.some(e => e.type === 'bass-burst'), 'the bass bursts where it lands');
+  run(burn, .15);
+  assert.equal(clipFor(n1).row, 2, '燃尽 settles after the extended slam');
+
+  // 入侵秀: point-blank only shoves. A charge that has already run most of the dash knocks down.
+  const bump = newGame(layer, at('boulder')); const [b1, b2] = bump.fighters; dummy(bump);
+  b2.x = b1.x + 70; b2.facing = -1;
+  bump.keyDown('KeyU');
+  let bumped = false;
+  for (let i = 0; i < Math.round(1.1 / STEP); i++) {
+    bump.step(STEP);
+    if (b2.knocked > 0) bumped = true;
+  }
+  assert.ok(b2.hp < b2.data.hp, 'a point-blank 入侵秀 connects');
+  assert.equal(bumped, false, 'a point-blank 入侵秀 does not knock down');
+
+  const charge = newGame(layer, at('boulder')); const [c1, c2] = charge.fighters; dummy(charge);
+  c2.x = c1.x + 430; c2.facing = -1;
+  charge.keyDown('KeyU');
+  let charged = false;
+  for (let i = 0; i < Math.round(1.1 / STEP); i++) {
+    charge.step(STEP);
+    if (c2.knocked > 0) charged = true;
+  }
+  assert.ok(charged, 'a long 入侵秀 knocks down');
+
+  // 全力碰撞: a grab becomes five floor slams. The 120 is 24 a hit. A miss deals nothing.
+  const slam = newGame(layer, at('boulder')); const [s1, s2] = slam.fighters; dummy(slam);
+  s2.x = s1.x + 60; s2.facing = -1;
+  const slamHp = s2.hp;
+  slam.keyDown('KeyO');
+  let slams = 0;
+  let slammed = false;
+  for (let i = 0; i < Math.round(2.2 / STEP); i++) {
+    slam.step(STEP);
+    slams = Math.max(slams, s1.combo);
+    if (s2.knocked > 0) slammed = true;
+  }
+  assert.equal(slams, 5, '全力碰撞 slams five times');
+  assert.ok(slammed, 'the last slam knocks down');
+  assert.ok(slamHp - s2.hp > 70, `the five slams dealt damage, ${slamHp - s2.hp}`);
+  assert.equal(s1.attack, null, '全力碰撞 plays out');
+
+  const missO = newGame(layer, at('boulder')); const [o1, o2] = missO.fighters; dummy(missO);
+  o2.x = o1.x + 280; o2.facing = -1;
+  const missOHp = o2.hp;
+  missO.keyDown('KeyO');
+  run(missO, 1.3);
+  assert.equal(o2.hp, missOHp, 'a missed 全力碰撞 deals nothing');
+  assert.equal(o1.attack, null, 'a missed 全力碰撞 ends');
+
+  const hold = newGame(layer, at('boulder')); const [h1, h2] = hold.fighters; dummy(hold);
+  h2.x = h1.x + 70; h2.facing = -1;
+  hold.keyDown('KeyO');
+  run(hold, .12);
+  assert.ok(h1.attack, '全力碰撞 has started');
+  const heldHp = h1.hp;
+  const jab = h2.data.skills[0];
+  hit(hold, h2, h1, jab, { hit: new Set() });
+  assert.equal(h1.attack?.skill.fx, 'crash', 'a jab does not drop 全力碰撞');
+  assert.equal(h1.stun, 0, 'the jab does not flinch the slam');
+  assert.ok(heldHp - h1.hp > 20, `the jab still hurts, took ${heldHp - h1.hp}`);
+  assert.ok(Math.abs(h1.vx) > 80, `knockback stays full, vx ${h1.vx}`);
+  assert.equal(h1.poise, 0, '抗打断 is the pose, not a poise buff');
+  assert.equal(h1.braced, 0, 'the slam is not 霸体');
+  hit(hold, h2, h1, { ...jab, type: 'grab' }, { hit: new Set() });
+  assert.equal(h1.attack, null, 'a grab still drops 全力碰撞');
 }
 
 console.log('selfcheck ok');

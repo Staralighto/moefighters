@@ -4,7 +4,7 @@ import { addDebt, addMod, dmgDealtMul, dmgTakenMul, has } from './mods.ts';
 import type { FightGame, Projectile, SealVolley } from './game.ts';
 import { CONTROLS, FLOOR, GRAVITY, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
 import { attackPhase } from './animState.ts';
-import { clipFor, drumRow } from '../render/clips.ts';
+import { clipFor, drumRow, RIOT_GAP, RIOT_HITS } from '../render/clips.ts';
 import { SCRIPTS } from './scripts.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
@@ -281,7 +281,8 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   // 绊创膏: the buffed fighter eats the damage without the flinch. Grabs and supers ignore the plaster.
   const braced = !blocked && has(defender, 'brace') && !isGrab && !skill.super;
   // 秋叶原马拉松: same no-flinch as the plaster, without the damage cut or the halved knockback.
-  const poised = !blocked && has(defender, 'poise') && !isGrab && !skill.super;
+  // 全力碰撞 wears that for the pose itself, not as a buff that outlives the move.
+  const poised = !blocked && (has(defender, 'poise') || !!armour && !!SCRIPTS[armour.skill.fx]?.poise) && !isGrab && !skill.super;
   // 梦想即力量！: the frenzy brace is true super armour — only the control set (grabs, the
   // roots, the ban) staggers her. Supers lose their pierce and the combo escape never fires.
   // 满月嚎叫 wears the same brace for the howl itself, and it ends when the howl does.
@@ -963,7 +964,6 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
     const clip = clipFor(f);
     g.effect('ghost', f.x - f.facing * 20, f.y, f.data.color, .28, { fighter: f.id, alpha: .5, tint: f.data.frenzy?.tint ?? FRENZY_TINT, sheet: clip.sheet, col: clip.col, row: clip.row, facing: f.facing });
   }
-
   if (s.hold) stepHold(g, f, a, dt);
   else SCRIPTS[s.fx]?.update?.(g, f, a, dt);
 
@@ -1535,6 +1535,165 @@ function step_fuga(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   }
 }
 
+/** 大闹一场: each strike slides forward across its gap (skill.speed over RIOT_GAP), then hits.
+ *  A hit reels them onto the fist; later strikes carry them. A miss still walks the route.
+ *  anchor / liftAt are this stride's start and end. liftAt 0 means the first stride is unplanned. */
+function step_riot(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  // Each new cell leaves the previous one behind as a flat copy of her color.
+  const now = clipFor(f);
+  const t = a.t;
+  a.t = Math.max(0, t - dt);
+  const prev = clipFor(f);
+  a.t = t;
+  if (prev.sheet !== now.sheet || prev.col !== now.col || prev.row !== now.row) {
+    const cell = now.sheet === 'world' ? now.row * 4 + now.col : 0;
+    const life = now.sheet === 'world' && cell >= RIOT_HITS ? .11 : RIOT_GAP;
+    g.effect('ghost', f.x, f.y, f.data.color, life, { fighter: f.id, alpha: .55, tint: f.data.color, sheet: prev.sheet, col: prev.col, row: prev.row, facing: f.facing });
+  }
+  if (a.t < s.start) return;
+  const stepMax = s.speed ?? 55;
+  const reach = (o: Fighter) => {
+    if (o.hp <= 0 || o.invuln > 0) return false;
+    const gap = (o.x - f.x) * f.facing;
+    return gap >= -20 && gap < s.range && Math.abs(o.y - f.y) < 112;
+  };
+  const plan = () => {
+    let step = stepMax;
+    if (a.hold < 0) {
+      let gap = Infinity;
+      for (const o of g.opponents(f)) {
+        const d = (o.x - f.x) * f.facing;
+        if (o.hp > 0 && d >= -20 && Math.abs(o.y - f.y) < 112 && d < gap) gap = d;
+      }
+      if (gap < Infinity) step = Math.min(stepMax, Math.max(0, gap - s.range * .5));
+    }
+    a.anchor = f.x;
+    a.liftAt = clamp(f.x + f.facing * step, X_MIN, X_MAX);
+  };
+  if (a.liftAt === 0) plan();
+  while (a.shots < RIOT_HITS && a.t >= s.start + (a.shots + 1) * RIOT_GAP) {
+    f.x = a.liftAt;
+    if (a.hold < 0) {
+      for (const o of g.opponents(f)) {
+        if (!reach(o)) continue;
+        a.hold = o.id;
+        o.attack = null;
+        o.queue = [];
+        break;
+      }
+    }
+    const last = a.shots >= RIOT_HITS - 1;
+    const o = a.hold >= 0 ? g.fighters.find(p => p.id === a.hold) : undefined;
+    if (o && o.hp > 0) hit(g, f, o, withFinale(s, last), { hit: new Set() });
+    a.shots++;
+    if (a.shots < RIOT_HITS) plan();
+  }
+  if (a.shots < RIOT_HITS) {
+    const u = clamp((a.t - s.start - a.shots * RIOT_GAP) / RIOT_GAP, 0, 1);
+    f.x = a.anchor + (a.liftAt - a.anchor) * u;
+  }
+  if (a.hold >= 0 && a.shots < RIOT_HITS) {
+    const o = g.fighters.find(p => p.id === a.hold);
+    if (o && o.hp > 0) {
+      o.y = FLOOR;
+      o.vx = 0;
+      o.vy = 0;
+      o.knocked = 0;
+      o.stun = Math.max(o.stun, .3);
+      o.facing = (f.facing < 0 ? 1 : -1);
+      const goal = clamp(f.x + f.facing * 58, X_MIN, X_MAX);
+      const pull = stepMax / RIOT_GAP * dt;
+      const dx = goal - o.x;
+      o.x += Math.abs(dx) <= pull ? dx : Math.sign(dx) * pull;
+    }
+  }
+}
+
+/** 入侵秀: slide until a hit, then hold the recover pose. Knockback is 40px at contact
+ *  and 200px after a full run; past 160px a clean hit also knocks down.
+ *  vx decays at 9, so the impulse is the distance times that curve. */
+function step_invade(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (a.t < s.start || a.shots > 0 || a.t >= s.duration - .08) return;
+  f.x += f.facing * (s.speed ?? 640) * dt;
+  const maxRun = (s.speed ?? 640) * Math.max(.05, s.duration - s.start - .08);
+  const run = Math.abs(f.x - a.anchor);
+  const px = 40 + 160 * Math.min(1, run / maxRun);
+  const prev = a.skill;
+  a.skill = {
+    ...prev,
+    knock: px * (1 - Math.exp(-9 * dt)) / dt,
+    ...(px > 160 ? { react: { kind: 'knockdown' as const, vy: -240, knocked: .72 } } : {}),
+  };
+  const before = a.hit.size;
+  applyMelee(g, f, a);
+  a.skill = prev;
+  if (Math.floor(a.t * 30) % 3 === 0) g.effect('ghost', f.x - f.facing * 18, f.y, f.data.color, .18, { fighter: f.id, alpha: .3 });
+  if (a.hit.size === before) return;
+  a.shots = 1;
+  const recoverAt = s.start + Math.min(.1, (s.duration - s.start) * .4);
+  if (a.t < recoverAt) a.t = recoverAt;
+}
+
+/** 全力碰撞: one grab, then five floor slams. Damage is the skill's per hit.
+ *  A miss snaps to a short recover so the slam string does not play out. */
+function step_crash(g: FightGame, f: Fighter, a: Attack, _dt: number): void {
+  const s = a.skill;
+  const hits = s.count ?? 5;
+  const gap = s.interval ?? .22;
+  const catchEnd = s.start + .12;
+  if (a.hold < 0 && a.tossAt === 0 && a.t >= s.start && a.t < catchEnd) {
+    for (const o of g.opponents(f)) {
+      if (o.hp <= 0 || o.invuln > 0) continue;
+      const radial = s.hitbox !== 'front';
+      const front = (o.x - f.x) * f.facing >= -20;
+      if ((radial || front) && Math.abs(o.x - f.x) < s.range && Math.abs(o.y - f.y) < 112) {
+        a.hold = o.id;
+        a.tossAt = a.t;
+        g.hitstop = Math.max(g.hitstop, .06);
+        g.effect('grab', o.x, o.y - 80, f.data.color, .25, { radius: 48 });
+        o.stun = Math.max(o.stun, .35);
+        o.vx = 0;
+        o.vy = 0;
+        o.knocked = 0;
+        o.attack = null;
+        o.queue = [];
+        break;
+      }
+    }
+  }
+  if (a.hold < 0 && a.tossAt === 0 && a.t >= catchEnd) {
+    a.tossAt = -1;
+    a.t = Math.max(a.t, s.duration - .55);
+    return;
+  }
+  if (a.hold < 0) return;
+  const o = g.fighters.find(p => p.id === a.hold);
+  if (!o || o.hp <= 0) { a.hold = -1; a.t = s.duration; return; }
+  const u = clamp((a.t - a.tossAt - a.shots * gap) / gap, 0, 1);
+  o.x = clamp(f.x + f.facing * 54, X_MIN, X_MAX);
+  o.y = FLOOR - Math.sin(u * Math.PI) * 86;
+  o.vx = 0;
+  o.vy = 0;
+  o.knocked = 0;
+  o.stun = Math.max(o.stun, .3);
+  o.facing = (f.facing < 0 ? 1 : -1);
+  if (a.shots >= hits || a.t < a.tossAt + (a.shots + 1) * gap) return;
+  o.y = FLOOR;
+  a.hit = new Set();
+  const last = a.shots >= hits - 1;
+  hit(g, f, o, last
+    ? { ...s, knock: 140, react: { kind: 'knockdown', vy: -140, knocked: .72 } }
+    : { ...s, knock: 0, react: { kind: 'pin', stun: .25, holdStill: true } }, a);
+  g.effect('slam', o.x, FLOOR, f.data.color, .28, { radius: 78 });
+  a.shots++;
+  if (a.shots >= hits) {
+    a.hold = -1;
+    a.t = Math.max(a.t, s.duration - .3);
+  }
+}
+
 function step_slam(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   const s = a.skill;
   if (a.hold < 0 && a.t >= s.start && a.t < s.start + .45) {
@@ -1923,6 +2082,16 @@ SCRIPTS['violet'] = Object.assign(SCRIPTS['violet'] ?? {}, { update: step_violet
 SCRIPTS['snip'] = Object.assign(SCRIPTS['snip'] ?? {}, { update: step_snip, freeWhenEmitted: true, skipVolley: true, skipCount: true, ownCount: true, mark: 'snip' });
 SCRIPTS['fuga'] = Object.assign(SCRIPTS['fuga'] ?? {}, { update: step_fuga, freeWhenEmitted: true });
 SCRIPTS['slam'] = Object.assign(SCRIPTS['slam'] ?? {}, { update: step_slam, commit: true, noMelee: true });
+SCRIPTS['crash'] = Object.assign(SCRIPTS['crash'] ?? {}, { update: step_crash, commit: true, noMelee: true, skipCount: true, poise: true });
+SCRIPTS['riot'] = Object.assign(SCRIPTS['riot'] ?? {}, {
+  update: step_riot, skipCount: true, noMelee: true, noStamp: true,
+  // 大闹一场: the string must not pay the bar back. The lock is the pose, then it drops.
+  cast(_g: FightGame, f: Fighter) {
+    const s = f.attack?.skill;
+    if (s) addMod(f, 'noGain', s.duration, { max: true });
+  },
+});
+SCRIPTS['invade'] = Object.assign(SCRIPTS['invade'] ?? {}, { update: step_invade, customDash: true });
 SCRIPTS['onegai'] = Object.assign(SCRIPTS['onegai'] ?? {}, { update: step_onegai, noMelee: true });
 SCRIPTS['arc-kick'] = Object.assign(SCRIPTS['arc-kick'] ?? {}, { update: step_arc_kick });
 SCRIPTS['compose'] = Object.assign(SCRIPTS['compose'] ?? {}, { update: step_compose, skipCount: true, noMelee: true });
@@ -1973,6 +2142,12 @@ SCRIPTS['tsun'] = Object.assign(SCRIPTS['tsun'] ?? {}, { flash(g: FightGame, f: 
 SCRIPTS['howl'] = Object.assign(SCRIPTS['howl'] ?? {}, { flash(g: FightGame, f: Fighter, a: Attack) { g.effect('howl', f.x, f.y - 80, f.data.color, .4, { radius: a.skill.range }); } });
 SCRIPTS['yokan'] = Object.assign(SCRIPTS['yokan'] ?? {}, { flash(g: FightGame, f: Fighter, a: Attack) { g.effect('yokan', f.x + f.facing * 70, FLOOR, f.data.color, .28, { dir: f.facing, radius: 80 }); } });
 SCRIPTS['rib'] = Object.assign(SCRIPTS['rib'] ?? {}, { flash(g: FightGame, f: Fighter, a: Attack) { g.effect('slash', f.x + f.facing * 65, f.y - 83, f.data.color, .22, { dir: f.facing, radius: a.skill.range * .5 }); } });
+SCRIPTS['burnout'] = Object.assign(SCRIPTS['burnout'] ?? {}, { flash(g: FightGame, f: Fighter, a: Attack) {
+  g.effect('slash', f.x + f.facing * 65, f.y - 83, f.data.color, .22, { dir: f.facing, radius: a.skill.range * .5 });
+  // The bass body's low point on the hit pose. Blocks burst out of that spot.
+  g.effect('bass-burst', f.x + f.facing * 199, f.y - 22, f.data.color, .32, { radius: 96 });
+  g.audio.play('slam');
+} });
 
 
 export function stepProjectiles(g: FightGame, dt: number): void {

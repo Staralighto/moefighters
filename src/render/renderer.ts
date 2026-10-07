@@ -4,7 +4,7 @@ import type { FighterView } from './view.ts';
 import type { ImageCache } from '../assets/loader.ts';
 import { FLOOR, H, SIDE, W } from '../game/constants.ts';
 import { violetHidden } from '../game/combat.ts';
-import { drawBanSign, drawCombo, drawEffect, drawGauge, drawKuji, drawParticles, drawProjectile, drawRootFx, drawTexts, UI_FONT } from './fx.ts';
+import { drawBanSign, drawCombo, drawEffect, drawGauge, drawKuji, drawLayerBass, drawParticles, drawProjectile, drawRootFx, drawTexts, UI_FONT } from './fx.ts';
 
 /** Hard 1px rim, yellow for the left team and green for the right. */
 const TEAM_GLOW = SIDE;
@@ -163,7 +163,9 @@ export class Renderer {
       if (violetHidden(f)) continue;
       const view = this.view(f.data.id);
       const outline = teamRim ? TEAM_GLOW[f.team] : undefined;
-      view.draw(c, f, f.x, f.hp <= 0 ? FLOOR : f.y, f.hp <= 0 ? .3 : f.basic ? .55 : f.echo ? .45 : 1, undefined, outline);
+      const alpha = f.hp <= 0 ? .3 : f.basic ? .55 : f.echo ? .45 : 1;
+      view.draw(c, f, f.x, f.hp <= 0 ? FLOOR : f.y, alpha, undefined, outline);
+      drawLayerBass(c, f, this.images, alpha);
       if (f.blocking) drawEffect(c, { type: 'shield', x: f.x + f.facing * 28, y: f.y - 80, color: '#a6eeff', life: .14, max: .22, radius: 58 });
       if (f.root > 0 && f.hp > 0) drawRootFx(c, f, g.age);
       if (f.slow > 0 && f.hp > 0) drawEffect(c, { type: 'petal-aura', x: f.x, y: f.y - 105, color: '#EE0022', life: 1, max: 1, radius: 44, age: g.age });
