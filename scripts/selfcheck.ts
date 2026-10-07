@@ -1737,6 +1737,30 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     if (line.includes('cqw')) assert.ok(line.includes('vmin') || /(\d|\.)vw\b/.test(line), 'cqw needs a same-line vmin/vw fallback: ' + raw.trim());
   }
   assert.ok(!cssText.includes('body.wide .touchpad .tp-stick') && cssText.includes('body.wide:not(.touch) .touchpad .tp-stick'), 'wide mode must scope control stripping to :not(.touch)');
+  // Stage rows follow the stage's own width. A short landscape phone is wide enough for one row;
+  // tying the 2x2 to max-height put every phone landscape into two rows.
+  const atRuleBody = (css: string, needle: string): string => {
+    const start = css.indexOf(needle);
+    if (start < 0) throw Error('FAIL: missing ' + needle);
+    const open = css.indexOf('{', start);
+    let depth = 0;
+    for (let i = open; i < css.length; i++) {
+      if (css[i] === '{') depth++;
+      else if (css[i] === '}') {
+        depth--;
+        if (depth === 0) return css.slice(open, i + 1);
+      }
+    }
+    throw Error('FAIL: unclosed ' + needle);
+  };
+  const stageRows = atRuleBody(cssText, '@container stage (max-width: 36rem)');
+  assert.ok(html.includes('class="stage-frame"') && cssText.includes('container-name: stage'), 'the stage container wraps the select stage');
+  assert.ok(stageRows.includes('grid-area: 2 / 1'), 'a narrow stage uses the 2x2 team layout');
+  assert.equal((cssText.match(/grid-area: 2 \/ 1/g) ?? []).length, 1, 'the 2x2 team placement lives only in the stage container');
+  const shortLandscape = atRuleBody(cssText, '@media (orientation: landscape) and (max-height: 500px)');
+  assert.ok(!shortLandscape.includes('grid-area'), 'short landscape does not choose stage rows');
+  assert.ok(!shortLandscape.includes('/ 2)'), 'short landscape does not halve portrait height');
+  assert.ok(stageRows.includes('(100dvh - 220px) / 2'), 'two-row portraits shrink only inside the narrow stage');
   assert.equal(ultIcon('gale'), '/icons/ult-gale.png', 'a drawn ultimate keeps its own icon');
   assert.equal(ultIcon('soyo'), DEFAULT_ULT_ICON, 'an ultimate without art uses the shared mark');
   for (const c of ROSTER) {

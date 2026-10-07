@@ -86,10 +86,12 @@ footer { display: flex; justify-content: space-between; gap: 16px; color: var(--
 .sectionline i { font-style: normal; color: var(--muted); margin-right: .5em; }
 .muted { color: var(--muted); font-weight: 400; font-size: 13px; }
 
+/* 量舞台外边宽。容器不能套在 .select-stage 自己身上，否则查询改不到它的格子。 */
+.stage-frame { container-type: inline-size; container-name: stage; }
 .select-stage { position: relative; display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: 14px; overflow: hidden; background: #17131f center bottom / auto no-repeat; border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
 .select-stage::before { content: ""; position: absolute; inset: 0; background: rgb(0 0 0 / 40%); pointer-events: none; }
 .select-stage > * { position: relative; z-index: 1; }
-/* 桌面 2V2 一行四格，正中留空列给字。字本身不占格，钉在舞台中心。 */
+/* 默认一行。2V2 正中留空列给字。字本身不占格，钉在舞台中心。窄过 36rem 的两行见文末 @container stage。 */
 .select-stage.team { grid-template-columns: 1fr 1fr 5rem 1fr 1fr; }
 .select-stage.team #preview-left { grid-column: 1; }
 .select-stage.team #preview-ally { grid-column: 2; }
@@ -469,7 +471,7 @@ body.wide .touchpad.in-tower .tp-actions { --atk: clamp(86px, 16vmin, 106px); ri
 .action-options > .seg { grid-area: 1 / 1; width: 100%; }
 .action-start { width: 100%; min-width: 0; font-size: 16px; padding: .6em .7em; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* 手机（竖屏窄屏 + 横屏矮屏）共用的压缩：字号下限 11px，所有槽位留在一排，背景地面线才对得上每个立绘。 */
+/* 窄竖屏和矮视口共用的压缩：字号、芯片、图标。行列不看横竖屏，见 @container stage。 */
 @media (max-width: 760px) and (orientation: portrait), (orientation: landscape) and (max-height: 500px) {
   header { padding: 8px 12px; gap: 8px; }
   .brand { gap: 8px; letter-spacing: .02em; min-width: 0; }
@@ -483,23 +485,8 @@ body.wide .touchpad.in-tower .tp-actions { --atk: clamp(86px, 16vmin, 106px); ri
   .rules-summary { font-size: 12px; }
   .sectionline #random { padding: .3em .6em; font-size: 13px; white-space: nowrap; }
 
-  /* 1V1（含无尽闯关）仍是一行。2V2 与无尽激战用两行舞台，激战是上一下二的三角。只在这条媒体查询里，桌面不动。
-     芯片在名字下面，舞台因此更高；背景由 placeStage 按舞台实宽高盖满。 */
+  /* 1V1 仍是一行两格。芯片在名字下面。2V2 / 激战的行列见 @container stage。 */
   .select-stage { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; padding: 10px; border-radius: 12px; }
-  .select-stage.team { grid-template-columns: 1fr 1fr; align-items: center; gap: 4px; }
-  .select-stage.team #preview-left { grid-area: 1 / 1; }
-  .select-stage.team #preview-ally { grid-area: 2 / 1; }
-  .select-stage.team #preview-right { grid-area: 1 / 2; }
-  .select-stage.team #preview-enemy2 { grid-area: 2 / 2; }
-  .select-stage.team .versus small { display: none; }
-  .select-stage.challenge:not(.solo) { grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: center; gap: 4px; }
-  .select-stage.challenge:not(.solo) #preview-left { grid-column: 2 / 4; grid-row: 1; padding-bottom: 18px; }
-  .select-stage.challenge:not(.solo) #preview-right { grid-column: 1 / 3; grid-row: 2; padding-top: 18px; }
-  .select-stage.challenge:not(.solo) #preview-enemy2 { grid-column: 3 / 5; grid-row: 2; padding-top: 18px; }
-  .select-stage.challenge:not(.solo) .versus small { display: none; }
-  .select-stage.challenge.solo { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .select-stage.challenge.solo #preview-left,
-  .select-stage.challenge.solo #preview-right { grid-column: auto; grid-row: auto; }
   .fighter-preview { min-width: 0; grid-template-columns: minmax(0, 1fr); grid-template-areas: "art" "name" "chip"; justify-items: center; }
   .fighter-preview canvas,
   .select-stage.team .fighter-preview canvas { grid-area: art; width: 100%; height: 152px; aspect-ratio: auto; }
@@ -563,16 +550,31 @@ body.wide .touchpad.in-tower .tp-actions { --atk: clamp(86px, 16vmin, 106px); ri
   .roster { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
 
-/* 横屏矮屏：和竖屏一样单列，模式下面就是角色列表。舞台跟屏幕一样宽，左右只留一点安全边。
-   两行舞台（2V2、无尽激战）把立绘压进剩余高度，否则底下一行会掉出屏幕。 */
+/* 横屏矮屏：舞台跟屏幕一样宽。立绘沿用上面的单行高度，不因为矮就改成两行。 */
 @media (orientation: landscape) and (max-height: 500px) {
   main#selection { max-width: none; padding: 8px max(8px, env(safe-area-inset-right)) 20px max(8px, env(safe-area-inset-left)); }
   .select-stage { width: 100%; }
-  .select-stage.team .fighter-preview canvas,
-  .select-stage.challenge:not(.solo) .fighter-preview canvas { height: clamp(72px, calc((100vh - 220px) / 2), 140px); height: clamp(72px, calc((100dvh - 220px) / 2), 140px); }
-  .select-stage.challenge:not(.solo) .fighter-preview canvas { height: clamp(72px, calc((100vh - 256px) / 2), 132px); height: clamp(72px, calc((100dvh - 256px) / 2), 132px); }
   .action-bar { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) 14rem; }
   .action-foot { display: contents; }
   .action-start { position: static; width: 100%; font-size: 16px; box-shadow: none; }
   .roster { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); }
+}
+
+/* 行列只看舞台外边宽。36rem：四人各约 120px，再加正中 5rem。再窄，2V2 改 2×2，激战改上一下二。
+   1V1 不进这里。两行时地面仍只跟左侧立绘；宽到能排一行时，脚在同一条地面线上。
+   两行画布按剩余高度对半，上限 152px，避免矮窗口里底下一行顶出屏幕。 */
+@container stage (max-width: 36rem) {
+  .select-stage.team { grid-template-columns: 1fr 1fr; align-items: center; gap: 4px; }
+  .select-stage.team #preview-left { grid-area: 1 / 1; }
+  .select-stage.team #preview-ally { grid-area: 2 / 1; }
+  .select-stage.team #preview-right { grid-area: 1 / 2; }
+  .select-stage.team #preview-enemy2 { grid-area: 2 / 2; }
+  .select-stage.team .versus small { display: none; }
+  .select-stage.challenge:not(.solo) { grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: center; gap: 4px; }
+  .select-stage.challenge:not(.solo) #preview-left { grid-column: 2 / 4; grid-row: 1; padding-bottom: 18px; }
+  .select-stage.challenge:not(.solo) #preview-right { grid-column: 1 / 3; grid-row: 2; padding-top: 18px; }
+  .select-stage.challenge:not(.solo) #preview-enemy2 { grid-column: 3 / 5; grid-row: 2; padding-top: 18px; }
+  .select-stage.challenge:not(.solo) .versus small { display: none; }
+  .select-stage.team .fighter-preview canvas,
+  .select-stage.challenge:not(.solo) .fighter-preview canvas { height: clamp(72px, calc((100vh - 220px) / 2), 152px); height: clamp(72px, calc((100dvh - 220px) / 2), 152px); }
 }
