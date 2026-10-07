@@ -316,7 +316,7 @@
       <ul>
         <li>模式和人机强度在角色预览下方切换；槽位上的「玩家 / 人机」决定谁来操作，两边都是人机则只看不打</li>
         <li>2V2 左边两名是 1P 和 2P，右边两名是 3P 和 4P，每格都能设玩家或人机，玩家最多两名；一方两人全倒才输本回合</li>
-        <li>训练场能量持续补满、对手自动恢复，不计胜负</li>
+        <li>训练场不计时、不计胜负；靶子空血才回满。无技能冷却和无限大招在设置里开关</li>
         <li>两名玩家共用键盘：按 1P 到 4P 的先后，先出现的玩家用左手键；后出现的用方向键移动、上跳、下格挡，小键盘 1 / 2 轻重击、4 / 5 / 6 技能、3 必杀</li>
         <li>选中后出现的那位时，招式表改成小键盘键位；人机槽仍显示左手键</li>
       </ul>
@@ -340,10 +340,42 @@
 
 <dialog id="settings-dialog">
   <div class="dialog-head"><h2>设置</h2><button id="close-settings" aria-label="关闭">×</button></div>
-  <div class="setting-row">
-    <b>名册显示</b>
-    <div class="seg" role="group" aria-label="名册显示"><button type="button" data-roster-layout="flat" aria-pressed="true">直接排开</button><button type="button" data-roster-layout="band" aria-pressed="false">按乐队分组</button></div>
-  </div>
+  <section class="setting-group">
+    <h3 class="setting-title">名册</h3>
+    <div class="setting-row">
+      <b id="set-roster">名册显示</b>
+      <button type="button" class="pick-btn" popovertarget="set-roster-menu" aria-haspopup="listbox" aria-expanded="false" aria-controls="set-roster-menu" aria-labelledby="set-roster set-roster-value">
+        <span class="pick-value" id="set-roster-value">直接排开</span>
+      </button>
+      <div id="set-roster-menu" class="pick-menu" popover role="listbox" aria-labelledby="set-roster">
+        <button type="button" role="option" data-value="flat" aria-selected="true">直接排开</button>
+        <button type="button" role="option" data-value="band" aria-selected="false">按乐队分组</button>
+      </div>
+    </div>
+  </section>
+  <section class="setting-group">
+    <h3 class="setting-title">训练场</h3>
+    <div class="setting-row">
+      <b id="set-nocd">无技能冷却</b>
+      <button type="button" class="pick-btn" popovertarget="set-nocd-menu" aria-haspopup="listbox" aria-expanded="false" aria-controls="set-nocd-menu" aria-labelledby="set-nocd set-nocd-value">
+        <span class="pick-value" id="set-nocd-value">开</span>
+      </button>
+      <div id="set-nocd-menu" class="pick-menu" popover role="listbox" aria-labelledby="set-nocd">
+        <button type="button" role="option" data-value="on" aria-selected="true">开</button>
+        <button type="button" role="option" data-value="off" aria-selected="false">关</button>
+      </div>
+    </div>
+    <div class="setting-row">
+      <b id="set-ult">无限大招</b>
+      <button type="button" class="pick-btn" popovertarget="set-ult-menu" aria-haspopup="listbox" aria-expanded="false" aria-controls="set-ult-menu" aria-labelledby="set-ult set-ult-value">
+        <span class="pick-value" id="set-ult-value">开</span>
+      </button>
+      <div id="set-ult-menu" class="pick-menu" popover role="listbox" aria-labelledby="set-ult">
+        <button type="button" role="option" data-value="on" aria-selected="true">开</button>
+        <button type="button" role="option" data-value="off" aria-selected="false">关</button>
+      </div>
+    </div>
+  </section>
 </dialog>
 
 <script type="module" src="/src/main.ts"></script>

@@ -7,6 +7,7 @@ import type { FighterView } from '../render/view.ts';
 import { previewFighter, type Fighter } from '../game/fighter.ts';
 import { FLOOR, H, W } from '../game/constants.ts';
 import { bestLabel, challengeName, foeCount, readBest, readRun, rollEnemies, type ChallengeKind } from './challenge.ts';
+import { trainPrefs } from './settings.ts';
 
 export interface MatchSetup {
   characters: CharacterData[];
@@ -530,8 +531,11 @@ export class SelectScreen {
     $('flavor').textContent = c.title + ' · ' + c.quote;
     $('passive').textContent = c.passive[0] + '：' + c.passive[1];
     $('skills').innerHTML = skillHTML(c, scheme);
+    const train = trainPrefs();
     $('round-rules').textContent = this.mode === 'training'
-      ? '训练场 · 不计时 · 不计胜负 · 能量常满'
+      ? '训练场 · 不计时 · 不计胜负'
+        + (train.noCd ? ' · 无技能冷却' : '')
+        + (train.infiniteUlt ? ' · 无限大招' : '')
       : this.mode === 'challenge'
         ? run
           ? `继续第 ${run.stage} 关 · 对手已锁定 · 单回合决胜 · 通关即下一关`

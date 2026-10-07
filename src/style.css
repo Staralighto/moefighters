@@ -52,18 +52,32 @@ nav { display: flex; gap: 8px; align-items: center; }
    加等宽数字，宽度在任何数值下都不变。 */
 .music-pop-row output { display: inline-block; min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
 #music-volume { width: 110px; accent-color: var(--p1); touch-action: none; }
-/* 设置弹窗跟帮助/确认共用原生 dialog：按内容收缩，上限用百分比。
-   视口宽度单位含滚动条，会把页面撑出横向滚动再跳回来。选项保持文字固有宽度，不收缩、不省略；
-   一行放不下时整组换到下一行，字仍然完整。 */
-#settings-dialog { max-width: min(560px, calc(100% - 2rem)); max-height: calc(100% - 2rem); overflow: auto; overscroll-behavior: contain; }
-#settings-dialog .setting-row { flex-wrap: wrap; margin-top: 14px; border-top: 0; padding-top: 2px; }
-#settings-dialog .setting-row > b { flex: none; white-space: nowrap; }
-#settings-dialog .seg { flex: none; width: max-content; }
-#settings-dialog .seg button { flex: 0 0 auto; min-width: max-content; overflow: visible; text-overflow: clip; }
+/* 设置弹窗宽度写死，不跟文案变。窄屏用百分比收缩，视口宽度单位含滚动条，会把页面撑出横向滚动再跳回来。
+   每行是同一套两列：左边名称吃剩余空间，右边下拉是同一条 min(16em, 46%)。
+   以后名称或选项变长，多出来的字进这截留白，列宽和弹窗宽都不变。 */
+#settings-dialog { width: min(760px, calc(100% - 2rem)); max-width: min(760px, calc(100% - 2rem)); max-height: calc(100% - 2rem); padding: 26px 36px 32px; overflow: auto; overscroll-behavior: contain; }
+#settings-dialog .setting-group:first-of-type { margin-top: 26px; }
+#settings-dialog .setting-group + .setting-group { margin-top: 28px; }
+#settings-dialog .setting-title { margin: 0 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 700; color: var(--muted); }
+#settings-dialog .setting-row { display: grid; grid-template-columns: minmax(0, 1fr) min(16em, 46%); align-items: center; column-gap: 32px; margin: 0; padding: 12px 0; border-top: 0; }
+#settings-dialog .setting-row > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 0; border-top: 1px solid var(--line); }
-/* 模态打开时收走页面滚动条，用等宽留白补上，背后的页面和居中的弹窗都不再横跳。 */
+/* 下拉跟右列一样宽，短选项留在格子里，不按文字收缩。箭头钉在右缘，所以三行长度对齐。 */
+.pick-btn { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-width: 0; text-align: left; }
+.pick-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-btn::after { content: ""; flex: none; width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid currentColor; }
+/* 菜单走 popover 顶层，不进文档流。清掉浏览器默认的 inset:0 + margin:auto，否则打开时先跳到屏幕正中。
+   宽度由脚本写成和触发器一样，长选项在浮层里省略，不把浮层撑得比按钮宽。底色、描边、圆角、阴影抄音乐面板。 */
+.pick-menu { inset: unset; position: fixed; width: min(16em, 46%); height: max-content; margin: 0; padding: 4px; overflow: visible; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); box-shadow: 0 6px 18px rgb(0 0 0 / 45%); }
+.pick-menu button { display: block; width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; white-space: nowrap; background: transparent; border-color: transparent; padding: .4em .8em; font-weight: 700; }
+.pick-menu button:hover, .pick-menu button:focus-visible { background: var(--panel-2); border-color: transparent; }
+.pick-menu button[aria-selected="true"] { background: var(--line); border-color: transparent; }
+/* 模态打开时收走页面滚动条，用等宽留白补上，页面内容不横跳。
+   弹窗在顶层，按视口居中，吃不到 body 的留白；滚动条一消失视口变宽，中线往右偏半个滚动条。
+   往回平移同样的量。做法同 react-remove-scroll 给脱离文档流的层补 gap。 */
 html.modal-open, html.modal-open body { overflow: hidden; }
 html.modal-open body { padding-right: var(--scrollbar-gap, 0px); }
+html.modal-open dialog { translate: calc(var(--scrollbar-gap, 0px) / -2) 0; }
 
 main { max-width: 1080px; margin: 0 auto; padding: 18px 22px 40px; }
 #selection { display: flex; flex-direction: column; }

@@ -13,6 +13,7 @@ import { cycleSkillTier, hideEnd, setBattleGuide, setRoundLabel, showBanner, sho
 import { setIconBtn } from './ui/iconBtn.ts';
 import { applyTouchDevice, watchTouch } from './ui/device.ts';
 import { applyTouchLayout, bindBattleFrame } from './ui/touchLayout.ts';
+import { bindPick, setTrainPrefs, trainPrefs } from './ui/settings.ts';
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
 const sfx = new Sfx();
@@ -254,6 +255,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
     mods: setup.mods,
     roundsToWin: setup.mode === 'challenge' ? 1 : undefined,
     stage: setup.stage,
+    training: trainPrefs(),
     audio: sfx,
     onHUD: updateHUD,
     onBanner: showBanner,
@@ -533,24 +535,20 @@ $('settings').onclick = () => {
 $('close-settings').onclick = () => settingsDialog.close();
 settingsDialog.addEventListener('click', e => { if (e.target === settingsDialog) settingsDialog.close(); });
 
-/* 名册显示设置：直接排开是默认，按乐队分组时每段乐队前插一条分组头。切换后名册重渲染，
-   滚动预加载观察器跟着重挂。 */
-const rosterLayoutButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-roster-layout]')];
-function syncRosterLayoutUi(): void {
-  for (const b of rosterLayoutButtons) {
-    const on = (b.dataset.rosterLayout === 'band') === select.isGrouped;
-    b.classList.toggle('active', on);
-    b.setAttribute('aria-pressed', String(on));
-  }
-}
-for (const b of rosterLayoutButtons) {
-  b.onclick = () => {
-    select.setRosterGrouped(b.dataset.rosterLayout === 'band');
-    observeRoster();
-    syncRosterLayoutUi();
-  };
-}
-syncRosterLayoutUi();
+/* 设置里每一行都是左名、右下拉。名册显示改分组后名册重渲染，滚动预加载观察器跟着重挂。
+   训练场两项写进同一份 prefs，进行中的对局下一帧就生效。 */
+bindPick('set-roster-menu', {
+  get: () => select.isGrouped ? 'band' : 'flat',
+  set: value => { select.setRosterGrouped(value === 'band'); observeRoster(); },
+});
+bindPick('set-nocd-menu', {
+  get: () => trainPrefs().noCd ? 'on' : 'off',
+  set: value => { setTrainPrefs({ noCd: value === 'on' }); select.refresh(); },
+});
+bindPick('set-ult-menu', {
+  get: () => trainPrefs().infiniteUlt ? 'on' : 'off',
+  set: value => { setTrainPrefs({ infiniteUlt: value === 'on' }); select.refresh(); },
+});
 
 document.addEventListener('visibilitychange', () => setMusicSuspended(document.hidden));
 window.addEventListener('blur', () => setMusicSuspended(true));

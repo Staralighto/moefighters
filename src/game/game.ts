@@ -117,6 +117,9 @@ export interface GameOptions {
   stage: StageData;
   audio: { play(kind: SfxKind): void };
   random?: () => number;
+  /** Live training switches. The same object is mutated from the settings dialog.
+   *  Absent keeps both on, so a training match with no prefs still has no skill cooldown and a full meter. */
+  training?: { noCd: boolean; infiniteUlt: boolean };
   onHUD?(g: FightGame): void;
   onBanner?(title: string, sub: string): void;
   onEnd?(title: string, stats: string): void;
@@ -255,7 +258,7 @@ export class FightGame {
       const f = makeFighter(d, i, {
         ...spawn[i],
         controller: controls ? (controls[i] ?? null) : spawn[i].controller,
-        energy: this.mode === 'training' ? meterCap(d) : 20,
+        energy: this.trainOn('infiniteUlt') ? meterCap(d) : 20,
       });
       const m = this.options.mods?.[i];
       f.dmgMul = m?.damage ?? 1;
@@ -486,7 +489,7 @@ export class FightGame {
   /** A long cooldown or an empty super meter should not sit in front of a move that can happen now. */
   private staleIntent(f: Fighter, index: number): boolean {
     if (f.cooldowns[index] > INPUT_BUFFER) return true;
-    return index === 5 && f.energy < (this.skillFor(f, 5).cost ?? 100) && this.mode !== 'training';
+    return index === 5 && f.energy < (this.skillFor(f, 5).cost ?? 100) && !this.trainOn('infiniteUlt');
   }
 
   /** Keep a press that is only waiting on a lock, landing, or a cooldown about to end. */
@@ -599,6 +602,7 @@ export class FightGame {
     stepProjectiles(this, dt);
 
     if (this.mode === 'training') {
+      // Empty bar refills. Damage in between just sticks; stopping the combo does not heal.
       for (const f of this.fighters) {
         if (f.hp <= 0) { f.hp = f.data.hp; f.stun = .5; this.text('训练恢复', f.x, f.y - 185, SIDE[1]); }
       }
@@ -848,10 +852,6 @@ export class FightGame {
     if (f.regen > 0) f.hp = Math.min(f.data.hp, f.hp + f.data.hp * f.regen * dt);
     const drip = regenPerSec(f);
     if (drip) f.hp = Math.min(f.data.hp, f.hp + drip * dt);
-    if (this.mode === 'training') {
-      f.energy = f.energyMax;
-      if (f.id === 1 && f.stun === 0 && !this.fighters[0].comboTime) f.hp = Math.min(f.data.hp, f.hp + dt * 350);
-    }
 
     const grounded = f.y >= FLOOR - .1;
     if (f.blockTap >= 0) f.blockTap += dt;
@@ -989,6 +989,14 @@ export class FightGame {
     f.x = clamp(f.x, X_MIN, X_MAX);
     updateAttack(this, f, dt);
     f.x = clamp(f.x, X_MIN, X_MAX);
+    // After the cast and any channel that just lengthened a cooldown, so the same step cannot leave a skill on the clock.
+    if (this.trainOn('noCd')) { f.cooldowns[2] = 0; f.cooldowns[3] = 0; f.cooldowns[4] = 0; }
+    if (this.trainOn('infiniteUlt')) f.energy = f.energyMax;
+  }
+
+  /** Training-only. Missing prefs stay on; other modes never read them. */
+  private trainOn(flag: 'noCd' | 'infiniteUlt'): boolean {
+    return this.mode === 'training' && this.options.training?.[flag] !== false;
   }
 
   /** ponytail: compacts the three visual lists in place — the per-step filter chains here

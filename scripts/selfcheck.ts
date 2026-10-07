@@ -20,6 +20,7 @@ import { battleFrame } from '../src/ui/battleFrame.ts';
 import { TOUCH_LAYOUT } from '../src/ui/touchLayout.data.ts';
 import { DEFAULT_ULT_ICON, ultIcon } from '../src/ui/touchIcons.ts';
 import { assignSlotWho, guideIndex, skillHTML, stageCover } from '../src/ui/select.ts';
+import { placePick } from '../src/ui/settings.ts';
 import { resolveMusicPrefs } from '../src/audio/bgm.ts';
 import { migrateLinearSlider, musicGain, MUSIC_CAP } from '../src/audio/mix.ts';
 import { POOL, aggregatePicks, bestLabel, drawThree, readBest, rollEnemies, stageSetup } from '../src/ui/challenge.ts';
@@ -50,8 +51,8 @@ function at(id: string): number {
   if (i < 0) throw Error('FAIL: ' + id + ' is on the roster');
   return i;
 }
-function newGame(p1 = at('gale'), p2 = at('boulder'), mode: 'cpu' | 'training' = 'cpu') {
-  const g = new FightGame([ROSTER[p1], ROSTER[p2]], { mode, difficulty: 1, stage: STAGES[0], audio: silent, random: rng(7) });
+function newGame(p1 = at('gale'), p2 = at('boulder'), mode: 'cpu' | 'training' = 'cpu', training?: { noCd: boolean; infiniteUlt: boolean }) {
+  const g = new FightGame([ROSTER[p1], ROSTER[p2]], { mode, difficulty: 1, stage: STAGES[0], audio: silent, random: rng(7), training });
   run(g, 2.3);
   assert.equal(g.phase, 'fight', 'intro ends in fight');
   return g;
@@ -587,13 +588,36 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(p2.invuln > 0 && Math.abs(p2.stun - .24) < 1e-9, `the escape fires at combo 5, stun ${p2.stun}`);
 }
 
-// training: no clock, energy pinned, target heals
+// training: no clock, skills have no cooldown, meter stays full, a target only refills at 0
 {
   const g = newGame(at('gale'), at('boulder'), 'training'); const [p1, p2] = g.fighters;
-  p1.energy = 10; p2.hp = 500; run(g, 1);
+  p1.energy = 10; p2.hp = 400; run(g, 1);
   assert.equal(g.time, 60, 'training clock frozen');
   assert.equal(p1.energy, 100, 'training energy pinned');
-  assert.ok(p2.hp > 500, 'training target regenerates');
+  assert.equal(p2.hp, 400, 'a hurt target stays at the damage');
+  g.keyDown('KeyU');
+  g.step(STEP);
+  assert.equal(p1.attack?.index, 2, 'the skill comes out');
+  assert.equal(p1.cooldowns[2], 0, 'training skills have no cooldown');
+  p1.cooldowns[0] = .4;
+  g.step(STEP);
+  assert.ok(p1.cooldowns[0] > .3, `normals keep their cooldown, left ${p1.cooldowns[0]}`);
+  p2.hp = 0;
+  g.step(STEP);
+  assert.equal(p2.hp, p2.data.hp, 'an empty target refills');
+}
+{
+  const g = newGame(at('gale'), at('boulder'), 'training', { noCd: false, infiniteUlt: false }); const [p1, p2] = g.fighters;
+  assert.ok(p1.energy < 100, 'training can start without a full meter');
+  p2.x = X_MAX;
+  p2.hp = 400;
+  g.keyDown('KeyU');
+  g.step(STEP);
+  assert.ok(p1.cooldowns[2] > .5, `skills cool down when the option is off, left ${p1.cooldowns[2]}`);
+  const energy = p1.energy;
+  run(g, 1);
+  assert.ok(p1.energy < 100 && p1.energy > energy, 'energy recovers on its own and is not pinned');
+  assert.equal(p2.hp, 400, 'turning the switches off does not bring the regen back');
 }
 
 // CPU fights back, and a player who faces it can hit it
@@ -1649,10 +1673,28 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const end = html.indexOf('</dialog>', start);
     assert.ok(start >= 0 && end > start, 'settings dialog exists');
     const visible = html.slice(start, end).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-    assert.equal(visible, '设置 × 名册显示 直接排开 按乐队分组', 'settings dialog shows names only, no explanation');
+    assert.equal(visible, '设置 × 名册 名册显示 直接排开 直接排开 按乐队分组 训练场 无技能冷却 开 开 关 无限大招 开 开 关', 'settings dialog shows names only, no explanation');
     const css = readFileSync('src/style.css', 'utf8');
-    assert.ok(css.includes('min-width: max-content'), 'settings options keep their full label');
+    assert.ok(css.includes('width: min(760px, calc(100% - 2rem))'), 'settings dialog width is reserved, not content-sized');
+    assert.ok(css.includes('minmax(0, 1fr) min(16em, 46%)'), 'settings dropdowns share one column so their lengths stay aligned');
+    assert.ok(css.includes('popover') || html.includes('popover'), 'settings menus are popovers so opening one does not grow the dialog');
+    assert.ok(css.includes('inset: unset'), 'popover menus drop the browser centering that flashes mid-screen');
     assert.ok(!css.includes('100vw'), 'dialog width must not use 100vw; it includes the scrollbar and shifts the page');
+    assert.deepEqual(
+      placePick({ right: 200, top: 40, bottom: 70 }, { width: 80, height: 60 }, { width: 400, height: 300 }),
+      { top: 74, left: 120 },
+      'a menu sits under the trigger, right edges aligned',
+    );
+    assert.deepEqual(
+      placePick({ right: 200, top: 200, bottom: 240 }, { width: 80, height: 80 }, { width: 400, height: 300 }),
+      { top: 116, left: 120 },
+      'a menu flips above when it would leave the viewport',
+    );
+    assert.equal(
+      placePick({ right: 30, top: 10, bottom: 40 }, { width: 100, height: 20 }, { width: 200, height: 200 }).left,
+      8,
+      'a menu that would hang off the left is pinned to the edge',
+    );
   }
   for (const gone of ['data-pad="jump"']) {
     assert.ok(!html.includes(gone), gone + ' is gone: jumping is the stick edge');
