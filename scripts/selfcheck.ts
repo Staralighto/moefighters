@@ -7,7 +7,7 @@ import { PLAYABLE, ROSTER, bandMembers } from '../src/data/characters.ts';
 import { BANDS, BAND_BY_ID } from '../src/data/bands.ts';
 import { AIR_SKILLS, skill } from '../src/data/skills.ts';
 import { STAGES } from '../src/data/stages.ts';
-import { FLOOR, COMBO_DECAY, STEP, X_MAX } from '../src/game/constants.ts';
+import { FLOOR, COMBO_DECAY, STEP, X_MAX, X_MIN } from '../src/game/constants.ts';
 import { clipFor, drumRow } from '../src/render/clips.ts';
 import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
 import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell } from '../src/render/fx.ts';
@@ -224,6 +224,118 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(standard.ai.block, 0, 'standard does not block the startup');
   const master = windup(2);
   assert.equal(master.dodge > 0 || master.ai.block > 0, true, 'master reads the startup');
+}
+
+// standard/master spend the first free frame. Easy still owes the reaction tax after hitstun.
+{
+  const opts = { mode: 'cpu' as const, stage: STAGES[0], audio: silent, random: () => 0, controllers: [0, null] as (number | null)[] };
+  function bank(difficulty: number) {
+    const g = new FightGame([ROSTER[at('gale')], ROSTER[at('ember')]], { ...opts, difficulty });
+    g.phase = 'fight';
+    const cpu = g.fighters[1];
+    cpu.stun = .3;
+    cpu.ai.wait = .4;
+    g.step(STEP);
+    return cpu.ai.wait;
+  }
+  assert.ok(bank(0) > 0, 'easy keeps waiting through hitstun');
+  assert.equal(bank(2), 0, 'master banks the wakeup frame');
+}
+
+// a recovering swing is a jab, not an invincible super
+{
+  const g = new FightGame([ROSTER[at('gale')], ROSTER[at('ember')]], {
+    mode: 'cpu', difficulty: 2, stage: STAGES[0], audio: silent, random: () => 0, controllers: [0, null],
+  });
+  g.phase = 'fight';
+  const [human, cpu] = g.fighters;
+  human.x = 400; cpu.x = 490;
+  assert.ok(g.attack(human, 0), 'human swings');
+  const a = human.attack!;
+  a.t = a.skill.start + .05;
+  a.emitted = true;
+  cpu.ai.wait = 0;
+  cpu.energy = cpu.energyMax;
+  g.step(STEP);
+  assert.equal(cpu.attack?.index, 0, 'master jabs the recovery');
+}
+
+// pinned to the left wall, the way out is a jump toward center, not a back-dodge into the wall
+{
+  const g = new FightGame([ROSTER[at('gale')], ROSTER[at('ember')]], {
+    mode: 'cpu', difficulty: 2, stage: STAGES[0], audio: silent, random: () => 0, controllers: [0, null],
+  });
+  g.phase = 'fight';
+  const [human, cpu] = g.fighters;
+  cpu.x = X_MIN; human.x = 220;
+  cpu.ai.wait = 0;
+  g.step(STEP);
+  assert.ok(cpu.vy < 0, 'cornered master jumps');
+  assert.equal(cpu.ai.move, 1, 'the jump travels toward center');
+  assert.equal(cpu.dodge, 0, 'no back-dodge into the wall');
+}
+
+// a full super bar in the corner still jumps; the zoning super waits behind that
+{
+  const g = new FightGame([ROSTER[at('gale')], ROSTER[at('ember')]], {
+    mode: 'cpu', difficulty: 2, stage: STAGES[0], audio: silent, random: () => 0, controllers: [0, null],
+  });
+  g.phase = 'fight';
+  const [human, cpu] = g.fighters;
+  cpu.x = X_MIN; human.x = 220;
+  cpu.energy = cpu.energyMax;
+  cpu.ai.wait = 0;
+  g.step(STEP);
+  assert.ok(cpu.vy < 0, 'meter does not replace the corner jump');
+  assert.ok(cpu.attack?.index !== 5, 'the zoning super stays unspent');
+}
+
+// low hp with nobody swinging still allows a far, safe super (the blast is not a panic button)
+{
+  const g = new FightGame([ROSTER[at('gale')], ROSTER[at('viola')]], {
+    mode: 'cpu', difficulty: 2, stage: STAGES[0], audio: silent, random: () => 0, controllers: [0, null],
+  });
+  g.phase = 'fight';
+  const [human, cpu] = g.fighters;
+  human.x = 100; cpu.x = 500;
+  cpu.hp = 100;
+  cpu.energy = cpu.energyMax;
+  cpu.ai.wait = 0;
+  g.step(STEP);
+  assert.equal(cpu.attack?.index, 5, 'hurt viola still fuga from outside the blast');
+}
+
+// under a live swing, a close super whose invuln covers startup comes out; a point-blank self-blast does not
+{
+  const opts = { mode: 'cpu' as const, difficulty: 2, stage: STAGES[0], audio: silent, random: () => 0, controllers: [0, null] as (number | null)[] };
+  function press(cpuId: string) {
+    const g = new FightGame([ROSTER[at('ember')], ROSTER[at(cpuId)]], { ...opts });
+    g.phase = 'fight';
+    const [human, cpu] = g.fighters;
+    human.x = 400; cpu.x = 500;
+    cpu.energy = cpu.energyMax;
+    cpu.ai.wait = 0;
+    assert.ok(g.attack(human, 0), 'human is swinging');
+    g.step(STEP);
+    return cpu;
+  }
+  assert.equal(press('gale').attack?.index, 5, 'gale supers through pressure');
+  assert.equal(press('ritsu').attack?.index, 5, 'ritsu opens the heal buff under pressure');
+  assert.ok(press('viola').attack?.index !== 5, 'viola does not fuga at point blank');
+}
+{
+  const g = new FightGame([ROSTER[at('ember')], ROSTER[at('ritsu')]], {
+    mode: 'cpu', difficulty: 2, stage: STAGES[0], audio: silent, random: () => 0, controllers: [0, null],
+  });
+  g.phase = 'fight';
+  const [human, cpu] = g.fighters;
+  human.x = 400; cpu.x = 500;
+  cpu.energy = cpu.energyMax;
+  cpu.feast = 2;
+  cpu.ai.wait = 0;
+  assert.ok(g.attack(human, 0), 'human is swinging');
+  g.step(STEP);
+  assert.ok(cpu.attack?.index !== 5, 'an already-running feast is not recast');
 }
 
 // 2v2: ally takes no damage, one enemy down keeps the round, a wipe scores
