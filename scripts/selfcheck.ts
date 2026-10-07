@@ -11,6 +11,7 @@ import { FLOOR, COMBO_DECAY, STEP, X_MAX, X_MIN } from '../src/game/constants.ts
 import { clipFor, drumRow } from '../src/render/clips.ts';
 import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
 import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell } from '../src/render/fx.ts';
+import { teamGlowOn } from '../src/render/renderer.ts';
 import { previewFighter, gainEnergy } from '../src/game/fighter.ts';
 import { addMod, clearMod, jumpMul, speedMul } from '../src/game/mods.ts';
 import { easeLoad, imageSources, nextSrc } from '../src/assets/loader.ts';
@@ -3533,6 +3534,18 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     pf.attack = { skill: data.skills[0], index: 0, serial: 1, t: .2, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 };
     assert.equal(clipFor(pf).sheet, 'frenzy', 'the form reads the frenzy sheet');
   }
+}
+
+// Team rims: a side with two real fighters, or the same character on both sides. Mode is not an input.
+{
+  const body = (id: string, team: number, minion = false, echo = false) => ({ team, minion, echo, data: { id } });
+  assert.equal(teamGlowOn({ fighters: [body('anon', 0), body('soyo', 1)] }), false, 'a 1v1 of different characters stays bare');
+  assert.equal(teamGlowOn({ fighters: [body('anon', 0), body('anon', 1)] }), true, 'a 1v1 mirror match rims both sides');
+  assert.equal(teamGlowOn({ fighters: [body('nonoka', 0), body('nonoka', 0, true), body('soyo', 1)] }), false, 'a same-side summon does not rim a 1v1');
+  assert.equal(teamGlowOn({ fighters: [body('anon', 0), body('anon', 0, false, true), body('soyo', 1)] }), false, 'a same-side echo does not rim a 1v1');
+  assert.equal(teamGlowOn({ fighters: [body('tomori', 0), body('anon', 0, true), body('anon', 1)] }), true, 'a summon that copies the foe rims both sides');
+  assert.equal(teamGlowOn({ fighters: [body('anon', 0), body('soyo', 0), body('taki', 1), body('rana', 1)] }), true, 'two real fighters on a side rims the match');
+  assert.equal(teamGlowOn({ fighters: [body('anon', 0), body('soyo', 1), body('taki', 1)] }), true, 'one side of two rims the match');
 }
 
 console.log('selfcheck ok');

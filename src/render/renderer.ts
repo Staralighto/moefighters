@@ -6,8 +6,23 @@ import { FLOOR, H, SIDE, W } from '../game/constants.ts';
 import { violetHidden } from '../game/combat.ts';
 import { drawBanSign, drawCombo, drawEffect, drawGauge, drawKuji, drawParticles, drawProjectile, drawRootFx, drawTexts, UI_FONT } from './fx.ts';
 
-/** Hard 1px rim, yellow for the left team and green for the right. Used in 2v2 and the 2-on-1 challenge. */
+/** Hard 1px rim, yellow for the left team and green for the right. */
 const TEAM_GLOW = SIDE;
+
+/** On when one side has two real fighters, or the same character stands on both sides.
+ *  2v2 and the 2-on-1 激战 are the first case; a 1v1 mirror match is the second.
+ *  Minions and echoes are not real fighters; a minion still completes a mirror pair. */
+export function teamGlowOn(g: { fighters: { team: number; minion?: boolean; echo?: boolean; data: { id: string } }[] }): boolean {
+  const n = [0, 0];
+  const side = new Map<string, number>();
+  for (const f of g.fighters) {
+    if (!f.minion && !f.echo) n[f.team]++;
+    const prev = side.get(f.data.id);
+    if (prev === undefined) side.set(f.data.id, f.team);
+    else if (prev !== f.team) return true;
+  }
+  return n[0] > 1 || n[1] > 1;
+}
 
 let veilBuf: HTMLCanvasElement | undefined;
 /** The scanline tile is one 1×4 pattern; the overlay itself never changes. */
@@ -142,8 +157,7 @@ export class Renderer {
       this.view(f.data.id).draw(c, f, e.x, e.y, (e.alpha ?? .3) * (e.life / e.max), e.tint, undefined, pose);
     }
     const order = [...g.fighters].sort((a, b) => Number(a.hp > 0) - Number(b.hp > 0) || a.y - b.y);
-    // Team rims only where sides can be confused: 2v2 and the 2-on-1 激战, summons never tip it.
-    const teamRim = g.mode === 'team' || (g.mode === 'challenge' && g.fighters.filter(x => !x.minion).length > 2);
+    const teamRim = teamGlowOn(g);
     for (const f of order) {
       // 哭泣的紫罗兰: between the vanish and the reappear she does not exist on screen.
       if (violetHidden(f)) continue;
