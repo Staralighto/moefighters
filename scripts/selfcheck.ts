@@ -1444,7 +1444,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const before = k1.hp;
   hit(boxGame, k2, k1, k2.data.skills[0], { hit: new Set() });
   const loss = before - k1.hp;
-  const plain = 26 * k2.data.power * .9; // armor trait cuts damage taken before the box does
+  const plain = 26 * k2.data.power * .95; // armor trait cuts damage taken before the box does
   assert.ok(Math.abs(loss - plain * .5) < .01, `纸箱 halves damage taken, saw ${loss.toFixed(2)} vs ${(plain * .5).toFixed(2)}`);
 }
 
@@ -2297,7 +2297,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
       if (!left && p2.hp < hp) { p2.y = 80; left = true; }
     }
     const taken = hp - p2.hp;
-    const arm = p2.data.trait === 'armor' ? .9 : 1;
+    const arm = p2.data.trait === 'armor' ? .95 : 1;
     let expect = 0;
     for (let n = 0; n < 6; n++) expect += 36 * arm * Math.max(.4, 1 - n * COMBO_DECAY);
     assert.ok(left, 'the wall circle connects');
@@ -2312,7 +2312,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(ritsu >= 0, 'ritsu is on the roster');
   const data = ROSTER[ritsu];
   assert.equal(data.trait, 'armor', 'ritsu is the armor tank');
-  assert.equal(data.hp, 1080, 'armor hp');
+  assert.equal(data.hp, 1040, 'armor hp');
   assert.equal(data.skills[2].fx, 'rib', 'U is the bone-in slam');
   assert.equal(data.skills[2].type, 'sweep', 'the slam only hits the ground');
   assert.equal(data.skills[3].fx, 'skewer', 'I is the skewer dash');
@@ -2387,7 +2387,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     g.keyDown('KeyO'); run(g, .15);
     hit(g, p2, p1, p2.data.skills[0], { hit: new Set() });
     assert.ok(p1.hp < 400, 'the wind-up can be hit');
-    assert.ok(p1.hp < 460, 'an interrupted bite does not heal');
+    assert.ok(p1.hp < 440, 'an interrupted bite does not heal');
     assert.equal(p1.braced, 0, 'an interrupted bite does not brace');
     assert.equal(p1.attack, null, 'the hit cancels the bite');
   }
@@ -2395,7 +2395,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const g = newGame(ritsu, at('gale')); const [p1] = g.fighters; dummy(g);
     p1.hp = 400;
     g.keyDown('KeyO'); run(g, .5);
-    assert.equal(p1.hp, 460, 'the bite heals 60');
+    assert.equal(p1.hp, 440, 'the bite heals 40');
     assert.ok(p1.braced > 3.4 && p1.braced <= 4, `the steak braces for 4 seconds, left ${p1.braced}`);
     const foe = g.fighters[1];
     foe.x = p1.x + 50; foe.facing = -1;
@@ -2417,7 +2417,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     g.keyDown('KeyJ'); run(g, .3);
     assert.equal(p1.attack, null, 'J does nothing during the feast');
     g.keyUp('KeyJ');
-    assert.ok(p1.hp > hp + 8, `the feast heals about 36 a second, gained ${p1.hp - hp}`);
+    assert.ok(p1.hp > hp + 4, `the feast heals about 18 a second, gained ${p1.hp - hp}`);
     g.keyDown('KeyU'); run(g, .1);
     assert.equal(p1.attack?.skill.fx, 'rib', 'U still comes out during the feast');
   }
@@ -3414,7 +3414,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     p2.x = p1.x + 60; p2.facing = -1;
     const hp = p2.hp;
     g.keyDown('KeyJ'); run(g, .3);
-    // boosted jab is round(26 * 1.25) = 33, and the armor dummy takes 90% → 29.7
+    // boosted jab is round(26 * 1.25) = 33, and the armor dummy takes 95% → 31.35
     assert.ok(hp - p2.hp > 25, `the form boosts the jab, dealt ${hp - p2.hp}`);
     const pf = previewFighter(data, 0);
     pf.frenzy = 8;

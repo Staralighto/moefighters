@@ -9,7 +9,7 @@ import { skill } from './skills.ts';
 
 const passives: Record<Trait, [string, string]> = {
   rush: ['追击节奏', '每第 3 次命中额外获得 14 气'],
-  armor: ['硬派身躯', '受到的伤害降低 10%'],
+  armor: ['硬派身躯', '受到的伤害降低 5%'],
   focus: ['远距专注', '飞行道具速度提高 15%'],
   beat: ['鼓点', '命中叠节拍（至多 8 层），每层冷却加快 6%、移速提高 2%；被击中掉 2 层'],
 };
@@ -17,9 +17,9 @@ const passives: Record<Trait, [string, string]> = {
 const stats = (trait: Trait) => ({
   trait,
   passive: passives[trait],
-  hp: trait === 'armor' ? 1080 : 1000,
+  hp: trait === 'armor' ? 1040 : 1000,
   speed: trait === 'rush' ? 248 : trait === 'armor' ? 195 : 225,
-  power: trait === 'armor' ? 1.06 : 1,
+  power: 1,
 });
 
 export const ROSTER: CharacterData[] = [
@@ -415,11 +415,11 @@ export const ROSTER: CharacterData[] = [
       skill(4, 'heavy', '大份牛排', {
         damage: 0, range: 0, start: .36, duration: .8, cd: 8, fx: 'steak',
         onActive: [
-          { op: 'heal', hp: 60 },
+          { op: 'heal', hp: 40 },
           { op: 'mod', kind: 'brace', time: 4 },
           { op: 'fx', life: .55, y: -118, dir: true, color: '#6eb6ff' },
         ],
-        brief: '啃牛排回血并霸体；前摇被打中则作废', detail: '啃牛排回复 60 并霸体 4 秒；前摇被打中则作废',
+        brief: '啃牛排回血并霸体；前摇被打中则作废', detail: '啃牛排回复 40 并霸体 4 秒；前摇被打中则作废',
       }),
       skill(5, 'endure', '超恢复', {
         damage: 0, range: 0, start: .45, duration: .9, fx: 'feast',
@@ -429,7 +429,7 @@ export const ROSTER: CharacterData[] = [
           { op: 'mod', kind: 'noGain', time: 6 },
           { op: 'fx', type: 'burst', life: .4, radius: 80, color: '#9ad4ff' },
         ],
-        brief: '霸体回血；禁回气，不能用 J / K，技能照常', detail: '6 秒内霸体、每秒回复 36、无法获得气；期间不能用 J / K，技能照常',
+        brief: '霸体回血；禁回气，不能用 J / K，技能照常', detail: '6 秒内霸体、每秒回复 18、无法获得气；期间不能用 J / K，技能照常',
       }),
     ],
   },
@@ -588,7 +588,7 @@ export const ROSTER: CharacterData[] = [
           { op: 'fx', life: .6, floor: true, radius: 200 },
           { op: 'repel', push: 380 },
         ],
-        brief: '变身仓库纸箱：减伤回血', detail: '变成仓库纸箱 7 秒：受伤减半、不受打断、每秒回复 36；只剩 J / K，无法获得气',
+        brief: '变身仓库纸箱：减伤回血', detail: '变成仓库纸箱 7 秒：受伤减半、不受打断、每秒回复 15；只剩 J / K，无法获得气',
       }),
     ],
   },

@@ -61,14 +61,14 @@ const RESOLVE_REPEL_PUSH = 540;
 /** 求你了: the kneel holds this long after the catch, so the pause reads before the headbutt. */
 const ONEGAI_PAUSE = .5;
 /** 大份牛排: one bite, then the same brace as the plaster. A hit before the bite cancels both. */
-const STEAK_HEAL = 60;
+const STEAK_HEAL = 40;
 const STEAK_BRACE = 4;
 /** 超恢复: the brace, this much hp each second, and J/K stay locked. The three end together. */
 export const FEAST_TIME = 6;
-export const FEAST_REGEN = 36;
+export const FEAST_REGEN = 18;
 /** 无敌仓库大王: damage taken while boxed — grabs and supers punch through — and hp dripped per second. */
 const BOX_CUT = .5;
-export const BOX_REGEN = 36;
+export const BOX_REGEN = 15;
 /** 绊创膏: seconds of no-flinch, the damage cut while it holds, and the shove the plaster gives the people around her. */
 const BRACED_TIME = 6;
 const BRACED_DAMAGE = .67;
@@ -288,7 +288,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   const howling = !!defender.attack?.skill.superArmor;
   const superBrace = !blocked && !isGrab && !skill.control
     && ((has(defender, 'brace') && defender.frenzy > 0) || howling);
-  let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .9 : 1)
+  let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .95 : 1)
     * dmgTakenMul(defender, { grab: isGrab, superHit: !!skill.super, superBrace, fallback: BRACED_DAMAGE })
     * (defender.ban > 0 ? BAN_DAMAGE : 1) * attacker.baseDmgMul * attacker.dmgMul * dmgDealtMul(attacker)
     * (defender.frail > 0 ? 1 + defender.frailBonus : 1);
