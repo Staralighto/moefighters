@@ -1,0 +1,26 @@
+# Vite hashes these. The name changes when the bytes change.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Same URL across deploys. A day in the browser cache, then a week of stale-while-revalidate,
+# so a return visit does not wait on a revalidation round trip.
+/sprites/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/stages/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/icons/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/fonts/*
+  Cache-Control: public, max-age=2592000
+
+/favicon.svg
+  Cache-Control: public, max-age=86400
+
+/favicon.png
+  Cache-Control: public, max-age=86400
+
+/apple-touch-icon.png
+  Cache-Control: public, max-age=86400

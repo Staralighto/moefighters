@@ -55,6 +55,8 @@ const BALL_SRC = '/sprites/kokoro/ball.png';
 const WAVE_SRC = '/sprites/kokoro/wave.png';
 const KASUMI_STAR_SRC = '/sprites/kasumi/star.png';
 const PILLAR_SRC = '/sprites/yukina/pillar.png';
+const JELLY_SRC = '/sprites/mashiro/jelly.png';
+const WHALE_SRC = '/sprites/mashiro/whale.png';
 const MORTIS_H = 181;
 
 /* Drop the pose-sheet chrome and the chroma key so a placeholder can sit in the fight. */
@@ -272,6 +274,32 @@ function drawPetal(ctx: CanvasRenderingContext2D, body: string, lobe: string): v
   ctx.beginPath(); ctx.ellipse(0, 0, 6.5, 3, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = lobe;
   ctx.beginPath(); ctx.ellipse(-1.5, -1, 3, 1.4, -.4, 0, Math.PI * 2); ctx.fill();
+}
+
+/** 蝶变: cyan leaf wings (fore + hind each side) on a hairline body, about twice a petal.
+    `open` is 0 (clapped) to 1 (spread); the flap squeezes the wings toward the body axis. */
+function drawButterfly(ctx: CanvasRenderingContext2D, open: number): void {
+  ctx.scale(2, 2);
+  const leaf = (angle: number, l: number, w: number) => {
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.bezierCurveTo(l * .25, -w * .5, l * .6, -w * 1.25, l, 0);
+    ctx.bezierCurveTo(l * .7, w * 1.1, l * .3, w * .8, 0, 0);
+    ctx.fill();
+  };
+  ctx.fillStyle = '#4EDFF9';
+  for (const side of [1, -1]) {
+    ctx.save();
+    ctx.scale(side * Math.max(.08, open), 1);
+    ctx.save(); leaf(.45, 4.6, 1.9); ctx.restore();
+    leaf(-.5, 7.5, 2.6);
+    ctx.translate(2.8, -.6);
+    ctx.fillStyle = '#A6F4FF';
+    leaf(0, 3.4, 1);
+    ctx.restore();
+  }
+  ctx.beginPath(); ctx.ellipse(0, .4, .7, 2.6, 0, 0, Math.PI * 2); ctx.fill();
 }
 
 /** Layer's bass on 燃尽. Places are baked; size 0 hides that phase. */
@@ -565,6 +593,47 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.strokeStyle = '#c45a6a';
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.ellipse(0, 0, (e.radius ?? 300) * p * .72, 10, 0, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
+    case 'whale-pool': {
+      // 巨鲸: a flat sea disc on the foot line. Two arcs swirl, two ripples walk out.
+      const rad = e.radius ?? 120;
+      const ry = rad * .26;
+      const fade = Math.min(1, e.life * 6);
+      const spin = p * 8;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = fade * .2;
+      ctx.fillStyle = '#1c6eb8';
+      ctx.beginPath(); ctx.ellipse(0, 0, rad, ry, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = fade * .1;
+      ctx.fillStyle = '#4EDFF9';
+      ctx.beginPath(); ctx.ellipse(0, 0, rad * .4, ry * .4, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#7eebff';
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 2; i++) {
+        const a0 = spin + i * 2.2;
+        ctx.globalAlpha = fade * (.21 - i * .06);
+        ctx.lineWidth = 3 - i;
+        ctx.beginPath(); ctx.ellipse(0, 0, rad * (.46 + i * .24), ry * (.46 + i * .24), 0, a0, a0 + 1.7); ctx.stroke();
+      }
+      for (let i = 0; i < 2; i++) {
+        const t = (p * 1.2 + i * .5) % 1;
+        ctx.globalAlpha = fade * (1 - t) * .15;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.ellipse(0, 0, rad * (.62 + t * .48), ry * (.62 + t * .48), 0, 0, Math.PI * 2); ctx.stroke();
+      }
+      break;
+    }
+    case 'shade': {
+      // 暗玉: a dark pool opens at her feet and closes again.
+      const rad = e.radius ?? 220;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= (1 - p) * .85;
+      ctx.fillStyle = '#241c44';
+      ctx.beginPath(); ctx.ellipse(0, 20, rad * (.25 + p * .75), 22 + p * 14, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha *= .55;
+      ctx.fillStyle = '#6677CC';
+      ctx.beginPath(); ctx.ellipse(0, 20, rad * p * .45, 12, 0, 0, Math.PI * 2); ctx.fill();
       break;
     }
     case 'huh': {
@@ -1562,7 +1631,7 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   if (p.fx === 'fuga') ctx.translate(0, -10);
   if (p.fx === 'mutsumi-note' || p.fx === 'chord') noteRibbon(ctx, p);
   else if (p.fx === 'sob') noteRibbon(ctx, p, '#f4e7b4', '#e8c96a');
-  else if (p.fx !== 'fuga' && p.fx !== 'smile-ship') {
+  else if (p.fx !== 'fuga' && p.fx !== 'smile-ship' && p.fx !== 'whale' && p.fx !== 'butterfly') {
     // 火的故事 skips the stock dots — they read as purple balls; its case draws gold afterimages.
     // 微笑号 is a screen-sized sweep, so the travelling point must not leave a dot trail.
     ctx.fillStyle = p.color;
@@ -2138,6 +2207,62 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
       ctx.beginPath(); ctx.arc(0, 0, s * .34, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#ffd257';
       ctx.beginPath(); ctx.arc(0, 0, s * .16, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case 'jelly': {
+      if (p.hue) ctx.filter = `hue-rotate(${p.hue}deg)`;
+      if (!prop(ctx, images, JELLY_SRC, p.size)) {
+        ctx.fillStyle = '#9ec0ee';
+        ctx.beginPath(); ctx.ellipse(0, p.radius * .35, p.radius, p.radius * .35, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.moveTo(-p.radius, p.radius * .2);
+        ctx.quadraticCurveTo(0, -p.radius * 1.3, p.radius, p.radius * .2);
+        ctx.quadraticCurveTo(0, p.radius * .05, -p.radius, p.radius * .2);
+        ctx.fill();
+      }
+      break;
+    }
+    case 'whale': {
+      // 地面遮罩：低于脚线的部分不画，鲸鱼从地里涌出再沉回去。
+      const ground = FLOOR - p.y;
+      ctx.beginPath();
+      ctx.rect(-W, ground - H, W * 2, H);
+      ctx.clip();
+      ctx.rotate(Math.atan2(p.vy, p.vx || 1));
+      if (!prop(ctx, images, WHALE_SRC, p.size ?? 512)) {
+        const r = 48;
+        ctx.fillStyle = p.color;
+        ctx.beginPath(); ctx.ellipse(10, 0, r * 1.7, r * .7, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(-r * 1.4, 0); ctx.lineTo(-r * 2.3, -r * .55); ctx.lineTo(-r * 2.3, r * .55); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#151222';
+        ctx.beginPath(); ctx.arc(r * 1.15, -r * .12, 3.5, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+    case 'butterfly': {
+      // 蝶变: inner seven, plus seven evenly around them. One hitbox.
+      const dir = Math.sign(p.vx || 1);
+      ctx.scale(dir, 1);
+      ctx.globalAlpha = .9;
+      const wing = (i: number, x: number, y: number) => {
+        const phase = p.age * 5 + i * 2.1;
+        const open = .25 + .75 * (.5 + .5 * Math.sin(p.age * 22 + i * 1.9));
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(.35 + Math.sin(phase) * .3);
+        drawButterfly(ctx, open);
+        ctx.restore();
+      };
+      for (let i = 0; i < 7; i++) {
+        const phase = p.age * 5 + i * 2.1;
+        wing(i, ((i * 2) % 7 - 3) * 10 + Math.sin(phase) * 14, ((i * 3) % 7 - 3) * 8 + Math.cos(phase * 1.3) * 4);
+      }
+      for (let i = 0; i < 7; i++) {
+        const phase = p.age * 5 + (i + 7) * 2.1;
+        const ang = (i / 7) * Math.PI * 2 - Math.PI / 2;
+        wing(i + 7, Math.cos(ang) * 72 + Math.sin(phase) * 6, Math.sin(ang) * 50 + Math.cos(phase * 1.3) * 4);
+      }
       break;
     }
     case 'wail':

@@ -62,6 +62,8 @@ export interface MoveScript {
   hidden?: boolean;
   /** Outbound half passes through bodies, then the shot turns around. */
   boomerang?: boolean;
+  /** Vertical overlap against the chest. Unset keeps the stock 72. */
+  hitY?: number;
   /** Horn the moment the shot is born. */
   whistle?: boolean;
   /** How spawnShot places the body. */

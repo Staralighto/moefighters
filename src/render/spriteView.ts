@@ -1,6 +1,6 @@
 import type { FighterView, FrozenPose } from './view.ts';
 import type { Fighter } from '../game/fighter.ts';
-import { missingImages, type ImageCache } from '../assets/loader.ts';
+import { missingImages, portraitSrc, type ImageCache } from '../assets/loader.ts';
 import { CELL, clipFor, type Clip } from './clips.ts';
 
 const rimCache = new Map<string, HTMLCanvasElement>();
@@ -145,8 +145,10 @@ export class SpriteView implements FighterView {
     private readonly box?: string,
   ) {}
 
-  /** The select screen only needs the idle sheet. A missing file is "ready" so the block figure can stand in. */
+  /** The select screen only needs the idle cell. A missing sheet is "ready" so the block figure can stand in. */
   idleReady(): boolean {
+    const stand = portraitSrc(this.common);
+    if (stand !== this.common && this.images.get(stand)?.naturalWidth) return true;
     if (missingImages.has(this.common)) return true;
     return !!this.images.get(this.common)?.naturalWidth;
   }
@@ -165,7 +167,13 @@ export class SpriteView implements FighterView {
       : clip.sheet === 'special' ? this.special
       : clip.sheet === 'world' && this.world ? this.world
       : this.frenzy;
-    const im = src ? this.images.get(src) : undefined;
+    // Standing pose uses the 256px crop until the full sheet arrives. Fight cells then share one encode.
+    const standSrc = portraitSrc(this.common);
+    const sheetIm = src ? this.images.get(src) : undefined;
+    const stand = src === this.common && standSrc !== this.common && clip.sx === 0 && clip.sy === 0 && !sheetIm?.naturalWidth
+      ? this.images.get(standSrc)
+      : undefined;
+    const im = stand?.naturalWidth ? stand : sheetIm;
     if (!im || !im.naturalWidth) { this.fallback.draw(ctx, f, x, y, alpha, undefined, outline); return; }
     const h = src === this.king ? this.height * this.kingScale : this.height;
     // Bake the cell at the resolution this canvas rasterises at (device pixels in the arena,

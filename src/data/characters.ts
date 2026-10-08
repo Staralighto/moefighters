@@ -833,6 +833,42 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'mashiro', name: '仓田真白', title: '主唱 / 幻视', quote: '如果平凡的我也能找到属于我的“特别”就好了', color: '#6677CC',
+    bands: ['morfonica'],
+    ...stats('focus'),
+    view: {
+      kind: 'sprite', common: '/sprites/mashiro/common.png', special: '/sprites/mashiro/special.png', height: 181,
+      extras: ['/sprites/mashiro/jelly.png', '/sprites/mashiro/whale.png'],
+    },
+    skills: [
+      skill(0, 'light', '轻点'),
+      skill(1, 'heavy', '拂踢'),
+      skill(2, 'projectile', '幻海', {
+        damage: 28, speed: 260, size: 56, life: 2.8, start: .22, duration: .55, cd: 3.4, fx: 'jelly',
+        brief: '水母慢速平飞；可格挡或跳过', detail: '水母慢速平飞，留在路上；可格挡或跳过',
+      }),
+      skill(3, 'projectile', '巨鲸', {
+        damage: 16, count: 4, interval: .14, gain: 4, size: 512, life: 1.2,
+        start: .28, duration: .73, cd: 7, knock: 0, fx: 'whale', solid: false,
+        brief: '巨鲸四段抛物线；末段击倒，满跳可躲',
+        detail: '身前斜上跃出再抛物线落下，至多四段；前三段不击退，末段击倒，满跳可躲',
+      }),
+      skill(4, 'endure', '暗玉', {
+        damage: 36, range: 220, start: .3, duration: .85, cd: 8, fx: 'shade', breakout: true,
+        knock: 480, knockOnBlock: true, holdEndure: true, hitbox: 'radial', reach: 'ground', hitAll: true,
+        react: { kind: 'stand', stun: .35 },
+        brief: '霸体震开身边；跳起可躲，可解控', detail: '霸体震开身边地面；跳起可躲，可解控',
+      }),
+      skill(5, 'projectile', '蝶变', {
+        damage: 72, count: 1, speed: 520, size: 80, life: 2.2, start: .3, duration: .8, fx: 'butterfly',
+        knock: 90, react: { kind: 'stand', stun: .22 },
+        slow: 4, slowMul: .6, slowJump: .75, slowOnBlock: true, solid: false,
+        brief: '闪蝶折返；挡住也减速，回程转向',
+        detail: '一群闪蝶平飞并折返，去程回程各打一次；打实或格挡都减速 4 秒，移动降至 60%、跳跃高度约降至 56%',
+      }),
+    ],
+  },
+  {
     id: 'viola', name: '薇欧拉', title: '队长 / 恶德', quote: '火种燃尽之后会怎么样呢？', color: '#8E5AC8',
     ...stats('armor'),
     view: {

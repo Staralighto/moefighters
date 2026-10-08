@@ -90,6 +90,8 @@ export interface Skill {
   slowMul?: number;
   /** Jump launch-velocity multiplier while 减速 holds. Default .75 (height ≈ .56 of normal). */
   slowJump?: number;
+  /** 蝶变: a blocked hit still applies `slow`. 花道·缠 leaves this unset and only slows clean hits. */
+  slowOnBlock?: boolean;
   /** Clean-hit pose. Stun-only (no kind) just overrides hitstun. */
   react?: HitReact;
   /** Screen shake on a clean hit. Block and juggle keep their own numbers. */

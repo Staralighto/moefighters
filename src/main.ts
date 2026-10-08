@@ -4,7 +4,7 @@ import { FightGame, MINION_BAND } from './game/game.ts';
 import { KeyboardInput, TouchInput } from './game/input.ts';
 import { Renderer } from './render/renderer.ts';
 import { createViews } from './render/view.ts';
-import { assetsFor, easeLoad, imageQueue, loadKujiFont, missingImages, preload, type ImageCache } from './assets/loader.ts';
+import { assetsFor, easeLoad, imageQueue, loadInto, loadKujiFont, loadPortrait, missingImages, portraitSrc, preload, type ImageCache } from './assets/loader.ts';
 import { Sfx } from './audio/sfx.ts';
 import { musicEnabled, musicVolume, pokeMusic, setMusicEnabled, setMusicSuspended, setMusicVolume } from './audio/bgm.ts';
 import { matchName, SelectScreen, type MatchSetup } from './ui/select.ts';
@@ -44,8 +44,12 @@ if (import.meta.env.DEV) {
 /* Idle sheets arrive after the select screen is up. Fight sheets wait until a match actually starts. */
 void loadKujiFont();
 const previewViews = createViews(PLAYABLE, images);
-const queue = imageQueue(images, 2);
+const queue = imageQueue(images, 2, src => loadPortrait(images, src));
 let followCast = false;
+
+function portraitOf(list: CharacterData[]): string[] {
+  return list.flatMap(c => c.view.kind === 'sprite' ? [portraitSrc(c.view.common)] : []);
+}
 
 function commonOf(list: CharacterData[]): string[] {
   return list.flatMap(c => c.view.kind === 'sprite' ? [c.view.common] : []);
@@ -74,7 +78,7 @@ function observeRoster(): void {
   rosterObserver = new IntersectionObserver(entries => {
     for (const e of entries) if (e.isIntersecting) {
       const c = PLAYABLE[Number((e.target as HTMLElement).dataset.index)];
-      if (c) queue.soon(commonOf([c]));
+      if (c) queue.soon(portraitOf([c]));
     }
   }, { rootMargin: '240px' });
   $('roster').querySelectorAll('.character').forEach(el => rosterObserver!.observe(el));
@@ -152,15 +156,18 @@ const select = new SelectScreen(PLAYABLE, previewViews, setup => {
   }
   void startGame(setup);
 }, () => { sfx.unlock(); sfx.play('select'); }, shown => {
-  if (followCast) queue.soon(commonOf(shown));
+  if (followCast) queue.soon(portraitOf(shown));
 });
 select.mount();
 {
-  const first = [...new Set([...(select.stage.image ? [select.stage.image] : []), ...commonOf(select.cast())])];
-  beginWait(first);
-  queue.pin(first);
-  // The rest of the roster loads on scroll (the observer below) or at fight start — not up front:
-  // eager-fetching every sheet spends ~13MB of bandwidth most sessions never use.
+  const idles = portraitOf(select.cast());
+  const stageSrc = select.stage.image;
+  beginWait([...new Set([...(stageSrc ? [stageSrc] : []), ...idles])]);
+  // The backdrop is the large file. Keep it off the two-wide portrait queue so the second
+  // standing picture is not stuck behind it.
+  queue.pin(idles);
+  if (stageSrc) void loadInto(images, stageSrc);
+  // Roster crops load on scroll. Full sheets wait until a fight starts.
   followCast = true;
   observeRoster();
 }

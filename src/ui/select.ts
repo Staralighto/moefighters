@@ -1,4 +1,4 @@
-import { applyImageUrl, assignImage } from '../assets/loader.ts';
+import { applyImageUrl, assignFirst, stageThumbSrc } from '../assets/loader.ts';
 import type { CharacterData, StageData } from '../data/types.ts';
 import { BAND_BY_ID, type BandId } from '../data/bands.ts';
 import { STAGES } from '../data/stages.ts';
@@ -168,10 +168,7 @@ export class SelectScreen {
     this.renderRoster();
     $('stage-grid').innerHTML = '<button type="button" class="stage-card stage-random" data-stage="random" aria-pressed="false"><span class="stage-random-art" aria-hidden="true">?</span><b>随机场景</b></button>'
       + STAGES.map(s => `<button type="button" class="stage-card" data-stage="${s.id}" aria-pressed="false">${s.image ? `<img data-src="${s.image}" alt="${s.name}场景预览">` : ''}<b>${s.name}</b></button>`).join('');
-    $('stage-grid').querySelectorAll<HTMLImageElement>('img[data-src]').forEach(img => {
-      const src = img.dataset.src;
-      if (src) assignImage(img, src);
-    });
+    this.watchStageCards();
     $('stage-grid').querySelectorAll<HTMLButtonElement>('button').forEach(b => b.onclick = () => {
       this.stageId = b.dataset.stage ?? 'random';
       this.onPick();
@@ -211,6 +208,29 @@ export class SelectScreen {
     document.querySelectorAll<HTMLButtonElement>('[data-challenge-kind]').forEach(b => b.onclick = () => this.setChallengeKind(b.dataset.challengeKind as ChallengeKind));
     $('start').onclick = () => this.onStart(this.setup());
     this.refresh();
+  }
+
+  /** Full backdrops are ~300KB. Cards load the small preview once they near the viewport. */
+  private watchStageCards(): void {
+    const imgs = [...$('stage-grid').querySelectorAll<HTMLImageElement>('img[data-src]')];
+    const load = (img: HTMLImageElement) => {
+      const full = img.dataset.src;
+      if (!full) return;
+      img.removeAttribute('data-src');
+      const thumb = stageThumbSrc(full);
+      assignFirst(img, thumb === full ? [full] : [thumb, full]);
+    };
+    if (typeof IntersectionObserver === 'undefined') {
+      imgs.forEach(load);
+      return;
+    }
+    const io = new IntersectionObserver(entries => {
+      for (const e of entries) if (e.isIntersecting) {
+        io.unobserve(e.target);
+        load(e.target as HTMLImageElement);
+      }
+    }, { rootMargin: '240px' });
+    imgs.forEach(img => io.observe(img));
   }
 
   /** Roster layout: false (default) is the flat run of portraits, true prepends a band

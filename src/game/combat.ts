@@ -337,6 +337,8 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     // 剪 is a trap and 火的故事 is her own blast: neither siphons meter for being blocked.
     if (skill.type === 'projectile' && !skill.noSiphon) attacker.energy = clamp(attacker.energy - fullHit * GUARD_DRAIN, 0, attacker.energyMax);
     g.effect('shield', defender.x - dir * 30, defender.y - 78, '#8df0ff', .22, { radius: 65 });
+    // 蝶变: the slow sticks through a block. 花道·缠 leaves the flag unset.
+    if (skill.slow && skill.slowOnBlock) addMod(defender, 'slow', skill.slow, { v: skill.slowMul ?? .6, jump: skill.slowJump ?? .75 });
     g.audio.play('block');
     g.text('格挡', defender.x, defender.y - 170, '#91eaff', .35, 16);
     if (defender.guard <= 0) {
@@ -623,6 +625,8 @@ export function spawnShot(g: FightGame, f: Fighter, a: Attack, offsetY = 0, arc 
     v0: juggle ? speed : undefined,
     solid: s.solid,
   };
+  // 幻海: one of blue, yellow, pink, light green. Offsets from the art's hue (~206).
+  if (s.fx === 'jelly') p.hue = [0, 204, 130, 280][Math.floor(g.random() * 4)];
   g.projectiles.push(p);
   // 微笑号出航: a horn blast the moment the hull is called, so the sweep has a warning.
   if (SCRIPTS[s.fx]?.whistle) g.audio.play('whistle');
@@ -1122,7 +1126,8 @@ function touchProjectile(g: FightGame, p: Projectile): void {
   const owner = g.fighterById(p.owner);
   if (!owner || p.settled || p.life <= 0) return;
   for (const target of g.opponents(owner)) {
-    if (Math.abs(p.x - target.x) >= 38 + p.radius || Math.abs(p.y - (target.y - 83)) >= 72) continue;
+    const bandY = SCRIPTS[p.fx]?.hitY ?? 72;
+    if (Math.abs(p.x - target.x) >= 38 + p.radius || Math.abs(p.y - (target.y - 83)) >= bandY) continue;
     if (!hit(g, owner, target, p.skill, { hit: p.hit }, p.x - Math.sign(p.vx) * 40)) continue;
     g.effect('burst', p.x, p.y, p.color, .3, { radius: p.size * .8 });
     SCRIPTS[p.fx]?.pulse?.(g, p, target);
@@ -2132,6 +2137,9 @@ SCRIPTS['mutsumi-note'] = Object.assign(SCRIPTS['mutsumi-note'] ?? {}, { trail: 
 SCRIPTS['wink'] = Object.assign(SCRIPTS['wink'] ?? {}, { trail: 10 });
 SCRIPTS['seal'] = Object.assign(SCRIPTS['seal'] ?? {}, { seal: true, swell: true });
 SCRIPTS['smile-ship'] = Object.assign(SCRIPTS['smile-ship'] ?? {}, { skipVolley: true, skipCount: true, whistle: true, wide: true });
+SCRIPTS['whale'] = { shot: (g, p, dt) => stepWhale(g, p, dt), emit: emitWhale, skipVolley: true, skipCount: true };
+SCRIPTS['butterfly'] = { boomerang: true, hitY: 130, trail: 0 };
+SCRIPTS['shade'] = { flash(g, f, a) { g.effect('shade', f.x, f.y - 20, f.data.color, .4, { radius: a.skill.range }); } };
 SCRIPTS['star-fall'] = Object.assign(SCRIPTS['star-fall'] ?? {}, { wide: true, after: after_star_fall });
 SCRIPTS['blackhole'] = Object.assign(SCRIPTS['blackhole'] ?? {}, { spawn: 'well' });
 SCRIPTS['donut'] = Object.assign(SCRIPTS['donut'] ?? {}, { variant: donutVariant });
@@ -2149,6 +2157,77 @@ SCRIPTS['burnout'] = Object.assign(SCRIPTS['burnout'] ?? {}, { flash(g: FightGam
   g.audio.play('slam');
 } });
 
+
+/** 巨鲸: breach 180px ahead at 45°, then the stock gravity. One body, four ticks. */
+const WHALE_AHEAD = 180;
+const WHALE_SPEED = 560;
+const WHALE_ALONG = 150;
+const WHALE_ACROSS = 55;
+
+function emitWhale(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  const dir = f.facing;
+  const x = clamp(f.x + dir * WHALE_AHEAD, X_MIN, X_MAX);
+  // Closed flight back to the floor. The discrete step lands about 2px short; the pool covers it.
+  const landX = x + dir * WHALE_SPEED * (2 * WHALE_SPEED / GRAVITY);
+  g.effect('whale-pool', x, FLOOR, '#4EDFF9', 1.05, { radius: 120 });
+  g.effect('whale-pool', landX, FLOOR, '#4EDFF9', 1.05, { radius: 120 });
+  g.projectiles.push({
+    owner: f.id,
+    x,
+    y: FLOOR,
+    vx: dir * WHALE_SPEED,
+    vy: -WHALE_SPEED,
+    life: s.life ?? 1.2,
+    skill: s,
+    color: f.data.color,
+    radius: 54,
+    size: s.size ?? 512,
+    fx: s.fx,
+    attack: a,
+    hit: new Set(),
+    trail: [],
+    age: 0,
+    solid: false,
+  });
+}
+
+function stepWhale(g: FightGame, p: Projectile, dt: number): boolean {
+  p.vy += GRAVITY * dt;
+  p.x += p.vx * dt;
+  p.y += p.vy * dt;
+  if (p.y >= FLOOR && p.vy > 0) {
+    p.life = 0;
+    return true;
+  }
+  const owner = g.fighterById(p.owner);
+  if (!owner) return true;
+  if (!p.marks) p.marks = new Map();
+  const ang = Math.atan2(p.vy, p.vx || 1);
+  const c = Math.cos(ang), sn = Math.sin(ang);
+  const cap = p.skill.count ?? 4;
+  const gap = p.skill.interval ?? .14;
+  for (const o of g.opponents(owner)) {
+    if (o.hp <= 0 || o.invuln > 0) continue;
+    const mark = p.marks.get(o.id);
+    if (mark && (mark.n >= cap || p.age < mark.next)) continue;
+    const dx = o.x - p.x;
+    const dy = (o.y - 83) - p.y;
+    const along = dx * c + dy * sn;
+    const across = -dx * sn + dy * c;
+    if (Math.abs(along) >= WHALE_ALONG || Math.abs(across) >= WHALE_ACROSS) continue;
+    const n = (mark?.n ?? 0) + 1;
+    const last = n >= cap;
+    const sk: Skill = last
+      ? { ...p.skill, knock: 420, react: { kind: 'knockdown', vy: -280, knocked: .72 } }
+      : { ...p.skill, knock: 0, knockOnBlock: true, react: { kind: 'stand', stun: .28 } };
+    if (!hit(g, owner, o, sk, { hit: new Set() }, p.x)) continue;
+    if (mark) { mark.n = n; mark.next = p.age + gap; }
+    else p.marks.set(o.id, { n, next: p.age + gap });
+    g.effect('burst', o.x, p.y, p.color, .2, { radius: 36 });
+  }
+  return true;
+}
 
 export function stepProjectiles(g: FightGame, dt: number): void {
   for (const p of g.projectiles) {

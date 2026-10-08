@@ -14,6 +14,16 @@ export function imageSources(src: string, prod = import.meta.env.PROD, webpOk = 
   return [src];
 }
 
+/** Select portraits and roster thumbs only draw the idle cell. Production asks for that 256px crop. */
+export function portraitSrc(common: string, prod = import.meta.env.PROD): string {
+  return prod && common.endsWith('/common.png') ? common.replace(/\/common\.png$/, '/idle.png') : common;
+}
+
+/** Stage cards are 78px tall. Production asks for the 480px preview; the backdrop keeps the full file. */
+export function stageThumbSrc(src: string, prod = import.meta.env.PROD): string {
+  return prod && src.endsWith('.png') ? src.replace(/\.png$/, '-thumb.png') : src;
+}
+
 function fetchImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const im = new Image();
@@ -62,13 +72,24 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
 
 /** Paint the URL that already loaded. A swapped icon does not treat the aborted request as a PNG fallback. */
 export function assignImage(img: HTMLImageElement, src: string): void {
+  assignFirst(img, [src]);
+}
+
+/** First URL that loads wins. A later assign on the same element still cancels this one. */
+export function assignFirst(img: HTMLImageElement, srcs: readonly string[]): void {
   const gen = String((Number(img.dataset.imgGen) || 0) + 1);
   img.dataset.imgGen = gen;
   img.onerror = null;
-  void loadImage(src).then(im => {
+  const tryAt = (i: number): void => {
     if (img.dataset.imgGen !== gen) return;
-    if (img.src !== im.src) img.src = im.src;
-  }).catch(() => {});
+    const src = srcs[i];
+    if (!src) return;
+    void loadImage(src).then(im => {
+      if (img.dataset.imgGen !== gen) return;
+      if (img.src !== im.src) img.src = im.src;
+    }).catch(() => tryAt(i + 1));
+  };
+  tryAt(0);
 }
 
 /** CSS has no error event. The url is applied only after loadImage picked WebP or PNG, so the sheet is not fetched twice. */
@@ -116,6 +137,28 @@ export function loadInto(cache: ImageCache, src: string): Promise<boolean> {
     inflight.set(src, pending);
   }
   return pending;
+}
+
+/**
+ * Select screen. Tries the idle crop, and if that file is not in the build yet, keeps the
+ * full sheet under the crop's key. Draw samples the top-left cell either way, and the
+ * loading bar is watching the crop path.
+ * ponytail: a missing crop downloads the whole 2048px sheet. The build writes the crop;
+ * this fallback is only for a deploy that skipped compress-images.
+ */
+export function loadPortrait(cache: ImageCache, src: string): Promise<boolean> {
+  if (cache.has(src)) return Promise.resolve(true);
+  if (!src.endsWith('/idle.png')) return loadInto(cache, src);
+  const sheet = src.replace(/\/idle\.png$/, '/common.png');
+  return loadImage(src).then(im => {
+    cache.set(src, im);
+    return true;
+  }).catch(() => loadInto(cache, sheet).then(ok => {
+    const im = cache.get(sheet);
+    if (ok && im) cache.set(src, im);
+    else missingImages.add(src);
+    return ok;
+  }));
 }
 
 /** Loads independently so one missing file does not wipe the rest of the cache. */

@@ -14,7 +14,7 @@ import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell } from '../src/
 import { teamGlowOn } from '../src/render/renderer.ts';
 import { previewFighter, gainEnergy } from '../src/game/fighter.ts';
 import { addMod, clearMod, jumpMul, speedMul } from '../src/game/mods.ts';
-import { easeLoad, imageSources, nextSrc } from '../src/assets/loader.ts';
+import { easeLoad, imageSources, nextSrc, portraitSrc, stageThumbSrc } from '../src/assets/loader.ts';
 import { isTouchJump, matchStickTouch, stickFingerGone, thumbBandTop, touchRelease } from '../src/game/input.ts';
 import { battleFrame } from '../src/ui/battleFrame.ts';
 import { TOUCH_LAYOUT } from '../src/ui/touchLayout.data.ts';
@@ -76,7 +76,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const g = c.bands?.[0] ?? 'none';
     if (runs[runs.length - 1] !== g) runs.push(g);
   }
-  assert.deepEqual(runs, ['ave-mujica', 'mygo', 'yumemita', 'poppin-party', 'roselia', 'hello-happy', 'sumimi', 'pastel-palettes', 'afterglow', 'raise-a-suilen', 'none'], 'roster order is the select-screen band order');
+  assert.deepEqual(runs, ['ave-mujica', 'mygo', 'yumemita', 'poppin-party', 'roselia', 'hello-happy', 'sumimi', 'pastel-palettes', 'afterglow', 'raise-a-suilen', 'morfonica', 'none'], 'roster order is the select-screen band order');
   assert.deepEqual(ROSTER[at('uika')].bands, ['ave-mujica', 'sumimi'], '初华 sings for two units');
   assert.deepEqual(bandMembers('mygo', 'tomori').map(c => c.id), ['anon', 'rana', 'soyo', 'taki'], 'the sing calls her bandmates, never herself');
   for (const id of ['gale', 'ember', 'boulder']) {
@@ -1645,7 +1645,14 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.deepEqual(imageSources('/sprites/aya/special.png', true, false), ['/sprites/aya/special.png'], 'a browser without webp never requests it');
   assert.deepEqual(imageSources('/sprites/aya/special.png', false), ['/sprites/aya/special.png'], 'dev keeps the single png');
   assert.deepEqual(imageSources('/icons/ult.svg', true), ['/icons/ult.svg'], 'a non-png url is unchanged');
-  assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes('const NEAR = 45'), 'webp stays at the Aya near-lossless 45 baseline');
+  assert.equal(portraitSrc('/sprites/aya/common.png', true), '/sprites/aya/idle.png', 'the select screen asks for the idle cell, not the whole sheet');
+  assert.equal(portraitSrc('/sprites/aya/common.png', false), '/sprites/aya/common.png', 'dev has no idle crop and uses the sheet');
+  assert.equal(portraitSrc('/sprites/aya/special.png', true), '/sprites/aya/special.png', 'only the common sheet has an idle crop');
+  assert.equal(stageThumbSrc('/stages/ring.png', true), '/stages/ring-thumb.png', 'stage cards ask for the small preview');
+  assert.equal(stageThumbSrc('/stages/ring.png', false), '/stages/ring.png', 'dev stage cards use the full backdrop');
+  assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes('const NEAR = 22'), 'webp stays at the near-lossless 22 baseline');
+  assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes('const STAGE_Q = 80'), 'stage backdrops stay lossy webp at quality 80');
+  assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes('idle.webp'), 'the build writes the 256px idle crop');
   const phone = battleFrame(844, 390);
   assert.ok(phone.top < 0, 'a wide phone crops vertically instead of leaving side bars');
   assert.ok(Math.abs(phone.floorY / 390 - FLOOR / 540) < 1e-6, 'phone floor stays at the desktop ratio');
@@ -3634,6 +3641,53 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     pf.frenzy = 8;
     pf.attack = { skill: data.skills[0], index: 0, serial: 1, t: .2, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0 };
     assert.equal(clipFor(pf).sheet, 'frenzy', 'the form reads the frenzy sheet');
+  }
+}
+
+// mashiro: one whale on a 45° arc ticks several times; the butterfly is one shot and slows a block
+{
+  const mashiro = at('mashiro');
+  const data = ROSTER[mashiro];
+  assert.equal(data.name, '仓田真白', 'mashiro display name');
+  assert.deepEqual(data.bands, ['morfonica'], 'mashiro fronts Morfonica');
+  assert.equal(data.trait, 'focus', 'mashiro is a zoner');
+  assert.equal(data.skills[3].count, 4, '巨鲸 is four ticks');
+  assert.equal(data.skills[5].slowOnBlock, true, '蝶变 slows a block');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/mashiro/jelly.png'), 'the jellyfish is preloaded');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/mashiro/whale.png'), 'the whale is preloaded');
+
+  {
+    const g = newGame(mashiro, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 320; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyI');
+    let whales = 0;
+    let vx = 0, vy = 0;
+    for (let i = 0; i < Math.round(1 / STEP); i++) {
+      g.step(STEP);
+      const live = g.projectiles.filter(p => p.fx === 'whale');
+      if (live.length > whales) whales = live.length;
+      if (live.length === 1 && vx === 0) { vx = live[0].vx; vy = live[0].vy; }
+    }
+    assert.equal(whales, 1, '巨鲸 is one body');
+    assert.ok(vx > 0 && vy < 0 && Math.abs(Math.abs(vx) - Math.abs(vy)) < 40, `巨鲸 leaves at 45°, vx ${vx} vy ${vy}`);
+    assert.ok(hp - p2.hp > 25, `巨鲸 ticks more than once, dealt ${hp - p2.hp}`);
+  }
+  {
+    const g = newGame(mashiro, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 220; p2.facing = -1;
+    p1.energy = p1.energyMax;
+    const hp = p2.hp;
+    g.keyDown('ArrowDown');
+    g.keyDown('KeyL');
+    let shots = 0;
+    for (let i = 0; i < Math.round(1.2 / STEP); i++) {
+      g.step(STEP);
+      shots = Math.max(shots, g.projectiles.filter(p => p.fx === 'butterfly').length);
+    }
+    assert.equal(shots, 1, '蝶变 is one hitbox');
+    assert.ok(p2.slow > 3, `a block still slows, left ${p2.slow}`);
+    assert.ok(hp - p2.hp < 40, `the block chips instead of the full hit, dealt ${hp - p2.hp}`);
   }
 }
 

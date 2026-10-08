@@ -90,6 +90,8 @@ export interface Projectile {
   v0?: number;
   /** False when opposing shots should pass through. Unset can be shot down. */
   solid?: boolean;
+  /** 幻海: hue-rotate degrees on the blue jellyfish. Visual only. */
+  hue?: number;
   /** Overrides Skill.floor for a shot whose picture is not the skill (抹茶熔岩). */
   floor?: 'pop' | 'stick' | 'drop' | 'splash';
 }
