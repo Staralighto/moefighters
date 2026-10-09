@@ -61,7 +61,7 @@ export interface Skill {
   life?: number;
   /** Startup invuln for dashes; for breakout skills, the invuln granted on every cast. */
   invuln?: number;
-  /** Combo escape (e.g. 恐湖, 轮奏): stays buffered through a super and clears control on cast. */
+  /** Combo escape (e.g. 恐湖, 轮奏). Cuts in through hitstun, knockdown and earlier inputs; that cast hits on the press. */
   breakout?: boolean;
   /** Per-skill hit knockback velocity; falls back to the type default when unset.
    *  A blocked hit is 75 unless knockOnBlock is set, in which case this value is used (including 0). */

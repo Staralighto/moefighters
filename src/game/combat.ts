@@ -259,12 +259,25 @@ function donutVariant(g: FightGame, s: Skill): Skill {
     : { ...s, fx: 'donut-choc', frail: DONUT_FRAIL, frailBonus: DONUT_FRAIL_BONUS, knock: DONUT_KNOCK };
 }
 
-export interface HitSource { hit: Set<number> }
+export interface HitSource { hit: Set<number>; pierce?: boolean }
+
+/** A hit or a grab eats the buffer. A breakout press stays, so the escape can still come out. */
+export function retainEscape(f: Fighter, superHit = false): void {
+  if (superHit) f.hitBySuper = true;
+  if (!f.data.skills.some(s => s.breakout)) { f.queue = []; return; }
+  f.queue = f.queue.filter(q => f.data.skills[q.index]?.breakout);
+}
+
+/** A reversal reaches the swing that is on us. A dodge, and the other person's reversal, stay up. */
+function cuts(blow: { pierce?: boolean } | undefined, defender: Fighter): boolean {
+  return !!blow?.pierce && !!defender.attack && !defender.attack.pierce;
+}
 
 export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: Skill, source: HitSource, originX = attacker.x): boolean {
   // friendly is the one blast that reads everyone on the field (火的故事).
   const blast = !!skill.friendly;
-  if ((!g.isEnemy(attacker, defender) && !blast) || defender.echo || defender.hp <= 0 || defender.invuln > 0 || source.hit.has(defender.id)) return false;
+  if ((!g.isEnemy(attacker, defender) && !blast) || defender.echo || defender.hp <= 0 || source.hit.has(defender.id)) return false;
+  if (defender.invuln > 0 && !cuts(source, defender)) return false;
   source.hit.add(defender.id);
   // 我会保护小睦: every hitstun this defender takes runs through the stack multiplier.
   const hitStun = (v: number) => v * defender.stunMul;
@@ -277,7 +290,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   // Super armour: an endure move in wind-up eats one strike. 恐湖 and 哈？ keep it through the hit. Grabs and supers still go through.
   const armour = defender.attack;
   const rippleLive = !!armour && !!armour.skill.holdEndure && armour.t < armour.skill.duration - .22;
-  const endured = !blocked && !!armour && armour.endure > 0 && (rippleLive || armour.t < armour.skill.start) && !isGrab && !skill.super;
+  const endured = !cuts(source, defender) && !blocked && !!armour && armour.endure > 0 && (rippleLive || armour.t < armour.skill.start) && !isGrab && !skill.super;
   // 绊创膏: the buffed fighter eats the damage without the flinch. Grabs and supers ignore the plaster.
   const braced = !blocked && has(defender, 'brace') && !isGrab && !skill.super;
   // 秋叶原马拉松: same no-flinch as the plaster, without the damage cut or the halved knockback.
@@ -346,7 +359,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       defender.stun = hitStun(.9);
       defender.guardBroken = 1.2;
       defender.blocking = false;
-      defender.queue = [];
+      retainEscape(defender);
       defender.jumpRequest = false;
       defender.jumpBuffer = 0;
       defender.dodgeRequest = false;
@@ -397,11 +410,8 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       }
       defender.stun = hitStun(skill.react?.stun ?? (skill.type === 'light' ? .28 : skill.super ? .42 : .37));
       defender.attack = null;
-      defender.hitBySuper = skill.super;
-      // A super wipes the buffer except combo escapes (恐湖, 轮奏), so the escape can still come out between hits.
-      defender.queue = skill.super && defender.data.skills.some(s => s.breakout)
-        ? defender.queue.filter(q => defender.data.skills[q.index]?.breakout)
-        : [];
+      // Follow-ups keep the escape armed. Only a super raises the flag; it drops when the lock ends.
+      retainEscape(defender, !!skill.super);
       defender.jumpRequest = false;
       defender.jumpBuffer = 0;
       defender.dodgeRequest = false;
@@ -625,8 +635,8 @@ export function spawnShot(g: FightGame, f: Fighter, a: Attack, offsetY = 0, arc 
     v0: juggle ? speed : undefined,
     solid: s.solid,
   };
-  // 幻海: one of blue, yellow, pink, light green. Offsets from the art's hue (~206).
-  if (s.fx === 'jelly') p.hue = [0, 204, 130, 280][Math.floor(g.random() * 4)];
+  const hue = SCRIPTS[s.fx]?.hue?.(g);
+  if (hue != null) p.hue = hue;
   g.projectiles.push(p);
   // 微笑号出航: a horn blast the moment the hull is called, so the sweep has a warning.
   if (SCRIPTS[s.fx]?.whistle) g.audio.play('whistle');
@@ -804,11 +814,13 @@ function wishBurst(g: FightGame, p: Projectile, owner: Fighter | undefined): voi
 /** Shove everyone inside `range`. Invulnerable bodies stay. */
 function repel(g: FightGame, f: Fighter, range: number, push: number, stun = .2): void {
   for (const o of g.opponents(f)) {
-    if (o.hp <= 0 || o.invuln > 0) continue;
+    const open = cuts(f.attack ?? undefined, o);
+    if (o.hp <= 0 || (o.invuln > 0 && !open)) continue;
     const dx = o.x - f.x;
     if (Math.abs(dx) < range) {
       o.vx = (Math.sign(dx) || f.facing) * push;
       o.stun = Math.max(o.stun, stun);
+      if (open) o.attack = null;
     }
   }
 }
@@ -925,7 +937,7 @@ function stepHold(g: FightGame, f: Fighter, a: Attack, dt: number): void {
       caught.vy = 0;
       caught.knocked = 0;
       caught.attack = null;
-      caught.queue = [];
+      retainEscape(caught, !!s.super);
     } else {
       f.x = clamp(f.x + f.facing * (s.speed ?? 520) * dt, X_MIN, X_MAX);
       if (f.x === X_MIN || f.x === X_MAX) a.t = Math.max(a.t, s.duration - .2);
@@ -1584,7 +1596,7 @@ function step_riot(g: FightGame, f: Fighter, a: Attack, dt: number): void {
         if (!reach(o)) continue;
         a.hold = o.id;
         o.attack = null;
-        o.queue = [];
+        retainEscape(o, !!s.super);
         break;
       }
     }
@@ -1663,7 +1675,7 @@ function step_crash(g: FightGame, f: Fighter, a: Attack, _dt: number): void {
         o.vy = 0;
         o.knocked = 0;
         o.attack = null;
-        o.queue = [];
+        retainEscape(o, !!s.super);
         break;
       }
     }
@@ -1714,7 +1726,7 @@ function step_slam(g: FightGame, f: Fighter, a: Attack, dt: number): void {
         o.vy = 0;
         o.knocked = 0;
         o.attack = null;
-        o.queue = [];
+        retainEscape(o, !!s.super);
         break;
       }
     }
@@ -1764,7 +1776,7 @@ function step_onegai(g: FightGame, f: Fighter, a: Attack, dt: number): void {
         o.vy = 0;
         o.knocked = 0;
         o.attack = null;
-        o.queue = [];
+        retainEscape(o, !!s.super);
         break;
       }
     }
@@ -2137,8 +2149,9 @@ SCRIPTS['mutsumi-note'] = Object.assign(SCRIPTS['mutsumi-note'] ?? {}, { trail: 
 SCRIPTS['wink'] = Object.assign(SCRIPTS['wink'] ?? {}, { trail: 10 });
 SCRIPTS['seal'] = Object.assign(SCRIPTS['seal'] ?? {}, { seal: true, swell: true });
 SCRIPTS['smile-ship'] = Object.assign(SCRIPTS['smile-ship'] ?? {}, { skipVolley: true, skipCount: true, whistle: true, wide: true });
-SCRIPTS['whale'] = { shot: (g, p, dt) => stepWhale(g, p, dt), emit: emitWhale, skipVolley: true, skipCount: true };
-SCRIPTS['butterfly'] = { boomerang: true, hitY: 130, trail: 0 };
+SCRIPTS['jelly'] = { hue: g => [0, 204, 130, 280][Math.floor(g.random() * 4)] };
+SCRIPTS['whale'] = { after: (g, p) => afterWhale(g, p), emit: emitWhale, skipVolley: true, skipCount: true, wide: true };
+SCRIPTS['butterfly'] = { boomerang: true, hitY: 130, trail: 0, wide: true };
 SCRIPTS['shade'] = { flash(g, f, a) { g.effect('shade', f.x, f.y - 20, f.data.color, .4, { radius: a.skill.range }); } };
 SCRIPTS['star-fall'] = Object.assign(SCRIPTS['star-fall'] ?? {}, { wide: true, after: after_star_fall });
 SCRIPTS['blackhole'] = Object.assign(SCRIPTS['blackhole'] ?? {}, { spawn: 'well' });
@@ -2192,10 +2205,8 @@ function emitWhale(g: FightGame, f: Fighter, a: Attack): void {
   });
 }
 
-function stepWhale(g: FightGame, p: Projectile, dt: number): boolean {
-  p.vy += GRAVITY * dt;
-  p.x += p.vx * dt;
-  p.y += p.vy * dt;
+/** Hits only. Gravity and the step are the stock fall; returning true keeps the circle hitbox off this body. */
+function afterWhale(g: FightGame, p: Projectile): boolean {
   if (p.y >= FLOOR && p.vy > 0) {
     p.life = 0;
     return true;
@@ -2217,11 +2228,7 @@ function stepWhale(g: FightGame, p: Projectile, dt: number): boolean {
     const across = -dx * sn + dy * c;
     if (Math.abs(along) >= WHALE_ALONG || Math.abs(across) >= WHALE_ACROSS) continue;
     const n = (mark?.n ?? 0) + 1;
-    const last = n >= cap;
-    const sk: Skill = last
-      ? { ...p.skill, knock: 420, react: { kind: 'knockdown', vy: -280, knocked: .72 } }
-      : { ...p.skill, knock: 0, knockOnBlock: true, react: { kind: 'stand', stun: .28 } };
-    if (!hit(g, owner, o, sk, { hit: new Set() }, p.x)) continue;
+    if (!hit(g, owner, o, withFinale(p.skill, n >= cap), { hit: new Set() }, p.x)) continue;
     if (mark) { mark.n = n; mark.next = p.age + gap; }
     else p.marks.set(o.id, { n, next: p.age + gap });
     g.effect('burst', o.x, p.y, p.color, .2, { radius: 36 });

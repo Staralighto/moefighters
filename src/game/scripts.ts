@@ -4,7 +4,7 @@ import type { Fighter } from './fighter.ts';
 import type { FightGame } from './game.ts';
 import { FLOOR, X_MAX, X_MIN, clamp } from './constants.ts';
 import { VOW_BEATS, vowBeatTime } from '../render/clips.ts';
-import { hit, withFinale } from './combat.ts';
+import { hit, retainEscape, withFinale } from './combat.ts';
 
 /** 和灯在一起的话: the last beat throws them. The pin itself is the same shape as stepHold. */
 const VOW_LAUNCH = 700;
@@ -104,6 +104,8 @@ export interface MoveScript {
   after?: (g: FightGame, p: import('./game.ts').Projectile, dt: number) => boolean;
   /** Extra graphic when this shot connects. */
   pulse?: (g: FightGame, p: import('./game.ts').Projectile, target: Fighter) => void;
+  /** Rolled once when the shot is born. 0 leaves the art as drawn (幻海). */
+  hue?: (g: FightGame) => number;
 }
 
 /**
@@ -135,7 +137,7 @@ export const SCRIPTS: Record<string, MoveScript> = {
             o.vy = 0;
             o.knocked = 0;
             o.attack = null;
-            o.queue = [];
+            retainEscape(o, !!s.super);
             break;
           }
         }

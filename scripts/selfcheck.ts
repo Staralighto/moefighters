@@ -1120,10 +1120,37 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(escaped, '恐湖 comes out during the super');
   assert.ok(invuln > .3, 'the escape is invulnerable');
 
-  const down = newGame(umiri, at('boulder')); const [d1] = down.fighters; dummy(down);
+  const down = newGame(umiri, at('boulder')); const [d1, d2] = down.fighters; dummy(down);
+  d2.x = d1.x + 80; d2.facing = -1;
+  d2.invuln = .5;
+  d2.attack = { skill: d2.data.skills[0], index: 0, serial: 1, t: .1, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: d2.x };
   d1.stun = .4; d1.knocked = 1; d1.vy = 0; d1.hitBySuper = true;
+  d1.queue.push({ index: 0, ttl: .2 });
   down.keyDown('KeyO'); down.step(STEP);
-  assert.equal(d1.attack, null, '恐湖 does not escape a knockdown');
+  assert.equal(d1.attack?.skill.fx, 'ripple', '恐湖 escapes a knockdown');
+  assert.equal(d1.knocked, 0, 'the escape clears the knockdown');
+  assert.equal(d1.queue.length, 0, 'the escape replaces the buffered jab');
+  assert.equal(d2.attack, null, 'the escape interrupts the foe on the press');
+  assert.ok(d2.hp < d2.data.hp, 'the hit lands through cast invuln');
+
+  const neutral = newGame(umiri, at('boulder')); const [n1] = neutral.fighters; dummy(neutral);
+  neutral.keyDown('KeyJ');
+  neutral.keyDown('KeyO');
+  neutral.step(STEP);
+  assert.equal(n1.attack?.skill.fx, 'ripple', '恐湖 jumps a buffered jab');
+  assert.ok((n1.attack?.t ?? 1) < .05, 'buffering a jab does not skip 恐湖 startup');
+  assert.equal(n1.queue.length, 0, 'the jab is not kept behind it');
+
+  const clash = newGame(umiri, at('mashiro')); const [z1, z2] = clash.fighters; dummy(clash);
+  z2.x = z1.x + 80; z2.facing = -1;
+  z2.invuln = .4;
+  z2.attack = { skill: z2.data.skills[4], index: 4, serial: 1, t: .3, emitted: true, shots: 0, burst: 0, hit: new Set(), endure: 1, liftAt: 0, tossAt: 0, hold: -1, anchor: z2.x, pierce: true };
+  const clashHp = z2.hp;
+  z1.stun = .3; z1.hitBySuper = true;
+  clash.keyDown('KeyO');
+  clash.step(STEP);
+  assert.equal(z2.attack?.pierce, true, 'two reversals do not delete each other');
+  assert.equal(z2.hp, clashHp, 'a reversal does not cut the other reversal');
 
   const slam = newGame(umiri, at('boulder')); const [s1, s2] = slam.fighters; dummy(slam);
   s1.energy = s1.energyMax;
@@ -1362,6 +1389,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(data.skills[4].fx, 'blackhole', 'O is the well');
   assert.equal(data.skills[4].knock, 0, 'the well does not knock back, the pull owns the body');
   assert.equal(data.skills[5].fx, 'poem', 'the super is the sing');
+  assert.equal(data.skills[5].cost, 150, 'the sing costs 150');
   assert.ok(data.skills[5].start >= 1, 'the sing lasts a second');
 
   // U: the stone flies and shoves the dummy
@@ -1454,6 +1482,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.equal(g.fighters.length, 3, 'the teammate takes the stage');
     const mate = g.fighters[2];
     assert.equal(mate.minion, true, 'the ally is a minion');
+    assert.equal(mate.dmgMul, .3, 'the teammate hits for three tenths');
     assert.equal(mate.data.hp, 200, 'the health cap is 200, not a fraction');
     assert.equal(mate.hp, 200, 'the teammate spawns at full health on the lowered cap');
     assert.ok((mate.life ?? 0) > 11, `twelve seconds on the clock, left ${mate.life}`);
@@ -3652,6 +3681,9 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.deepEqual(data.bands, ['morfonica'], 'mashiro fronts Morfonica');
   assert.equal(data.trait, 'focus', 'mashiro is a zoner');
   assert.equal(data.skills[3].count, 4, '巨鲸 is four ticks');
+  assert.equal(data.skills[3].motion, 'fall', '巨鲸 rides the stock arc');
+  assert.equal(data.skills[3].finale?.react?.kind, 'knockdown', 'the last tick knocks down');
+  assert.equal(data.skills[5].count, 1, '蝶变 is one shot');
   assert.equal(data.skills[5].slowOnBlock, true, '蝶变 slows a block');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/mashiro/jelly.png'), 'the jellyfish is preloaded');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/mashiro/whale.png'), 'the whale is preloaded');
@@ -3674,6 +3706,17 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     assert.ok(hp - p2.hp > 25, `巨鲸 ticks more than once, dealt ${hp - p2.hp}`);
   }
   {
+    const g = newGame(mashiro, at('boulder')); const [p1] = g.fighters; dummy(g);
+    p1.x = X_MAX; p1.facing = 1;
+    g.keyDown('KeyI');
+    let lived = 0;
+    for (let i = 0; i < Math.round(1 / STEP); i++) {
+      g.step(STEP);
+      if (g.projectiles.some(p => p.fx === 'whale')) lived++;
+    }
+    assert.ok(lived > 40, `巨鲸 finishes the arc at the wall, frames ${lived}`);
+  }
+  {
     const g = newGame(mashiro, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 220; p2.facing = -1;
     p1.energy = p1.energyMax;
@@ -3688,6 +3731,19 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     assert.equal(shots, 1, '蝶变 is one hitbox');
     assert.ok(p2.slow > 3, `a block still slows, left ${p2.slow}`);
     assert.ok(hp - p2.hp < 40, `the block chips instead of the full hit, dealt ${hp - p2.hp}`);
+  }
+  {
+    const g = newGame(mashiro, at('boulder')); const [p1] = g.fighters; dummy(g);
+    p1.x = X_MAX; p1.facing = 1;
+    p1.energy = p1.energyMax;
+    g.keyDown('ArrowDown');
+    g.keyDown('KeyL');
+    let turned = false;
+    for (let i = 0; i < Math.round(1.6 / STEP); i++) {
+      g.step(STEP);
+      if (g.projectiles.some(p => p.fx === 'butterfly' && p.returned)) turned = true;
+    }
+    assert.ok(turned, '蝶变 still turns around from the wall');
   }
 }
 

@@ -31,6 +31,8 @@ export interface Attack {
   hold: number;
   /** World x where 高性能作曲AI planted its lane. */
   anchor: number;
+  /** This cast cut in (escape or ahead of another input). Its hit ignores invuln and armour. */
+  pierce?: boolean;
 }
 
 export interface QueuedInput { index: number; ttl: number }

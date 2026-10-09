@@ -48,7 +48,7 @@ const DODGE_SPEED = (X_MAX - X_MIN) * .35 / DODGE_TIME;
 /** 狂化连招: three ground jabs inside the window arm the next press as the heavy, so mashing J keeps looping. */
 const FRENZY_CHAIN_JABS = 3;
 const FRENZY_CHAIN_WINDOW = .6;
-/** 诗超绊: the teammate's health CAP is this slice of the borrowed sheet, for this long. The brain is the master AI (stepAI). */
+/** 诗超绊: the teammate's health CAP is this slice of the borrowed sheet, hits land at three tenths, for this long. The brain is the master AI (stepAI). */
 const MINION_HP_RATIO = .2;
 const MINION_LIFE = 12;
 /** Whose bandmates answer the call. The pool itself derives from the band at cast time
@@ -383,16 +383,20 @@ export class FightGame {
     return this.airborne(f) && index <= 1 ? AIR_SKILLS[index] : f.data.skills[index];
   }
 
+  /** Hitstun, knockdown, or a super that still has them. A breakout may cut out of this. */
+  private suppressed(f: Fighter): boolean {
+    return f.hitBySuper || f.stun > 0 || f.knocked > 0;
+  }
+
   canAttack(f: Fighter, index: number): boolean {
     if (this.paused || this.phase !== 'fight') return false;
     if (f.hp <= 0 || f.blocking || f.dodge > 0 || (f.cooldowns[index] > 0 && !has(f, 'nocd'))) return false;
     if (f.feast > 0 && index <= 1) return false;
     const breakout = !!f.data.skills[index]?.breakout;
-    const downed = f.y >= FLOOR - .1 && f.knocked > 0 && f.vy >= 0;
-    const escape = breakout && f.hitBySuper && !downed;
-    if (f.ban > 0 || (!escape && (f.stun > 0 || f.knocked > 0))) return false;
+    const escape = breakout && this.suppressed(f);
+    if (!escape && (f.ban > 0 || f.stun > 0 || f.knocked > 0)) return false;
     if (index >= 2 && this.airborne(f) && !escape) return false;
-    if (f.root > 0) {
+    if (!escape && f.root > 0) {
       // 'move' pins only the dash; the freeze tier pins everything.
       if (f.rootLevel === 'freeze' || this.skillFor(f, index).type === 'dash') return false;
     }
@@ -403,10 +407,14 @@ export class FightGame {
     if (index === 5 && f.energy < (skillNow.cost ?? 100)) return false;
     if (SCRIPTS[skillNow.fx]?.oneShot && this.projectiles.some(p => p.fx === skillNow.fx && p.owner === f.id && p.life > 0)) return false;
     const a = f.attack;
+    if (a?.skill.super) return false;
+    if (a && a.index === index) return false;
     // Grounded light attacks that connected can cancel into light or heavy.
     // A counted melee flurry is not a chainable jab; it plays out.
+    // A breakout cuts the swing off: that is the insert.
     const flurry = !!a && (a.skill.count ?? 0) > 1 && a.skill.type !== 'projectile';
-    if (a && !(a.skill.type === 'light' && !a.skill.air && !flurry && a.hit.size > 0 && a.t > .12 && index <= 1)) return false;
+    const chain = !!a && a.skill.type === 'light' && !a.skill.air && !flurry && a.hit.size > 0 && a.t > .12 && index <= 1;
+    if (a && !breakout && !chain) return false;
     return true;
   }
 
@@ -422,14 +430,17 @@ export class FightGame {
     const slot = this.frenzyChain(f, index);
     if (!this.canAttack(f, slot)) return false;
     const skill = this.skillFor(f, slot);
+    // Only a lock skips startup. A queued jab makes the escape start now; it does not become a 0-frame.
+    const escaping = !!skill.breakout && this.suppressed(f);
     f.attack = {
-      skill, index: slot, serial: ++f.attackSerial, t: 0, emitted: false, shots: 0, hit: new Set(),
+      skill, index: slot, serial: ++f.attackSerial, t: escaping ? skill.start : 0, emitted: false, shots: 0, hit: new Set(),
       burst: SCRIPTS[skill.fx]?.burst?.(f) ?? 0,
       endure: skill.type === 'endure' ? 1 : 0,
       liftAt: 0,
       tossAt: 0,
       hold: -1,
       anchor: f.x,
+      pierce: escaping,
     };
     // 狂化 J/K. Soyo and Arale stay on the ground; a form with frenzy.air (国王) covers the air normals too.
     // The clone keeps the shared skill data untouched.
@@ -444,13 +455,17 @@ export class FightGame {
         damage: Math.round(skill.damage * damageMul),
       };
     }
-    if (skill.breakout && f.hitBySuper) {
+    if (escaping) {
       f.stun = 0;
       f.knocked = 0;
       f.downTime = 0;
       f.vx = 0;
       f.vy = 0;
       f.y = FLOOR;
+      f.root = 0;
+      f.rootHits = 0;
+      f.rootLevel = 'move';
+      f.ban = 0;
       f.invuln = Math.max(f.invuln, skill.invuln ?? .34);
       f.hitBySuper = false;
     } else if (skill.breakout && skill.invuln) {
@@ -502,13 +517,24 @@ export class FightGame {
     return f.cooldowns[index] > 0;
   }
 
-  /** Fire the first legal attack. An earlier press that cannot happen soon is dropped.
+  /** Newest breakout first. A press only sticks for the next action, same as a one-deep buffer. */
+  private tryBreakout(f: Fighter): boolean {
+    for (let i = f.queue.length - 1; i >= 0; i--) {
+      if (!f.data.skills[f.queue[i].index]?.breakout) continue;
+      if (this.attack(f, f.queue[i].index)) return true;
+    }
+    return false;
+  }
+
+  /** Fire the first legal attack. Breakouts jump the queue and replace whatever else was waiting.
    *  ponytail: compacts f.queue in place — this runs per fighter per fixed step, so the
    *  skipped/later/filter copies it replaced were ~2400 short-lived arrays a second. */
   private releaseQueue(f: Fighter, dt: number): boolean {
     if (!f.queue.length) return false;
+    if (this.tryBreakout(f)) { f.queue.length = 0; return true; }
     let firedAt = -1;
     for (let i = 0; i < f.queue.length && firedAt < 0; i++) {
+      if (f.data.skills[f.queue[i].index]?.breakout) continue;
       if (this.attack(f, f.queue[i].index)) firedAt = i;
     }
     if (firedAt < 0) {
@@ -656,7 +682,7 @@ export class FightGame {
     }
   }
 
-  /** 诗超绊: a MyGO teammate answers the call — a real Fighter whose health cap is 20% of the borrowed sheet. */
+  /** 诗超绊: a MyGO teammate answers the call — health cap 20% of the borrowed sheet, hits at 30%. */
   summonAlly(owner: Fighter): void {
     const old = this.fighters.find(f => f.minion && f.team === owner.team);
     if (old) this.dismissMinion(old, false);
@@ -672,6 +698,7 @@ export class FightGame {
     });
     m.hp = m.data.hp;
     m.minion = true;
+    m.dmgMul = .3;
     m.life = MINION_LIFE;
     while (this.totalHits.length <= m.id) { this.totalHits.push(0); this.maxCombo.push(0); }
     this.fighters.push(m);
