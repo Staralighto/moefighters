@@ -3909,4 +3909,63 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.equal(h1.attack, null, 'a grab still drops 全力碰撞');
 }
 
+// hina: fries is one melee that frails, 噜噜噜 is three light hits, the partner slot summons 丸山彩
+{
+  const data = ROSTER[at('hina')];
+  assert.equal(data.skills[2].fx, 'fries', 'U is the fries');
+  assert.equal(data.skills[2].frail, 2, '薯条 frails for 2 seconds');
+  assert.equal(data.skills[3].count, 3, '噜噜噜 hits three times');
+  assert.equal(data.skills[3].range, 220, '噜噜噜 reaches a longer stretch ahead');
+  assert.equal(data.skills[3].finale?.root, 1, 'the last 噜 roots for one second');
+  assert.equal(data.skills[5].onActive?.[0]?.op === 'summon' && data.skills[5].onActive[0].kind === 'named' && data.skills[5].onActive[0].id, 'aya', 'the partner slot is aya until sayo exists');
+  {
+    const g = newGame(at('hina'), at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 80; p2.facing = -1;
+    g.keyDown('KeyU');
+    run(g, .4);
+    assert.ok(p2.frail > 0, '薯条 frails on a clean hit');
+    assert.equal(g.projectiles.length, 0, '薯条 is one melee check');
+    const fries = g.effects.find(e => e.type === 'fries');
+    assert.ok(fries, 'the fries are drawn as an effect');
+    assert.ok(fries!.y < p1.y - 100, 'the fries leave from the hand, not the floor');
+  }
+  {
+    const g = newGame(at('hina'), at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 180; p2.facing = -1;
+    const hp = p2.hp;
+    const stamps: number[] = [];
+    const seen = new Set<number>();
+    const watch = () => {
+      for (const e of g.effects) {
+        if (e.type !== 'slash') continue;
+        const rel = Math.round((e.x - p1.x) * p1.facing);
+        if (seen.has(rel)) continue;
+        seen.add(rel);
+        stamps.push(rel);
+        assert.equal(e.dir, p1.facing, 'the 噜 arc opens forward');
+      }
+    };
+    g.keyDown('KeyI');
+    for (let i = 0; i < Math.round(.24 / STEP); i++) { g.step(STEP); watch(); }
+    assert.ok(p2.hp < hp, '噜噜噜 reaches past the old close range');
+    assert.equal(p2.root, 0, 'the first 噜s do not root');
+    for (let i = 0; i < Math.round(.5 / STEP); i++) { g.step(STEP); watch(); }
+    assert.ok(p2.root > 0 && p2.root <= 1, `the last 噜 roots for one second, left ${p2.root}`);
+    assert.equal(stamps.length, 3, `three 噜 stamps, saw ${stamps.join(',')}`);
+    assert.ok(stamps.every(x => x > 40), `every 噜 stamp is in front, saw ${stamps.join(',')}`);
+  }
+  {
+    const g = newGame(at('hina'), at('boulder')); const [p1] = g.fighters; dummy(g);
+    p1.energy = p1.energyMax;
+    g.keyDown('KeyL');
+    run(g, .6);
+    const mate = g.fighters.find(f => f.minion);
+    assert.ok(mate, 'the partner takes the stage');
+    assert.equal(mate?.data.id, 'aya', 'the placeholder is 丸山彩');
+    assert.equal(mate?.dmgMul, .3, 'the partner hits for three tenths');
+    assert.equal(mate?.hp, 200, 'the partner spawns at two tenths');
+    assert.ok((mate?.life ?? 0) > 11, 'the partner stays twelve seconds');
+  }
+}
+
 console.log('selfcheck ok');

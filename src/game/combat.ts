@@ -907,6 +907,7 @@ function runOps(g: FightGame, f: Fighter, s: Skill, ops: Op[]): void {
       if (op.announce) g.text(s.name, f.x, f.y + op.announce.y, op.announce.color, op.announce.life, op.announce.size);
     } else if (op.op === 'summon') {
       if (op.kind === 'ally') g.summonAlly(f);
+      else if (op.kind === 'named') g.summonNamed(f, op.id);
       else g.summonHalf(f);
     }
   }

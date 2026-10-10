@@ -707,6 +707,30 @@ export class FightGame {
     this.text(m.data.name + '！', m.x, m.y - 210, m.data.color, .8, 20);
   }
 
+  /** 和姐姐在一起: one named roster member, same cap as 诗超绊. */
+  summonNamed(owner: Fighter, id: string): void {
+    const data = ROSTER_BY_ID.get(id);
+    if (!data) return;
+    const old = this.fighters.find(f => f.minion && f.team === owner.team);
+    if (old) this.dismissMinion(old, false);
+    const m = makeFighter({ ...data, hp: Math.round(data.hp * MINION_HP_RATIO) }, this.minionSeq++, {
+      x: clamp(owner.x - owner.facing * 46, X_MIN, X_MAX),
+      facing: owner.facing,
+      controller: null,
+      energy: 0,
+      team: owner.team,
+    });
+    m.hp = m.data.hp;
+    m.minion = true;
+    m.dmgMul = .3;
+    m.life = MINION_LIFE;
+    while (this.totalHits.length <= m.id) { this.totalHits.push(0); this.maxCombo.push(0); }
+    this.fighters.push(m);
+    this.sparks(m.x, m.y - 80, m.data.color, 16);
+    this.effect('super', m.x, m.y - 80, m.data.color, .5, { radius: 60 });
+    this.text(m.data.name + '！', m.x, m.y - 210, m.data.color, .8, 20);
+  }
+
   /** 对半分: another Nonoka steps out just behind the foe. Short life, soft hits, normals only. */
   summonHalf(owner: Fighter): void {
     const old = this.fighters.find(f => f.minion && f.team === owner.team);

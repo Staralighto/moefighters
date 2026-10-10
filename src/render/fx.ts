@@ -1591,6 +1591,38 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.restore();
       break;
     }
+    case 'fries': {
+      // 薯条: a handful is tossed out of the hand one after another, tumbles, sags a little and fades in mid-air.
+      // Each fry is one slight bow; the midpoint sits about half of `bend` off the straight line.
+      // The melee check already fired. Fall angle ≤ .25 and sag 50 keep every fry ~25 px above the floor.
+      const rnd = (n: number) => { const s = Math.sin(n * 12.9898 + e.x * .731) * 43758.5453; return s - Math.floor(s); };
+      const bodies = ['#ffd84a', '#ffcc33', '#ffe27a'];
+      ctx.translate(e.x, e.y);
+      ctx.scale(e.dir ?? 1, 1);
+      for (let i = 0; i < 16; i++) {
+        const delay = i / 16 * .25, q = (p - delay) / (1 - delay);
+        if (q <= 0) continue;
+        const ang = -.6 + rnd(i) * .85, speed = 70 + rnd(i + 31) * 100, out = 1 - (1 - q) * (1 - q);
+        const len = 20 + rnd(i + 57) * 12, w = 5 + rnd(i + 83) * 1.5, bend = (rnd(i + 17) - .5) * 18;
+        const bow = (x0: number, x1: number, y: number, bulge: number) => {
+          ctx.beginPath();
+          ctx.moveTo(x0, y);
+          ctx.quadraticCurveTo((x0 + x1) / 2, y + bulge, x1, y);
+        };
+        ctx.save();
+        ctx.translate(Math.cos(ang) * speed * out, Math.sin(ang) * speed * out + 50 * q * q);
+        ctx.rotate(ang + (rnd(i + 97) - .5) * 1.2 + (rnd(i + 113) - .5) * 1.6 * q);
+        ctx.globalAlpha = Math.min(1, q * 8, (1 - q) / .55);
+        ctx.lineCap = 'round';
+        bow(-len / 2, len / 2, 0, bend); ctx.strokeStyle = '#c47a1a'; ctx.lineWidth = w + 2; ctx.stroke();
+        bow(-len / 2, len / 2, 0, bend); ctx.strokeStyle = bodies[i % 3]; ctx.lineWidth = w; ctx.stroke();
+        bow(-len / 2, len / 2, w * .12, bend); ctx.strokeStyle = '#eeb02c'; ctx.lineWidth = w * .35; ctx.stroke();
+        bow(-len / 2 + 2, len / 2 - 2, -w * .22, bend * .6); ctx.strokeStyle = '#fff4b0'; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.fillStyle = '#dc922a'; ctx.beginPath(); ctx.arc(len / 2, 0, w * .42, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+      break;
+    }
     case 'super':
     default:
       ctx.translate(e.x, e.y); ctx.rotate(p * 1.5);

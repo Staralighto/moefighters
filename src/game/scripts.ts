@@ -4,7 +4,7 @@ import type { Fighter } from './fighter.ts';
 import type { FightGame } from './game.ts';
 import { FLOOR, X_MAX, X_MIN, clamp } from './constants.ts';
 import { VOW_BEATS, vowBeatTime } from '../render/clips.ts';
-import { hit, retainEscape, withFinale } from './combat.ts';
+import { applyMelee, hit, retainEscape, withFinale } from './combat.ts';
 
 /** 和灯在一起的话: the last beat throws them. The pin itself is the same shape as stepHold. */
 const VOW_LAUNCH = 700;
@@ -113,6 +113,24 @@ export interface MoveScript {
  * ponytail: the registry is a plain record. A second lookup table would only exist to hide this one.
  */
 export const SCRIPTS: Record<string, MoveScript> = {
+  fries: {
+    flash(g, f) {
+      // Must sit on the FRIES_H hand of scripts/hina-sheet.ts at a 181 px body; move both together.
+      g.effect('fries', f.x + f.facing * 55, f.y - 136, '#ffe14a', .6, { dir: f.facing });
+    },
+  },
+  // The shared swing ring puts the third chop behind the body. These three stay in front.
+  lulu: {
+    swing(g, f, a, s) {
+      const prev = a.skill;
+      a.skill = withFinale(s, a.shots >= (s.count ?? 1) - 1);
+      applyMelee(g, f, a);
+      a.skill = prev;
+      const x = 110 + a.shots * 40;
+      const y = a.shots === 1 ? -110 : -78;
+      g.effect('slash', f.x + f.facing * x, f.y + y, f.data.color, .18, { dir: f.facing, radius: 48 });
+    },
+  },
   vow: {
     update(g, f, a, dt) {
       const s = a.skill;

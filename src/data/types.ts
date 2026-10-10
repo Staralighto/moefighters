@@ -149,7 +149,9 @@ export type Op =
   | { op: 'heal'; hp: number }
   | { op: 'fx'; type?: string; life: number; y?: number; radius?: number; dir?: boolean; floor?: boolean; color?: string; flash?: number; announce?: { color: string; life: number; size: number; y: number } }
   | { op: 'shot' }
-  | { op: 'summon'; kind: 'ally' | 'half' };
+  | { op: 'summon'; kind: 'ally' | 'half' }
+  /** 和姐姐在一起: `id` is the roster member who answers. */
+  | { op: 'summon'; kind: 'named'; id: string };
 
 /** Shared pin: lunge, catch, beats. Last-hit pose stays on Skill.finale. */
 export interface Hold {

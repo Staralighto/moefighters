@@ -14,6 +14,9 @@ const passives: Record<Trait, [string, string]> = {
   beat: ['鼓点', '命中叠节拍（至多 8 层），每层冷却加快 6%、移速提高 2%；被击中掉 2 层'],
 };
 
+/** 和姐姐在一起. Swap this to 'sayo' once 冰川纱夜 is on the roster. */
+export const HINA_PARTNER = 'aya';
+
 const stats = (trait: Trait) => ({
   trait,
   passive: passives[trait],
@@ -740,6 +743,35 @@ export const ROSTER: CharacterData[] = [
           { op: 'mod', kind: 'brace', time: 6 },
         ],
         brief: '震开周围；期间技能无冷却且禁回气，霸体', detail: '摆出 wink 姿势震开周围一圈；6 秒内所有技能无冷却、无法获得气，效果结束时全部技能一起进入完整冷却；期间霸体',
+      }),
+    ],
+  },
+  {
+    id: 'hina', name: '冰川日菜', title: '吉他 / 天才', quote: '谁都不跟我一样！所以才有趣！', color: '#55DDEE',
+    bands: ['pastel-palettes'],
+    ...stats('rush'),
+    view: { kind: 'sprite', common: '/sprites/hina/common.png', special: '/sprites/hina/special.png', height: 181 },
+    skills: [
+      skill(0, 'light', '扫弦'),
+      skill(1, 'heavy', '横踢'),
+      skill(2, 'heavy', '薯条', {
+        damage: 36, range: 160, start: .22, duration: .55, cd: 5, knock: 140, fx: 'fries',
+        frail: 2, frailBonus: .2,
+        brief: '挥手撒出；打实后脆弱', detail: '身前一小段挥手撒出，打一次；打实后脆弱 2 秒（受伤 +20%）',
+      }),
+      skill(3, 'light', '噜噜噜', {
+        damage: 16, count: 3, interval: .12, range: 220, start: .08, duration: .55, cd: 4, knock: 70, fx: 'lulu',
+        finale: { root: 1, rootPin: true },
+        brief: '前方三下；末击定身，受击两次解除', detail: '前方较长距离打三下；最后一下定身 1 秒，受击两次解除',
+      }),
+      skill(4, 'dash', '好近哦', {
+        damage: 48, speed: 760, start: .1, duration: .32, cd: 4.5, knock: 160, fx: 'dash',
+        brief: '短距离贴到面前打一下', detail: '短距离突进，贴到面前打一下',
+      }),
+      skill(5, 'endure', '和姐姐在一起', {
+        damage: 0, range: 0, start: .4, duration: .9, fx: 'burst',
+        onActive: [{ op: 'summon', kind: 'named', id: HINA_PARTNER }],
+        brief: '召唤一名队友到身侧；被击败提前退场', detail: '召唤 1 名队友到身侧并肩 12 秒，生命两成、伤害三成；被击败提前退场',
       }),
     ],
   },
