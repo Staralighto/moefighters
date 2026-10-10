@@ -25,7 +25,7 @@ export function stageThumbSrc(src: string, prod = import.meta.env.PROD): string 
 }
 
 function fetchImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
+  const once = (): Promise<HTMLImageElement> => new Promise((resolve, reject) => {
     const im = new Image();
     im.onload = () => {
       // Decode here, while the loading screen or the queue is the thing waiting, so a
@@ -36,6 +36,9 @@ function fetchImage(src: string): Promise<HTMLImageElement> {
     im.onerror = () => reject(Error('图片加载失败：' + src));
     im.src = src;
   });
+  // data: URLs fail because those bytes cannot decode, so a second try would fail the same way.
+  // A network URL gets one more try: a reset on a lossy link should not stick as a missing sheet.
+  return src.startsWith('data:') ? once() : once().catch(() => once());
 }
 
 let webpOk: Promise<boolean> | null = null;
@@ -116,7 +119,7 @@ export function loadKujiFont(): Promise<void> {
   return kujiFont;
 }
 
-/** Sheets that failed once. Portraits stop waiting and fall back to the block figure. */
+/** Sheets that still failed after one retry. Portraits stop waiting and fall back to the block figure. */
 export const missingImages = new Set<string>();
 
 const inflight = new Map<string, Promise<boolean>>();

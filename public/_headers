@@ -16,6 +16,14 @@
 /fonts/*
   Cache-Control: public, max-age=2592000
 
+# Stable URLs. The music file is the largest request on the site, so a return visit
+# must not revalidate it across a slow link.
+/bgm/*
+  Cache-Control: public, max-age=2592000
+
+/sfx/*
+  Cache-Control: public, max-age=2592000
+
 /favicon.svg
   Cache-Control: public, max-age=86400
 

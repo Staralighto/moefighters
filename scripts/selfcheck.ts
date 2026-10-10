@@ -31,8 +31,10 @@ import { checkSpriteGuard } from './sprite-guard.ts';
 declare const process: { getBuiltinModule(name: 'fs'): {
   readFileSync(path: string, encoding: 'utf8'): string;
   readdirSync(path: string, options: { recursive: true }): string[];
+  statSync(path: string): { size: number };
 } };
 const readFileSync = process.getBuiltinModule('fs').readFileSync;
+const statSync = process.getBuiltinModule('fs').statSync;
 
 checkSpriteGuard();
 
@@ -1674,6 +1676,10 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.deepEqual(imageSources('/sprites/aya/special.png', true, false), ['/sprites/aya/special.png'], 'a browser without webp never requests it');
   assert.deepEqual(imageSources('/sprites/aya/special.png', false), ['/sprites/aya/special.png'], 'dev keeps the single png');
   assert.deepEqual(imageSources('/icons/ult.svg', true), ['/icons/ult.svg'], 'a non-png url is unchanged');
+  assert.ok(readFileSync('src/assets/loader.ts', 'utf8').includes('once().catch(() => once())'), 'a dropped image is requested once more before the block figure');
+  const headers = readFileSync('public/_headers', 'utf8');
+  assert.ok(/\/bgm\/\*[\r\n]+\s*Cache-Control: public, max-age=2592000/.test(headers), 'bgm is cached for 30 days');
+  assert.ok(/\/sfx\/\*[\r\n]+\s*Cache-Control: public, max-age=2592000/.test(headers), 'sfx is cached for 30 days');
   assert.equal(portraitSrc('/sprites/aya/common.png', true), '/sprites/aya/idle.png', 'the select screen asks for the idle cell, not the whole sheet');
   assert.equal(portraitSrc('/sprites/aya/common.png', false), '/sprites/aya/common.png', 'dev has no idle crop and uses the sheet');
   assert.equal(portraitSrc('/sprites/aya/special.png', true), '/sprites/aya/special.png', 'only the common sheet has an idle crop');
@@ -1846,6 +1852,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(!/\bnew Audio\b|createMediaElementSource/.test(bgm), 'BGM stays on Web Audio buffers: no media element, no element source node');
   assert.ok(bgm.includes('localStorage'), 'BGM prefs persist in localStorage');
   assert.ok(!/sessionStorage\.setItem/.test(bgm), 'BGM does not keep writing the old session key');
+  assert.ok(statSync('public/bgm/garupa-pico-instrumental.m4a').size < 1_500_000, 'bgm stays under 1.5MB so turning music on is not a multi-megabyte download');
   const on = resolveMusicPrefs('{"enabled":true,"volume":0.4,"curve":"db"}', '{"enabled":false,"volume":0.9}');
   assert.deepEqual(on, { enabled: true, volume: 0.4, writeLocal: null, dropSession: true }, 'a log-fader record wins over a stale session');
   const moved = resolveMusicPrefs(null, '{"enabled":true,"volume":0.4}');
