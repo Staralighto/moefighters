@@ -1,7 +1,7 @@
 import type { StageData } from '../data/types.ts';
 import type { FightGame } from '../game/game.ts';
 import type { FighterView } from './view.ts';
-import type { ImageCache } from '../assets/loader.ts';
+import { stageThumbSrc, type ImageCache } from '../assets/loader.ts';
 import { FLOOR, H, SIDE, W } from '../game/constants.ts';
 import { violetHidden } from '../game/combat.ts';
 import { drawBanSign, drawCombo, drawEffect, drawGauge, drawKuji, drawLayerBass, drawParticles, drawProjectile, drawRootFx, drawTexts, UI_FONT } from './fx.ts';
@@ -291,7 +291,9 @@ export class Renderer {
 
   private drawStage(): void {
     const c = this.ctx, s = this.stage;
-    const bg = s.image ? this.images.get(s.image) : undefined;
+    // A slow link starts on the 480px preview; the cover math below only reads the aspect.
+    const full = s.image ? this.images.get(s.image) : undefined;
+    const bg = full?.naturalWidth || !s.image ? full : this.images.get(stageThumbSrc(s.image));
     // The art is world-sized (960×540), so painting it straight onto the transformed canvas
     // each frame is the same single resample a bake would produce, with no buffer to size or
     // rebake on window changes. Smoothing stays on for the upscale and off for the rest of

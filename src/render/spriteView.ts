@@ -1,6 +1,6 @@
 import type { FighterView, FrozenPose } from './view.ts';
 import type { Fighter } from '../game/fighter.ts';
-import { missingImages, portraitSrc, type ImageCache } from '../assets/loader.ts';
+import { LITE_SCALE, liteSrc, missingImages, portraitSrc, type ImageCache } from '../assets/loader.ts';
 import { CELL, clipFor, type Clip } from './clips.ts';
 
 const rimCache = new Map<string, HTMLCanvasElement>();
@@ -33,7 +33,7 @@ function cacheCell(cache: Map<string, HTMLCanvasElement>, max: number, key: stri
 
 /** The 256px cell pre-scaled to the raster size it is blitted at (with the flash filter baked
  *  in), so the per-draw cost is a 1:1 blit instead of a high-quality resample of the whole sheet. */
-function prescaledCell(im: HTMLImageElement, sx: number, sy: number, h: number, filter: string): HTMLCanvasElement {
+function prescaledCell(im: HTMLImageElement, sx: number, sy: number, cs: number, h: number, filter: string): HTMLCanvasElement {
   return cacheCell(cellCache, CELL_CACHE_MAX, im.src + '|' + sx + '|' + sy + '|' + h + '|' + filter, () => {
     const c = document.createElement('canvas');
     c.width = h;
@@ -43,7 +43,7 @@ function prescaledCell(im: HTMLImageElement, sx: number, sy: number, h: number, 
     g.imageSmoothingEnabled = true;
     g.imageSmoothingQuality = 'high';
     if (filter !== 'none') g.filter = filter;
-    g.drawImage(im, sx, sy, CELL, CELL, 0, 0, h, h);
+    g.drawImage(im, sx, sy, cs, cs, 0, 0, h, h);
     return c;
   });
 }
@@ -63,7 +63,7 @@ const RIM_PAD = 4;
 const BOX_SINK = 40;
 
 /** ~3px stroke from the smoothed silhouette, then a 1px blur so the edge isn't stepped. Cached per cell. */
-function hardRim(im: HTMLImageElement, sx: number, sy: number, h: number, color: string): HTMLCanvasElement {
+function hardRim(im: HTMLImageElement, sx: number, sy: number, cs: number, h: number, color: string): HTMLCanvasElement {
   const key = im.src + '|' + sx + '|' + sy + '|' + h + '|' + color;
   return cacheCell(rimCache, RIM_CACHE_MAX, key, () => {
     const tinted = document.createElement('canvas');
@@ -73,7 +73,7 @@ function hardRim(im: HTMLImageElement, sx: number, sy: number, h: number, color:
     if (!tg) return tinted;
     tg.imageSmoothingEnabled = true;
     tg.imageSmoothingQuality = 'high';
-    tg.drawImage(im, sx, sy, CELL, CELL, 0, 0, h, h);
+    tg.drawImage(im, sx, sy, cs, cs, 0, 0, h, h);
     tg.globalCompositeOperation = 'source-in';
     tg.fillStyle = color;
     tg.fillRect(0, 0, h, h);
@@ -108,9 +108,9 @@ function hardRim(im: HTMLImageElement, sx: number, sy: number, h: number, color:
 
 /** Flat colour wash over the opaque pixels, baked per (sheet, cell, raster size, tint).
  *  Same trick as the 墨缇丝 afterimage. `h` is the logical draw size, `hs` the raster size. */
-function drawTint(ctx: CanvasRenderingContext2D, im: HTMLImageElement, sx: number, sy: number, h: number, hs: number, tint: string): void {
+function drawTint(ctx: CanvasRenderingContext2D, im: HTMLImageElement, sx: number, sy: number, cs: number, h: number, hs: number, tint: string): void {
   if (typeof document === 'undefined') {
-    ctx.drawImage(im, sx, sy, CELL, CELL, -Math.round(h / 2), -h, h, h);
+    ctx.drawImage(im, sx, sy, cs, cs, -Math.round(h / 2), -h, h, h);
     return;
   }
   const baked = cacheCell(tintCache, CELL_CACHE_MAX, im.src + '|' + sx + '|' + sy + '|' + hs + '|' + tint, () => {
@@ -121,7 +121,7 @@ function drawTint(ctx: CanvasRenderingContext2D, im: HTMLImageElement, sx: numbe
     if (!g) return c;
     g.imageSmoothingEnabled = true;
     g.imageSmoothingQuality = 'high';
-    g.drawImage(im, sx, sy, CELL, CELL, 0, 0, hs, hs);
+    g.drawImage(im, sx, sy, cs, cs, 0, 0, hs, hs);
     g.globalCompositeOperation = 'source-atop';
     g.fillStyle = tint;
     g.fillRect(0, 0, hs, hs);
@@ -145,11 +145,11 @@ export class SpriteView implements FighterView {
     private readonly box?: string,
   ) {}
 
-  /** The select screen only needs the idle cell. A missing sheet is "ready" so the block figure can stand in. */
+  /** The select screen only needs the idle cell. A missing crop or sheet is "ready" so the block figure can stand in. */
   idleReady(): boolean {
     const stand = portraitSrc(this.common);
     if (stand !== this.common && this.images.get(stand)?.naturalWidth) return true;
-    if (missingImages.has(this.common)) return true;
+    if (missingImages.has(stand) || missingImages.has(this.common)) return true;
     return !!this.images.get(this.common)?.naturalWidth;
   }
 
@@ -167,14 +167,17 @@ export class SpriteView implements FighterView {
       : clip.sheet === 'special' ? this.special
       : clip.sheet === 'world' && this.world ? this.world
       : this.frenzy;
-    // Standing pose uses the 256px crop until the full sheet arrives. Fight cells then share one encode.
+    // Until the full sheet arrives: the 256px crop for the standing pose, else the half-size
+    // lite sheet a slow link started on. Fight cells then share one encode.
     const standSrc = portraitSrc(this.common);
     const sheetIm = src ? this.images.get(src) : undefined;
     const stand = src === this.common && standSrc !== this.common && clip.sx === 0 && clip.sy === 0 && !sheetIm?.naturalWidth
       ? this.images.get(standSrc)
       : undefined;
-    const im = stand?.naturalWidth ? stand : sheetIm;
+    const lite = src && !sheetIm?.naturalWidth && !stand?.naturalWidth ? this.images.get(liteSrc(src)) : undefined;
+    const im = stand?.naturalWidth ? stand : lite?.naturalWidth ? lite : sheetIm;
     if (!im || !im.naturalWidth) { this.fallback.draw(ctx, f, x, y, alpha, undefined, outline); return; }
+    const k = im === lite ? LITE_SCALE : 1;
     const h = src === this.king ? this.height * this.kingScale : this.height;
     // Bake the cell at the resolution this canvas rasterises at (device pixels in the arena,
     // the portrait's own scale on the select screen), so the blit below is 1:1 instead of a
@@ -184,7 +187,8 @@ export class SpriteView implements FighterView {
     const m = ctx.getTransform();
     const hs = Math.min(512, Math.max(1, Math.round(h * Math.hypot(m.a, m.b))));
     const ax = -Math.round(h / 2);
-    const cell = boxed ? { sx: 0, sy: 0 } : clip;
+    const cell = boxed ? { sx: 0, sy: 0 } : { sx: clip.sx * k, sy: clip.sy * k };
+    const cs = CELL * k;
     ctx.save();
     try {
       ctx.translate(Math.round(x), Math.round(y));
@@ -210,13 +214,13 @@ export class SpriteView implements FighterView {
       if (outline && typeof document !== 'undefined') {
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(hardRim(im, cell.sx, cell.sy, h, outline), ax - RIM_PAD, -h - RIM_PAD);
+        ctx.drawImage(hardRim(im, cell.sx, cell.sy, cs, h, outline), ax - RIM_PAD, -h - RIM_PAD);
       }
       // Source cell is 256, baked once per raster size (see hs); the per-draw cost is a
       // nearest-neighbour 1:1 blit. Smoothing stays off so the blit cannot soften the pixels.
       ctx.imageSmoothingEnabled = false;
-      if (tint) drawTint(ctx, im, cell.sx, cell.sy, h, hs, tint);
-      else ctx.drawImage(prescaledCell(im, cell.sx, cell.sy, hs, spriteFilter(f)), ax, -h, h, h);
+      if (tint) drawTint(ctx, im, cell.sx, cell.sy, cs, h, hs, tint);
+      else ctx.drawImage(prescaledCell(im, cell.sx, cell.sy, cs, hs, spriteFilter(f)), ax, -h, h, h);
     } finally {
       ctx.restore();
     }

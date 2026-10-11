@@ -4,9 +4,9 @@ import { FightGame, MINION_BAND } from './game/game.ts';
 import { KeyboardInput, TouchInput } from './game/input.ts';
 import { Renderer } from './render/renderer.ts';
 import { createViews } from './render/view.ts';
-import { assetsFor, easeLoad, imageQueue, loadInto, loadKujiFont, loadPortrait, missingImages, portraitSrc, preload, type ImageCache } from './assets/loader.ts';
+import { assetsFor, easeLoad, imageQueue, liteFight, loadInto, loadKujiFont, missingImages, portraitSrc, preload, slowLink, stageThumbSrc, supportsWebp, type ImageCache } from './assets/loader.ts';
 import { Sfx } from './audio/sfx.ts';
-import { musicEnabled, musicVolume, pokeMusic, setMusicEnabled, setMusicSuspended, setMusicVolume } from './audio/bgm.ts';
+import { musicEnabled, musicVolume, pokeMusic, setMusicEnabled, setMusicHeld, setMusicSuspended, setMusicVolume } from './audio/bgm.ts';
 import { matchName, SelectScreen, type MatchSetup } from './ui/select.ts';
 import { bestLabel, challengeName, deckLabel, foeCount, hideBuffPicker, readBest, readRun, rollEnemies, showBuffPicker, stageSetup, writeBest, writeRun, type ChallengeKind, type ChallengeRun } from './ui/challenge.ts';
 import { cycleSkillTier, hideEnd, setBattleGuide, setRoundLabel, showBanner, showEnd, updateHUD } from './ui/hud.ts';
@@ -41,11 +41,20 @@ if (import.meta.env.DEV) {
   void import('./ui/touchTune.ts').then(m => m.mountTouchTune($('touchpad')));
 }
 
-/* Idle sheets arrive after the select screen is up. Fight sheets wait until a match actually starts. */
-void loadKujiFont();
+/* Idle sheets arrive after the select screen is up. Fight sheets and the kuji font wait until a match actually starts.
+   A slow link (see slowLink) opens on the stage preview and starts fights on half-size sheets;
+   the full sheets stream in during the fight and replace them. */
+performance.setResourceTimingBufferSize?.(1000);
 const previewViews = createViews(PLAYABLE, images);
-const queue = imageQueue(images, 2, src => loadPortrait(images, src));
+const queue = imageQueue(images, 2);
 let followCast = false;
+let webpOk = false;
+void supportsWebp().then(ok => { webpOk = ok; });
+
+/** null on a fast link: the fight waits for the full set, as before. */
+function litePlan(characters: CharacterData[], stage: StageData): { need: string[]; rest: string[] } | null {
+  return webpOk && slowLink() ? liteFight(characters, stage, s => images.has(s)) : null;
+}
 
 function portraitOf(list: CharacterData[]): string[] {
   return list.flatMap(c => c.view.kind === 'sprite' ? [portraitSrc(c.view.common)] : []);
@@ -94,6 +103,7 @@ function beginWait(srcs: string[]): void {
   bootPins = [...new Set(srcs)];
   bootAt = performance.now();
   bootDone = false;
+  setMusicHeld(true);
   if (keep) return;
   bootDisplay = 0;
   bootShown = false;
@@ -133,7 +143,7 @@ function tickBoot(now: number): void {
 }
 
 const select = new SelectScreen(PLAYABLE, previewViews, setup => {
-  queue.soon(commonOf(setup.characters));
+  queue.soon(litePlan(setup.characters, setup.stage)?.need ?? commonOf(setup.characters));
   if (setup.mode === 'challenge') {
     // Each sub-mode keeps its own run: switching kinds here reloads the other one from storage,
     // so a parked 闯关 run and a parked 激战 run never block each other.
@@ -158,10 +168,11 @@ const select = new SelectScreen(PLAYABLE, previewViews, setup => {
 }, () => { sfx.unlock(); sfx.play('select'); }, shown => {
   if (followCast) queue.soon(portraitOf(shown));
 });
+select.liteStage = slowLink();
 select.mount();
 {
   const idles = portraitOf(select.cast());
-  const stageSrc = select.stage.image;
+  const stageSrc = select.stage.image && select.liteStage ? stageThumbSrc(select.stage.image) : select.stage.image;
   beginWait([...new Set([...(stageSrc ? [stageSrc] : []), ...idles])]);
   // The backdrop is the large file. Keep it off the two-wide portrait queue so the second
   // standing picture is not stuck behind it.
@@ -187,6 +198,7 @@ let selectRaf = 0;
 function selectLoop(now: number): void {
   if (!$('selection').hidden) {
     tickBoot(now);
+    setMusicHeld(!bootDone);
     select.animate(now);
   }
   selectRaf = requestAnimationFrame(selectLoop);
@@ -217,17 +229,21 @@ async function startGame(setup: MatchSetup): Promise<void> {
   /* pointerdown 上的开始/重开把这次手势让给了全屏，音乐改在这条仍处于点击里的路径接上。 */
   pokeMusic();
   const srcs = fightSources(setup.characters, setup.stage);
-  if (srcs.some(s => !images.has(s) && !missingImages.has(s))) beginWait(srcs);
+  const lite = litePlan(setup.characters, setup.stage);
+  const need = lite?.need ?? srcs;
+  if (need.some(s => !images.has(s) && !missingImages.has(s))) beginWait(need);
   $('start').setAttribute('disabled', '');
   // The fight's own sheets take the link; the background roster queue waits so the
   // "开打" wait is not competing with 2-at-a-time prefetch for the same bandwidth.
   queue.pause();
   let missing: string[];
   try {
-    [missing] = await Promise.all([preload(images, srcs), loadKujiFont()]);
+    [missing] = await Promise.all([preload(images, need), loadKujiFont()]);
   } finally {
     queue.resume();
   }
+  // Lite form sheets first (an ultimate can come early), then the full set replaces the soft one.
+  if (lite) queue.soon([...lite.rest, ...srcs]);
   $('start').removeAttribute('disabled');
   if (missing.length) console.warn('缺图，已回退色块人形：' + missing.join(', '));
   lastSetup = setup;
@@ -235,6 +251,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
   cancelAnimationFrame(raf);
   cancelAnimationFrame(selectRaf);
   bootDone = true;
+  setMusicHeld(false);
   $('stage-load').hidden = true;
   $('stage-load').classList.remove('is-out');
   $('select-stage').setAttribute('aria-busy', 'false');

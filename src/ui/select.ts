@@ -144,6 +144,8 @@ export class SelectScreen {
   private lastRosterDraw = 0;
   /** One idle stand-in per portrait canvas, rebuilt only when the slot switches character. */
   private readonly previewCache = new WeakMap<HTMLCanvasElement, { id: string; facing: number; f: Fighter }>();
+  /** Slow link: the panel backdrop is the 480px preview, behind a 40% shade. */
+  liteStage = false;
 
   constructor(roster: CharacterData[], views: Map<string, FighterView>, onStart: (setup: MatchSetup) => void, onPick: () => void, onShown: (shown: CharacterData[]) => void = () => {}) {
     this.roster = roster;
@@ -644,7 +646,7 @@ export class SelectScreen {
     const drawnH = canvas.height * fit;
     const footScreen = box.top + (box.height - drawnH) + PORTRAIT_FOOT * fit;
     const cover = stageCover(panel.clientWidth, panel.clientHeight, panelBox.bottom - footScreen, this.stage.groundY ?? FLOOR);
-    const image = this.stage.image;
+    const image = this.liteStage ? stageThumbSrc(this.stage.image) : this.stage.image;
     panel.dataset.stageSrc = image;
     applyImageUrl(image, url => {
       if (panel.dataset.stageSrc !== image) return;

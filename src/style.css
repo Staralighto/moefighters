@@ -37,7 +37,8 @@ kbd { font: 700 13px/1 var(--font); background: #0d0c14; border: 1px solid var(-
 header { display: flex; justify-content: space-between; align-items: center; padding: 10px 22px; border-bottom: 1px solid var(--line); }
 .brand { display: flex; gap: 10px; align-items: center; text-decoration: none; color: inherit; font-weight: 800; letter-spacing: .06em; }
 .brand small { display: block; font-weight: 400; color: var(--muted); letter-spacing: 0; }
-.brand-icon { display: grid; place-items: center; width: 34px; height: 34px; background: var(--p1); color: #14140c; border-radius: 8px; font-size: 20px; }
+.brand-icon { display: grid; place-items: center; width: 34px; height: 34px; background: var(--p1); color: #14140c; border-radius: 8px; }
+.brand-icon svg { display: block; width: 100%; height: 100%; }
 nav { display: flex; gap: 8px; align-items: center; }
 /* 音乐设置浮层：summary 是导航里的音符按钮，点开下方面板。开/关与音量都在面板里；
    面板收起靠点外面或 ESC（main.ts），原生 details 只管展开。 */
@@ -82,6 +83,10 @@ html.modal-open dialog { translate: calc(var(--scrollbar-gap, 0px) / -2) 0; }
 main { max-width: 1080px; margin: 0 auto; padding: 18px 22px 40px; }
 #selection { display: flex; flex-direction: column; }
 footer { display: flex; justify-content: space-between; gap: 16px; color: var(--muted); font-size: 13px; margin-top: 26px; flex-wrap: wrap; }
+.site-foot { flex-direction: column; justify-content: center; align-items: center; gap: 10px; margin: 0; padding: 10px 22px; border-top: 1px solid var(--line); }
+.site-links { display: flex; justify-content: center; align-items: center; gap: 22px; flex-wrap: wrap; }
+.site-foot a { color: inherit; }
+.site-foot p { margin: 0; text-align: center; }
 .sectionline { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 6px 0 12px; font-weight: 700; }
 .sectionline i { font-style: normal; color: var(--muted); margin-right: .5em; }
 .muted { color: var(--muted); font-weight: 400; font-size: 13px; }
@@ -399,7 +404,7 @@ body.touch .battle-top #fullscreen { display: none; }
 .rotate-hint { display: none; position: absolute; inset: 0; place-content: center; background: #0b0a12dd; font-weight: 800; font-size: 20px; }
 @media (orientation: landscape) {
   body.touch.in-battle { position: fixed; inset: 0; height: 100vh; height: 100dvh; overflow: hidden; }
-  body.touch.in-battle header, body.touch.in-battle .battle-top, body.touch.in-battle #battle-skills, body.touch.in-battle #battle-skills-bar, body.touch.in-battle #battle footer { display: none; }
+  body.touch.in-battle header, body.touch.in-battle .battle-top, body.touch.in-battle #battle-skills, body.touch.in-battle #battle-skills-bar, body.touch.in-battle #battle footer, body.touch.in-battle .site-foot { display: none; }
   /* dvh tracks the real viewport; the 100vh declaration before it is the fallback for browsers without dvh. */
   body.touch.in-battle #battle { width: 100%; height: 100vh; height: 100dvh; max-width: none; margin: 0; padding: 0; display: block; }
   /* One box owns the safe area: all four insets land on the same element, so the leftover bars stay symmetric instead of pooling at the top. */
@@ -430,7 +435,7 @@ body.touch .battle-top #fullscreen { display: none; }
    缩放画布、地面钉在桌面比例。右下角是必杀 + 三技能的冷却指示键（同手机布局，去掉摇杆、攻击、
    格挡），点它们照常放技能。不调用 Fullscreen API，地址栏还在。 */
 body.wide.in-battle { position: fixed; inset: 0; height: 100vh; height: 100dvh; overflow: hidden; }
-body.wide.in-battle header, body.wide.in-battle #battle-skills, body.wide.in-battle #battle-skills-bar, body.wide.in-battle #battle footer { display: none; }
+body.wide.in-battle header, body.wide.in-battle #battle-skills, body.wide.in-battle #battle-skills-bar, body.wide.in-battle #battle footer, body.wide.in-battle .site-foot { display: none; }
 body.wide.in-battle #battle { width: 100%; height: 100vh; height: 100dvh; max-width: none; margin: 0; padding: 0; display: block; }
 body.wide.in-battle .arena { position: fixed; inset: 0; width: auto; height: auto; max-height: none; aspect-ratio: auto; border: 0; border-radius: 0; }
 body.wide.in-battle .arena canvas { position: absolute; left: 0; top: 0; width: 100%; height: auto; object-fit: fill; }
@@ -474,6 +479,7 @@ body.wide .touchpad.in-tower .tp-actions { --atk: clamp(86px, 16vmin, 106px); ri
 /* 窄竖屏和矮视口共用的压缩：字号、芯片、图标。行列不看横竖屏，见 @container stage。 */
 @media (max-width: 760px) and (orientation: portrait), (orientation: landscape) and (max-height: 500px) {
   header { padding: 8px 12px; gap: 8px; }
+  .site-foot { padding: 8px 12px; }
   .brand { gap: 8px; letter-spacing: .02em; min-width: 0; }
   .brand small { display: none; }
   .brand > span:last-child { white-space: nowrap; }
@@ -545,6 +551,7 @@ body.wide .touchpad.in-tower .tp-actions { --atk: clamp(86px, 16vmin, 106px); ri
 /* 竖屏：角色 5 列（每格够放 5 个字的名字），开打钉在屏幕底部，滚到招式表也能直接点。 */
 @media (max-width: 760px) and (orientation: portrait) {
   main { max-width: none; padding: 10px 12px calc(84px + env(safe-area-inset-bottom)); }
+  .site-foot { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
   .action-foot { display: grid; grid-template-columns: 1fr; gap: 8px; }
   .action-start { position: fixed; z-index: 10; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); min-width: 0; font-size: 17px; box-shadow: 0 8px 24px #000c; }
   .roster { grid-template-columns: repeat(5, minmax(0, 1fr)); }

@@ -1,3 +1,11 @@
+# The document URL never changes. A return visit paints the cached page and revalidates
+# in the background, so a slow link does not sit on a blank tab.
+/
+  Cache-Control: public, max-age=0, stale-while-revalidate=604800
+
+/index.html
+  Cache-Control: public, max-age=0, stale-while-revalidate=604800
+
 # Vite hashes these. The name changes when the bytes change.
 /assets/*
   Cache-Control: public, max-age=31536000, immutable

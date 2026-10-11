@@ -63,7 +63,7 @@
   <symbol id="i-music-notes" viewBox="0 0 256 256"><path fill="currentColor" d="M212.92,17.69a8,8,0,0,0-6.86-1.45l-128,32A8,8,0,0,0,72,56V166.08A36,36,0,1,0,88,196V110.25l112-28v51.83A36,36,0,1,0,216,164V24A8,8,0,0,0,212.92,17.69ZM52,216a20,20,0,1,1,20-20A20,20,0,0,1,52,216ZM88,93.75V62.25l112-28v31.5ZM180,184a20,20,0,1,1,20-20A20,20,0,0,1,180,184Z"/></symbol>
 </svg>
 <header>
-  <a class="brand" href="/"><span class="brand-icon" aria-hidden="true">M</span><span>萌趣格斗<small>同屏街机格斗 · 第一版</small></span></a>
+  <a class="brand" href="/"><span class="brand-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path fill="currentColor" d="M14.26 9.52A1.83 1.83 0 0 1 17.74 9.52L18.53 11.94A1.83 1.83 0 0 0 20.27 13.2L22.81 13.2A1.83 1.83 0 0 1 23.89 16.52L21.84 18.01A1.83 1.83 0 0 0 21.17 20.06L21.96 22.48A1.83 1.83 0 0 1 19.13 24.53L17.08 23.04A1.83 1.83 0 0 0 14.92 23.04L12.87 24.53A1.83 1.83 0 0 1 10.04 22.48L10.83 20.06A1.83 1.83 0 0 0 10.16 18.01L8.11 16.52A1.83 1.83 0 0 1 9.19 13.2L11.73 13.2A1.83 1.83 0 0 0 13.47 11.94L14.26 9.52Z"/></svg></span><span>萌趣格斗<small>同屏街机格斗 · 第一版</small></span></a>
   <nav>
     <button id="settings" class="icon-btn icon-only" type="button" title="设置" aria-label="设置"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-gear-six"/></svg><span class="btn-label">设置</span></button>
     <button id="sound" class="icon-btn icon-only" type="button" aria-label="音效开"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-speaker-high"/></svg><span class="btn-label">♪ 音效开</span></button>
@@ -224,12 +224,12 @@
         <div class="tp-ring"><i class="tp-knob-move"><b class="tp-knob"></b></i></div>
       </div>
       <div class="tp-actions">
-        <button type="button" class="sk ult" data-pad="ult" data-key="KeyL" aria-label="必杀"><img alt="" src="/icons/ult.svg"></button>
-        <button type="button" class="sk s1" data-pad="s1" data-key="KeyU" aria-label="技能1"><img alt="" src="/icons/dash.png"></button>
-        <button type="button" class="sk s2" data-pad="s2" data-key="KeyI" aria-label="技能2"><img alt="" src="/icons/upper.png"></button>
-        <button type="button" class="sk s3" data-pad="s3" data-key="KeyO" aria-label="技能3"><img alt="" src="/icons/grab.png"></button>
-        <button type="button" class="atk" data-pad="atk" data-atk aria-label="短按轻击，长按重击"><img alt="" src="/icons/light.png"></button>
-        <button type="button" class="guard" data-pad="guard" data-guard aria-label="格挡"><img alt="" src="/icons/guard.png"></button>
+        <button type="button" class="sk ult" data-pad="ult" data-key="KeyL" aria-label="必杀"><img alt="" loading="lazy" src="/icons/ult.svg"></button>
+        <button type="button" class="sk s1" data-pad="s1" data-key="KeyU" aria-label="技能1"><img alt="" loading="lazy" src="/icons/dash.png"></button>
+        <button type="button" class="sk s2" data-pad="s2" data-key="KeyI" aria-label="技能2"><img alt="" loading="lazy" src="/icons/upper.png"></button>
+        <button type="button" class="sk s3" data-pad="s3" data-key="KeyO" aria-label="技能3"><img alt="" loading="lazy" src="/icons/grab.png"></button>
+        <button type="button" class="atk" data-pad="atk" data-atk aria-label="短按轻击，长按重击"><img alt="" loading="lazy" src="/icons/light.png"></button>
+        <button type="button" class="guard" data-pad="guard" data-guard aria-label="格挡"><img alt="" loading="lazy" src="/icons/guard.png"></button>
       </div>
     </div>
     <div class="end-overlay" id="end" hidden>
@@ -246,6 +246,14 @@
   </div>
   <footer><span>J → J → K 轻击起手 · 长按 S 格挡 · 点按 S 后闪躲抓投 · 跳中 J / K 空击 · L 满气必杀</span><span>手机：摇杆上推跳 · 攻击键上方按住格挡 · 点偏上空白处后撤</span></footer>
 </main>
+
+<footer class="site-foot">
+  <div class="site-links">
+    <span>作者：<a href="https://space.bilibili.com/35556245" target="_blank" rel="noopener noreferrer">碎影星SSS</a></span>
+    <a href="https://github.com/Staralighto/moefighters" target="_blank" rel="noopener noreferrer">GitHub</a>
+  </div>
+  <p>萌趣格斗为非官方同人游戏，仅供免费、非商业娱乐，与《BanG Dream!》官方无关，亦未获其授权或认可。角色名称、形象及相关权利归各自权利人所有，禁止商用。</p>
+</footer>
 
 <div class="buff-picker" id="buff-picker" hidden>
   <small>CHALLENGE</small>

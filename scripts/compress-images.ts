@@ -9,6 +9,8 @@ const NEAR = 22;
 const STAGE_Q = 80;
 /** clips.ts CELL. The select screen only paints this top-left cell. */
 const IDLE = 256;
+/** Slow-link stand-in: half size, lossy. Soft, but a fight can start on it; the near-lossless sheet replaces it. */
+const LITE_Q = 70;
 const DIRS = ['sprites', 'stages', 'icons'];
 
 function pngs(dir: string): string[] {
@@ -54,8 +56,11 @@ await pool(files, 4, async file => {
   }
   const info = await sharp(file).webp(near).toFile(file.slice(0, -4) + '.webp');
   webpBytes += info.size;
-  if (!rel.endsWith('/common.png')) return;
   const meta = await sharp(file).metadata();
+  if (rel.includes('/sprites/')) {
+    await sharp(file).resize({ width: Math.max(1, Math.round((meta.width ?? 2) / 2)) }).webp({ quality: LITE_Q, effort: 5, alphaQuality: 80 }).toFile(file.slice(0, -4) + '-lite.webp');
+  }
+  if (!rel.endsWith('/common.png')) return;
   if ((meta.width ?? 0) < IDLE || (meta.height ?? 0) < IDLE) return;
   await sharp(file).extract({ left: 0, top: 0, width: IDLE, height: IDLE }).webp(near).toFile(file.slice(0, -'common.png'.length) + 'idle.webp');
 });

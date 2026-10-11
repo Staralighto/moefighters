@@ -24,6 +24,53 @@ export function stageThumbSrc(src: string, prod = import.meta.env.PROD): string 
   return prod && src.endsWith('.png') ? src.replace(/\.png$/, '-thumb.png') : src;
 }
 
+/** Half-size lossy copy of a sprite sheet, WebP only. Dev has none and gets the sheet back. */
+export function liteSrc(src: string, prod = import.meta.env.PROD): string {
+  return prod && src.startsWith('/sprites/') && src.endsWith('.png') ? src.slice(0, -4) + '-lite.webp' : src;
+}
+export const LITE_SCALE = 0.5;
+
+interface Timed { transferSize?: number; responseStart: number; responseEnd: number }
+
+/**
+ * Bytes per second while something was arriving. Parallel downloads share one link, so
+ * overlapping busy time is counted once. Cache hits carry no bytes and are skipped.
+ * ponytail: the newest 24 downloads only. A cold connection's slow start reads low; the
+ * error leans toward the lite path, which costs a soft first few seconds, not a stall.
+ */
+export function linkRate(entries: readonly Timed[]): number | null {
+  const xs = entries.filter(e => (e.transferSize ?? 0) > 0 && e.responseEnd > e.responseStart).slice(-24)
+    .sort((a, b) => a.responseStart - b.responseStart);
+  let bytes = 0, busy = 0, end = -Infinity;
+  for (const e of xs) {
+    bytes += e.transferSize!;
+    busy += Math.max(0, e.responseEnd - Math.max(e.responseStart, end));
+    end = Math.max(end, e.responseEnd);
+  }
+  return bytes >= 32_000 && busy > 0 ? bytes / busy * 1000 : null;
+}
+
+/** Below this the full fight set (~1.3MB for 1V1) is a wait of several seconds. */
+export const SLOW_RATE = 300_000;
+const RATE_KEY = 'moefighters.link';
+
+/**
+ * A slow link starts fights on lite sheets. Fresh downloads decide; a visit served from cache
+ * reuses the last measured rate; with neither, the browser's own estimate, where it has one.
+ */
+export function slowLink(prod = import.meta.env.PROD): boolean {
+  if (!prod || typeof performance === 'undefined') return false;
+  const net = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+  if (net?.saveData) return true;
+  let rate = linkRate(performance.getEntriesByType('resource') as PerformanceResourceTiming[]);
+  try {
+    if (rate != null) localStorage.setItem(RATE_KEY, String(Math.round(rate)));
+    else rate = Number(localStorage.getItem(RATE_KEY)) || null;
+  } catch { /* private mode: this page's measurement still counts */ }
+  if (rate != null) return rate < SLOW_RATE;
+  return /2g|3g/.test(net?.effectiveType ?? '');
+}
+
 function fetchImage(src: string): Promise<HTMLImageElement> {
   const once = (): Promise<HTMLImageElement> => new Promise((resolve, reject) => {
     const im = new Image();
@@ -42,7 +89,7 @@ function fetchImage(src: string): Promise<HTMLImageElement> {
 }
 
 let webpOk: Promise<boolean> | null = null;
-function supportsWebp(): Promise<boolean> {
+export function supportsWebp(): Promise<boolean> {
   if (!import.meta.env.PROD) return Promise.resolve(false);
   webpOk ??= fetchImage(WEBP_PROBE).then(() => true, () => false);
   return webpOk;
@@ -109,6 +156,21 @@ export function assetsFor(characters: CharacterData[], stage: StageData): string
   return [...new Set(srcs)];
 }
 
+/**
+ * Slow link: the fight waits only for each fighter's two main sheets at half size and the
+ * stage preview. `rest` (lite form sheets) and then the full set follow during the fight.
+ * A sheet `have` already holds in full needs no stand-in.
+ */
+export function liteFight(characters: CharacterData[], stage: StageData, have: (src: string) => boolean, prod = import.meta.env.PROD): { need: string[]; rest: string[] } {
+  const views = characters.flatMap(c => c.view.kind === 'sprite' ? [c.view] : []);
+  const small = (s: string | undefined, to: (s: string) => string) => s && !have(s) ? [to(s)] : [];
+  const lite = (s: string) => liteSrc(s, prod);
+  const need = views.flatMap(v => [...small(v.common, lite), ...small(v.special, lite)]);
+  need.push(...small(stage.image, s => stageThumbSrc(s, prod)));
+  const rest = views.flatMap(v => [v.frenzy, v.king, v.world, v.box].flatMap(s => small(s, lite)));
+  return { need: [...new Set(need)], rest: [...new Set(rest)] };
+}
+
 /** 马善政毛笔楷书, subset to the nine kuji characters. OFL, see public/fonts/MaShanZheng-OFL.txt. */
 let kujiFont: Promise<void> | null = null;
 export function loadKujiFont(): Promise<void> {
@@ -140,28 +202,6 @@ export function loadInto(cache: ImageCache, src: string): Promise<boolean> {
     inflight.set(src, pending);
   }
   return pending;
-}
-
-/**
- * Select screen. Tries the idle crop, and if that file is not in the build yet, keeps the
- * full sheet under the crop's key. Draw samples the top-left cell either way, and the
- * loading bar is watching the crop path.
- * ponytail: a missing crop downloads the whole 2048px sheet. The build writes the crop;
- * this fallback is only for a deploy that skipped compress-images.
- */
-export function loadPortrait(cache: ImageCache, src: string): Promise<boolean> {
-  if (cache.has(src)) return Promise.resolve(true);
-  if (!src.endsWith('/idle.png')) return loadInto(cache, src);
-  const sheet = src.replace(/\/idle\.png$/, '/common.png');
-  return loadImage(src).then(im => {
-    cache.set(src, im);
-    return true;
-  }).catch(() => loadInto(cache, sheet).then(ok => {
-    const im = cache.get(sheet);
-    if (ok && im) cache.set(src, im);
-    else missingImages.add(src);
-    return ok;
-  }));
 }
 
 /** Loads independently so one missing file does not wipe the rest of the cache. */

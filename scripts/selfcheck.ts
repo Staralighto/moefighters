@@ -14,7 +14,7 @@ import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell } from '../src/
 import { teamGlowOn } from '../src/render/renderer.ts';
 import { previewFighter, gainEnergy } from '../src/game/fighter.ts';
 import { addMod, clearMod, jumpMul, speedMul } from '../src/game/mods.ts';
-import { easeLoad, imageSources, nextSrc, portraitSrc, stageThumbSrc } from '../src/assets/loader.ts';
+import { easeLoad, imageSources, linkRate, liteFight, liteSrc, nextSrc, portraitSrc, SLOW_RATE, stageThumbSrc } from '../src/assets/loader.ts';
 import { isTouchJump, matchStickTouch, stickFingerGone, thumbBandTop, touchRelease } from '../src/game/input.ts';
 import { battleFrame } from '../src/ui/battleFrame.ts';
 import { TOUCH_LAYOUT } from '../src/ui/touchLayout.data.ts';
@@ -1680,6 +1680,10 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const headers = readFileSync('public/_headers', 'utf8');
   assert.ok(/\/bgm\/\*[\r\n]+\s*Cache-Control: public, max-age=2592000/.test(headers), 'bgm is cached for 30 days');
   assert.ok(/\/sfx\/\*[\r\n]+\s*Cache-Control: public, max-age=2592000/.test(headers), 'sfx is cached for 30 days');
+  assert.ok(/(^|\n)\/\r?\n\s*Cache-Control: public, max-age=0, stale-while-revalidate=604800/.test(headers), 'the document can paint from cache while it revalidates');
+  assert.ok(/\/index\.html[\r\n]+\s*Cache-Control: public, max-age=0, stale-while-revalidate=604800/.test(headers), 'index.html uses the same document cache');
+  assert.ok(!readFileSync('src/assets/loader.ts', 'utf8').includes('loadPortrait'), 'a failed idle crop does not download the full sheet');
+  assert.ok(readFileSync('src/render/spriteView.ts', 'utf8').includes('missingImages.has(stand)'), 'a failed idle crop shows the block figure');
   assert.equal(portraitSrc('/sprites/aya/common.png', true), '/sprites/aya/idle.png', 'the select screen asks for the idle cell, not the whole sheet');
   assert.equal(portraitSrc('/sprites/aya/common.png', false), '/sprites/aya/common.png', 'dev has no idle crop and uses the sheet');
   assert.equal(portraitSrc('/sprites/aya/special.png', true), '/sprites/aya/special.png', 'only the common sheet has an idle crop');
@@ -1688,6 +1692,28 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes('const NEAR = 22'), 'webp stays at the near-lossless 22 baseline');
   assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes('const STAGE_Q = 80'), 'stage backdrops stay lossy webp at quality 80');
   assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes('idle.webp'), 'the build writes the 256px idle crop');
+  assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes("'-lite.webp'"), 'the build writes the half-size lite sheet');
+  assert.equal(liteSrc('/sprites/aya/common.png', true), '/sprites/aya/common-lite.webp', 'a sheet has a half-size lite copy');
+  assert.equal(liteSrc('/sprites/aya/common.png', false), '/sprites/aya/common.png', 'dev has no lite copy');
+  assert.equal(liteSrc('/stages/ring.png', true), '/stages/ring.png', 'stages use the thumb, not a lite copy');
+  {
+    // 30KB/s: two 60KB files that overlap for half their time are one 3s busy window.
+    const slow = linkRate([{ transferSize: 60_000, responseStart: 0, responseEnd: 2000 }, { transferSize: 30_000, responseStart: 1000, responseEnd: 3000 }]);
+    assert.ok(slow !== null && Math.abs(slow - 30_000) < 1, 'overlapping downloads share the link: 90KB over 3s is 30KB/s');
+    assert.ok(slow! < SLOW_RATE, 'a few dozen KB/s is a slow link');
+    assert.ok(linkRate([{ transferSize: 400_000, responseStart: 0, responseEnd: 200 }])! > SLOW_RATE, '2MB/s is a fast link');
+    assert.equal(linkRate([{ transferSize: 0, responseStart: 0, responseEnd: 0 }, { transferSize: 10_000, responseStart: 0, responseEnd: 500 }]), null, 'cache hits and a few KB decide nothing');
+    const aya = PLAYABLE.find(c => c.id === 'aya')!;
+    const nonoka = PLAYABLE.find(c => c.id === 'nonoka')!;
+    const stage = STAGES.find(s => s.image)!;
+    const plan = liteFight([aya, nonoka], stage, () => false, true);
+    assert.ok(plan.need.includes('/sprites/aya/common-lite.webp') && plan.need.includes('/sprites/aya/special-lite.webp'), 'a slow fight waits for the two lite main sheets');
+    assert.ok(plan.need.includes(stageThumbSrc(stage.image!, true)), 'a slow fight waits for the stage preview, not the backdrop');
+    assert.ok(plan.need.every(s => !s.endsWith('/common.png') && !s.endsWith('/special.png')), 'a slow fight does not wait for a full sheet');
+    assert.ok(plan.rest.some(s => s.includes('/nonoka/') && s.endsWith('-lite.webp')) && plan.rest.every(s => !plan.need.includes(s)), 'form sheets follow during the fight');
+    const warm = liteFight([aya], stage, s => s.includes('/aya/common'), true);
+    assert.ok(!warm.need.some(s => s.includes('/aya/common')), 'a sheet already held in full needs no lite copy');
+  }
   const phone = battleFrame(844, 390);
   assert.ok(phone.top < 0, 'a wide phone crops vertically instead of leaving side bars');
   assert.ok(Math.abs(phone.floorY / 390 - FLOOR / 540) < 1e-6, 'phone floor stays at the desktop ratio');
@@ -1852,7 +1878,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(!/\bnew Audio\b|createMediaElementSource/.test(bgm), 'BGM stays on Web Audio buffers: no media element, no element source node');
   assert.ok(bgm.includes('localStorage'), 'BGM prefs persist in localStorage');
   assert.ok(!/sessionStorage\.setItem/.test(bgm), 'BGM does not keep writing the old session key');
-  assert.ok(statSync('public/bgm/garupa-pico-instrumental.m4a').size < 1_500_000, 'bgm stays under 1.5MB so turning music on is not a multi-megabyte download');
+  assert.ok(statSync('public/bgm/garupa-pico-instrumental.m4a').size < 3_400_000, 'bgm stays a 96 kbps encode under 3.4MB');
   const on = resolveMusicPrefs('{"enabled":true,"volume":0.4,"curve":"db"}', '{"enabled":false,"volume":0.9}');
   assert.deepEqual(on, { enabled: true, volume: 0.4, writeLocal: null, dropSession: true }, 'a log-fader record wins over a stale session');
   const moved = resolveMusicPrefs(null, '{"enabled":true,"volume":0.4}');

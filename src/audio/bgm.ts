@@ -155,8 +155,17 @@ function ensureCtx(): AudioContext | null {
   return ctx;
 }
 
+/* 选人或开打还在等图时不拉音乐：3MB 的文件会和立绘、精灵表分同一条慢链路。 */
+let held = false;
+
+export function setMusicHeld(on: boolean): void {
+  if (held === on) return;
+  held = on;
+  if (!on) sync();
+}
+
 function ensureBuffer(): void {
-  if (buffer || decoding || bufferBroken || !ctx) return;
+  if (buffer || decoding || bufferBroken || held || !ctx) return;
   decoding = true;
   fetch(MUSIC_SRC)
     .then(r => { if (!r.ok) throw new Error('bgm fetch ' + r.status); return r.arrayBuffer(); })
