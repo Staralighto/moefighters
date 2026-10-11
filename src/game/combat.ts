@@ -2042,6 +2042,83 @@ function emit_fuga(g: FightGame, f: Fighter, a: Attack): void {
     }
 }
 
+/** 秋时雨: five drops in a line ahead. Gap is wider than one body's hit, so standing under one misses the rest. */
+const SHIGURE_X0 = 130;
+const SHIGURE_GAP = 110;
+const SHIGURE_RISE = 320;
+/** The cell sits entirely behind the head, so the tail is one cell back. */
+const JEWEL_TAIL = 256;
+
+function swing_metronome(g: FightGame, f: Fighter, a: Attack, s: Skill): void {
+  const prev = a.skill;
+  a.skill = withFinale(s, a.shots >= (s.count ?? 1) - 1);
+  applyMelee(g, f, a);
+  a.skill = prev;
+  const swing = SWING_RING[a.shots % SWING_RING.length];
+  // Long enough that the next note's ring starts while this one is still traveling.
+  g.effect('metronome', f.x + f.facing * swing.x, f.y + swing.y, '#7ec8ff', .42, { dir: f.facing * swing.dir, radius: 52 });
+}
+
+function volley_shigure(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  const volley = a.burst || s.count || 1;
+  const size = s.size ?? 36;
+  while (a.shots < volley && a.t >= s.start + a.shots * (s.interval ?? .18)) {
+    const i = a.shots;
+    const x = clamp(f.x + f.facing * (SHIGURE_X0 + i * SHIGURE_GAP), X_MIN, X_MAX);
+    const y = FLOOR - SHIGURE_RISE;
+    g.effect('shigure-ring', x, y, '#7ec8ff', .32, { radius: 88 });
+    g.projectiles.push({
+      owner: f.id,
+      x,
+      y,
+      vx: 0,
+      vy: 0,
+      life: s.life ?? 1.1,
+      skill: s,
+      color: f.data.color,
+      radius: Math.min(54, size * .23),
+      size,
+      fx: 'shigure',
+      attack: a,
+      hit: new Set(),
+      trail: [],
+      age: 0,
+      solid: false,
+    });
+    a.shots++;
+  }
+}
+
+function emit_jewel(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  const speed = (s.speed ?? 720) * (f.data.trait === 'focus' ? 1.15 : 1);
+  const x = f.x + f.facing * 48;
+  // 寿命算到尾巴出屏。火头先离开场地，整条火还在画面里，不能在这时候灭。
+  const exitX = f.facing > 0 ? W + JEWEL_TAIL : -JEWEL_TAIL;
+  g.projectiles.push({
+    owner: f.id,
+    x,
+    y: FLOOR,
+    vx: f.facing * speed,
+    vy: 0,
+    life: Math.abs(exitX - x) / speed + 1 / 60,
+    skill: s,
+    color: f.data.color,
+    radius: 22,
+    size: s.size ?? 220,
+    fx: 'jewel',
+    attack: a,
+    hit: new Set(),
+    trail: [],
+    age: 0,
+    solid: false,
+  });
+  // 出手时一团我的世界式蓝火粒子从身上冒出，往上飘。
+  g.effect('jewel-ring', f.x, f.y - 64, '#5fd0ff', .62, { radius: 70 });
+  g.shake = Math.max(g.shake, 6);
+}
+
 function emit_firebird(g: FightGame, f: Fighter, a: Attack): void {
   const s = a.skill;
   {
@@ -2126,6 +2203,10 @@ SCRIPTS['world'] = Object.assign(SCRIPTS['world'] ?? {}, { emit: emit_world });
 SCRIPTS['snip'] = Object.assign(SCRIPTS['snip'] ?? {}, { emit: emit_snip, freeWhenEmitted: true, skipVolley: true, skipCount: true, ownCount: true, mark: 'snip' });
 SCRIPTS['fuga'] = Object.assign(SCRIPTS['fuga'] ?? {}, { emit: emit_fuga, freeWhenEmitted: true });
 SCRIPTS['firebird'] = Object.assign(SCRIPTS['firebird'] ?? {}, { emit: emit_firebird });
+SCRIPTS['arrow'] = Object.assign(SCRIPTS['arrow'] ?? {}, { trail: 8 });
+SCRIPTS['metronome'] = Object.assign(SCRIPTS['metronome'] ?? {}, { swing: swing_metronome });
+SCRIPTS['shigure'] = Object.assign(SCRIPTS['shigure'] ?? {}, { volley: volley_shigure, trail: 0 });
+SCRIPTS['jewel'] = Object.assign(SCRIPTS['jewel'] ?? {}, { emit: emit_jewel, hitY: 100, trail: 0, wide: true });
 SCRIPTS['summit'] = Object.assign(SCRIPTS['summit'] ?? {}, { emit: emit_summit });
 SCRIPTS['chord'] = Object.assign(SCRIPTS['chord'] ?? {}, { guitar: 'strum', holdFrom: 3, release: .22, settle: .22, home: 'seek', trail: 14 });
 SCRIPTS['guitar-smash'] = Object.assign(SCRIPTS['guitar-smash'] ?? {}, {

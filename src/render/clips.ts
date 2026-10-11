@@ -131,6 +131,16 @@ export function pillarFrame(age: number, life: number): [number, number] {
   return [Math.floor(age * 12) % 4, 1];
 }
 
+/** BRAVE JEWEL: the tongue sheet plays ignition → travel → embers on the projectile clock.
+ *  Row 0 grows over .48s (four lengths you can actually see), row 1 loops, row 2 dies
+ *  across the last .2s. The empty last cell never plays. `life` is the remaining clock,
+ *  same reason as pillarFrame. */
+export function flameFrame(age: number, life: number): [number, number] {
+  if (age < .48) return [Math.min(3, Math.floor(age / .12)), 0];
+  if (life < .2) return [Math.min(2, Math.floor((.2 - life) / .07)), 2];
+  return [Math.floor(age * 12) % 4, 1];
+}
+
 /** 抹茶大芭菲: the arms-wide beat holds 0.25s — well past the default 0.1s active — then the bow. */
 export function parfaitRow(t: number, start: number, duration: number): number {
   if (t < start) return 0;

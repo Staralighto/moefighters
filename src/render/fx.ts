@@ -3,7 +3,7 @@ import { SHIP_HOLD, SHIP_SWEEP } from '../game/combat.ts';
 import type { Fighter } from '../game/fighter.ts';
 import { clamp, FLOOR, H, SIDE, W } from '../game/constants.ts';
 import type { ImageCache } from '../assets/loader.ts';
-import { CELL, clipFor, pillarFrame } from './clips.ts';
+import { CELL, clipFor, flameFrame, pillarFrame } from './clips.ts';
 import { watchProp } from './propLayout.ts';
 
 const CUCUMBER_SRC = '/sprites/mutsumi/cucumber.png';
@@ -55,6 +55,17 @@ const BALL_SRC = '/sprites/kokoro/ball.png';
 const WAVE_SRC = '/sprites/kokoro/wave.png';
 const KASUMI_STAR_SRC = '/sprites/kasumi/star.png';
 const PILLAR_SRC = '/sprites/yukina/pillar.png';
+const ARROW_SRC = '/sprites/sayo/arrow.png';
+const FLAME_SRC = '/sprites/sayo/flame.png';
+/** 纱夜火舌画在格子里偏上。播放时整格下移这么多，火舌才贴到脚线。判定仍钉在弹道上。 */
+const FLAME_DROP = 30;
+/** 我的世界火焰的三帧。坐标是像素格，颜色 0 深 / 1 中 / 2 亮。 */
+const MC_FLAME: readonly (readonly [number, number, number])[][] = [
+  [[0, -4, 2], [-1, -3, 1], [0, -3, 2], [1, -3, 1], [-2, -2, 0], [-1, -2, 1], [0, -2, 2], [1, -2, 1], [2, -2, 0], [-1, -1, 1], [0, -1, 2], [1, -1, 1], [0, 0, 1]],
+  [[-1, -4, 2], [0, -4, 1], [-2, -3, 1], [-1, -3, 2], [0, -3, 1], [1, -3, 0], [-2, -2, 0], [-1, -2, 2], [0, -2, 2], [1, -2, 1], [2, -2, 0], [-1, -1, 1], [0, -1, 1], [1, -1, 0], [0, 0, 0]],
+  [[1, -4, 2], [0, -4, 1], [-1, -3, 0], [0, -3, 1], [1, -3, 2], [2, -3, 1], [-2, -2, 0], [-1, -2, 1], [0, -2, 2], [1, -2, 2], [2, -2, 0], [-1, -1, 0], [0, -1, 1], [1, -1, 1], [0, 0, 1]],
+];
+const MC_FLAME_INK = ['#1a3a8a', '#3d7cff', '#e8f7ff'];
 const JELLY_SRC = '/sprites/mashiro/jelly.png';
 const WHALE_SRC = '/sprites/mashiro/whale.png';
 const MORTIS_H = 181;
@@ -448,6 +459,55 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(0, 0, r * p, 0, Math.PI * 2); ctx.stroke();
       break;
+    case 'jewel-ring': {
+      // 我的世界火焰粒子：一团竖直小火从身上冒出，往上飘、换帧、缩小。不是扩散环。
+      const half = e.radius ?? 72;
+      const n = 36;
+      const puff: { x: number; y: number; frame: number; shrink: number; alpha: number }[] = [];
+      for (let i = 0; i < n; i++) {
+        const a = ((i * 47) % 97) / 97;
+        const b = ((i * 73) % 89) / 89;
+        const c = ((i * 19) % 83) / 83;
+        const span = .5 + a * .5;
+        const u = p / span;
+        if (u >= 1) continue;
+        const rise = (1 - Math.pow(.42, u)) / .58 * (48 + a * 42);
+        puff.push({
+          x: (b - .5) * half * 2 + Math.sin(p * 20 + i) * 1.5,
+          y: (c - .5) * half * .55 - rise,
+          frame: (i + Math.floor(p * 16)) % 3,
+          shrink: 1 - u * u * .5,
+          alpha: u < .75 ? .95 : (1 - u) / .25 * .95,
+        });
+      }
+      puff.sort((a, b) => a.y - b.y);
+      ctx.translate(e.x, e.y);
+      for (const bit of puff) {
+        ctx.save();
+        ctx.translate(bit.x, bit.y);
+        ctx.scale(bit.shrink, bit.shrink);
+        ctx.globalAlpha = bit.alpha;
+        for (const [x, y, k] of MC_FLAME[bit.frame]) {
+          ctx.fillStyle = MC_FLAME_INK[k];
+          ctx.fillRect(x * 2, y * 2, 2, 2);
+        }
+        ctx.restore();
+      }
+      break;
+    }
+    case 'shigure-ring': {
+      // 秋时雨: a bright ring blooms where each drop appears, then fades as the drop falls away.
+      const grow = r * (.28 + .72 * p);
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = (1 - p) * .95;
+      ctx.lineWidth = 8;
+      ctx.strokeStyle = '#d6f4ff';
+      ctx.beginPath(); ctx.arc(0, 0, grow, 0, Math.PI * 2); ctx.stroke();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#7ec8ff';
+      ctx.stroke();
+      break;
+    }
     case 'smile-pulse': {
       // 世界微笑 impact pulse: the wave's own grin stamped on the victim, swelling once —
       // ghostly, fast, gone. e.radius is the full-swell size (~150% of the victim's height);
@@ -1623,6 +1683,28 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       }
       break;
     }
+    case 'metronome': {
+      // 忧伤节拍器: one small note at the strum. A ring grows from the note head and fades, so four strums read as ripples.
+      ctx.translate(e.x, e.y);
+      ctx.scale(e.dir ?? 1, 1);
+      const grow = 6 + p * (e.radius ?? 52);
+      ctx.save();
+      ctx.globalAlpha = (1 - p) * .9;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#d6f4ff';
+      ctx.beginPath();
+      ctx.arc(-2, 6, grow, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+      ctx.globalAlpha = Math.min(1, (1 - p) * 2);
+      ctx.fillStyle = '#7ec8ff';
+      ctx.beginPath();
+      ctx.ellipse(-2, 6, 9, 6, -.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#d6f4ff';
+      ctx.fillRect(5, -16, 3, 20);
+      break;
+    }
     case 'super':
     default:
       ctx.translate(e.x, e.y); ctx.rotate(p * 1.5);
@@ -1663,7 +1745,8 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   if (p.fx === 'fuga') ctx.translate(0, -10);
   if (p.fx === 'mutsumi-note' || p.fx === 'chord') noteRibbon(ctx, p);
   else if (p.fx === 'sob') noteRibbon(ctx, p, '#f4e7b4', '#e8c96a');
-  else if (p.fx !== 'fuga' && p.fx !== 'smile-ship' && p.fx !== 'whale' && p.fx !== 'butterfly') {
+  else if (p.fx === 'arrow') noteRibbon(ctx, p, '#1a3a8a', '#7ec8ff');
+  else if (p.fx !== 'fuga' && p.fx !== 'smile-ship' && p.fx !== 'whale' && p.fx !== 'butterfly' && p.fx !== 'jewel' && p.fx !== 'shigure') {
     // 火的故事 skips the stock dots — they read as purple balls; its case draws gold afterimages.
     // 微笑号 is a screen-sized sweep, so the travelling point must not leave a dot trail.
     ctx.fillStyle = p.color;
@@ -1676,6 +1759,71 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   ctx.globalAlpha = 1;
   ctx.translate(p.x, p.y);
   switch (p.fx) {
+    case 'arrow': {
+      ctx.scale(Math.sign(p.vx) || 1, 1);
+      if (!prop(ctx, images, ARROW_SRC, Math.max(p.size, 28))) {
+        ctx.fillStyle = '#3d7cff';
+        ctx.beginPath();
+        ctx.moveTo(16, 0);
+        ctx.lineTo(-12, -6);
+        ctx.lineTo(-12, 6);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#d6f4ff';
+        ctx.beginPath();
+        ctx.moveTo(6, 0);
+        ctx.lineTo(-4, -3);
+        ctx.lineTo(-4, 3);
+        ctx.closePath();
+        ctx.fill();
+      }
+      break;
+    }
+    case 'shigure': {
+      ctx.strokeStyle = '#7ec8ff';
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(0, -18);
+      ctx.lineTo(0, 8);
+      ctx.stroke();
+      ctx.fillStyle = '#d6f4ff';
+      ctx.beginPath();
+      ctx.arc(0, 10, 4, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'jewel': {
+      // Head of the cell sits on the projectile; the tail trails behind. The tongue sits high in the cell, so the blit drops to the foot line.
+      const flame = images?.get(FLAME_SRC);
+      ctx.scale(Math.sign(p.vx) || 1, 1);
+      if (flame?.naturalWidth) {
+        const [col, row] = flameFrame(p.age, p.life);
+        ctx.drawImage(keyed(flame), col * CELL, row * CELL, CELL, CELL, -CELL, -CELL + FLAME_DROP, CELL, CELL);
+        break;
+      }
+      const fade = Math.min(1, p.life / .2, p.age / .12);
+      ctx.globalAlpha = fade;
+      ctx.fillStyle = '#1a3a8a';
+      ctx.beginPath();
+      ctx.moveTo(-150, 0);
+      ctx.quadraticCurveTo(-70, -28, 0, -8);
+      ctx.lineTo(0, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#3d7cff';
+      ctx.beginPath();
+      ctx.moveTo(-120, 0);
+      ctx.quadraticCurveTo(-50, -16, 0, -4);
+      ctx.lineTo(0, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#d6f4ff';
+      ctx.beginPath();
+      ctx.arc(0, -4, 6, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
     case 'firebird': {
       // 火鸟: the pillar sheet plays eruption → burn → embers, cell bottom pinned to the
       // stage floor. The procedural tongues are the stand-in while the sheet is a missing

@@ -1,4 +1,4 @@
-import { PLAYABLE, bandMembers } from './data/characters.ts';
+import { PLAYABLE, guestsFor } from './data/characters.ts';
 import type { CharacterData, StageData } from './data/types.ts';
 import { FightGame, MINION_BAND } from './game/game.ts';
 import { KeyboardInput, TouchInput } from './game/input.ts';
@@ -64,12 +64,14 @@ function commonOf(list: CharacterData[]): string[] {
   return list.flatMap(c => c.view.kind === 'sprite' ? [c.view.common] : []);
 }
 
-/** 诗超绊 calls a bandmate who is not on the match card. Their sheets ride the fight load. */
+/** Sheets for the card, plus anyone the card can call onto it. */
+function withGuests(characters: CharacterData[]): CharacterData[] {
+  const guests = guestsFor(characters, MINION_BAND);
+  return guests.length ? [...characters, ...guests] : characters;
+}
+
 function fightSources(characters: CharacterData[], stage: StageData): string[] {
-  const mates = characters.some(c => c.skills.some(s => s.fx === 'poem'))
-    ? bandMembers(MINION_BAND)
-    : [];
-  return assetsFor([...characters, ...mates], stage);
+  return assetsFor(withGuests(characters), stage);
 }
 
 let bootPins: string[] = [];
@@ -143,7 +145,7 @@ function tickBoot(now: number): void {
 }
 
 const select = new SelectScreen(PLAYABLE, previewViews, setup => {
-  queue.soon(litePlan(setup.characters, setup.stage)?.need ?? commonOf(setup.characters));
+  queue.soon(litePlan(withGuests(setup.characters), setup.stage)?.need ?? commonOf(withGuests(setup.characters)));
   if (setup.mode === 'challenge') {
     // Each sub-mode keeps its own run: switching kinds here reloads the other one from storage,
     // so a parked 闯关 run and a parked 激战 run never block each other.
@@ -228,8 +230,9 @@ async function startGame(setup: MatchSetup): Promise<void> {
   sfx.unlock();
   /* pointerdown 上的开始/重开把这次手势让给了全屏，音乐改在这条仍处于点击里的路径接上。 */
   pokeMusic();
+  const cast = withGuests(setup.characters);
   const srcs = fightSources(setup.characters, setup.stage);
-  const lite = litePlan(setup.characters, setup.stage);
+  const lite = litePlan(cast, setup.stage);
   const need = lite?.need ?? srcs;
   if (need.some(s => !images.has(s) && !missingImages.has(s))) beginWait(need);
   $('start').setAttribute('disabled', '');

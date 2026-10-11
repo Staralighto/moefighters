@@ -3,12 +3,12 @@ import { FightGame } from '../src/game/game.ts';
 import { drumShotTime, hit, violetHidden } from '../src/game/combat.ts';
 import { vowBeatTime, VOW_BEATS } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
-import { PLAYABLE, ROSTER, bandMembers } from '../src/data/characters.ts';
+import { PLAYABLE, ROSTER, bandMembers, guestsFor } from '../src/data/characters.ts';
 import { BANDS, BAND_BY_ID } from '../src/data/bands.ts';
 import { AIR_SKILLS, skill } from '../src/data/skills.ts';
 import { STAGES } from '../src/data/stages.ts';
-import { FLOOR, COMBO_DECAY, STEP, X_MAX, X_MIN } from '../src/game/constants.ts';
-import { clipFor, crashRow, drumRow, riotCell } from '../src/render/clips.ts';
+import { FLOOR, COMBO_DECAY, STEP, W, X_MAX, X_MIN } from '../src/game/constants.ts';
+import { clipFor, crashRow, drumRow, flameFrame, riotCell } from '../src/render/clips.ts';
 import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
 import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell } from '../src/render/fx.ts';
 import { teamGlowOn } from '../src/render/renderer.ts';
@@ -81,6 +81,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.deepEqual(runs, ['ave-mujica', 'mygo', 'yumemita', 'poppin-party', 'roselia', 'hello-happy', 'sumimi', 'pastel-palettes', 'afterglow', 'raise-a-suilen', 'morfonica', 'none'], 'roster order is the select-screen band order');
   assert.deepEqual(ROSTER[at('uika')].bands, ['ave-mujica', 'sumimi'], '初华 sings for two units');
   assert.deepEqual(bandMembers('mygo', 'tomori').map(c => c.id), ['anon', 'rana', 'soyo', 'taki'], 'the sing calls her bandmates, never herself');
+  assert.deepEqual(guestsFor([ROSTER[at('tomori')]], 'mygo').map(c => c.id), ['anon', 'rana', 'soyo', 'taki'], 'a sing loads the bandmates who are not already in');
   for (const id of ['gale', 'ember', 'boulder']) {
     assert.ok(!PLAYABLE.some(c => c.id === id), id + ' stays off the select screen');
   }
@@ -3942,7 +3943,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.equal(h1.attack, null, 'a grab still drops 全力碰撞');
 }
 
-// hina: fries is one melee that frails, 噜噜噜 is three light hits, the partner slot summons 丸山彩
+// hina: fries is one melee that frails, 噜噜噜 is three light hits, the partner slot summons 冰川纱夜
 {
   const data = ROSTER[at('hina')];
   assert.equal(data.skills[2].fx, 'fries', 'U is the fries');
@@ -3950,7 +3951,13 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.equal(data.skills[3].count, 3, '噜噜噜 hits three times');
   assert.equal(data.skills[3].range, 220, '噜噜噜 reaches a longer stretch ahead');
   assert.equal(data.skills[3].finale?.root, 1, 'the last 噜 roots for one second');
-  assert.equal(data.skills[5].onActive?.[0]?.op === 'summon' && data.skills[5].onActive[0].kind === 'named' && data.skills[5].onActive[0].id, 'aya', 'the partner slot is aya until sayo exists');
+  assert.equal(data.skills[5].onActive?.[0]?.op === 'summon' && data.skills[5].onActive[0].kind === 'named' && data.skills[5].onActive[0].id, 'sayo', 'the partner slot is sayo');
+  {
+    const guest = guestsFor([data], 'mygo');
+    assert.deepEqual(guest.map(c => c.id), ['sayo'], '日菜 loads 纱夜, not a band roll');
+    assert.ok(guest[0].view.kind === 'sprite' && guest[0].view.common === '/sprites/sayo/common.png', '纱夜的通用表跟着日菜进战斗');
+    assert.ok(guest[0].view.kind === 'sprite' && guest[0].view.extras?.includes('/sprites/sayo/flame.png'), '纱夜的火舌跟着日菜进战斗');
+  }
   {
     const g = newGame(at('hina'), at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 80; p2.facing = -1;
@@ -3994,10 +4001,113 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     run(g, .6);
     const mate = g.fighters.find(f => f.minion);
     assert.ok(mate, 'the partner takes the stage');
-    assert.equal(mate?.data.id, 'aya', 'the placeholder is 丸山彩');
+    assert.equal(mate?.data.id, 'sayo', 'the partner is 冰川纱夜');
     assert.equal(mate?.dmgMul, .3, 'the partner hits for three tenths');
     assert.equal(mate?.hp, 200, 'the partner spawns at two tenths');
     assert.ok((mate?.life ?? 0) > 11, 'the partner stays twelve seconds');
+  }
+}
+
+// sayo: five rain lanes, a four-tick low string, a floor flame a jump clears
+{
+  const data = ROSTER[at('sayo')];
+  assert.equal(data.skills[3].count, 5, '秋时雨 drops five');
+  assert.equal(data.skills[4].count, 4, '忧伤节拍器 ticks four times');
+  assert.equal(data.skills[4].reach, 'low', 'the metronome only meets a standing chest');
+  assert.equal(data.skills[4].finale?.react?.kind, 'knockdown', 'the last tick knocks down');
+  assert.equal(data.skills[5].count, 1, 'BRAVE JEWEL is one tongue');
+  assert.deepEqual([0, .15, .3, .45].map(t => flameFrame(t, 1)[0]), [0, 1, 2, 3], 'the tongue grows through four lengths');
+  assert.equal(flameFrame(.5, 1)[1], 1, 'after the grow the tail loops');
+  assert.ok(data.view.kind === 'sprite' && data.view.specialScale === 1.1, 'the special sheet scales at playback');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/sayo/flame.png'), 'the flame sheet is preloaded');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/sayo/arrow.png'), 'the arrow is preloaded');
+  {
+    const g = newGame(at('sayo'), at('ember')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 180; p1.facing = 1;
+    p2.x = p1.x + 240; p2.facing = -1;
+    const xs: number[] = [];
+    const seen = new Set<number>();
+    g.keyDown('KeyI');
+    for (let i = 0; i < Math.round(1.3 / STEP); i++) {
+      g.step(STEP);
+      for (const p of g.projectiles) {
+        if (p.fx !== 'shigure') continue;
+        const rel = Math.round(p.x - p1.x);
+        if (seen.has(rel)) continue;
+        seen.add(rel);
+        xs.push(rel);
+      }
+    }
+    assert.deepEqual(xs, [130, 240, 350, 460, 570], 'the five drops keep a 110 gap');
+    assert.equal(p1.combo, 1, 'a body under one drop eats only that drop');
+    assert.ok(p2.hp < 1000, 'the drop under her connects');
+  }
+  {
+    const g = newGame(at('sayo'), at('ember')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 70; p2.facing = -1;
+    g.keyDown('KeyO');
+    run(g, 1.45);
+    assert.equal(p1.combo, 4, 'the metronome lands all four ticks');
+    assert.ok(p2.knocked > 0, 'the last tick knocks down');
+  }
+  {
+    const g = newGame(at('sayo'), at('ember')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 70; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyO');
+    for (let i = 0; i < Math.round(1.45 / STEP); i++) {
+      p2.y = FLOOR - 80; p2.vy = 0;
+      g.step(STEP);
+    }
+    assert.equal(p2.hp, hp, 'a real jump clears the metronome');
+  }
+  {
+    const g = newGame(at('sayo'), at('ember')); const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = p1.energyMax;
+    p1.x = 200; p1.facing = 1;
+    p2.x = 480; p2.facing = -1;
+    g.keyDown('KeyL');
+    let ring = false;
+    for (let i = 0; i < Math.round(1 / STEP); i++) {
+      g.step(STEP);
+      if (g.effects.some(e => e.type === 'jewel-ring')) ring = true;
+    }
+    const flame = g.projectiles.find(p => p.fx === 'jewel');
+    assert.ok(flame, 'the tongue is in flight');
+    assert.ok(ring, 'a burst of flames leaves with the tongue');
+    assert.equal(flame!.y, FLOOR, 'the tongue rides the floor');
+    assert.ok(Math.abs(Math.abs(flame!.vx) - 828) < 1, `focus speeds the tongue, vx ${flame!.vx}`);
+    assert.ok(p2.hp < 1000, 'a standing body eats the tongue');
+    assert.ok(p2.knocked > 0, 'the tongue knocks down');
+  }
+  {
+    const g = newGame(at('sayo'), at('ember')); const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = p1.energyMax;
+    p1.x = 200; p1.facing = 1;
+    p2.x = 480; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyL');
+    for (let i = 0; i < Math.round(1.3 / STEP); i++) {
+      p2.y = FLOOR - 50; p2.vy = 0;
+      g.step(STEP);
+    }
+    assert.equal(p2.hp, hp, 'leaving the floor clears the tongue');
+  }
+  {
+    const g = newGame(at('sayo'), at('ember')); const [p1] = g.fighters; dummy(g);
+    p1.energy = p1.energyMax;
+    p1.x = X_MIN; p1.facing = 1;
+    g.keyDown('KeyL');
+    let last = 0;
+    let saw = false;
+    for (let i = 0; i < Math.round(3 / STEP); i++) {
+      g.step(STEP);
+      const flame = g.projectiles.find(p => p.fx === 'jewel');
+      if (flame) { saw = true; last = flame.x; }
+      else if (saw) break;
+    }
+    assert.ok(saw, 'the tongue is born at the left wall');
+    assert.ok(last > W + 256 - 40, `the tail clears the screen, last head ${last}`);
   }
 }
 

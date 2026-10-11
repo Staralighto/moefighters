@@ -61,6 +61,8 @@ const RIM_PAD = 4;
  *  lowest point) deliberately hangs below. Measured on the current sheet: vertices y=191/167,
  *  average 179 → 46px at h=181, backed off to 40 after eyeballing. Re-measure if the art is replaced. */
 const BOX_SINK = 40;
+/** Special-sheet scale pivots here: the shared foot line, 12px above the cell bottom. */
+const FOOT_MARGIN = 12;
 
 /** ~3px stroke from the smoothed silhouette, then a 1px blur so the edge isn't stepped. Cached per cell. */
 function hardRim(im: HTMLImageElement, sx: number, sy: number, cs: number, h: number, color: string): HTMLCanvasElement {
@@ -143,6 +145,7 @@ export class SpriteView implements FighterView {
     private readonly kingScale = 1,
     private readonly world?: string,
     private readonly box?: string,
+    private readonly specialScale?: number,
   ) {}
 
   /** The select screen only needs the idle cell. A missing crop or sheet is "ready" so the block figure can stand in. */
@@ -210,6 +213,14 @@ export class SpriteView implements FighterView {
       if (boxed) ctx.translate(0, BOX_SINK);
       // Undo the body offset baked into the cell so only the prop hangs off the fighter origin.
       if (!boxed && clip.ox) ctx.translate(-Math.round(clip.ox * h / CELL), 0);
+      // 必杀表单独放大时绕脚线，脚不动、身子向上长。
+      const sheetScale = !boxed && clip.sheet === 'special' ? this.specialScale : undefined;
+      if (sheetScale) {
+        const pivot = -h * FOOT_MARGIN / CELL;
+        ctx.translate(0, pivot);
+        ctx.scale(sheetScale, sheetScale);
+        ctx.translate(0, -pivot);
+      }
       ctx.globalAlpha = alpha;
       if (outline && typeof document !== 'undefined') {
         ctx.imageSmoothingEnabled = true;
@@ -218,7 +229,9 @@ export class SpriteView implements FighterView {
       }
       // Source cell is 256, baked once per raster size (see hs); the per-draw cost is a
       // nearest-neighbour 1:1 blit. Smoothing stays off so the blit cannot soften the pixels.
-      ctx.imageSmoothingEnabled = false;
+      // 必杀表被放大时打开平滑，避免最近邻把边缘打成台阶。
+      ctx.imageSmoothingEnabled = !!sheetScale;
+      if (sheetScale) ctx.imageSmoothingQuality = 'high';
       if (tint) drawTint(ctx, im, cell.sx, cell.sy, cs, h, hs, tint);
       else ctx.drawImage(prescaledCell(im, cell.sx, cell.sy, cs, hs, spriteFilter(f)), ax, -h, h, h);
     } finally {

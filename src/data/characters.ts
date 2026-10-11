@@ -14,8 +14,8 @@ const passives: Record<Trait, [string, string]> = {
   beat: ['鼓点', '命中叠节拍（至多 8 层），每层冷却加快 6%、移速提高 2%；被击中掉 2 层'],
 };
 
-/** 和姐姐在一起. Swap this to 'sayo' once 冰川纱夜 is on the roster. */
-export const HINA_PARTNER = 'aya';
+/** 和姐姐在一起：召来的是冰川纱夜。 */
+export const HINA_PARTNER = 'sayo';
 
 const stats = (trait: Trait) => ({
   trait,
@@ -643,6 +643,47 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'sayo', name: '冰川纱夜', title: '吉他 / 节拍器', quote: '像正式演出那样练习，像练习那样正式演出。', color: '#00AABB',
+    bands: ['roselia'],
+    ...stats('focus'),
+    view: {
+      kind: 'sprite', common: '/sprites/sayo/common.png', special: '/sprites/sayo/special.png', height: 181,
+      // common 半表放大后 special 没跟着放大，格内再放会出界。播放时绕脚线放大。
+      specialScale: 1.1,
+      extras: ['/sprites/sayo/arrow.png', '/sprites/sayo/flame.png'],
+    },
+    skills: [
+      skill(0, 'light', '指正'),
+      skill(1, 'heavy', '横踢'),
+      skill(2, 'projectile', '百发百中', {
+        damage: 36, cd: 4, start: .26, duration: .8, speed: 700, life: .95, size: 28, knock: 160, fx: 'arrow',
+        brief: '一发笔直音矢；看见前摇跳起可躲',
+        detail: '一发笔直音矢，飞得很快，判定很细。看见前摇跳起能过。出手后还要收完招。',
+      }),
+      skill(3, 'projectile', '秋时雨', {
+        // Five drops at the release frame. interval 0 dumps the volley in one step, then a short tail.
+        damage: 14, count: 5, interval: 0, cd: 8, start: .32, duration: .44, knock: 40, size: 36, life: 1.1,
+        motion: 'fall', floor: 'splash', solid: false, fx: 'shigure',
+        brief: '五道雨打不掉；间隙躲且可行动',
+        detail: '五道雨在出手时一起从身前直直落下，间距比人宽，站定只吃到一道。走到两道之间躲过。这些雨打不掉。出手后可行动。',
+      }),
+      skill(4, 'light', '忧伤节拍器', {
+        damage: 14, count: 4, interval: .22, cd: 7, start: .36, duration: 1.3, range: 156, reach: 'low', fx: 'metronome',
+        finale: { knock: 340, react: { kind: 'knockdown', vy: -200, knocked: .72 } },
+        brief: '四下等间隔；跳起可躲，中了连到击倒',
+        detail: '四下等间隔扫弦，判定只到站立胸口，跳起躲过整段。第一下命中后硬直接上下面三下，最后一下击倒。',
+      }),
+      skill(5, 'projectile', '冰川打火姬', {
+        // count 1 keeps the super projectile template from firing three shots. emit owns the tongue
+        // and keeps it until the tail leaves the screen.
+        damage: 160, count: 1, start: .45, duration: 1.15, speed: 720, knock: 380, size: 220, fx: 'jewel',
+        contact: 'pass', solid: false,
+        brief: '贴地火舌；可格挡，离地躲，命中击倒',
+        detail: '一道贴地火舌向前烧过身前。可格挡。人离地就躲过。每人只烧一次，命中击倒。',
+      }),
+    ],
+  },
+  {
     id: 'kokoro', name: '弦卷心', title: '主唱 / 微笑', quote: '为世界带来笑容！', color: '#FFEE22',
     bands: ['hello-happy'],
     ...stats('rush'),
@@ -771,7 +812,7 @@ export const ROSTER: CharacterData[] = [
       skill(5, 'endure', '和姐姐在一起', {
         damage: 0, range: 0, start: .4, duration: .9, fx: 'burst',
         onActive: [{ op: 'summon', kind: 'named', id: HINA_PARTNER }],
-        brief: '召唤一名队友到身侧；被击败提前退场', detail: '召唤 1 名队友到身侧并肩 12 秒，生命两成、伤害三成；被击败提前退场',
+        brief: '召唤冰川纱夜到身侧；被击败提前退场', detail: '召唤冰川纱夜到身侧并肩 12 秒，生命两成、伤害三成；被击败提前退场',
       }),
     ],
   },
@@ -989,3 +1030,25 @@ export function bandMembers(band: BandId, except?: string): CharacterData[] {
 }
 
 export const ROSTER_BY_ID = new Map(ROSTER.map(c => [c.id, c]));
+
+/** People this cast can call who are not already standing there.
+ *  诗超绊 borrows the rest of her band. 和姐姐在一起 names one roster id. */
+export function guestsFor(characters: CharacterData[], allyBand: BandId): CharacterData[] {
+  const have = new Set(characters.map(c => c.id));
+  const out: CharacterData[] = [];
+  const add = (c: CharacterData | undefined) => {
+    if (!c || have.has(c.id)) return;
+    have.add(c.id);
+    out.push(c);
+  };
+  for (const c of characters) {
+    for (const s of c.skills) {
+      for (const op of s.onActive ?? []) {
+        if (op.op !== 'summon') continue;
+        if (op.kind === 'ally') for (const m of bandMembers(allyBand, c.id)) add(m);
+        else if (op.kind === 'named') add(ROSTER_BY_ID.get(op.id));
+      }
+    }
+  }
+  return out;
+}
