@@ -141,6 +141,8 @@ export interface Fighter {
   minion?: boolean;
   /** Seconds before a summoned teammate bows out. Only minions carry it; kept out of DECAY_TIMERS on purpose. */
   life?: number;
+  /** 召唤队友的大招: who called this minion, so their 禁回气 drops when it leaves. */
+  summoner?: number;
   /** 对半分: J/K only. ponytail: also the translucent veil — a second basic fighter would fade too. */
   basic?: boolean;
   /** Nono国王: the king common sheet stays up through the last staff swing after the timer. */

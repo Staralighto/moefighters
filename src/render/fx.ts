@@ -1,6 +1,7 @@
 import type { Effect, FightGame, FloatingText, Particle, Projectile } from '../game/game.ts';
-import { SHIP_HOLD, SHIP_SWEEP } from '../game/combat.ts';
+import { holdNoteSpan, holdsNote, noteCaught, NOTE_FROM, SHIP_HOLD, SHIP_SWEEP } from '../game/combat.ts';
 import type { Fighter } from '../game/fighter.ts';
+import type { FighterView } from './view.ts';
 import { clamp, FLOOR, H, SIDE, W } from '../game/constants.ts';
 import type { ImageCache } from '../assets/loader.ts';
 import { CELL, clipFor, flameFrame, pillarFrame } from './clips.ts';
@@ -47,6 +48,8 @@ const FUGA_ARROW_SRC = '/sprites/viola/fuga-arrow.png';
 const FUGA_BURST_SRC = '/sprites/viola/fuga-burst.png';
 const MEAT_SRC = '/sprites/yuno/meat.png';
 const YUNO_NOTE_SRC = '/sprites/yuno/note.png';
+const CHUCHU_JERKY_SRC = '/sprites/chuchu/jerky.png';
+const CHUCHU_CAKE_SRC = '/sprites/chuchu/cake.png';
 const DONUT_STRAW_SRC = '/sprites/mana/donut-straw.png';
 const DONUT_CHOC_SRC = '/sprites/mana/donut-choc.png';
 const MANA_HEART_SRC = '/sprites/mana/heart.png';
@@ -66,8 +69,80 @@ const MC_FLAME: readonly (readonly [number, number, number])[][] = [
   [[1, -4, 2], [0, -4, 1], [-1, -3, 0], [0, -3, 1], [1, -3, 2], [2, -3, 1], [-2, -2, 0], [-1, -2, 1], [0, -2, 2], [1, -2, 2], [2, -2, 0], [-1, -1, 0], [0, -1, 1], [1, -1, 1], [0, 0, 1]],
 ];
 const MC_FLAME_INK = ['#1a3a8a', '#3d7cff', '#e8f7ff'];
+
+/** Phones skip canvas filters and high-quality resamples. `body.touch` comes from device.ts. */
+function phoneRaster(): boolean {
+  return typeof document !== 'undefined' && !!document.body?.classList.contains('touch');
+}
+
+/** ponytail: one lite tier, switched on once and kept for the session — it never steps back up,
+ *  so it cannot oscillate. More tiers or recovery would need hysteresis between bands. */
+let liteFx = false;
+export function isLiteFx(): boolean { return liteFx; }
+export function setLiteFx(on: boolean): void { liteFx = on; }
+/** Average frame gap that trips the lite tier: roughly 42fps or worse, sustained. */
+export const LITE_MS = 24;
+export function shouldGoLite(avgMs: number, touch: boolean): boolean {
+  return touch && avgMs > LITE_MS;
+}
+
+/** ponytail: one 36-slot scratch for jewel-ring. Rings draw one after another, so the next call refills it. */
+const JEWEL_PUFFS: { x: number; y: number; frame: number; shrink: number; alpha: number }[] = [];
+for (let i = 0; i < 36; i++) JEWEL_PUFFS.push({ x: 0, y: 0, frame: 0, shrink: 1, alpha: 1 });
+
+function sortJewelPuffs(n: number): void {
+  for (let i = 1; i < n; i++) {
+    const bit = JEWEL_PUFFS[i];
+    let j = i - 1;
+    while (j >= 0 && JEWEL_PUFFS[j].y > bit.y) {
+      JEWEL_PUFFS[j + 1] = JEWEL_PUFFS[j];
+      j--;
+    }
+    JEWEL_PUFFS[j + 1] = bit;
+  }
+}
+
+/** Declaration light is constant colour. Gradients stick to the context that built them. */
+let declOwner: CanvasRenderingContext2D | null = null;
+let declBeamG: CanvasGradient | null = null;
+let declGlowG: CanvasGradient | null = null;
+let declPoolG: CanvasGradient | null = null;
+function declarationPaint(ctx: CanvasRenderingContext2D): { beam: CanvasGradient; glow: CanvasGradient; pool: CanvasGradient } {
+  if (declOwner !== ctx || !declBeamG || !declGlowG || !declPoolG) {
+    declOwner = ctx;
+    declBeamG = ctx.createLinearGradient(0, 0, 0, FLOOR);
+    declBeamG.addColorStop(0, 'rgba(238, 0, 34, .3)');
+    declBeamG.addColorStop(1, 'rgba(238, 0, 34, .06)');
+    declGlowG = ctx.createRadialGradient(0, 0, 6, 0, 0, 90);
+    declGlowG.addColorStop(0, 'rgba(255, 214, 224, .26)');
+    declGlowG.addColorStop(1, 'rgba(238, 0, 34, 0)');
+    declPoolG = ctx.createRadialGradient(0, 0, 8, 0, 0, 105);
+    declPoolG.addColorStop(0, 'rgba(238, 0, 34, .38)');
+    declPoolG.addColorStop(1, 'rgba(238, 0, 34, 0)');
+  }
+  return { beam: declBeamG, glow: declGlowG, pool: declPoolG };
+}
+
+/** ponytail: dusk shots reuse a gradient per colour and rounded width. Cap 8; a ninth colour rebuilds. */
+let duskOwner: CanvasRenderingContext2D | null = null;
+const duskGrads = new Map<string, CanvasGradient>();
+function duskGrad(ctx: CanvasRenderingContext2D, color: string, w: number): CanvasGradient {
+  if (duskOwner !== ctx) { duskOwner = ctx; duskGrads.clear(); }
+  const span = Math.round(w);
+  const key = color + '|' + span;
+  let grad = duskGrads.get(key);
+  if (grad) return grad;
+  if (duskGrads.size >= 8) duskGrads.clear();
+  grad = ctx.createLinearGradient(-span, 0, span * .2, 0);
+  grad.addColorStop(0, '#e8a060');
+  grad.addColorStop(1, color);
+  duskGrads.set(key, grad);
+  return grad;
+}
 const JELLY_SRC = '/sprites/mashiro/jelly.png';
 const WHALE_SRC = '/sprites/mashiro/whale.png';
+const SPROUT_SRC = '/sprites/tsukushi/sprout.png';
+const WHEEL_SRC = '/sprites/tsukushi/wheel.png';
 const MORTIS_H = 181;
 
 /* Drop the pose-sheet chrome and the chroma key so a placeholder can sit in the fight. */
@@ -102,7 +177,7 @@ function prop(ctx: CanvasRenderingContext2D, images: ImageCache | undefined, src
   if (!im?.naturalWidth) return false;
   const s = Math.max(16, size);
   ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
+  ctx.imageSmoothingQuality = phoneRaster() ? 'low' : 'high';
   ctx.drawImage(keyed(im), -s / 2, -s / 2, s, s);
   return true;
 }
@@ -126,8 +201,6 @@ export function mortisAfterimage(p: number): [number, number] | null {
   if (prev[0] === cur[0] && prev[1] === cur[1]) return null;
   return prev;
 }
-
-let ghostBuf: HTMLCanvasElement | undefined;
 
 const silhouetteCache = new WeakMap<CanvasImageSource, Map<string, HTMLCanvasElement>>();
 
@@ -156,24 +229,14 @@ function tintedSilhouette(src: CanvasImageSource, w: number, h: number, color: s
   return canvas;
 }
 
+/** The whole keyed sheet is tinted once; each frame only cuts its cell out of that bake. */
 function drawMortisGhost(ctx: CanvasRenderingContext2D, im: HTMLImageElement, col: number, row: number, alpha: number): void {
-  if (typeof document === 'undefined') return;
-  if (!ghostBuf) ghostBuf = document.createElement('canvas');
-  // Assigning width/height resets the bitmap even when the value is unchanged; guard it.
-  if (ghostBuf.width !== CELL) { ghostBuf.width = CELL; ghostBuf.height = CELL; }
-  const g = ghostBuf.getContext('2d');
-  if (!g) return;
-  g.imageSmoothingEnabled = true;
-  g.imageSmoothingQuality = 'high';
-  g.clearRect(0, 0, CELL, CELL);
-  g.globalCompositeOperation = 'source-over';
-  g.drawImage(keyed(im), col * CELL, row * CELL, CELL, CELL, 0, 0, CELL, CELL);
-  g.globalCompositeOperation = 'source-atop';
-  g.fillStyle = '#c8ffd2';
-  g.fillRect(0, 0, CELL, CELL);
+  const sheet = keyed(im);
+  const sil = tintedSilhouette(sheet, im.naturalWidth, im.naturalHeight, '#c8ffd2');
+  if (!sil) return;
   ctx.save();
   ctx.globalAlpha = alpha;
-  ctx.drawImage(ghostBuf, -10 - MORTIS_H / 2, -MORTIS_H, MORTIS_H, MORTIS_H);
+  ctx.drawImage(sil, col * CELL, row * CELL, CELL, CELL, -10 - MORTIS_H / 2, -MORTIS_H, MORTIS_H, MORTIS_H);
   ctx.restore();
 }
 
@@ -229,6 +292,16 @@ export function drawRootFx(ctx: CanvasRenderingContext2D, f: Fighter, time: numb
   ctx.save();
   ctx.translate(f.x, f.y - 105 + bob);
   switch (f.data.rootFx) {
+    case 'moca-ring': {
+      // 扣一点: a flat ring on the ankles. The parent sits at the torso, so step down to the feet.
+      ctx.translate(0, 105 - bob);
+      ctx.strokeStyle = f.data.color;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 26, 8, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      break;
+    }
     case 'stun': {
       // 星之鼓动: three dizzy little stars circle the head instead of the heart.
       for (let i = 0; i < 3; i++) {
@@ -331,7 +404,7 @@ export function drawLayerBass(ctx: CanvasRenderingContext2D, f: Fighter, images:
   ctx.translate(place.x, place.y);
   ctx.rotate(place.rot);
   ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
+  ctx.imageSmoothingQuality = phoneRaster() ? 'low' : 'high';
   ctx.drawImage(keyed(im), -LAYER_BASS_GRIP.x / im.naturalWidth * dw, -LAYER_BASS_GRIP.y / im.naturalHeight * dh, dw, dh);
   ctx.restore();
 }
@@ -365,6 +438,31 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.beginPath(); ctx.arc(-22, 12, r * (.8 + p * .4), -1.5, .7); ctx.stroke();
       ctx.strokeStyle = '#fff7de'; ctx.lineWidth = 3; ctx.stroke();
       break;
+    case 'slow-bubble': {
+      const t = e.age ?? 0;
+      ctx.translate(e.x, e.y);
+      ctx.fillStyle = '#e8fff8';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 22, 14, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = e.color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-6, 10);
+      ctx.lineTo(-2, 18);
+      ctx.lineTo(4, 10);
+      ctx.fillStyle = '#e8fff8';
+      ctx.fill();
+      for (let i = 0; i < 3; i++) {
+        ctx.globalAlpha = Math.floor(t * 3) % 3 === i ? 1 : .35;
+        ctx.fillStyle = e.color;
+        ctx.beginPath();
+        ctx.arc(-8 + i * 8, 0, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    }
     case 'bass-burst': {
       // 燃尽: small red blocks flying out of the bass body where it lands.
       ctx.translate(e.x, e.y);
@@ -459,12 +557,28 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(0, 0, r * p, 0, Math.PI * 2); ctx.stroke();
       break;
+    case 'sprout-break': {
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = (1 - p) * .9;
+      const w = 6 + p * 22;
+      const h = 4 + p * 10;
+      ctx.fillStyle = '#8B6914';
+      ctx.fillRect(-w / 2, -h / 2, w, h);
+      break;
+    }
+    case 'clock-ring': {
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= 1 - p;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, r * p, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
     case 'jewel-ring': {
       // 我的世界火焰粒子：一团竖直小火从身上冒出，往上飘、换帧、缩小。不是扩散环。
       const half = e.radius ?? 72;
-      const n = 36;
-      const puff: { x: number; y: number; frame: number; shrink: number; alpha: number }[] = [];
-      for (let i = 0; i < n; i++) {
+      let count = 0;
+      for (let i = 0; i < JEWEL_PUFFS.length; i++) {
         const a = ((i * 47) % 97) / 97;
         const b = ((i * 73) % 89) / 89;
         const c = ((i * 19) % 83) / 83;
@@ -472,18 +586,18 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
         const u = p / span;
         if (u >= 1) continue;
         const rise = (1 - Math.pow(.42, u)) / .58 * (48 + a * 42);
-        puff.push({
-          x: (b - .5) * half * 2 + Math.sin(p * 20 + i) * 1.5,
-          y: (c - .5) * half * .55 - rise,
-          frame: (i + Math.floor(p * 16)) % 3,
-          shrink: 1 - u * u * .5,
-          alpha: u < .75 ? .95 : (1 - u) / .25 * .95,
-        });
+        const bit = JEWEL_PUFFS[count++];
+        bit.x = (b - .5) * half * 2 + Math.sin(p * 20 + i) * 1.5;
+        bit.y = (c - .5) * half * .55 - rise;
+        bit.frame = (i + Math.floor(p * 16)) % 3;
+        bit.shrink = 1 - u * u * .5;
+        bit.alpha = u < .75 ? .95 : (1 - u) / .25 * .95;
       }
-      puff.sort((a, b) => a.y - b.y);
+      sortJewelPuffs(count);
       ctx.translate(e.x, e.y);
-      for (const bit of puff) {
-        ctx.save();
+      for (let i = 0; i < count; i++) {
+        const bit = JEWEL_PUFFS[i];
+        const inv = 1 / bit.shrink;
         ctx.translate(bit.x, bit.y);
         ctx.scale(bit.shrink, bit.shrink);
         ctx.globalAlpha = bit.alpha;
@@ -491,7 +605,8 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
           ctx.fillStyle = MC_FLAME_INK[k];
           ctx.fillRect(x * 2, y * 2, 2, 2);
         }
-        ctx.restore();
+        ctx.scale(inv, inv);
+        ctx.translate(-bit.x, -bit.y);
       }
       break;
     }
@@ -771,8 +886,8 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
     }
     case 'riff':
     case 'sing': {
-      // 吉他激奏 / 这次是真的在唱！: sound rings race out from her chest and fade as they
-      // widen; the sing's script keeps the reach flat, so its rings hold one fixed radius.
+      // 吉他激奏 / 这次是真的在唱！: sound rings race out from her chest and fade
+      // as they widen. The sing's script keeps the reach flat, so its rings hold one radius.
       const r = e.radius ?? (e.type === 'riff' ? 240 : 260);
       const alt = e.type === 'riff' ? '#d8f7e2' : '#ffe3f1';
       ctx.translate(e.x, e.y);
@@ -1617,13 +1732,12 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
     }
     case 'declaration': {
       // 宣战布告: 此即世界那盏半透明光，改成从画面顶上直落的一根红光。基础色 #EE0022。
+      // Glow and pool are translated onto a cached origin so the gradient is not rebuilt per frame.
       const x = e.x;
+      const paint = declarationPaint(ctx);
       ctx.globalCompositeOperation = 'lighter';
       ctx.globalAlpha *= 1 - p;
-      const beam = ctx.createLinearGradient(0, 0, 0, FLOOR);
-      beam.addColorStop(0, 'rgba(238, 0, 34, .3)');
-      beam.addColorStop(1, 'rgba(238, 0, 34, .06)');
-      ctx.fillStyle = beam;
+      ctx.fillStyle = paint.beam;
       ctx.beginPath();
       ctx.moveTo(x - 22, 0);
       ctx.lineTo(x + 22, 0);
@@ -1631,20 +1745,17 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.lineTo(x - 100, FLOOR);
       ctx.closePath();
       ctx.fill();
-      const glow = ctx.createRadialGradient(x, FLOOR - 88, 6, x, FLOOR - 88, 90);
-      glow.addColorStop(0, 'rgba(255, 214, 224, .26)');
-      glow.addColorStop(1, 'rgba(238, 0, 34, 0)');
-      ctx.fillStyle = glow;
+      ctx.save();
+      ctx.translate(x, FLOOR - 88);
+      ctx.fillStyle = paint.glow;
       ctx.beginPath();
-      ctx.arc(x, FLOOR - 88, 90, 0, Math.PI * 2);
+      ctx.arc(0, 0, 90, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
       ctx.save();
       ctx.translate(x, FLOOR);
       ctx.scale(1, .3);
-      const pool = ctx.createRadialGradient(0, 0, 8, 0, 0, 105);
-      pool.addColorStop(0, 'rgba(238, 0, 34, .38)');
-      pool.addColorStop(1, 'rgba(238, 0, 34, 0)');
-      ctx.fillStyle = pool;
+      ctx.fillStyle = paint.pool;
       ctx.beginPath();
       ctx.arc(0, 0, 105, 0, Math.PI * 2);
       ctx.fill();
@@ -1746,7 +1857,7 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   if (p.fx === 'mutsumi-note' || p.fx === 'chord') noteRibbon(ctx, p);
   else if (p.fx === 'sob') noteRibbon(ctx, p, '#f4e7b4', '#e8c96a');
   else if (p.fx === 'arrow') noteRibbon(ctx, p, '#1a3a8a', '#7ec8ff');
-  else if (p.fx !== 'fuga' && p.fx !== 'smile-ship' && p.fx !== 'whale' && p.fx !== 'butterfly' && p.fx !== 'jewel' && p.fx !== 'shigure') {
+  else if (p.fx !== 'fuga' && p.fx !== 'smile-ship' && p.fx !== 'whale' && p.fx !== 'butterfly' && p.fx !== 'jewel' && p.fx !== 'shigure' && p.fx !== 'moca-dusk' && p.fx !== 'sprout' && p.fx !== 'clock') {
     // 火的故事 skips the stock dots — they read as purple balls; its case draws gold afterimages.
     // 微笑号 is a screen-sized sweep, so the travelling point must not leave a dot trail.
     ctx.fillStyle = p.color;
@@ -1966,6 +2077,52 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
         ctx.fillStyle = '#EE5577';
         ctx.fillRect(s * .4, -s * 1.28, s * .18, s * 1.38);
         ctx.beginPath(); ctx.ellipse(-s * .08, s * .18, s * .58, s * .36, -.5, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+    case 'jerky': {
+      ctx.rotate(p.age * 6 * Math.sign(p.vx || 1));
+      if (!prop(ctx, images, CHUCHU_JERKY_SRC, p.size)) {
+        ctx.fillStyle = '#8a4b28';
+        ctx.fillRect(-p.radius * 1.4, -p.radius * .35, p.radius * 2.8, p.radius * .7);
+      }
+      break;
+    }
+    case 'trash': {
+      const s = Math.max(9, p.size * .38);
+      ctx.translate(0, -s);
+      ctx.rotate(p.age * 8 * Math.sign(p.vx || 1));
+      ctx.fillStyle = '#f7f7f7';
+      ctx.strokeStyle = '#8d8d8d';
+      ctx.lineWidth = Math.max(1.4, s * .16);
+      ctx.lineJoin = 'round';
+      const ring: [number, number][] = [
+        [-1.05, -.15], [-.55, -.95], [.25, -1.05], [1, -.4],
+        [.9, .45], [.25, 1], [-.6, .85], [-1.05, .3],
+      ];
+      ctx.beginPath();
+      ctx.moveTo(ring[0][0] * s, ring[0][1] * s);
+      for (let i = 1; i < ring.length; i++) ctx.lineTo(ring[i][0] * s, ring[i][1] * s);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-.45 * s, -.25 * s);
+      ctx.lineTo(.1 * s, .15 * s);
+      ctx.lineTo(.55 * s, -.15 * s);
+      ctx.moveTo(-.15 * s, .2 * s);
+      ctx.lineTo(.25 * s, .55 * s);
+      ctx.stroke();
+      break;
+    }
+    case 'cake': {
+      if (!prop(ctx, images, CHUCHU_CAKE_SRC, p.size)) {
+        ctx.fillStyle = '#fff6ee';
+        ctx.beginPath(); ctx.ellipse(0, 0, p.radius, p.radius * .55, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#e23b4a';
+        ctx.beginPath(); ctx.arc(-p.radius * .35, -p.radius * .1, p.radius * .16, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(p.radius * .1, -p.radius * .2, p.radius * .16, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(p.radius * .4, 0, p.radius * .16, 0, Math.PI * 2); ctx.fill();
       }
       break;
     }
@@ -2370,6 +2527,77 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
       ctx.beginPath(); ctx.arc(-r * .16, -r * .2, r * .14, 0, Math.PI * 2); ctx.fill();
       break;
     }
+    case 'moca-bubble': {
+      ctx.scale(Math.sign(p.vx) || 1, 1);
+      const w = (p.size ?? 78) * .45;
+      const h = w * .42;
+      ctx.fillStyle = '#e8fff8';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, w, h, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.fillStyle = '#e8fff8';
+      ctx.beginPath();
+      ctx.moveTo(-w * .35, h * .45);
+      ctx.lineTo(-w * .85, h * .15);
+      ctx.lineTo(-w * .15, h * .1);
+      ctx.fill();
+      const step = Math.floor(p.age * 3) % 3;
+      for (let i = 0; i < 3; i++) {
+        ctx.globalAlpha = i === step ? 1 : .35;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(-w * .35 + i * w * .32, 0, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    }
+    case 'moca-die': {
+      const s = 14;
+      ctx.rotate(p.age * 8 * Math.sign(p.vx || 1));
+      ctx.fillStyle = '#f4f0e6';
+      ctx.fillRect(-s, -s, s * 2, s * 2);
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-s, -s, s * 2, s * 2);
+      ctx.fillStyle = '#151222';
+      [[-5, -5], [5, -5], [-5, 5], [5, 5], [0, 0]].forEach(([x, y], i) => {
+        ctx.globalAlpha = i === 4 ? .2 : 1;
+        ctx.beginPath();
+        ctx.arc(x, y, 2.1, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      break;
+    }
+    case 'moca-dusk': {
+      ctx.scale(Math.sign(p.vx) || 1, 1);
+      const w = (p.size ?? 140) * .9;
+      const ground = FLOOR - p.y;
+      const grad = duskGrad(ctx, p.color, w);
+      const n = 7, pitch = w * 1.2 / n, bw = pitch * .58, dx = 5, dy = 4;
+      for (let i = 0; i < n; i++) {
+        const x = -w + i * pitch;
+        const top = ground - (34 + 46 * (.5 + .5 * Math.sin(p.age * 9 + i * 1.3)));
+        ctx.fillStyle = grad;
+        ctx.fillRect(x, top, bw, ground - top);
+        ctx.beginPath();
+        ctx.moveTo(x + bw, top); ctx.lineTo(x + bw + dx, top - dy); ctx.lineTo(x + bw + dx, ground - dy); ctx.lineTo(x + bw, ground);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = 'rgba(0,0,0,.35)';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(x, top); ctx.lineTo(x + dx, top - dy); ctx.lineTo(x + bw + dx, top - dy); ctx.lineTo(x + bw, top);
+        ctx.closePath();
+        ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,.4)';
+        ctx.fill();
+      }
+      break;
+    }
     case 'hana': {
       // 花道·缠: a spinning blossom. The trail dots behind it come from the stock loop.
       const s = (p.size ?? 46) * .3;
@@ -2390,7 +2618,7 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
       break;
     }
     case 'jelly': {
-      if (p.hue) ctx.filter = `hue-rotate(${p.hue}deg)`;
+      if (p.hue && !phoneRaster()) ctx.filter = `hue-rotate(${p.hue}deg)`;
       if (!prop(ctx, images, JELLY_SRC, p.size)) {
         ctx.fillStyle = '#9ec0ee';
         ctx.beginPath(); ctx.ellipse(0, p.radius * .35, p.radius, p.radius * .35, 0, 0, Math.PI * 2); ctx.fill();
@@ -2445,6 +2673,49 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
       }
       break;
     }
+    case 'sprout': {
+      if (!prop(ctx, images, SPROUT_SRC, p.size)) {
+        ctx.fillStyle = '#8B6914';
+        ctx.fillRect(-6, -8, 12, 28);
+        ctx.fillStyle = '#C4A574';
+        ctx.beginPath();
+        ctx.ellipse(0, -16, 12, 16, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    }
+    case 'clock': {
+      // Same shape as the retired 256-cell sheet, scaled into p.size the way prop() did.
+      if (p.hue) ctx.rotate(.7);
+      const k = Math.max(16, p.size) / 256;
+      const x = (sx: number) => (sx - 128) * k;
+      const y = (sy: number) => (sy - 128) * k;
+      ctx.fillStyle = '#f4f4f6';
+      ctx.beginPath();
+      ctx.arc(x(114), y(62), 16 * k, 0, Math.PI * 2);
+      ctx.arc(x(142), y(62), 16 * k, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#EE7788';
+      ctx.fillRect(x(108), y(70), 10 * k, 22 * k);
+      ctx.fillRect(x(138), y(70), 10 * k, 22 * k);
+      ctx.beginPath();
+      ctx.arc(x(128), y(148), 72 * k, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff4f6';
+      ctx.beginPath();
+      ctx.arc(x(128), y(148), 52 * k, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#151222';
+      ctx.lineWidth = 6 * k;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x(128), y(148));
+      ctx.lineTo(x(128), y(112));
+      ctx.moveTo(x(128), y(148));
+      ctx.lineTo(x(156), y(148));
+      ctx.stroke();
+      break;
+    }
     case 'wail':
     case 'orb':
     default: {
@@ -2457,6 +2728,195 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
       ctx.fillRect(-p.radius * .4, -p.radius * .4, p.radius * .8, p.radius * .8);
     }
   }
+  ctx.restore();
+}
+
+/** 改变世界：音游长按条。圆点飞到第一个人身前就停在对方中心，不再穿过去。
+ *  对方按住格挡时，圆心快速间歇地向外放光。几何只来自 holdNoteSpan。 */
+export function drawHoldNote(ctx: CanvasRenderingContext2D, f: Fighter, foes: Fighter[]): void {
+  const a = f.attack;
+  const span = a && holdNoteSpan(a, f, foes);
+  if (!a || !span) return;
+  const [tail, head] = span;
+  const t = a.t - a.skill.start;
+  const h = 15;
+  const lite = liteFx;
+  const release = (tail - NOTE_FROM) / (a.skill.range - NOTE_FROM);
+  ctx.save();
+  ctx.translate(Math.round(f.x), Math.round(f.y - 80));
+  ctx.scale(f.facing, 1);
+  const capsule = () => {
+    ctx.beginPath();
+    ctx.moveTo(tail, -h);
+    ctx.lineTo(head, -h);
+    ctx.arc(head, 0, h, -Math.PI / 2, Math.PI / 2);
+    ctx.lineTo(tail, h);
+    ctx.arc(tail, 0, h, Math.PI / 2, Math.PI * 1.5);
+    ctx.closePath();
+  };
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  if (!lite) {
+    ctx.lineWidth = h * 2 + 14;
+    ctx.strokeStyle = 'rgba(0, 170, 255, .12)';
+    ctx.beginPath();
+    ctx.moveTo(tail, 0);
+    ctx.lineTo(head, 0);
+    ctx.stroke();
+  }
+  // 条身：半透明蓝，上浅下深一点点
+  const body = ctx.createLinearGradient(0, -h, 0, h);
+  body.addColorStop(0, 'rgba(150, 228, 255, .44)');
+  body.addColorStop(.5, 'rgba(20, 175, 255, .28)');
+  body.addColorStop(1, 'rgba(0, 125, 235, .4)');
+  capsule();
+  ctx.fillStyle = body;
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = 'rgba(190, 240, 255, .75)';
+  ctx.stroke();
+  if (!lite) {
+    // 箭头光纹从尾流向头；相位跟着地面走，尾巴松开时不跳
+    ctx.save();
+    capsule();
+    ctx.clip();
+    const gap = 46;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(230, 250, 255, .32)';
+    ctx.beginPath();
+    for (let x = NOTE_FROM + (t * 280) % gap - gap; x < head + gap; x += gap) {
+      ctx.moveTo(x - 6, -h * .5);
+      ctx.lineTo(x + 2, 0);
+      ctx.lineTo(x - 6, h * .5);
+    }
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255, 255, 255, .4)';
+    ctx.beginPath();
+    ctx.moveTo(tail, -h * .55);
+    ctx.lineTo(head, -h * .55);
+    ctx.stroke();
+    ctx.restore();
+  }
+  if (release > 0) {
+    // 尾判：松开后尾端一道白线，扫过谁谁就解开
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(235, 250, 255, .9)';
+    ctx.beginPath();
+    ctx.moveTo(tail, -h + 2);
+    ctx.lineTo(tail, h - 2);
+    ctx.stroke();
+  } else if (!lite) {
+    // 尾端跟着双手打碟的节拍（.14s 一换手）亮
+    const beat = .5 + .5 * Math.sin(t * Math.PI / .14);
+    const src = ctx.createRadialGradient(tail, 0, 0, tail, 0, h * 1.8);
+    src.addColorStop(0, `rgba(200, 240, 255, ${(.3 + .25 * beat).toFixed(3)})`);
+    src.addColorStop(1, 'rgba(0, 187, 255, 0)');
+    ctx.fillStyle = src;
+    ctx.beginPath();
+    ctx.arc(tail, 0, h * 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // 按住长条：圆点停在对方中心，从圆心快速间歇地向外放光
+  let pressing = false;
+  for (const o of foes) {
+    if (a.hit.has(o.id) || !noteCaught(a, o.id) || !holdsNote(o, f)) continue;
+    const along = (o.x - f.x) * f.facing;
+    if (Math.abs(along - head) < 8) pressing = true;
+  }
+  // 头：白芯蓝边的圆点。出手时从小弹开，尾巴追上来时胀亮
+  const r = 17 * Math.min(1, .5 + t / .12) * (1 + release * .3);
+  if (!lite) {
+    const halo = ctx.createRadialGradient(head, 0, 0, head, 0, r * 2.2);
+    halo.addColorStop(0, `rgba(170, 235, 255, ${(.45 + release * .4).toFixed(3)})`);
+    halo.addColorStop(1, 'rgba(0, 187, 255, 0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(head, 0, r * 2.2, 0, Math.PI * 2);
+    ctx.fill();
+    if (head >= a.skill.range - .5) {
+      const p = (t / .45) % 1;
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = `rgba(120, 215, 255, ${(.5 * (1 - p)).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(head, 0, r + p * 18, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+  const core = ctx.createRadialGradient(head - r * .3, -r * .3, 0, head, 0, r);
+  core.addColorStop(0, 'rgba(255, 255, 255, .95)');
+  core.addColorStop(1, 'rgba(90, 205, 255, .85)');
+  ctx.fillStyle = core;
+  ctx.beginPath();
+  ctx.arc(head, 0, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = '#00BBFF';
+  ctx.stroke();
+  if (pressing) {
+    const period = .11;
+    for (let i = 0; i < 2; i++) {
+      const p = (t / period + i * .5) % 1;
+      if (p > .55) continue;
+      const u = p / .55;
+      ctx.beginPath();
+      ctx.lineWidth = 2.5 * (1 - u) + .5;
+      ctx.strokeStyle = `rgba(255, 255, 255, ${(0.9 * (1 - u)).toFixed(3)})`;
+      ctx.arc(head, 0, r * .3 + u * (70 - r * .3), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+/** 仓鼠队长: the wheel is a separate picture. She only runs inside it.
+    wheel.png ink is 885px of 1024, so this size sits 8px taller than her body.
+    Remeasure that box if the wheel art changes. */
+const WHEEL_INK = 885 / 1024;
+
+export function drawWheel(ctx: CanvasRenderingContext2D, f: Fighter, images?: ImageCache): void {
+  const a = f.attack;
+  if (!a || a.t < a.skill.start) return;
+  const body = f.data.view.kind === 'sprite' ? f.data.view.height : 170;
+  const size = Math.round((body + 8) / WHEEL_INK);
+  const spin = a.t * 8 * f.facing;
+  ctx.save();
+  ctx.translate(f.x, f.y - body / 2);
+  ctx.rotate(spin);
+  if (!prop(ctx, images, WHEEL_SRC, size)) {
+    ctx.strokeStyle = '#C4A574';
+    ctx.lineWidth = 10;
+    const rad = (body + 8) / 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, rad, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-rad * .85, 0);
+    ctx.lineTo(rad * .85, 0);
+    ctx.moveTo(0, -rad * .85);
+    ctx.lineTo(0, rad * .85);
+    ctx.stroke();
+    ctx.fillStyle = '#EE7788';
+    ctx.beginPath();
+    ctx.arc(0, 0, 12, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/** 二叶三姐妹: a small copy of her sheet. Not a fighter, so nothing draws a bar over her head. */
+const SISTER_SCALE = .62;
+
+export function drawSister(ctx: CanvasRenderingContext2D, p: Projectile, owner: Fighter, view: FighterView): void {
+  const dir = Math.sign(p.vx) || 1;
+  const col = 1 + Math.floor(p.age * 8) % 4;
+  const x = p.x;
+  const y = p.y;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(SISTER_SCALE, SISTER_SCALE);
+  ctx.translate(-x, -y);
+  if (!phoneRaster()) ctx.filter = p.hue ? 'hue-rotate(-26deg)' : 'hue-rotate(22deg)';
+  view.draw(ctx, owner, x, y, 1, undefined, undefined, { sheet: 'common', col, row: 0, facing: dir });
   ctx.restore();
 }
 
@@ -2484,7 +2944,10 @@ export function drawBanSign(ctx: CanvasRenderingContext2D, f: Fighter): void {
 }
 
 export function drawParticles(ctx: CanvasRenderingContext2D, particles: Particle[]): void {
+  const lite = liteFx;
   for (const p of particles) {
+    // Lite keeps about half. vx never changes after the spawn, so a particle never blinks.
+    if (lite && Math.floor(Math.abs(p.vx)) & 1) continue;
     ctx.globalAlpha = Math.min(1, p.life * 5);
     ctx.fillStyle = p.color;
     ctx.fillRect(Math.round(p.x), Math.round(p.y), p.size, p.size);
@@ -2525,17 +2988,79 @@ export function drawKuji(ctx: CanvasRenderingContext2D, g: FightGame): void {
     ctx.save();
     ctx.translate(Math.round(f.x), Math.round(f.y - head - 6));
     ctx.globalAlpha = flash.alpha;
-    ctx.font = '48px "Ma Shan Zheng", KaiTi, STKaiti, serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = '#241433';
-    ctx.strokeText(flash.ch, 0, 0);
-    ctx.fillStyle = '#e6d4ff';
-    ctx.fillText(flash.ch, 0, 0);
+    const s = rasterScale(ctx);
+    const baked = s && cacheText(kujiBakes, flash.ch + '|' + s, () => bakeText(KUJI_FONT, 48, flash.ch, 4, '#241433', '#e6d4ff', 'bottom', s, 'round'));
+    if (baked) blitText(ctx, baked, 0, 0);
+    else {
+      ctx.font = KUJI_FONT;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#241433';
+      ctx.strokeText(flash.ch, 0, 0);
+      ctx.fillStyle = '#e6d4ff';
+      ctx.fillText(flash.ch, 0, 0);
+    }
     ctx.restore();
   }
+}
+
+const KUJI_FONT = '48px "Ma Shan Zheng", KaiTi, STKaiti, serif';
+const kujiBakes = new Map<string, BakedText>();
+
+/** Stroke+fill text rasterised once into its own canvas. Re-stroking CJK glyphs every frame
+ *  was the floating-number cost on old phones; a blit is one quad. */
+interface BakedText { c: HTMLCanvasElement; w: number; h: number; base: number; s: number }
+
+/** Raster pixels per world unit under the current transform; 0 off the DOM (selfcheck). */
+function rasterScale(ctx: CanvasRenderingContext2D): number {
+  if (typeof document === 'undefined' || !ctx.getTransform) return 0;
+  const m = ctx.getTransform();
+  return Math.round(Math.hypot(m.a, m.b) * 100) / 100;
+}
+
+/** ponytail: kuji keys are 9 glyphs × a few raster scales, so the map stays tiny; cap at 64 in case the window keeps resizing. */
+function cacheText(cache: Map<string, BakedText>, key: string, bake: () => BakedText): BakedText {
+  let hit = cache.get(key);
+  if (!hit) {
+    if (cache.size >= 64) cache.clear();
+    hit = bake();
+    cache.set(key, hit);
+  }
+  return hit;
+}
+
+/** World-unit box padded on every side for the stroke; `base` is the baseline's y inside it.
+ *  The width is rounded up to whole raster pixels so the blit lands 1:1. */
+function bakeText(font: string, px: number, text: string, lw: number, stroke: string, fill: string, baseline: 'alphabetic' | 'bottom', s: number, join: CanvasLineJoin = 'miter'): BakedText {
+  const c = document.createElement('canvas');
+  const g = c.getContext('2d');
+  // Miter joins on sharp glyph corners poke out several stroke widths; round joins stay within one.
+  const pad = join === 'round' ? lw : lw * 3;
+  const h = Math.ceil((px * 1.4 + pad * 2) * s) / s;
+  if (!g) return { c, w: 0, h, base: 0, s };
+  g.font = font;
+  const w = Math.ceil((g.measureText(text).width + pad * 2) * s) / s;
+  c.width = Math.max(1, Math.round(w * s));
+  c.height = Math.max(1, Math.round(h * s));
+  const base = h - pad - (baseline === 'alphabetic' ? px * .3 : 0);
+  g.scale(s, s);
+  g.font = font;
+  g.textAlign = 'center';
+  g.textBaseline = baseline;
+  g.lineJoin = join;
+  g.lineWidth = lw;
+  g.strokeStyle = stroke;
+  g.strokeText(text, w / 2, base);
+  g.fillStyle = fill;
+  g.fillText(text, w / 2, base);
+  return { c, w, h, base, s };
+}
+
+/** Anchor (x, y) is the text's centre on its baseline, snapped to the raster grid. */
+function blitText(ctx: CanvasRenderingContext2D, b: BakedText, x: number, y: number): void {
+  ctx.drawImage(b.c, Math.round((x - b.w / 2) * b.s) / b.s, Math.round((y - b.base) * b.s) / b.s, b.w, b.h);
 }
 
 const LIME = new Set(['#b7ff6e']);
@@ -2554,11 +3079,24 @@ function floatingFont(lime: boolean, size: number): string {
   return font;
 }
 
+/** A floating text never changes its words, colour or size, so each one bakes once per raster scale. */
+const textBakes = new WeakMap<FloatingText, BakedText>();
+
 export function drawTexts(ctx: CanvasRenderingContext2D, texts: FloatingText[]): void {
   ctx.textAlign = 'center';
+  const s = rasterScale(ctx);
   for (const t of texts) {
     const lime = LIME.has(t.color);
     ctx.globalAlpha = Math.min(1, t.life * 4);
+    if (s) {
+      let b = textBakes.get(t);
+      if (!b || b.s !== s) {
+        b = bakeText(floatingFont(lime, t.size), lime ? Math.round(t.size * 1.2) : t.size, t.text, lime ? 6 : 4, lime ? '#000' : '#171120', lime ? '#fff' : t.color, 'alphabetic', s);
+        textBakes.set(t, b);
+      }
+      blitText(ctx, b, t.x, t.y);
+      continue;
+    }
     ctx.font = floatingFont(lime, t.size);
     ctx.lineWidth = lime ? 6 : 4;
     ctx.strokeStyle = lime ? '#000' : '#171120';

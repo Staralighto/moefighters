@@ -4,7 +4,7 @@ import type { FighterView } from './view.ts';
 import { stageThumbSrc, type ImageCache } from '../assets/loader.ts';
 import { FLOOR, H, SIDE, W } from '../game/constants.ts';
 import { violetHidden } from '../game/combat.ts';
-import { drawBanSign, drawCombo, drawEffect, drawGauge, drawKuji, drawLayerBass, drawParticles, drawProjectile, drawRootFx, drawTexts, UI_FONT } from './fx.ts';
+import { drawBanSign, drawCombo, drawEffect, drawGauge, drawHoldNote, drawKuji, drawLayerBass, drawParticles, drawProjectile, drawRootFx, drawSister, drawTexts, drawWheel, isLiteFx, UI_FONT } from './fx.ts';
 
 /** Hard 1px rim, yellow for the left team and green for the right. */
 const TEAM_GLOW = SIDE;
@@ -98,7 +98,8 @@ export class Renderer {
   private sy = 1;
 
   constructor(canvas: HTMLCanvasElement, views: Map<string, FighterView>, stage: StageData, images: ImageCache) {
-    const ctx = canvas.getContext('2d');
+    // The stage covers every pixel, so the page never needs to blend through the bitmap.
+    const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) throw Error('Canvas 2D 不可用');
     this.ctx = ctx;
     this.canvas = canvas;
@@ -109,13 +110,15 @@ export class Renderer {
   }
 
   /** Size the backing store to the on-screen box × devicePixelRatio, so the compositor blits
-      the canvas 1:1 (the CSS `image-rendering: pixelated` stretch never resamples it) and the
-      fixed 960×540 world rasterises at screen resolution instead. Cheap to call every frame:
-      a no-op unless the box, the zoom or the monitor's scale moved. */
+      the canvas 1:1 and the fixed 960×540 world rasterises at screen resolution. Phones
+      (`body.touch`) cap that scale at 1: a 3× store is about 9× the fill, and the CSS box is
+      already near the world width. The lite tier drops phones to 0.75 (44% fewer pixels per pass).
+      Desktop, including wide mode, keeps the monitor scale.
+      Cheap to call every frame: a no-op unless the box, the zoom or the monitor's scale moved. */
   resize(): void {
     const cw = this.canvas.clientWidth, ch = this.canvas.clientHeight;
     if (!cw || !ch) return;
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = document.body.classList.contains('touch') ? (isLiteFx() ? .75 : 1) : (window.devicePixelRatio || 1);
     const w = Math.max(1, Math.round(cw * dpr));
     const h = Math.max(1, Math.round(ch * dpr));
     if (this.canvas.width !== w || this.canvas.height !== h) {
@@ -147,8 +150,11 @@ export class Renderer {
       c.fill();
     }
 
+    const lite = isLiteFx();
     for (const e of g.effects) {
       if (e.type !== 'ghost' || e.fighter === undefined) continue;
+      // Lite draws only the fresher half of each trail; picked by age, so nothing blinks.
+      if (lite && e.life / e.max <= .5) continue;
       // By id: a summoned teammate can leave mid-effect, so index lookups would alias or miss.
       const f = g.fighters.find(x => x.id === e.fighter);
       if (!f) continue;
@@ -164,11 +170,17 @@ export class Renderer {
       const view = this.view(f.data.id);
       const outline = teamRim ? TEAM_GLOW[f.team] : undefined;
       const alpha = f.hp <= 0 ? .3 : f.basic ? .55 : f.echo ? .45 : 1;
+      if (f.attack?.skill.fx === 'wheel') drawWheel(c, f, this.images);
       view.draw(c, f, f.x, f.hp <= 0 ? FLOOR : f.y, alpha, undefined, outline);
       drawLayerBass(c, f, this.images, alpha);
       if (f.blocking) drawEffect(c, { type: 'shield', x: f.x + f.facing * 28, y: f.y - 80, color: '#a6eeff', life: .14, max: .22, radius: 58 });
       if (f.root > 0 && f.hp > 0) drawRootFx(c, f, g.age);
-      if (f.slow > 0 && f.hp > 0) drawEffect(c, { type: 'petal-aura', x: f.x, y: f.y - 105, color: '#EE0022', life: 1, max: 1, radius: 44, age: g.age });
+      if (f.slow > 0 && f.hp > 0) {
+        const bubble = f.mods.some(m => m.kind === 'slow' && m.left > 0 && m.mark === 'bubble');
+        drawEffect(c, bubble
+          ? { type: 'slow-bubble', x: f.x, y: f.y - 150, color: f.data.color, life: 1, max: 1, radius: 18, age: g.age }
+          : { type: 'petal-aura', x: f.x, y: f.y - 105, color: '#EE0022', life: 1, max: 1, radius: 44, age: g.age });
+      }
       drawGauge(c, f);
       if (f.feast > 0 && f.hp > 0) drawEffect(c, { type: 'feast', x: f.x, y: f.y - 92, color: '#9ad4ff', life: 1, max: 1, radius: 40 });
       if (f.debt > 0 && f.hp > 0) {
@@ -190,7 +202,12 @@ export class Renderer {
         c.fillRect(bx, by, Math.max(0, bw * (f.hp / f.data.hp)), 3);
       }
     }
-    for (const p of g.projectiles) drawProjectile(c, p, this.images);
+    for (const f of g.fighters) if (f.attack?.skill.fx === 'change') drawHoldNote(c, f, g.opponents(f));
+    for (const p of g.projectiles) {
+      if (p.fx !== 'sister') { drawProjectile(c, p, this.images); continue; }
+      const owner = g.fighterById(p.owner);
+      if (owner) drawSister(c, p, owner, this.view(owner.data.id));
+    }
     for (const f of g.fighters) if (f.ban > 0 && f.hp > 0) drawBanSign(c, f);
     for (const e of g.effects) if (e.type !== 'ghost') drawEffect(c, e, this.images);
     drawParticles(c, g.particles);
@@ -269,18 +286,32 @@ export class Renderer {
       c.fill();
       c.restore();
     }
-    if (!scanPattern) {
-      const tile = document.createElement('canvas');
-      tile.width = 1;
-      tile.height = 4;
-      const t = tile.getContext('2d');
-      if (t) {
-        t.fillStyle = '#0000000c';
-        t.fillRect(0, 0, 1, 1);
-        scanPattern = c.createPattern(tile, 'repeat');
+    // A full-canvas tint on top of the stage. Phones skip it: it is a third fullscreen pass.
+    if (!document.body.classList.contains('touch')) {
+      if (!scanPattern) {
+        const tile = document.createElement('canvas');
+        tile.width = 1;
+        tile.height = 4;
+        const t = tile.getContext('2d');
+        if (t) {
+          t.fillStyle = '#0000000c';
+          t.fillRect(0, 0, 1, 1);
+          scanPattern = c.createPattern(tile, 'repeat');
+        }
       }
+      if (scanPattern) { c.fillStyle = scanPattern; c.fillRect(0, 0, W, H); }
     }
-    if (scanPattern) { c.fillStyle = scanPattern; c.fillRect(0, 0, W, H); }
+  }
+
+  /** `?fps` readout for phone testing: the last sampled average frame gap, and the lite tier. */
+  drawFps(avgMs: number): void {
+    const c = this.ctx;
+    c.setTransform(this.sx, 0, 0, this.sy, 0, 0);
+    c.font = `14px ${UI_FONT}`;
+    c.textAlign = 'center';
+    c.fillStyle = '#fff';
+    const fps = avgMs ? `${Math.round(1000 / avgMs)} fps · ${avgMs.toFixed(1)} ms` : '-- fps';
+    c.fillText(fps + (isLiteFx() ? ' · 精简' : ''), W / 2, 110);
   }
 
   private view(id: string): FighterView {
@@ -289,25 +320,37 @@ export class Renderer {
     return v;
   }
 
+  /** The art, resampled to the backing store with the stage shade on top, so each frame is one
+      1:1 blit instead of a filtered upscale plus a second full-screen blend. Rebaked when the
+      backing store resizes or the full art replaces the slow-link preview. */
+  private stageBake: HTMLCanvasElement | undefined;
+  private stageKey = '';
+
   private drawStage(): void {
     const c = this.ctx, s = this.stage;
     // A slow link starts on the 480px preview; the cover math below only reads the aspect.
     const full = s.image ? this.images.get(s.image) : undefined;
     const bg = full?.naturalWidth || !s.image ? full : this.images.get(stageThumbSrc(s.image));
-    // The art is world-sized (960×540), so painting it straight onto the transformed canvas
-    // each frame is the same single resample a bake would produce, with no buffer to size or
-    // rebake on window changes. Smoothing stays on for the upscale and off for the rest of
-    // the frame.
-    // ponytail: no backdrop bake — drawImage allocates nothing, so this only costs one scaled
-    // quad per frame. Re-add a bake if phone profiling ever blames this line.
-    if (bg && bg.naturalWidth) {
-      c.imageSmoothingEnabled = true;
-      this.paintBackdrop(c, bg);
-      c.imageSmoothingEnabled = false;
-    } else {
-      this.paintFlat(c);
+    const art = bg && bg.naturalWidth ? bg : undefined;
+    const key = this.canvas.width + '|' + this.canvas.height + '|' + (art?.src ?? '');
+    if (key !== this.stageKey || !this.stageBake) {
+      const bake = this.stageBake ?? document.createElement('canvas');
+      bake.width = this.canvas.width;
+      bake.height = this.canvas.height;
+      const g = bake.getContext('2d', { alpha: false });
+      if (!g) return;
+      g.setTransform(this.sx, 0, 0, this.sy, 0, 0);
+      if (art) {
+        g.imageSmoothingEnabled = true;
+        this.paintBackdrop(g, art);
+      } else {
+        this.paintFlat(g);
+      }
+      g.fillStyle = s.shade ?? '#10101b20'; g.fillRect(0, 0, W, H);
+      this.stageBake = bake;
+      this.stageKey = key;
     }
-    c.fillStyle = s.shade ?? '#10101b20'; c.fillRect(0, 0, W, H);
+    c.drawImage(this.stageBake, 0, 0, W, H);
   }
 
   /** No art on the stage — none declared, or the file 404'd (the loader drops it from the cache).

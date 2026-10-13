@@ -12,7 +12,10 @@ const ICON_FOR: Record<string, string> = {
   '← 返回选人': 'arrow-left',
   '返回选人 ◀': 'arrow-left',
   '返回休息': 'house',
+  '继续战斗': 'play',
   '继续战斗 ▶': 'play',
+  '退出宽屏': 'corners-in',
+  '退出横屏': 'corners-in',
 };
 
 export function setIconBtn(el: HTMLElement, label: string): void {

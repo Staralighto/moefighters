@@ -90,8 +90,14 @@ export interface Skill {
   slowMul?: number;
   /** Jump launch-velocity multiplier while 减速 holds. Default .75 (height ≈ .56 of normal). */
   slowJump?: number;
+  /** Attack-speed multiplier while 减速 holds. Unset is 1. J/K cooldown clocks tick at this rate. */
+  slowAtk?: number;
   /** 蝶变: a blocked hit still applies `slow`. 花道·缠 leaves this unset and only slows clean hits. */
   slowOnBlock?: boolean;
+  /** Status mark while 减速 holds. Unset keeps the shared petal aura. */
+  slowMark?: string;
+  /** Flat extra damage on a clean hit when the target is already 减速. This hit's own slow does not qualify. */
+  slowBonus?: number;
   /** Clean-hit pose. Stun-only (no kind) just overrides hitstun. */
   react?: HitReact;
   /** Screen shake on a clean hit. Block and juggle keep their own numbers. */
@@ -104,6 +110,10 @@ export interface Skill {
   friendly?: boolean;
   /** A blocked projectile does not siphon the attacker's energy (剪, 火的故事). */
   noSiphon?: boolean;
+  /** 冰川打火姬: a guard does not catch this hit. A jump still clears a low shot. */
+  noBlock?: boolean;
+  /** 小摩卡要上了: a defender who is already 减速 cannot block this hit. */
+  noBlockSlow?: boolean;
   /** Clean hits with this move do not charge the attacker's gauge (这次是真的在唱！ self-feed guard). */
   noGauge?: boolean;
   /** No hit sparks (剪 draws its own burst). */
@@ -169,7 +179,9 @@ export type ViewSpec =
   | { kind: 'geometry'; build: 'slim' | 'bulky' | 'tall' }
   | { kind: 'sprite'; common: string; special: string; height: number; frenzy?: string; king?: string; kingScale?: number; world?: string; box?: string; extras?: string[];
       /** Special-sheet playback scale, pivoted on the foot line so the feet stay. */
-      specialScale?: number };
+      specialScale?: number;
+      /** Pixels to draw the whole cell above the fighter origin. Positive is up. */
+      lift?: number };
 
 export interface CharacterData {
   id: string;

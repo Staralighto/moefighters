@@ -273,6 +273,17 @@ function cuts(blow: { pierce?: boolean } | undefined, defender: Fighter): boolea
   return !!blow?.pierce && !!defender.attack && !defender.attack.pierce;
 }
 
+/** 减速: one writer, so a block and a clean hit cannot drift apart. */
+function applySlow(defender: Fighter, skill: Skill): void {
+  if (!skill.slow) return;
+  addMod(defender, 'slow', skill.slow, {
+    v: skill.slowMul ?? .6,
+    jump: skill.slowJump ?? .75,
+    atk: skill.slowAtk ?? 1,
+    mark: skill.slowMark,
+  });
+}
+
 export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: Skill, source: HitSource, originX = attacker.x): boolean {
   // friendly is the one blast that reads everyone on the field (火的故事).
   const blast = !!skill.friendly;
@@ -282,11 +293,13 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   // 我会保护小睦: every hitstun this defender takes runs through the stack multiplier.
   const hitStun = (v: number) => v * defender.stunMul;
   const wasRooted = defender.root > 0;
+  const wasSlow = defender.slow > 0;
   let holdStill = wasRooted;
   const dir = defender.x >= originX ? 1 : -1;
   const inFront = defender.facing === -dir;
   const isGrab = skill.type === 'grab';
-  const blocked = defender.blocking && inFront && defender.guard > 0 && !isGrab;
+  const blocked = defender.blocking && inFront && defender.guard > 0 && !isGrab && !skill.noBlock
+    && !(skill.noBlockSlow && defender.slow > 0);
   // Super armour: an endure move in wind-up eats one strike. 恐湖 and 哈？ keep it through the hit. Grabs and supers still go through.
   const armour = defender.attack;
   const rippleLive = !!armour && !!armour.skill.holdEndure && armour.t < armour.skill.duration - .22;
@@ -351,7 +364,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     if (skill.type === 'projectile' && !skill.noSiphon) attacker.energy = clamp(attacker.energy - fullHit * GUARD_DRAIN, 0, attacker.energyMax);
     g.effect('shield', defender.x - dir * 30, defender.y - 78, '#8df0ff', .22, { radius: 65 });
     // 蝶变: the slow sticks through a block. 花道·缠 leaves the flag unset.
-    if (skill.slow && skill.slowOnBlock) addMod(defender, 'slow', skill.slow, { v: skill.slowMul ?? .6, jump: skill.slowJump ?? .75 });
+    if (skill.slowOnBlock) applySlow(defender, skill);
     g.audio.play('block');
     g.text('格挡', defender.x, defender.y - 170, '#91eaff', .35, 16);
     if (defender.guard <= 0) {
@@ -378,6 +391,8 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     // 最喜欢闪闪发光的东西！: unblocked hits only, and the damage number prints one size up.
     crit = attacker.critChance > 0 && g.random() < attacker.critChance;
     if (crit) damage *= 1.5;
+    // 小摩卡要上了: one flat extra chunk when the body was already slowed. This hit's own slow does not count.
+    if (wasSlow && skill.slowBonus) damage += skill.slowBonus;
     // 鼓点: a clean hit adds a beat; taking one shakes two off.
     if (attacker.data.trait === 'beat') attacker.beatStacks = Math.min(BEAT_MAX, attacker.beatStacks + 1);
     if (defender.data.trait === 'beat') defender.beatStacks = Math.max(0, defender.beatStacks - 2);
@@ -421,9 +436,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       defender.blocking = false;
       // 花道·缠: a soft control that rides the same clean-hit gate as the root — braced and
       // poised bodies never reach this branch, so they shrug it off too.
-      if (skill.slow) {
-        addMod(defender, 'slow', skill.slow, { v: skill.slowMul ?? .6, jump: skill.slowJump ?? .75 });
-      }
+      applySlow(defender, skill);
       if (skill.root && !wasRooted) {
         // 定身: the parameterized control. root seconds and the tier come from the skill,
         // rootBreak clean hits shake it off early (default 2, 0 holds to the clock),
@@ -512,6 +525,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   } else {
     crit = attacker.critChance > 0 && g.random() < attacker.critChance;
     if (crit) damage *= 1.5;
+    if (wasSlow && skill.slowBonus) damage += skill.slowBonus;
     g.audio.play('key');
     g.text('-' + Math.round(damage), defender.x + dir * 8, defender.y - 148, '#fff', .35, 16);
   }
@@ -997,7 +1011,11 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
     applyMelee(g, f, a);
     if (dash?.sparseGhost) {
       if (Math.floor(a.t * 8) !== Math.floor((a.t - dt) * 8)) g.effect('ghost', f.x - f.facing * 18, f.y, f.data.color, .18, { fighter: f.id, alpha: .3 });
-    } else if (Math.floor(a.t * 30) % 3 === 0) g.effect('ghost', f.x - f.facing * 18, f.y, f.data.color, .18, { fighter: f.id, alpha: .3 });
+    } else {
+      // At 120Hz a bucket stays true for ~4 steps and would stamp four sprites on one spot.
+      const bucket = Math.floor(a.t * 30);
+      if (bucket % 3 === 0 && bucket !== Math.floor((a.t - dt) * 30)) g.effect('ghost', f.x - f.facing * 18, f.y, f.data.color, .18, { fighter: f.id, alpha: .3 });
+    }
   }
 
   // The rising fist stays live for a while so it catches jumpers at any height.
@@ -1138,7 +1156,9 @@ function pushTrail(p: Projectile, cap: number): void {
 function touchProjectile(g: FightGame, p: Projectile): void {
   const owner = g.fighterById(p.owner);
   if (!owner || p.settled || p.life <= 0) return;
-  for (const target of g.opponents(owner)) {
+  // Same filter as opponents(), without the per-shot array.
+  for (const target of g.fighters) {
+    if (!g.isEnemy(owner, target) || target.hp <= 0 || target.echo) continue;
     const bandY = SCRIPTS[p.fx]?.hitY ?? 72;
     if (Math.abs(p.x - target.x) >= 38 + p.radius || Math.abs(p.y - (target.y - 83)) >= bandY) continue;
     if (!hit(g, owner, target, p.skill, { hit: p.hit }, p.x - Math.sign(p.vx) * 40)) continue;
@@ -1647,7 +1667,8 @@ function step_invade(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   const before = a.hit.size;
   applyMelee(g, f, a);
   a.skill = prev;
-  if (Math.floor(a.t * 30) % 3 === 0) g.effect('ghost', f.x - f.facing * 18, f.y, f.data.color, .18, { fighter: f.id, alpha: .3 });
+  const bucket = Math.floor(a.t * 30);
+  if (bucket % 3 === 0 && bucket !== Math.floor((a.t - dt) * 30)) g.effect('ghost', f.x - f.facing * 18, f.y, f.data.color, .18, { fighter: f.id, alpha: .3 });
   if (a.hit.size === before) return;
   a.shots = 1;
   const recoverAt = s.start + Math.min(.1, (s.duration - s.start) * .4);
@@ -1955,6 +1976,122 @@ function swing_groove(g: FightGame, f: Fighter, a: Attack, s: Skill): void {
       }
 }
 
+/** 改变世界: the head crosses slowly enough to block on sight, then stops on the first body
+ *  instead of flying through. The tail stays on her deck, then lets go for the last NOTE_LET
+ *  and sweeps up to the head. A block only counts if it starts once the head is within
+ *  NOTE_WINDOW — already holding while it is far away is an early miss. The window is loose
+ *  so a point-blank cast is inside it on the first frame. */
+export const NOTE_FROM = 24;
+const NOTE_SHOOT = 1.2;
+const NOTE_LET = .3;
+const NOTE_WINDOW = 220;
+/** A full block of the note spends half the guard bar, spread across the emission. */
+const NOTE_GUARD = 50;
+
+/** [tail, head] of the hold note as distance in front of her; null before it is out.
+ *  Pass the bodies in front and the head stops on the nearest center. */
+export function holdNoteSpan(a: Attack, f?: Fighter, foes?: readonly Fighter[]): [number, number] | null {
+  const s = a.skill;
+  if (a.t < s.start) return null;
+  const len = s.range - NOTE_FROM;
+  const out = Math.min(1, (a.t - s.start) / NOTE_SHOOT);
+  let head = NOTE_FROM + len * out;
+  if (f && foes) {
+    for (const o of foes) {
+      if (o.hp <= 0) continue;
+      const along = (o.x - f.x) * f.facing;
+      if (along < 0 || along >= head) continue;
+      head = along;
+    }
+  }
+  const let_ = clamp((a.t - s.duration + NOTE_LET) / NOTE_LET, 0, 1) ** 2;
+  return [Math.min(NOTE_FROM + len * let_, head), head];
+}
+
+export function holdsNote(o: Fighter, f: Fighter): boolean {
+  return o.blocking && o.guard > 0 && o.facing === -f.facing;
+}
+
+/** The block started while the head was already close, so the hold glow may play. */
+export function noteCaught(a: Attack, id: number): boolean {
+  return noteTicks.get(a)?.get(id)?.good === true;
+}
+
+/** Per cast: gap hits, and whether this block started close enough to the head. */
+const noteTicks = new WeakMap<Attack, Map<number, { n: number; next: number; snd: number; early: boolean; good: boolean; bad: boolean; wasBlocking: boolean }>>();
+
+function noteTick(a: Attack, id: number): { n: number; next: number; snd: number; early: boolean; good: boolean; bad: boolean; wasBlocking: boolean } {
+  let marks = noteTicks.get(a);
+  if (!marks) noteTicks.set(a, marks = new Map());
+  let mark = marks.get(id);
+  if (!mark) marks.set(id, mark = { n: 0, next: 0, snd: 0, early: false, good: false, bad: false, wasBlocking: false });
+  return mark;
+}
+
+function step_change(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const span = holdNoteSpan(a, f, g.opponents(f));
+  if (!span) return;
+  const [tail, head] = span;
+  const ending = a.t >= a.skill.duration;
+  const cap = a.skill.count ?? 10;
+  const gap = a.skill.interval ?? .1;
+  const emit = a.skill.duration - a.skill.start;
+  for (const o of g.opponents(f)) {
+    const along = (o.x - f.x) * f.facing;
+    if (along < 0 || along > a.skill.range + 20) continue;
+    const mark = noteTick(a, o.id);
+    const blocking = holdsNote(o, f);
+    // A press counts when the head is already close. Holding from before that is too early.
+    if (!mark.good && !mark.early && blocking && !mark.wasBlocking) {
+      if (along - head <= NOTE_WINDOW) mark.good = true;
+      else {
+        mark.early = true;
+        g.text('miss', o.x, o.y - 190, '#ffb0c0', .8, 22);
+      }
+    }
+    mark.wasBlocking = blocking;
+    // The hold spends guard on its own clock. A block that lasts the whole note loses half the bar.
+    if (mark.good && blocking && !a.hit.has(o.id)) {
+      o.guard -= NOTE_GUARD / emit * dt;
+      if (o.guard <= 0) {
+        o.guard = 0;
+        o.blocking = false;
+        o.guardBroken = Math.max(o.guardBroken, 1.2);
+        mark.bad = true;
+        mark.good = false;
+        // Same lock as an early miss: a later press does not catch this note again.
+        mark.early = true;
+      }
+    }
+    if (along > head + 20) continue;
+    const guarded = mark.good && holdsNote(o, f);
+    if ((along < tail || ending) && mark.n === 0 && guarded && !a.hit.has(o.id)) {
+      a.hit.add(o.id);
+      g.text('Good', o.x, o.y - 170, '#9ee7ff', .7, 22);
+      g.effect('burst', o.x, f.y - 80, '#9ee7ff', .3, { radius: 46 });
+      continue;
+    }
+    if (guarded && Math.abs(along - head) < 8 && !a.hit.has(o.id) && a.t >= mark.snd) {
+      g.audio.play('hit');
+      mark.snd = a.t + gap;
+    }
+    if (guarded || o.invuln > 0 || mark.n >= cap || a.t < mark.next) continue;
+    // An early press is still held, but it does not count: drop the pose so the hit goes through.
+    const cover = o.blocking;
+    if (mark.early) o.blocking = false;
+    if (!hit(g, f, o, a.skill, { hit: new Set() }, f.x)) {
+      if (mark.early) o.blocking = cover;
+      continue;
+    }
+    if (mark.bad) {
+      g.text('Bad', o.x, o.y - 190, '#ff8aa0', .8, 22);
+      mark.bad = false;
+    }
+    mark.n++;
+    mark.next = a.t + gap;
+  }
+}
+
 function emit_wish(g: FightGame, f: Fighter, a: Attack): void {
   const s = a.skill;
   {
@@ -2198,6 +2335,38 @@ SCRIPTS['riff'] = Object.assign(SCRIPTS['riff'] ?? {}, { swing: swing_riff, hold
 SCRIPTS['sing'] = Object.assign(SCRIPTS['sing'] ?? {}, { swing: swing_sing });
 SCRIPTS['crown'] = Object.assign(SCRIPTS['crown'] ?? {}, { swing: swing_crown });
 SCRIPTS['groove'] = Object.assign(SCRIPTS['groove'] ?? {}, { swing: swing_groove, holdFrom: 1, release: .3, cd: { tap: GROOVE_CD_TAP, max: GROOVE_CD_MAX, waves: GROOVE_WAVES } });
+SCRIPTS['change'] = Object.assign(SCRIPTS['change'] ?? {}, { update: step_change, noMelee: true, skipCount: true });
+/** 垃圾桶: four paper wads leave the same spot in front, one after another. */
+const TRASH_X0 = 40;
+
+function volley_trash(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  const volley = a.burst || s.count || 1;
+  const size = s.size ?? 32;
+  const speed = (s.speed ?? 160) * (f.data.trait === 'focus' ? 1.15 : 1);
+  while (a.shots < volley && a.t >= s.start + a.shots * (s.interval ?? .22)) {
+    g.projectiles.push({
+      owner: f.id,
+      x: clamp(f.x + f.facing * TRASH_X0, X_MIN, X_MAX),
+      y: FLOOR,
+      vx: f.facing * speed,
+      vy: 0,
+      life: s.life ?? 2.4,
+      skill: s,
+      color: f.data.color,
+      radius: Math.min(54, size * .23),
+      size,
+      fx: s.fx,
+      attack: a,
+      hit: new Set(),
+      trail: [],
+      age: 0,
+    });
+    a.shots++;
+  }
+}
+
+SCRIPTS['trash'] = Object.assign(SCRIPTS['trash'] ?? {}, { volley: volley_trash, hitY: 100, trail: 0 });
 SCRIPTS['wish'] = Object.assign(SCRIPTS['wish'] ?? {}, { emit: emit_wish, skipVolley: true, skipCount: true });
 SCRIPTS['world'] = Object.assign(SCRIPTS['world'] ?? {}, { emit: emit_world });
 SCRIPTS['snip'] = Object.assign(SCRIPTS['snip'] ?? {}, { emit: emit_snip, freeWhenEmitted: true, skipVolley: true, skipCount: true, ownCount: true, mark: 'snip' });
@@ -2205,7 +2374,203 @@ SCRIPTS['fuga'] = Object.assign(SCRIPTS['fuga'] ?? {}, { emit: emit_fuga, freeWh
 SCRIPTS['firebird'] = Object.assign(SCRIPTS['firebird'] ?? {}, { emit: emit_firebird });
 SCRIPTS['arrow'] = Object.assign(SCRIPTS['arrow'] ?? {}, { trail: 8 });
 SCRIPTS['metronome'] = Object.assign(SCRIPTS['metronome'] ?? {}, { swing: swing_metronome });
+/** 土笔: four shoots pop up in a row and creep forward along the floor. */
+const SPROUT_X0 = 72;
+const SPROUT_GAP = 58;
+
+function volley_sprout(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  const volley = a.burst || s.count || 1;
+  const size = s.size ?? 44;
+  while (a.shots < volley && a.t >= s.start + a.shots * (s.interval ?? .12)) {
+    const i = a.shots;
+    const x = clamp(f.x + f.facing * (SPROUT_X0 + i * SPROUT_GAP), X_MIN, X_MAX);
+    g.effect('sprout-break', x, FLOOR, '#8B6914', .28, { radius: 18 });
+    g.projectiles.push({
+      owner: f.id,
+      x,
+      y: FLOOR,
+      vx: f.facing * (s.speed ?? 150),
+      vy: 0,
+      life: s.life ?? 1.5,
+      skill: s,
+      color: f.data.color,
+      radius: Math.min(54, size * .23),
+      size,
+      fx: 'sprout',
+      attack: a,
+      hit: new Set(),
+      trail: [],
+      age: 0,
+      solid: false,
+    });
+    a.shots++;
+  }
+}
+
+/** 五个闹钟: five landing spots. A low roll tips that clock over and it never rings.
+    After they land, everyone waits. Silent ones vanish. The rest chirp three times. */
+const CLOCK_X0 = 130;
+const CLOCK_GAP = 110;
+const CLOCK_RISE = 300;
+const CLOCK_WAIT = 1.5;
+const CLOCK_RING = 1.5;
+const CLOCK_PULSES = 3;
+/** Wider than half the gap, so a body between two clocks eats both. */
+const CLOCK_HIT = 80;
+/** Fall from CLOCK_RISE, plus slack so one long frame cannot expire a clock in the air. */
+const CLOCK_FALL = Math.sqrt(2 * CLOCK_RISE / GRAVITY) + .6;
+export const CLOCK_DUD = .34;
+
+export function clockRings(roll: number): boolean {
+  return roll >= CLOCK_DUD;
+}
+
+function volley_clock(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  const volley = a.burst || s.count || 1;
+  const size = s.size ?? 48;
+  while (a.shots < volley && a.t >= s.start + a.shots * (s.interval ?? 0)) {
+    const i = a.shots;
+    const rings = clockRings(g.random());
+    const skill = rings ? s : { ...s, damage: 0, gain: 0, knock: 0 };
+    g.projectiles.push({
+      owner: f.id,
+      x: clamp(f.x + f.facing * (CLOCK_X0 + i * CLOCK_GAP), X_MIN, X_MAX),
+      y: FLOOR - CLOCK_RISE,
+      vx: 0,
+      vy: 0,
+      life: Math.max(s.life ?? 0, CLOCK_WAIT + CLOCK_RING + CLOCK_FALL),
+      skill,
+      color: f.data.color,
+      radius: Math.min(54, size * .23),
+      size,
+      fx: 'clock',
+      attack: a,
+      hit: new Set(),
+      trail: [],
+      age: 0,
+      solid: false,
+      hue: rings ? 0 : 1,
+    });
+    a.shots++;
+  }
+}
+
+/** Land, wait, then three screen-facing rings. Silent clocks vanish when the wait ends. */
+function after_clock(g: FightGame, p: Projectile, dt: number): boolean {
+  if (p.y < FLOOR) return true;
+  p.y = FLOOR;
+  p.vy = 0;
+  p.vx = 0;
+  if (!p.settled) {
+    p.settled = true;
+    p.ticked = p.age;
+  }
+  const since = p.age - (p.ticked ?? 0);
+  const prev = since - dt;
+  if (p.skill.damage <= 0) {
+    if (since >= CLOCK_WAIT) p.life = 0;
+    return true;
+  }
+  const step = CLOCK_RING / CLOCK_PULSES;
+  const owner = g.fighterById(p.owner);
+  for (let i = 0; i < CLOCK_PULSES; i++) {
+    const at = CLOCK_WAIT + i * step;
+    if (prev >= at || since < at) continue;
+    p.hit.clear();
+    g.effect('clock-ring', p.x, p.y, '#ffffff', .42, { radius: CLOCK_HIT });
+    if (!owner) continue;
+    for (const o of g.opponents(owner)) {
+      if (Math.abs(o.x - p.x) >= CLOCK_HIT) continue;
+      hit(g, owner, o, p.skill, { hit: p.hit }, p.x);
+    }
+  }
+  if (since >= CLOCK_WAIT + CLOCK_RING) p.life = 0;
+  return true;
+}
+
+/** 仓鼠队长: the stock dash swing is one hit. She keeps running and the count loop strikes.
+    No speed means she stays; the old 520 fallback ran her past the target. */
+function step_wheel(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (!s.speed || a.t < s.start || a.t >= s.duration - .08) return;
+  f.x += f.facing * s.speed * dt;
+}
+
 SCRIPTS['shigure'] = Object.assign(SCRIPTS['shigure'] ?? {}, { volley: volley_shigure, trail: 0 });
+SCRIPTS['sprout'] = Object.assign(SCRIPTS['sprout'] ?? {}, { volley: volley_sprout, hitY: 100, trail: 0 });
+SCRIPTS['clock'] = Object.assign(SCRIPTS['clock'] ?? {}, { volley: volley_clock, after: after_clock, trail: 0 });
+SCRIPTS['wheel'] = Object.assign(SCRIPTS['wheel'] ?? {}, { update: step_wheel, customDash: true });
+/** 二叶三姐妹: two copies run to the edge she faces, turn once, then leave past the far edge.
+    The string only lands while a sister overlaps someone. Both share one hit schedule. */
+const SISTER_SPEED = 280;
+const SISTER_REACH = 64;
+// Same band as a low reach (dy < 48). A real jump peaks near 109, so it clears.
+const SISTER_HIGH = 48;
+/** Backstop if a sister never reaches an edge. The walk itself leaves well before this. */
+const SISTER_LIFE = 12;
+
+function step_sisters(g: FightGame, f: Fighter, a: Attack): void {
+  if (a.emitted || a.t < a.skill.start) return;
+  a.emitted = true;
+  const marks = new Map<number, { n: number; next: number }>();
+  for (let i = 0; i < 2; i++) {
+    g.projectiles.push({
+      owner: f.id,
+      x: clamp(f.x - f.facing * (16 + i * 32), X_MIN, X_MAX),
+      y: FLOOR,
+      vx: f.facing * SISTER_SPEED,
+      vy: 0,
+      life: SISTER_LIFE,
+      skill: a.skill,
+      color: f.data.color,
+      radius: 18,
+      size: 48,
+      fx: 'sister',
+      attack: a,
+      hit: new Set(),
+      trail: [],
+      age: 0,
+      solid: false,
+      hue: i,
+      marks,
+    });
+  }
+}
+
+function step_sister(g: FightGame, p: Projectile, dt: number): boolean {
+  p.x += p.vx * dt;
+  const dir = Math.sign(p.vx) || 1;
+  const edge = dir > 0 ? X_MAX : X_MIN;
+  const atEdge = dir > 0 ? p.x >= edge : p.x <= edge;
+  // One turn, then they walk off. `returned` is that turn; the swell animator cannot rewind it.
+  if (atEdge && !p.returned) {
+    p.x = edge;
+    p.vx = -p.vx;
+    p.returned = true;
+  }
+  if (p.x < -8 || p.x > W + 8) p.life = 0;
+  const owner = g.fighterById(p.owner);
+  const a = p.attack;
+  const marks = p.marks;
+  const count = p.skill.count ?? 1;
+  if (!owner || !a || !marks || a.shots >= count) return true;
+  for (const o of g.opponents(owner)) {
+    if (o.hp <= 0 || Math.abs(o.x - p.x) > SISTER_REACH || Math.abs(o.y - p.y) >= SISTER_HIGH) continue;
+    if (g.age < (marks.get(o.id)?.next ?? 0)) continue;
+    p.hit.clear();
+    const skill = withFinale(p.skill, a.shots >= count - 1);
+    if (!hit(g, owner, o, skill, p, p.x)) continue;
+    a.shots++;
+    marks.set(o.id, { n: a.shots, next: g.age + (p.skill.interval ?? .11) });
+    if (a.shots >= count) break;
+  }
+  return true;
+}
+
+SCRIPTS['sisters'] = Object.assign(SCRIPTS['sisters'] ?? {}, { noStamp: true, update: step_sisters, skipCount: true, noMelee: true });
+SCRIPTS['sister'] = Object.assign(SCRIPTS['sister'] ?? {}, { shot: step_sister, trail: 0 });
 SCRIPTS['jewel'] = Object.assign(SCRIPTS['jewel'] ?? {}, { emit: emit_jewel, hitY: 100, trail: 0, wide: true });
 SCRIPTS['summit'] = Object.assign(SCRIPTS['summit'] ?? {}, { emit: emit_summit });
 SCRIPTS['chord'] = Object.assign(SCRIPTS['chord'] ?? {}, { guitar: 'strum', holdFrom: 3, release: .22, settle: .22, home: 'seek', trail: 14 });

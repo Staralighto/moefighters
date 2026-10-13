@@ -196,4 +196,21 @@ export const SCRIPTS: Record<string, MoveScript> = {
       return true;
     },
   },
+  // 扣一点 / 小摩卡要上了: pin the body to the ankles and let the kernel fly and hit it.
+  'moca-die': {
+    hitY: 96,
+    trail: 4,
+    shot(_g, p) {
+      p.y = FLOOR - 18;
+      return false;
+    },
+  },
+  'moca-dusk': {
+    hitY: 96,
+    trail: 0,
+    shot(_g, p) {
+      p.y = FLOOR - 28;
+      return false;
+    },
+  },
 };

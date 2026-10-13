@@ -9,6 +9,13 @@ const WEBP_PROBE = 'data:image/webp;base64,UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBA
  * Production lists the built WebP, then the PNG. Dev, and a browser that cannot decode
  * WebP, get the PNG only — one request, no fallback storm.
  */
+/** Root paths stay root paths on the dev server. A relative base (Toy) is prefixed at the request. */
+export function assetUrl(src: string, base = import.meta.env?.BASE_URL ?? '/'): string {
+  if (!src.startsWith('/') || src.startsWith('//')) return src;
+  if (!base || base === '/') return src;
+  return (base.endsWith('/') ? base : base + '/') + src.slice(1);
+}
+
 export function imageSources(src: string, prod = import.meta.env.PROD, webpOk = true): readonly string[] {
   if (prod && webpOk && src.endsWith('.png')) return [src.slice(0, -4) + '.webp', src];
   return [src];
@@ -81,7 +88,7 @@ function fetchImage(src: string): Promise<HTMLImageElement> {
       void decoded.then(() => resolve(im));
     };
     im.onerror = () => reject(Error('图片加载失败：' + src));
-    im.src = src;
+    im.src = assetUrl(src);
   });
   // data: URLs fail because those bytes cannot decode, so a second try would fail the same way.
   // A network URL gets one more try: a reset on a lossy link should not stick as a missing sheet.
@@ -176,7 +183,7 @@ let kujiFont: Promise<void> | null = null;
 export function loadKujiFont(): Promise<void> {
   if (kujiFont) return kujiFont;
   if (typeof document === 'undefined' || !document.fonts) return Promise.resolve();
-  const face = new FontFace('Ma Shan Zheng', 'url(/fonts/ma-shan-zheng-kuji.woff2)');
+  const face = new FontFace('Ma Shan Zheng', `url(${assetUrl('/fonts/ma-shan-zheng-kuji.woff2')})`);
   kujiFont = face.load().then(loaded => { document.fonts.add(loaded); }).catch(() => {});
   return kujiFont;
 }

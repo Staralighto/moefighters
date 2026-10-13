@@ -108,8 +108,10 @@ ${lines.join('\n')}
 `;
 }
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // Toy hosts the built page under /toy/<slug>/. Dev stays at the site root.
+  base: command === 'build' ? './' : '/',
   plugins: [propLayout(), touchLayout()],
   server: { host: true },
   preview: { host: true },
-});
+}));

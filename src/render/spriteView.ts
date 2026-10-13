@@ -7,12 +7,23 @@ const rimCache = new Map<string, HTMLCanvasElement>();
 const cellCache = new Map<string, HTMLCanvasElement>();
 const tintCache = new Map<string, HTMLCanvasElement>();
 
+/** Phones bake and blit at low smoothing. `body.touch` is the capability class from device.ts. */
+function phoneRaster(): boolean {
+  return typeof document !== 'undefined' && !!document.body?.classList.contains('touch');
+}
+
+function bakeQuality(): 'low' | 'high' {
+  return phoneRaster() ? 'low' : 'high';
+}
+
 /** ponytail: LRU cap per baked-cell cache. A cell is h×h (181px ≈ 130KB on a dpr-1 canvas,
  *  ~240KB at the arena's usual device scale), the working set is the fielded cast's cells,
  *  and 256 keeps the worst case bounded at ~60MB; eviction rebuilds on demand, so the worst
- *  case is a one-frame bake. Raise only with a memory reason. */
+ *  case is a one-frame bake. Raise only with a memory reason.
+ *  Rims match the cell cap: a 2v2 with summons fields up to 8 rimmed bodies, and 128 thrashed
+ *  there, re-baking mid-fight. A phone rim is ~106KB at dpr 1, so 256 tops out near 27MB. */
 const CELL_CACHE_MAX = 256;
-const RIM_CACHE_MAX = 128;
+const RIM_CACHE_MAX = 256;
 
 /** LRU get-or-bake. Refreshing on hit keeps the hot cells of the current match alive. */
 function cacheCell(cache: Map<string, HTMLCanvasElement>, max: number, key: string, bake: () => HTMLCanvasElement): HTMLCanvasElement {
@@ -31,27 +42,30 @@ function cacheCell(cache: Map<string, HTMLCanvasElement>, max: number, key: stri
   return made;
 }
 
-/** The 256px cell pre-scaled to the raster size it is blitted at (with the flash filter baked
- *  in), so the per-draw cost is a 1:1 blit instead of a high-quality resample of the whole sheet. */
-function prescaledCell(im: HTMLImageElement, sx: number, sy: number, cs: number, h: number, filter: string): HTMLCanvasElement {
-  return cacheCell(cellCache, CELL_CACHE_MAX, im.src + '|' + sx + '|' + sy + '|' + h + '|' + filter, () => {
+/** The 256px cell pre-scaled to the raster size it is blitted at, so the per-draw cost is a
+ *  1:1 blit instead of a high-quality resample of the whole sheet. */
+function prescaledCell(im: HTMLImageElement, sx: number, sy: number, cs: number, h: number): HTMLCanvasElement {
+  const quality = bakeQuality();
+  return cacheCell(cellCache, CELL_CACHE_MAX, im.src + '|' + sx + '|' + sy + '|' + h + '|' + quality, () => {
     const c = document.createElement('canvas');
     c.width = h;
     c.height = h;
     const g = c.getContext('2d');
     if (!g) return c;
     g.imageSmoothingEnabled = true;
-    g.imageSmoothingQuality = 'high';
-    if (filter !== 'none') g.filter = filter;
+    g.imageSmoothingQuality = quality;
     g.drawImage(im, sx, sy, cs, cs, 0, 0, h, h);
     return c;
   });
 }
 
-function spriteFilter(f: Fighter): string {
-  if (f.hitFlash > 0) return 'brightness(2.1)';
-  if (f.invuln > .1) return 'brightness(1.25)';
-  return 'none';
+/** Extra brightness on top of the plain cell: the hit flash is ×2.1, the invuln glow ×1.25.
+ *  Added with 'lighter' instead of a baked brightness() copy, so flashes take no cache slots
+ *  and still show where canvas `filter` is unsupported (Safari before 18). */
+function spriteBoost(f: Fighter): number {
+  if (f.hitFlash > 0) return 1.1;
+  if (f.invuln > .1) return .25;
+  return 0;
 }
 
 const RIM = 3;
@@ -64,17 +78,20 @@ const BOX_SINK = 40;
 /** Special-sheet scale pivots here: the shared foot line, 12px above the cell bottom. */
 const FOOT_MARGIN = 12;
 
-/** ~3px stroke from the smoothed silhouette, then a 1px blur so the edge isn't stepped. Cached per cell. */
+/** ~3px stroke from the smoothed silhouette, then a 1px blur so the edge isn't stepped. Cached per cell.
+ *  Phones stamp 8 times and skip the blur: 40 draws plus a filter bake hitch a 2v2 round start. */
 function hardRim(im: HTMLImageElement, sx: number, sy: number, cs: number, h: number, color: string): HTMLCanvasElement {
-  const key = im.src + '|' + sx + '|' + sy + '|' + h + '|' + color;
+  const phone = phoneRaster();
+  const key = im.src + '|' + sx + '|' + sy + '|' + h + '|' + color + (phone ? '|p' : '');
   return cacheCell(rimCache, RIM_CACHE_MAX, key, () => {
+    const quality = phone ? 'low' : 'high';
     const tinted = document.createElement('canvas');
     tinted.width = h;
     tinted.height = h;
     const tg = tinted.getContext('2d');
     if (!tg) return tinted;
     tg.imageSmoothingEnabled = true;
-    tg.imageSmoothingQuality = 'high';
+    tg.imageSmoothingQuality = quality;
     tg.drawImage(im, sx, sy, cs, cs, 0, 0, h, h);
     tg.globalCompositeOperation = 'source-in';
     tg.fillStyle = color;
@@ -87,14 +104,15 @@ function hardRim(im: HTMLImageElement, sx: number, sy: number, cs: number, h: nu
     const rg = raw.getContext('2d');
     if (!rg) return tinted;
     rg.imageSmoothingEnabled = true;
-    rg.imageSmoothingQuality = 'high';
-    const steps = 20;
+    rg.imageSmoothingQuality = quality;
+    const steps = phone ? 8 : 20;
     for (const radius of [RIM, RIM * 0.5]) {
       for (let i = 0; i < steps; i++) {
         const a = (i / steps) * Math.PI * 2;
         rg.drawImage(tinted, RIM_PAD + Math.cos(a) * radius, RIM_PAD + Math.sin(a) * radius);
       }
     }
+    if (phone) return raw;
 
     const c = document.createElement('canvas');
     c.width = size;
@@ -115,14 +133,15 @@ function drawTint(ctx: CanvasRenderingContext2D, im: HTMLImageElement, sx: numbe
     ctx.drawImage(im, sx, sy, cs, cs, -Math.round(h / 2), -h, h, h);
     return;
   }
-  const baked = cacheCell(tintCache, CELL_CACHE_MAX, im.src + '|' + sx + '|' + sy + '|' + hs + '|' + tint, () => {
+  const quality = bakeQuality();
+  const baked = cacheCell(tintCache, CELL_CACHE_MAX, im.src + '|' + sx + '|' + sy + '|' + hs + '|' + tint + '|' + quality, () => {
     const c = document.createElement('canvas');
     c.width = hs;
     c.height = hs;
     const g = c.getContext('2d');
     if (!g) return c;
     g.imageSmoothingEnabled = true;
-    g.imageSmoothingQuality = 'high';
+    g.imageSmoothingQuality = quality;
     g.drawImage(im, sx, sy, cs, cs, 0, 0, hs, hs);
     g.globalCompositeOperation = 'source-atop';
     g.fillStyle = tint;
@@ -146,6 +165,7 @@ export class SpriteView implements FighterView {
     private readonly world?: string,
     private readonly box?: string,
     private readonly specialScale?: number,
+    private readonly lift = 0,
   ) {}
 
   /** The select screen only needs the idle cell. A missing crop or sheet is "ready" so the block figure can stand in. */
@@ -194,7 +214,7 @@ export class SpriteView implements FighterView {
     const cs = CELL * k;
     ctx.save();
     try {
-      ctx.translate(Math.round(x), Math.round(y));
+      ctx.translate(Math.round(x), Math.round(y) - this.lift);
       // 微笑大回旋: the cell is a front-facing 大字. Don't mirror it; spin that pose three turns on the screen.
       // Frozen ghosts keep their stamped cell; only the live fighter spins.
       const cartwheel = !pose && f.attack?.skill.fx === 'cartwheel';
@@ -213,8 +233,8 @@ export class SpriteView implements FighterView {
       if (boxed) ctx.translate(0, BOX_SINK);
       // Undo the body offset baked into the cell so only the prop hangs off the fighter origin.
       if (!boxed && clip.ox) ctx.translate(-Math.round(clip.ox * h / CELL), 0);
-      // 必杀表单独放大时绕脚线，脚不动、身子向上长。
-      const sheetScale = !boxed && clip.sheet === 'special' ? this.specialScale : undefined;
+      // 必杀表单独放大时绕脚线，脚不动、身子向上长。一列自己的 scale 优先于整表。
+      const sheetScale = !boxed && clip.sheet === 'special' ? (clip.scale ?? this.specialScale) : undefined;
       if (sheetScale) {
         const pivot = -h * FOOT_MARGIN / CELL;
         ctx.translate(0, pivot);
@@ -224,16 +244,28 @@ export class SpriteView implements FighterView {
       ctx.globalAlpha = alpha;
       if (outline && typeof document !== 'undefined') {
         ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
+        ctx.imageSmoothingQuality = bakeQuality();
         ctx.drawImage(hardRim(im, cell.sx, cell.sy, cs, h, outline), ax - RIM_PAD, -h - RIM_PAD);
       }
       // Source cell is 256, baked once per raster size (see hs); the per-draw cost is a
       // nearest-neighbour 1:1 blit. Smoothing stays off so the blit cannot soften the pixels.
       // 必杀表被放大时打开平滑，避免最近邻把边缘打成台阶。
       ctx.imageSmoothingEnabled = !!sheetScale;
-      if (sheetScale) ctx.imageSmoothingQuality = 'high';
+      if (sheetScale) ctx.imageSmoothingQuality = bakeQuality();
       if (tint) drawTint(ctx, im, cell.sx, cell.sy, cs, h, hs, tint);
-      else ctx.drawImage(prescaledCell(im, cell.sx, cell.sy, cs, hs, spriteFilter(f)), ax, -h, h, h);
+      else {
+        const baked = prescaledCell(im, cell.sx, cell.sy, cs, hs);
+        ctx.drawImage(baked, ax, -h, h, h);
+        // Only over a normal paint: the time-stop veil stamps her with destination-out.
+        const boost = ctx.globalCompositeOperation === 'source-over' ? spriteBoost(f) : 0;
+        if (boost > 0) {
+          ctx.globalCompositeOperation = 'lighter';
+          for (let k = boost; k > 0; k -= 1) {
+            ctx.globalAlpha = alpha * Math.min(1, k);
+            ctx.drawImage(baked, ax, -h, h, h);
+          }
+        }
+      }
     } finally {
       ctx.restore();
     }

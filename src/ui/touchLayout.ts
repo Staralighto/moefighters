@@ -33,7 +33,8 @@ export function bindBattleFrame(): void {
   };
   const apply = () => {
     // 宽屏（桌面全屏开关）走同一条管线，但没有横竖屏门槛：窗口什么比例都铺。
-    const touchOn = document.body.classList.contains('touch') && landscape.matches;
+    const turned = document.body.classList.contains('turned');
+    const touchOn = document.body.classList.contains('touch') && (landscape.matches || turned);
     const wideOn = document.body.classList.contains('wide');
     const on = (touchOn || wideOn)
       && document.body.classList.contains('in-battle')
@@ -49,7 +50,9 @@ export function bindBattleFrame(): void {
       applyTouchLayout();
       return;
     }
-    fit();
+    // The rotated battle is already a landscape box. Pinning it to the portrait height would stretch it.
+    if (turned) arena.style.height = '';
+    else fit();
     // The keys are sized and placed off --atk, so the arena width is the only number they need.
     pad.classList.add('in-tower');
     pad.style.setProperty('--atk', `${arena.clientWidth * .09}px`);
@@ -65,7 +68,10 @@ export function bindBattleFrame(): void {
     applyTouchLayout();
   };
   if (typeof ResizeObserver !== 'undefined') new ResizeObserver(apply).observe(arena);
-  landscape.addEventListener('change', () => requestAnimationFrame(apply));
+  landscape.addEventListener('change', () => {
+    if (landscape.matches) document.body.classList.remove('turned');
+    requestAnimationFrame(apply);
+  });
   window.addEventListener('resize', () => requestAnimationFrame(apply));
   window.visualViewport?.addEventListener('resize', () => requestAnimationFrame(apply));
   new MutationObserver(() => requestAnimationFrame(apply)).observe(document.body, { attributes: true, attributeFilter: ['class'] });

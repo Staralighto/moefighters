@@ -63,14 +63,14 @@
   <symbol id="i-music-notes" viewBox="0 0 256 256"><path fill="currentColor" d="M212.92,17.69a8,8,0,0,0-6.86-1.45l-128,32A8,8,0,0,0,72,56V166.08A36,36,0,1,0,88,196V110.25l112-28v51.83A36,36,0,1,0,216,164V24A8,8,0,0,0,212.92,17.69ZM52,216a20,20,0,1,1,20-20A20,20,0,0,1,52,216ZM88,93.75V62.25l112-28v31.5ZM180,184a20,20,0,1,1,20-20A20,20,0,0,1,180,184Z"/></symbol>
 </svg>
 <header>
-  <a class="brand" href="/"><span class="brand-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path fill="currentColor" d="M14.26 9.52A1.83 1.83 0 0 1 17.74 9.52L18.53 11.94A1.83 1.83 0 0 0 20.27 13.2L22.81 13.2A1.83 1.83 0 0 1 23.89 16.52L21.84 18.01A1.83 1.83 0 0 0 21.17 20.06L21.96 22.48A1.83 1.83 0 0 1 19.13 24.53L17.08 23.04A1.83 1.83 0 0 0 14.92 23.04L12.87 24.53A1.83 1.83 0 0 1 10.04 22.48L10.83 20.06A1.83 1.83 0 0 0 10.16 18.01L8.11 16.52A1.83 1.83 0 0 1 9.19 13.2L11.73 13.2A1.83 1.83 0 0 0 13.47 11.94L14.26 9.52Z"/></svg></span><span>萌趣格斗<small>同屏街机格斗 · 第一版</small></span></a>
+  <a class="brand" href="./"><span class="brand-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path fill="currentColor" d="M14.26 9.52A1.83 1.83 0 0 1 17.74 9.52L18.53 11.94A1.83 1.83 0 0 0 20.27 13.2L22.81 13.2A1.83 1.83 0 0 1 23.89 16.52L21.84 18.01A1.83 1.83 0 0 0 21.17 20.06L21.96 22.48A1.83 1.83 0 0 1 19.13 24.53L17.08 23.04A1.83 1.83 0 0 0 14.92 23.04L12.87 24.53A1.83 1.83 0 0 1 10.04 22.48L10.83 20.06A1.83 1.83 0 0 0 10.16 18.01L8.11 16.52A1.83 1.83 0 0 1 9.19 13.2L11.73 13.2A1.83 1.83 0 0 0 13.47 11.94L14.26 9.52Z"/></svg></span><span>萌趣格斗<small>同屏街机格斗 · 第一版</small></span></a>
   <nav>
     <button id="settings" class="icon-btn icon-only" type="button" title="设置" aria-label="设置"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-gear-six"/></svg><span class="btn-label">设置</span></button>
     <button id="sound" class="icon-btn icon-only" type="button" aria-label="音效开"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-speaker-high"/></svg><span class="btn-label">♪ 音效开</span></button>
     <details id="music-settings" class="music-wrap">
       <summary id="music" class="icon-btn icon-only" title="背景音乐" aria-label="背景音乐"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-music-notes"/></svg><span class="btn-label">♫ 音乐</span></summary>
       <div class="music-pop">
-        <button id="music-toggle" type="button" aria-pressed="false">♫ 音乐关</button>
+        <button id="music-toggle" type="button" aria-pressed="true">♫ 音乐开</button>
         <label class="music-pop-row" for="music-volume">音量 <input id="music-volume" type="range" min="0" max="100" step="5" value="60" aria-label="音乐音量"><output id="music-volume-value" for="music-volume">60%</output></label>
       </div>
     </details>
@@ -215,9 +215,9 @@
     <div class="game-banner" id="banner">
       <small id="banner-sub"></small><strong id="banner-text"></strong>
       <small id="deck-label" class="deck-label" hidden></small>
-      <button id="resume" class="icon-btn" type="button" hidden aria-label="继续战斗"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-play"/></svg><span class="btn-label">继续战斗 ▶</span></button>
-      <button id="wide-exit" class="icon-btn" type="button" hidden aria-label="退出宽屏"><span class="btn-label">退出宽屏</span><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-corners-in"/></svg></button>
-      <button id="pause-quit" class="icon-btn" type="button" hidden aria-label="返回选人"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-arrow-left"/></svg><span class="btn-label">返回选人 ◀</span></button>
+      <button id="resume" class="icon-btn" type="button" hidden aria-label="继续战斗"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-play"/></svg><span class="btn-label">继续战斗</span></button>
+      <button id="wide-exit" class="icon-btn" type="button" hidden aria-label="退出宽屏"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-corners-in"/></svg><span class="btn-label">退出宽屏</span></button>
+      <button id="pause-quit" class="icon-btn" type="button" hidden aria-label="返回选人"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-arrow-left"/></svg><span class="btn-label">返回选人</span></button>
     </div>
     <div class="touchpad" id="touchpad">
       <div class="tp-stick" data-pad="stick">
@@ -238,7 +238,7 @@
       <p id="end-info"></p>
       <div><button class="start icon-btn" id="rematch" type="button" aria-label="再来一局"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-arrow-clockwise"/></svg><span class="btn-label">再来一局 ↻</span></button><button class="icon-btn" id="reselect" type="button" aria-label="重新选人"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-users"/></svg><span class="btn-label">重新选人</span></button></div>
     </div>
-    <div class="rotate-hint">横过来才能打</div>
+    <div class="rotate-hint">点右上角进入横屏</div>
   </div>
   <div id="battle-skills" data-tier="2"></div>
   <div id="battle-skills-bar">

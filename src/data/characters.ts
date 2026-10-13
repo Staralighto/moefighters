@@ -25,6 +25,11 @@ const stats = (trait: Trait) => ({
   power: 1,
 });
 
+/** 半速、捉弄、必杀 share this. The super adds the block flag and the bonus on top. */
+const mocaSlow = {
+  slow: 5, slowMul: .5, slowJump: .65, slowAtk: .7, slowMark: 'bubble',
+};
+
 export const ROSTER: CharacterData[] = [
   {
     id: 'uika', name: '三角初华', title: '忠犬 / 悲伤', quote: '我毋畏悲伤。', color: '#BB9955',
@@ -171,7 +176,7 @@ export const ROSTER: CharacterData[] = [
       skill(5, 'endure', '诗超绊', {
         cost: 150, damage: 0, start: 1.0, duration: 1.35, fx: 'poem',
         onActive: [{ op: 'summon', kind: 'ally' }],
-        brief: '原地歌唱震退；召唤队友并肩，被击败提前退场', detail: '原地歌唱 1 秒震退对手，随后召唤 1 名 MyGO 队友并肩 12 秒；队友生命只有两成、伤害三成，被击败提前退场',
+        brief: '震退并召唤队友；在场禁回气，被击败退场', detail: '原地歌唱 1 秒震退对手，随后召唤 1 名 MyGO 队友并肩 12 秒；生命两成、伤害三成，队友在场时无法获得气，被击败提前退场',
       }),
     ],
   },
@@ -677,9 +682,9 @@ export const ROSTER: CharacterData[] = [
         // count 1 keeps the super projectile template from firing three shots. emit owns the tongue
         // and keeps it until the tail leaves the screen.
         damage: 160, count: 1, start: .45, duration: 1.15, speed: 720, knock: 380, size: 220, fx: 'jewel',
-        contact: 'pass', solid: false,
-        brief: '贴地火舌；可格挡，离地躲，命中击倒',
-        detail: '一道贴地火舌向前烧过身前。可格挡。人离地就躲过。每人只烧一次，命中击倒。',
+        contact: 'pass', solid: false, noBlock: true,
+        brief: '贴地火舌；无法格挡，跳起可躲，命中击倒',
+        detail: '一道贴地火舌向前烧过身前，无法格挡，跳起躲过；每人只烧一次，命中击倒',
       }),
     ],
   },
@@ -810,9 +815,9 @@ export const ROSTER: CharacterData[] = [
         brief: '短距离贴到面前打一下', detail: '短距离突进，贴到面前打一下',
       }),
       skill(5, 'endure', '和姐姐在一起', {
-        damage: 0, range: 0, start: .4, duration: .9, fx: 'burst',
+        cost: 150, damage: 0, range: 0, start: .4, duration: .9, fx: 'burst',
         onActive: [{ op: 'summon', kind: 'named', id: HINA_PARTNER }],
-        brief: '召唤冰川纱夜到身侧；被击败提前退场', detail: '召唤冰川纱夜到身侧并肩 12 秒，生命两成、伤害三成；被击败提前退场',
+        brief: '召唤纱夜到身侧；在场禁回气，被击败退场', detail: '召唤冰川纱夜到身侧并肩 12 秒，生命两成、伤害三成；纱夜在场时无法获得气，被击败提前退场',
       }),
     ],
   },
@@ -868,6 +873,45 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'moca', name: '青叶摩卡', title: '吉他 / 半速', quote: 'モカちゃんやっちゃうよ～', color: '#00CCAA',
+    bands: ['afterglow'],
+    ...stats('focus'),
+    rootFx: 'moca-ring',
+    view: { kind: 'sprite', common: '/sprites/moca/common.png', special: '/sprites/moca/special.png', height: 175 },
+    skills: [
+      skill(0, 'light', '懒拨'),
+      skill(1, 'heavy', '横踢'),
+      skill(2, 'projectile', '半速', {
+        ...mocaSlow,
+        damage: 16, speed: 174, size: 78, life: 2.5, start: .34, duration: .72, cd: 4.5, knock: 50, fx: 'moca-bubble',
+        brief: '慢气泡打实减速，拖慢 J / K；可格挡或跳过',
+        detail: '横躺气泡慢速平飞，打实后减速 5 秒，移动降至 50%、跳跃高度约降至 42%，J / K 攻速降至 70%、冷却延长至约 143%；可格挡或跳过',
+      }),
+      skill(3, 'projectile', '扣一点', {
+        damage: 18, speed: 226, size: 36, life: .75, start: .3, duration: .7, cd: 6, knock: 0, fx: 'moca-die',
+        root: 1.5, rootBreak: 0, rootPin: true,
+        brief: '贴地骰子命中定身；可格挡或跳过',
+        detail: '贴地骰子短距离滚出，命中定身 1.5 秒，不受击解除；可格挡或跳过',
+      }),
+      skill(4, 'grab', '捉弄', {
+        damage: 16, count: 2, interval: .28, range: 150, start: .24, duration: 1.1, cd: 7, knock: 0, fx: 'slash',
+        hitbox: 'front',
+        react: { kind: 'stand', stun: .3 },
+        ...mocaSlow,
+        brief: '近身连戳两下；打实减速，拖慢 J / K',
+        detail: '近身连戳两下，打实后减速 5 秒，移动降至 50%、跳跃高度约降至 42%，J / K 攻速降至 70%、冷却延长至约 143%',
+      }),
+      skill(5, 'projectile', '小摩卡要上了', {
+        damage: 36, count: 1, speed: 243, size: 140, life: 3.2, start: .4, duration: .9, knock: 40, fx: 'moca-dusk',
+        contact: 'pass', solid: false,
+        react: { kind: 'stand', stun: .2 },
+        ...mocaSlow, slowOnBlock: true, slowBonus: 100, noBlockSlow: true,
+        brief: '拖 J / K 可跳；减速挡不住加伤，挡也减速',
+        detail: '贴地夕阳慢波爬过，打实减速 5 秒，移动降至 50%、跳跃高度约降至 42%，J / K 攻速降至 70%、冷却延长至约 143%；未减速时格挡也减速，已减速时无法格挡并额外 100 伤害，跳起可躲',
+      }),
+    ],
+  },
+  {
     id: 'layer', name: 'LAYER', title: '主唱 / 近战', quote: '准备好大闹一场了吗？', color: '#CC0000',
     bands: ['raise-a-suilen'],
     ...stats('rush'),
@@ -902,6 +946,43 @@ export const ROSTER: CharacterData[] = [
         finale: { damage: 48, knock: 420, react: { kind: 'knockdown', vy: -260, knocked: .75 } },
         brief: '每击向前一步并带走；禁回气，空挥走完，末击击倒',
         detail: '七下各向前踏一步，打中后钉在身前带走，末击击倒；打空也把步子走完，期间无法获得气',
+      }),
+    ],
+  },
+  {
+    id: 'chuchu', name: 'CHU²', title: '制作人 / DJ', quote: 'Change The World！', color: '#00BBFF',
+    bands: ['raise-a-suilen'],
+    ...stats('focus'),
+    view: {
+      kind: 'sprite', common: '/sprites/chuchu/common.png', special: '/sprites/chuchu/special.png', height: 170, lift: 10,
+      extras: ['/sprites/chuchu/jerky.png', '/sprites/chuchu/cake.png'],
+    },
+    skills: [
+      skill(0, 'light', '轻点'),
+      skill(1, 'heavy', '横踢'),
+      skill(2, 'projectile', '牛肉干', {
+        damage: 16, count: 3, interval: .12, speed: 500, size: 36, life: 1.6,
+        start: .2, duration: .65, cd: 3.2, fx: 'jerky',
+        brief: '连甩三根肉干；可格挡或跳过',
+        detail: '连甩三根肉干；可格挡或跳过',
+      }),
+      skill(3, 'projectile', '垃圾桶', {
+        damage: 14, count: 4, interval: .22, speed: 160, size: 32, life: 2.4,
+        start: .2, duration: .9, cd: 5, fx: 'trash',
+        brief: '四团纸贴地慢滚；可格挡或跳过',
+        detail: '四团纸球从身前同一点依次贴地滚出；可格挡或跳过',
+      }),
+      skill(4, 'projectile', '草莓蛋糕', {
+        damage: 52, speed: 220, size: 96, life: 2.4, knock: 280,
+        start: .28, duration: .7, cd: 6.5, fx: 'cake',
+        brief: '抛出慢速蛋糕；击退且可挡可跳',
+        detail: '一整只蛋糕慢速飞过，击退 280；可格挡或跳过',
+      }),
+      skill(5, 'light', '改变世界', {
+        damage: 40, count: 10, interval: .1, range: 480, knock: 180,
+        start: .35, duration: 2.95, fx: 'change',
+        brief: '圆点靠近才挡；按早显示miss',
+        detail: '身前蓝色长条发出 2.6 秒并停在对方身上；圆点靠近后再格挡才算，按早会被击穿并显示 miss，全程格挡均匀削去一半破防，归零被击中显示 Bad，不挡至多挨 10 下，跳不掉',
       }),
     ],
   },
@@ -941,6 +1022,46 @@ export const ROSTER: CharacterData[] = [
         slow: 4, slowMul: .6, slowJump: .75, slowOnBlock: true, solid: false,
         brief: '闪蝶折返；挡住也减速，回程转向',
         detail: '一群闪蝶平飞并折返，去程回程各打一次；打实或格挡都减速 4 秒，移动降至 60%、跳跃高度约降至 56%',
+      }),
+    ],
+  },
+  {
+    id: 'tsukushi', name: '二叶筑紫', title: '鼓手 / 班长', quote: '以成为坚定可靠的人为目标。', color: '#EE7788',
+    bands: ['morfonica'],
+    ...stats('beat'),
+    view: {
+      kind: 'sprite', common: '/sprites/tsukushi/common.png', special: '/sprites/tsukushi/special.png', height: 170,
+      extras: ['/sprites/tsukushi/sprout.png', '/sprites/tsukushi/wheel.png'],
+    },
+    skills: [
+      skill(0, 'light', '点拍'),
+      skill(1, 'heavy', '横踢'),
+      skill(2, 'projectile', '土笔', {
+        damage: 14, count: 4, interval: .12, gain: 3, speed: 150, size: 44, life: 1.5,
+        start: .26, duration: .78, cd: 6.5, knock: 60, solid: false, fx: 'sprout',
+        brief: '四株贴地推进；可格挡或跳过',
+        detail: '四株笔头菜依次从身前冒出并向前推进；可格挡或跳过',
+      }),
+      skill(3, 'projectile', '五个闹钟', {
+        damage: 12, count: 5, interval: 0, gain: 2, size: 48, life: 4.2,
+        start: .3, duration: .55, cd: 8, knock: 0, solid: false, motion: 'fall', fx: 'clock',
+        brief: '五只落地等待后连响三次；等待时走开可避',
+        detail: '五只闹钟落到身前五个点并在地面等待1.5秒。不响的随后消失，会响的在1.5秒内连放三圈白波，每圈打一段。站在两只中间会同时挨打。等待时离开可避',
+      }),
+      skill(4, 'dash', '仓鼠队长', {
+        damage: 16, count: 4, interval: .1, range: 150, start: .12, duration: .86, cd: 5.5,
+        speed: 280, knock: 0, gain: 3, reach: 'low', fx: 'wheel',
+        finale: { knock: 380, react: { kind: 'knockdown', vy: -240, knocked: .72 } },
+        brief: '滚轮连打四下；只打站立目标',
+        detail: '滚轮向前连打四下，末击击倒；只打站立目标',
+      }),
+      skill(5, 'light', '二叶三姐妹', {
+        cost: 110, damage: 22, count: 6, interval: .11, range: 160, start: .3, duration: 1.22,
+        knock: 0, gain: 2, fx: 'sisters',
+        react: { kind: 'pin', stun: .22 },
+        finale: { knock: 420, react: { kind: 'knockdown', vy: -260, knocked: .72 } },
+        brief: '妹妹撞上才连打，末击倒；跳起可躲',
+        detail: '两个妹妹跑向面前的场边，碰到后折返，再走出另一边。撞上才连打，末击击倒。跳起可躲',
       }),
     ],
   },

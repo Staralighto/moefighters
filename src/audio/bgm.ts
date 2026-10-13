@@ -6,9 +6,11 @@
    开关是同步布尔：点击立即翻转、UI 立即跟手，出声只是跟着状态走；点击路径上没有可悬挂的
    promise（解码异步落地后由 sync 接上）。开关与音量存 localStorage，关掉标签页也在。
    旧的 sessionStorage 只读一次：能解析就迁到 localStorage 再删掉；坏 JSON 当成没有，
-   不让存档把页面打崩。   浏览器允许时开着的音乐会自己响；不允许就保持开关为开，等下一次
-   点击或按键再接上。静默试播只用同一个 AudioContext：手势里 resume 它，
-   不再关掉后另建一个，避免和音效抢第二次创建并把这一页的音乐标死。 */
+   不让存档把页面打崩。没有存档时默认开着，用户拨过开关之后以存档为准。浏览器允许时
+   开着的音乐会自己响；不允许就保持开关为开，选人页先不出声，开打的点击再接上。静默
+   试播只用同一个 AudioContext：手势里 resume 它，不再关掉后另建一个，避免和音效抢
+   第二次创建并把这一页的音乐标死。 */
+import { assetUrl } from '../assets/loader.ts';
 import { migrateLinearSlider, musicGain } from './mix.ts';
 
 const MUSIC_SRC = '/bgm/garupa-pico-instrumental.m4a';
@@ -57,7 +59,7 @@ export function resolveMusicPrefs(localRaw: string | null, sessionRaw: string | 
     };
   }
   const session = readRecord(sessionRaw);
-  if (!session) return { enabled: false, volume: DEFAULT_VOLUME, writeLocal: null, dropSession: false };
+  if (!session) return { enabled: true, volume: DEFAULT_VOLUME, writeLocal: null, dropSession: false };
   return {
     enabled: session.enabled,
     volume: session.volume,
@@ -100,7 +102,7 @@ const stored = loadPrefs();
 let enabled = stored.enabled;
 let volume = stored.volume;
 
-/* ctx 懒建。unlocked 只在点击开关或 pokeMusic（按下/按键）之后放开，切回前台不会在
+/* ctx 懒建。unlocked 只在点击开关或 pokeMusic（开打）之后放开，切回前台不会在
    还没有手势时把 context 建出来。音乐关着的访客一个字节都不下载。 */
 let ctx: AudioContext | null = null;
 let gain: GainNode | null = null;
@@ -114,8 +116,10 @@ let offset = 0;
 let startedAt = 0;
 let pageSuspended = typeof document !== 'undefined' && document.hidden;
 let unlocked = false;
-/* 静默开播的临时 context。只有已经 running 才收编；失败或一直挂起就关掉，手势另建。
-   ponytail: 只试一次，不排队重试。升级路径是下一次 pokeMusic。 */
+/* 静默开播还没成功时，选人页的点击不接音乐。开打或用户自己点开关才清掉。 */
+let waitForFight = enabled;
+/* 静默开播的临时 context。只有已经 running 才收编；失败或一直挂起就关掉，开打的手势另建。
+   ponytail: 只试一次，不排队重试。升级路径是开打时的 pokeMusic，或用户自己点开关。 */
 let pending: AudioContext | null = null;
 
 function save(): void {
@@ -167,7 +171,7 @@ export function setMusicHeld(on: boolean): void {
 function ensureBuffer(): void {
   if (buffer || decoding || bufferBroken || held || !ctx) return;
   decoding = true;
-  fetch(MUSIC_SRC)
+  fetch(assetUrl(MUSIC_SRC))
     .then(r => { if (!r.ok) throw new Error('bgm fetch ' + r.status); return r.arrayBuffer(); })
     .then(ab => ctx!.decodeAudioData(ab))
     .then(decoded => {
@@ -221,6 +225,7 @@ export function setMusicEnabled(on: boolean): void {
   enabled = on;
   save();
   unlocked = true; /* 点开关本身就是手势 */
+  waitForFight = false;
   if (!on) {
     buffer = null; /* 解码后的 PCM 比压缩文件大一个数量级，音乐关着就不驻留内存 */
     dropPending();
@@ -228,12 +233,18 @@ export function setMusicEnabled(on: boolean): void {
   sync(); /* 关：sync 收拾播放；开：借这次手势建 ctx、拉文件、接上 */
 }
 
-/** 每次用户手势调用：音乐开着但还没出声（重新打开页面后静默开播被拒、解码刚落地）
-   就在这里接上；已经出声则什么都不做。 */
+/** 开打时调用：音乐开着但还没出声就在这次点击里接上；已经出声则什么都不做。 */
 export function pokeMusic(): void {
   if (!enabled) return;
+  waitForFight = false;
   unlocked = true;
   sync();
+}
+
+/** 选人页的点击和按键。静默开播被拒时先不开，等开打；已经允许出声之后，用来把挂起的播放接回来。 */
+export function nudgeMusic(): void {
+  if (waitForFight) return;
+  pokeMusic();
 }
 
 export function setMusicVolume(v: number): void {
@@ -253,15 +264,16 @@ export function setMusicSuspended(suspended: boolean): void {
 function trySilent(): void {
   if (!enabled || ctx || ctxBroken || pending || typeof AudioContext === 'undefined') return;
   let c: AudioContext;
-  try { c = new AudioContext(); } catch { return; }
+  try { c = new AudioContext(); } catch { waitForFight = true; return; }
   pending = c;
   const take = (): void => {
     if (pending !== c) return;
-    if (!enabled || pageSuspended || c.state !== 'running') { dropPending(); return; }
+    if (!enabled || pageSuspended || c.state !== 'running') { waitForFight = true; dropPending(); return; }
+    waitForFight = false;
     sync();
   };
   if (c.state === 'running') take();
-  else void c.resume().then(take).catch(() => { if (pending === c) dropPending(); });
+  else void c.resume().then(take).catch(() => { if (pending === c) { waitForFight = true; dropPending(); } });
 }
 
 function scheduleSilent(): void {

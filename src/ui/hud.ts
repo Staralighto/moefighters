@@ -110,17 +110,19 @@ export function updateHUD(g: FightGame): void {
   };
   const paintCd = (b: HTMLElement, cd: number) => {
     if (!(cd > 0)) {
-      b.classList.remove('cooling');
-      b.style.removeProperty('--cd');
-      delete b.dataset.cdMax;
+      if (b.classList.contains('cooling')) b.classList.remove('cooling');
+      if (b.style.getPropertyValue('--cd')) b.style.removeProperty('--cd');
+      if (b.dataset.cdMax) delete b.dataset.cdMax;
       return;
     }
     // The first frame of a cooldown is the full clock. Later frames only shrink, unless a channel extends it.
     const prev = Number(b.dataset.cdMax);
     const max = Math.max(cd, prev > 0 ? prev : 0);
-    b.dataset.cdMax = String(max);
-    b.style.setProperty('--cd', max > 0 ? String(1 - cd / max) : '0');
-    b.classList.add('cooling');
+    const maxStr = String(max);
+    if (b.dataset.cdMax !== maxStr) b.dataset.cdMax = maxStr;
+    const next = max > 0 ? String(1 - cd / max) : '0';
+    if (b.style.getPropertyValue('--cd') !== next) b.style.setProperty('--cd', next);
+    if (!b.classList.contains('cooling')) b.classList.add('cooling');
   };
   // The pad is display:none on plain desktop, so body.touch gates the whole block out for free.
   // Wide mode shows the same pad as cooldown indicators, so it rides the same updates.
@@ -134,10 +136,16 @@ export function updateHUD(g: FightGame): void {
     touchUlt ??= $m('touchpad').querySelector<HTMLElement>('.ult');
     if (touchUlt) {
       const ready = me.energy >= ultCost;
-      touchUlt.style.setProperty('--p', String(Math.min(1, me.energy / ultCost)));
+      const p = String(Math.min(1, me.energy / ultCost));
+      if (touchUlt.style.getPropertyValue('--p') !== p) touchUlt.style.setProperty('--p', p);
       touchUlt.classList.toggle('ready', ready);
     }
   }
+  // Landscape phones, the portrait turn, and wide mode hide the movelist. Writing it still dirties style.
+  const skillsHidden = document.body.classList.contains('wide')
+    || document.body.classList.contains('turned')
+    || (document.body.classList.contains('touch') && matchMedia('(orientation: landscape)').matches);
+  if (skillsHidden) return;
   for (let i = 0; i < skillRows.length; i++) {
     const el = skillRows[i];
     const charge = i === 5 ? skillCharges[i] : null;

@@ -73,6 +73,12 @@ export function thumbBandTop(attackTop: number, attackSize: number): number {
   return attackTop + Math.max(0, attackSize) * .08;
 }
 
+/** Screen offset from the stick center, in the axes of a battle rotated 90° clockwise.
+ *  Content right lands on screen down; content down lands on screen left. */
+export function turnedStickDelta(screenDx: number, screenDy: number): { dx: number; dy: number } {
+  return { dx: screenDy, dy: -screenDx };
+}
+
 /**
  * Pair a stick pointer with the touch that started it. pointerId and the touch identifier are not
  * the same number on every browser, so match the contact. The window is one event turn, not a
@@ -195,7 +201,7 @@ export class TouchInput {
     const el = e.target as HTMLElement;
     if (el.closest(NOT_BLANK)) return;
     const band = this.thumbBandTop();
-    if (band !== null && e.clientY >= band) {
+    if (band !== null && this.inThumbBand(e.clientX, e.clientY, band)) {
       e.preventDefault();
       return;
     }
@@ -259,6 +265,16 @@ export class TouchInput {
     const r = atk.getBoundingClientRect();
     if (r.height < 2) return null;
     return thumbBandTop(r.top, r.height);
+  }
+
+  /** True when a blank press sits in the thumb row. Turned mode: game-down is screen-left, so the attack key's top is the right edge of its box. */
+  private inThumbBand(clientX: number, clientY: number, band: number): boolean {
+    if (!document.body.classList.contains('turned')) return clientY >= band;
+    const atk = this.pad.querySelector<HTMLElement>('.tp-actions .atk');
+    if (!atk) return clientY >= band;
+    const r = atk.getBoundingClientRect();
+    if (r.width < 2) return clientY >= band;
+    return clientX <= r.right - r.width * .08;
   }
 
   private stick(): HTMLElement | null { return this.pad.querySelector('.tp-stick'); }
@@ -422,8 +438,9 @@ export class TouchInput {
     const g = this.getGame();
     const box = this.stickBox;
     if (!g || !box || !this.stickKnob) return;
-    const dx = clientX - (box.left + box.width / 2);
-    const dy = clientY - (box.top + box.height / 2);
+    const sdx = clientX - (box.left + box.width / 2);
+    const sdy = clientY - (box.top + box.height / 2);
+    const { dx, dy } = document.body.classList.contains('turned') ? turnedStickDelta(sdx, sdy) : { dx: sdx, dy: sdy };
     const max = box.width / 2;
     if (!(max > 0)) return;
     const len = Math.hypot(dx, dy) || 1;

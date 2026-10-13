@@ -6,7 +6,7 @@ import { bandMembers, ROSTER_BY_ID } from '../data/characters.ts';
 import type { BandId } from '../data/bands.ts';
 import { advanceAnim } from './animState.ts';
 import { easeSealSwells, effectSettled, stepProjectiles, updateAttack } from './combat.ts';
-import { addMod, has, jumpMul, regenPerSec, speedMul, tickMods } from './mods.ts';
+import { addMod, atkMul, clearMod, has, jumpMul, regenPerSec, speedMul, tickMods } from './mods.ts';
 import { SCRIPTS } from './scripts.ts';
 import { stepAI } from './ai.ts';
 import { COMBO_DECAY, COMBO_ESCAPE, CONTROLS, FLOOR, GRAVITY, INPUT_BUFFER, SIDE, STEP, X_MAX, X_MIN, clamp } from './constants.ts';
@@ -223,7 +223,10 @@ export class FightGame {
   /* ---- queries ---- */
   isEnemy(a: Fighter | undefined, b: Fighter | undefined): boolean { return !!a && !!b && a.team !== b.team; }
   /** By id, never by array slot: a summoned teammate's id has nothing to do with its position. */
-  fighterById(id: number): Fighter | undefined { return this.fighters.find(f => f.id === id); }
+  fighterById(id: number): Fighter | undefined {
+    for (const f of this.fighters) if (f.id === id) return f;
+    return undefined;
+  }
   /** Echoes are nobody's target: not melee, not shots, not the AI, not a well's pull. */
   opponents(f: Fighter): Fighter[] { return this.fighters.filter(o => this.isEnemy(f, o) && o.hp > 0 && !o.echo); }
   /** Nearest living enemy to a point, one pass, no allocation. Per-step callers (homing shots,
@@ -300,10 +303,12 @@ export class FightGame {
     this.options.onHUD?.(this);
   }
 
-  /** Feed a requestAnimationFrame timestamp; runs as many fixed steps as elapsed time allows. */
+  /** Feed a requestAnimationFrame timestamp; runs as many fixed steps as elapsed time allows.
+   *  At most 6 per frame: below 20fps the match slows down instead of spending the next frame
+   *  catching up, which on a slow phone only makes that frame late too. */
   advance(nowMs: number): void {
     if (!this.lastFrame) this.lastFrame = nowMs;
-    const delta = Math.min((nowMs - this.lastFrame) / 1000, .1);
+    const delta = Math.min((nowMs - this.lastFrame) / 1000, .05);
     this.lastFrame = nowMs;
     this.accumulator += delta;
     while (this.accumulator >= STEP) {
@@ -665,11 +670,13 @@ export class FightGame {
   /** ponytail: 36px gap only between teams. Teammates have no body and pass through. */
   private separate(): void {
     const GAP = 36;
-    const live = this.fighters.filter(f => f.hp > 0 && !f.echo);
-    for (let i = 0; i < live.length; i++) {
-      for (let j = i + 1; j < live.length; j++) {
-        const a = live[i], b = live[j];
-        if (a.team === b.team) continue;
+    const all = this.fighters;
+    for (let i = 0; i < all.length; i++) {
+      const a = all[i];
+      if (a.hp <= 0 || a.echo) continue;
+      for (let j = i + 1; j < all.length; j++) {
+        const b = all[j];
+        if (b.hp <= 0 || b.echo || a.team === b.team) continue;
         if (Math.abs(a.y - b.y) >= 40) continue;
         const dx = b.x - a.x;
         const adx = Math.abs(dx);
@@ -700,6 +707,7 @@ export class FightGame {
     m.minion = true;
     m.dmgMul = .3;
     m.life = MINION_LIFE;
+    this.lockUltSummon(owner, m);
     while (this.totalHits.length <= m.id) { this.totalHits.push(0); this.maxCombo.push(0); }
     this.fighters.push(m);
     this.sparks(m.x, m.y - 80, m.data.color, 16);
@@ -724,11 +732,21 @@ export class FightGame {
     m.minion = true;
     m.dmgMul = .3;
     m.life = MINION_LIFE;
+    this.lockUltSummon(owner, m);
     while (this.totalHits.length <= m.id) { this.totalHits.push(0); this.maxCombo.push(0); }
     this.fighters.push(m);
     this.sparks(m.x, m.y - 80, m.data.color, 16);
     this.effect('super', m.x, m.y - 80, m.data.color, .5, { radius: 60 });
     this.text(m.data.name + '！', m.x, m.y - 210, m.data.color, .8, 20);
+  }
+
+  /** 召唤队友的大招: the bar stays shut until this minion leaves, so the ult cannot chain. */
+  private lockUltSummon(owner: Fighter, m: Fighter): void {
+    if (!owner.attack?.skill.super) return;
+    m.summoner = owner.id;
+    // ponytail: not a real duration. dismissMinion clears the tag. Ceiling: a minion that
+    // leaves without dismissMinion holds the lock for about twelve days.
+    addMod(owner, 'noGain', 1e6, { tag: 'summon' });
   }
 
   /** 对半分: another Nonoka steps out just behind the foe. Short life, soft hits, normals only. */
@@ -762,6 +780,10 @@ export class FightGame {
     const i = this.fighters.indexOf(m);
     if (i < 0) return;
     this.fighters.splice(i, 1);
+    if (m.summoner != null) {
+      const owner = this.fighterById(m.summoner);
+      if (owner) clearMod(owner, 'noGain', 'summon');
+    }
     this.sparks(m.x, m.y - 80, m.data.color, 18);
     this.effect('burst', m.x, m.y - 80, m.data.color, .35, { radius: 60 });
     if (expired) this.text('谢幕', m.x, m.y - 200, m.data.color, .8, 18);
@@ -878,7 +900,11 @@ export class FightGame {
     // ponytail: in-place decay. The .map() this replaced handed GC a fresh 6-slot array per
     // fighter per fixed step (~500-700/s across a match) for no semantic gain.
     const cdRate = f.data.trait === 'beat' ? 1 + f.beatStacks * .06 : 1;
-    for (let i = 0; i < f.cooldowns.length; i++) f.cooldowns[i] = Math.max(0, f.cooldowns[i] - dt * cdRate);
+    const atk = atkMul(f);
+    for (let i = 0; i < f.cooldowns.length; i++) {
+      const rate = cdRate * (i <= 1 ? atk : 1);
+      f.cooldowns[i] = Math.max(0, f.cooldowns[i] - dt * rate);
+    }
     const recWas = f.recLeft;
     for (const key of DECAY_TIMERS) f[key] = Math.max(0, f[key] - dt);
     tickMods(this, f, dt);

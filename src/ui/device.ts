@@ -4,7 +4,7 @@
  * 三层归属（规则全文见 docs/device-adaptation.md，selfcheck 有源码锁）：
  * - 能力：本文件，多信号裁决后写 body 类。CSS 和别的模块不得自己写能力媒体查询。
  * - 布局：视口多少空间是 CSS 的事（style.css 的断点、touchLayout.ts 的 orientation 查询）。
- * - 开关：宽屏这类玩法开关由 main.ts 的按钮写 body 类，不得掺能力信号。
+ * - 开关：宽屏、横屏这类玩法开关由 main.ts 的按钮写 body 类，不得掺能力信号。
  *
  * 判定优先级：
  * 1. `(hover: none) and (pointer: coarse)` —— 标准手机/平板浏览器的报告。iPad 的媒体查询恒报

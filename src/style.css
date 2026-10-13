@@ -260,12 +260,11 @@ body.in-battle { overflow-x: hidden; }
 .game-banner strong { font: italic 900 64px Impact, sans-serif; font-size: clamp(22px, 6.7vw, 64px); font-size: clamp(22px, 6.7cqw, 64px); text-shadow: 0 4px 0 #000; }
 .game-banner.super-call strong { font: 900 64px "Noto Sans SC", "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif; font-size: clamp(22px, 6.7vw, 64px); font-size: clamp(22px, 6.7cqw, 64px); }
 .game-banner strong:empty, .game-banner small:empty { display: none; }
-/* 暂停浮层的按钮一律等宽：加什么按钮、写什么文本都一样长，几颗排成一列永远对齐。
-   （窄屏媒体查询里 icon-only 时回到 auto。） */
+/* 暂停浮层的按钮一律等宽，电脑和手机都是图标在左、文字在右。 */
 .game-banner button { pointer-events: auto; margin: 12px auto 0; width: 11em; }
-/* 退出宽屏：图标放在文字右侧。svg 默认隐藏，这里单独放开。 */
-.game-banner #wide-exit { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
-.game-banner #wide-exit .btn-icon { display: block; }
+.game-banner .icon-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: .45em .9em; line-height: 1.2; }
+.game-banner .icon-btn .btn-icon { display: block; }
+.game-banner .icon-btn .btn-label { display: inline; }
 /* The deck line under the PAUSED title: quiet body text, not the stroked banner font. */
 .game-banner .deck-label { font: 13px/1.5 var(--font); letter-spacing: 0; -webkit-text-stroke: 0; text-shadow: 0 1px 0 #000; color: var(--muted); margin-top: 10px; }
 .end-overlay { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; background: #0b0a12eb; gap: 6px; }
@@ -398,10 +397,10 @@ body.touch.in-battle #battle {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
-/* 宽屏 is the desktop wide-mode toggle (body.wide). The phone keeps
-   the bar's 返回选人 + 暂停 pair; 宽屏 stays off the phone bar. */
+/* 宽屏 is the desktop wide-mode toggle (body.wide). Phones hide it except in a portrait
+   fight, where the same button turns the battle sideways (body.turned) instead. */
 body.touch .battle-top #fullscreen { display: none; }
-.rotate-hint { display: none; position: absolute; inset: 0; place-content: center; background: #0b0a12dd; font-weight: 800; font-size: 20px; }
+.rotate-hint { display: none; position: absolute; inset: 0; z-index: 4; place-content: center; padding: 24px; text-align: center; background: #0b0a12dd; font-weight: 800; font-size: 20px; }
 @media (orientation: landscape) {
   body.touch.in-battle { position: fixed; inset: 0; height: 100vh; height: 100dvh; overflow: hidden; }
   body.touch.in-battle header, body.touch.in-battle .battle-top, body.touch.in-battle #battle-skills, body.touch.in-battle #battle-skills-bar, body.touch.in-battle #battle footer, body.touch.in-battle .site-foot { display: none; }
@@ -427,9 +426,31 @@ body.touch .battle-top #fullscreen { display: none; }
   body.touch.in-battle .timer b { font-size: calc(40px * var(--hud, 1)); }
 }
 @media (orientation: portrait) {
+  body.touch.in-battle .battle-top #fullscreen { display: inline-flex; }
   body.touch.in-battle .rotate-hint { display: grid; }
   body.touch.in-battle .end-overlay:not([hidden]) ~ .rotate-hint { display: none; }
 }
+/* Toy 的手机容器不转系统方向。body.turned 把战斗转 90°，尺寸对调后就和真横屏同一套键位。
+   玩家把手机横过来看。真横屏时这个类会被拿掉，避免转两次。 */
+body.touch.turned.in-battle { position: fixed; inset: 0; height: 100vh; height: 100dvh; overflow: hidden; }
+body.touch.turned.in-battle header, body.touch.turned.in-battle .battle-top, body.touch.turned.in-battle #battle-skills, body.touch.turned.in-battle #battle-skills-bar, body.touch.turned.in-battle #battle footer, body.touch.turned.in-battle .site-foot, body.touch.turned.in-battle .rotate-hint { display: none; }
+/* 竖屏时 vmin 就是手机的宽，转完正好铺满。 */
+body.touch.turned.in-battle #battle { position: fixed; z-index: 5; top: 0; left: 100%; width: 100vh; width: 100dvh; height: 100vmin; max-width: none; margin: 0; padding: 0; display: block; transform: rotate(90deg); transform-origin: top left; }
+body.touch.turned.in-battle .arena { position: fixed; inset: env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left) env(safe-area-inset-top); width: auto; height: auto; max-height: none; aspect-ratio: auto; border: 0; border-radius: 0; }
+body.touch.turned.in-battle .arena canvas { position: absolute; left: 0; top: 0; width: 100%; height: auto; object-fit: fill; }
+body.touch.turned.in-battle .touchpad { display: block; }
+body.touch.turned.in-battle .hud { inset: calc(10px * var(--hud, 1)) calc(14px * var(--hud, 1)) auto; gap: calc(14px * var(--hud, 1)); }
+body.touch.turned.in-battle .hud-side { gap: calc(8px * var(--hud, 1)); }
+body.touch.turned.in-battle .hud-player { gap: calc(3px * var(--hud, 1)); font-size: calc(15px * var(--hud, 1)); }
+body.touch.turned.in-battle .health { height: calc(14px * var(--hud, 1)); }
+body.touch.turned.in-battle .hud-player.sub .health { height: calc(10px * var(--hud, 1)); }
+body.touch.turned.in-battle .hud.team .hud-player.sub .health,
+body.touch.turned.in-battle .hud.challenge .hud-player.sub .health { height: calc(14px * var(--hud, 1)); }
+body.touch.turned.in-battle .energy { height: calc(6px * var(--hud, 1)); }
+body.touch.turned.in-battle .hud-player small { font-size: calc(11px * var(--hud, 1)); }
+body.touch.turned.in-battle .timer { min-width: calc(88px * var(--hud, 1)); }
+body.touch.turned.in-battle .timer small { font-size: calc(11px * var(--hud, 1)); }
+body.touch.turned.in-battle .timer b { font-size: calc(40px * var(--hud, 1)); }
 
 /* 桌面宽屏（战斗顶栏的开关切换）：跟手机横屏同一套铺满逻辑——arena 钉满视口，battleFrame 按宽
    缩放画布、地面钉在桌面比例。右下角是必杀 + 三技能的冷却指示键（同手机布局，去掉摇杆、攻击、
@@ -539,11 +560,11 @@ body.wide .touchpad.in-tower .tp-actions { --atk: clamp(86px, 16vmin, 106px); ri
   .buff-picker h2 { font-size: 26px; }
   .buff-card { width: min(190px, 44vw); }
   #battle-skills { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  /* 功能按钮只留图标。模式、难度、挑战名和开打仍是文字。 */
+  /* 功能按钮只留图标。模式、难度、挑战名和开打仍是文字。暂停浮层除外：那里只剩图标时看不出继续、退出还是返回。 */
   .icon-btn { padding: .35em; line-height: 0; }
   .icon-btn .btn-label { display: none; }
   .icon-btn .btn-icon { display: block; }
-  nav .icon-btn, .battle-top .icon-btn, .game-banner .icon-btn { padding: .35em; width: auto; }
+  nav .icon-btn, .battle-top .icon-btn { padding: .35em; width: auto; }
   .slot-control .icon-btn { padding: .12em .4em; }
   .slot-control .btn-icon { width: 16px; height: 16px; }
 }

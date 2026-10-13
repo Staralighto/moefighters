@@ -282,13 +282,19 @@ export function stepAI(g: FightGame, dt: number): void {
 
 /** Prefer an enemy no closer teammate is already on, so the CPUs don't pile onto one body. */
 function aiTarget(g: FightGame, f: Fighter): Fighter | undefined {
-  const foes = g.opponents(f);
-  if (foes.length <= 1) return foes[0];
-  const mates = g.fighters.filter(m => m !== f && m.team === f.team && m.hp > 0);
-  const open = foes.filter(o => {
+  // Runs every step for every CPU, so one pass and no arrays. Ties keep roster order.
+  let any: Fighter | undefined, anyD = Infinity;
+  let open: Fighter | undefined, openD = Infinity;
+  for (const o of g.fighters) {
+    if (!g.isEnemy(f, o) || o.hp <= 0 || o.echo) continue;
     const mine = Math.abs(o.x - f.x);
-    return !mates.some(m => Math.abs(o.x - m.x) < mine);
-  });
-  const pool = open.length ? open : foes;
-  return pool.slice().sort((a, b) => Math.abs(a.x - f.x) - Math.abs(b.x - f.x))[0];
+    if (mine < anyD) { any = o; anyD = mine; }
+    if (mine >= openD) continue;
+    let taken = false;
+    for (const m of g.fighters) {
+      if (m !== f && m.team === f.team && m.hp > 0 && Math.abs(o.x - m.x) < mine) { taken = true; break; }
+    }
+    if (!taken) { open = o; openD = mine; }
+  }
+  return open ?? any;
 }

@@ -3,10 +3,11 @@ import type { CharacterData, StageData } from './data/types.ts';
 import { FightGame, MINION_BAND } from './game/game.ts';
 import { KeyboardInput, TouchInput } from './game/input.ts';
 import { Renderer } from './render/renderer.ts';
+import { isLiteFx, setLiteFx, shouldGoLite } from './render/fx.ts';
 import { createViews } from './render/view.ts';
 import { assetsFor, easeLoad, imageQueue, liteFight, loadInto, loadKujiFont, missingImages, portraitSrc, preload, slowLink, stageThumbSrc, supportsWebp, type ImageCache } from './assets/loader.ts';
 import { Sfx } from './audio/sfx.ts';
-import { musicEnabled, musicVolume, pokeMusic, setMusicEnabled, setMusicHeld, setMusicSuspended, setMusicVolume } from './audio/bgm.ts';
+import { musicEnabled, musicVolume, nudgeMusic, pokeMusic, setMusicEnabled, setMusicHeld, setMusicSuspended, setMusicVolume } from './audio/bgm.ts';
 import { matchName, SelectScreen, type MatchSetup } from './ui/select.ts';
 import { bestLabel, challengeName, deckLabel, foeCount, hideBuffPicker, readBest, readRun, rollEnemies, showBuffPicker, stageSetup, writeBest, writeRun, type ChallengeKind, type ChallengeRun } from './ui/challenge.ts';
 import { cycleSkillTier, hideEnd, setBattleGuide, setRoundLabel, showBanner, showEnd, updateHUD } from './ui/hud.ts';
@@ -36,6 +37,7 @@ bindBattleFrame();
 /* Phones get one on-screen key set, so body.touch caps the match at one human.
    The ruling itself lives in ui/device.ts: capability is decided in one place, not per call site. */
 applyTouchDevice();
+syncFullscreenLabel();
 if (import.meta.env.DEV) {
   void import('./render/propTune.ts').then(m => m.mountPropTune());
   void import('./ui/touchTune.ts').then(m => m.mountTouchTune($('touchpad')));
@@ -184,7 +186,7 @@ select.mount();
   followCast = true;
   observeRoster();
 }
-watchTouch(() => { applyTouchDevice(); select.refresh(); });
+watchTouch(() => { applyTouchDevice(); syncFullscreenLabel(); select.refresh(); });
 
 /* An armed run survives a refresh or crash: with the stage's card already picked, the fight was
    the next thing the player was about to see, so it restarts directly. A parked run (stage won,
@@ -288,11 +290,11 @@ async function startGame(setup: MatchSetup): Promise<void> {
     onBanner: showBanner,
     onEnd: onFightEnd,
     onPause: paused => {
+      if (!paused && portraitHold()) { game?.togglePause(true); return; }
       setIconBtn($('pause'), paused ? '继续 ESC' : '暂停 ESC');
       $('resume').hidden = !paused;
       $('pause-quit').hidden = !paused;
-      // 退出宽屏的按钮只活在宽屏的暂停浮层里；这条随暂停状态一起刷新。
-      $('wide-exit').hidden = !paused || !document.body.classList.contains('wide');
+      showLayoutExit(paused);
       // The deck line rides the pause banner; challenge stages with a deck only.
       const deck = paused && game?.mode === 'challenge' ? deckLabel(challenge?.picks ?? []) : '';
       $('deck-label').hidden = !deck;
@@ -301,7 +303,10 @@ async function startGame(setup: MatchSetup): Promise<void> {
   });
   // previewViews covers the whole roster: a 诗超绊 bandmate borrows their sheets mid-match.
   renderer = new Renderer($('game') as HTMLCanvasElement, previewViews, setup.stage, images);
+  lastNow = gapSum = gapCount = 0;
   raf = requestAnimationFrame(frame);
+  // 竖屏还没转过来时先停住，玩家才有空点右上角的横屏。点进去的那一下直接开打。
+  holdIfPortrait();
   if (!document.body.classList.contains('touch')) {
     $('game').focus();
     // Desktop only. Park the arena's text bar on the top edge of the viewport, so the site header is
@@ -358,10 +363,29 @@ function onFightEnd(title: string, stats: string): void {
   }
 }
 
+/* Frame-gap sampler for the lite tier and the ?fps readout. Only live fight frames count:
+   the intro, pauses and a tab coming back (gaps over 250ms) would skew the average. */
+const showFps = new URLSearchParams(location.search).has('fps');
+let lastNow = 0;
+let gapSum = 0;
+let gapCount = 0;
+let avgGap = 0;
+
 function frame(now: number): void {
   if (!game || !renderer) return;
+  const gap = lastNow ? now - lastNow : 0;
+  lastNow = now;
   game.advance(now);
+  if (gap > 0 && gap < 250 && !game.paused && game.phase === 'fight') {
+    gapSum += gap;
+    if (++gapCount >= 90) {
+      avgGap = gapSum / gapCount;
+      gapSum = gapCount = 0;
+      if (!isLiteFx() && shouldGoLite(avgGap, document.body.classList.contains('touch'))) setLiteFx(true);
+    }
+  }
   renderer.draw(game);
+  if (showFps) renderer.drawFps(avgGap);
   raf = requestAnimationFrame(frame);
 }
 
@@ -376,7 +400,7 @@ function restBack(): void {
   $('battle').hidden = true;
   $('selection').hidden = false;
   selectRaf = requestAnimationFrame(selectLoop);
-  document.body.classList.remove('in-battle');
+  document.body.classList.remove('in-battle', 'turned');
   // The fight parked the page on its text bar (see startGame); the select screen opens at the top.
   if (!document.body.classList.contains('touch')) window.scrollTo(0, 0);
   leaveBattleFullscreen();
@@ -429,13 +453,44 @@ $('rematch').onclick = () => {
 };
 $('pause').onclick = () => game?.togglePause();
 $('skill-tier').onclick = () => cycleSkillTier();
-/* 桌面宽屏：顶栏开关只管进。宽屏里顶栏整个隐藏，退出走暂停浮层的 退出宽屏 按钮（ESC 或点
-   计时区域打开）。触屏上这个按钮本来就是隐藏的。 */
-$('fullscreen').onclick = () => document.body.classList.add('wide');
-$('wide-exit').onclick = () => {
-  document.body.classList.remove('wide');
-  $('wide-exit').hidden = true;
+/* 桌面宽屏、手机横屏：顶栏开关只管进。进去后顶栏藏掉，退出走暂停浮层（ESC 或点计时区域打开）。 */
+function syncFullscreenLabel(): void {
+  setIconBtn($('fullscreen'), document.body.classList.contains('touch') ? '横屏' : '宽屏');
+}
+function portraitHold(): boolean {
+  return document.body.classList.contains('touch')
+    && matchMedia('(orientation: portrait)').matches
+    && !document.body.classList.contains('turned');
+}
+function holdIfPortrait(): void {
+  if (game && game.phase !== 'finished' && portraitHold() && !game.paused) game.togglePause(true);
+}
+function showLayoutExit(paused: boolean): void {
+  const turned = document.body.classList.contains('turned');
+  const on = paused && (turned || document.body.classList.contains('wide'));
+  $('wide-exit').hidden = !on;
+  if (on) setIconBtn($('wide-exit'), turned ? '退出横屏' : '退出宽屏');
+}
+$('fullscreen').onclick = () => {
+  if (document.body.classList.contains('touch')) {
+    document.body.classList.add('turned');
+    // turned 已经加上，portraitHold 不再把这一下按回去。
+    if (game?.paused) game.togglePause(false);
+    return;
+  }
+  document.body.classList.add('wide');
+  if (game?.paused) showLayoutExit(true);
 };
+$('wide-exit').onclick = () => {
+  document.body.classList.remove('wide', 'turned');
+  $('wide-exit').hidden = true;
+  holdIfPortrait();
+};
+matchMedia('(orientation: landscape)').addEventListener('change', e => {
+  if (e.matches) document.body.classList.remove('turned');
+  else holdIfPortrait();
+  if (game?.paused) showLayoutExit(true);
+});
 document.querySelector('.timer')?.addEventListener('click', () => {
   const body = document.body;
   // 手机点计时暂停；桌面宽屏同理——顶栏藏了，这是鼠标开暂停浮层的入口。
@@ -535,8 +590,8 @@ $('music-volume').oninput = () => {
   setMusicVolume(Number(($('music-volume') as HTMLInputElement).value) / 100);
   syncMusicUi();
 };
-/* 开关与音量从 localStorage 恢复（关掉标签页也在）：滑条回到上次的档位。开关若上次是开的，
-   浏览器允许就会自己响；不允许的话仍显示为开，第一次点击或按键时 pokeMusic 才把音乐接上。 */
+/* 开关与音量从 localStorage 恢复（关掉标签页也在）：滑条回到上次的档位。没有存档时默认开。
+   浏览器允许就会自己响；不允许的话仍显示为开，开打时 pokeMusic 才把音乐接上。 */
 ($('music-volume') as HTMLInputElement).value = String(Math.round(musicVolume() * 100));
 syncMusicUi();
 document.addEventListener('pointerdown', e => {
@@ -589,9 +644,9 @@ document.addEventListener('pointerdown', e => {
     return;
   }
   sfx.unlock();
-  pokeMusic();
+  nudgeMusic();
 }, { capture: true });
-document.addEventListener('keydown', e => { if (!e.repeat) { sfx.unlock(); pokeMusic(); } }, { capture: true });
+document.addEventListener('keydown', e => { if (!e.repeat) { sfx.unlock(); nudgeMusic(); } }, { capture: true });
 for (const type of ['contextmenu', 'selectstart', 'dragstart', 'dblclick', 'gesturestart']) {
   $('arena').addEventListener(type, e => e.preventDefault());
 }

@@ -17,6 +17,10 @@ export interface Mod {
   v?: number;
   /** 花道·缠: jump launch-velocity multiplier carried by a 'slow' mod. */
   jump?: number;
+  /** 半速: attack-speed multiplier. J/K cooldown clocks tick at this rate. Unset is 1. */
+  atk?: number;
+  /** 半速: which status graphic this slow wears. Unset is the petal aura. */
+  mark?: string;
   tag?: string;
   acc?: number;
   onExpire?: (g: FightGame, f: Fighter) => void;
@@ -35,6 +39,8 @@ export function addMod(f: Fighter, kind: ModKind, time: number, opt: Partial<Mod
   m.left = opt.max ? Math.max(m.left, time) : time;
   if (opt.v != null) m.v = opt.v;
   if (opt.jump != null) m.jump = opt.jump;
+  if (opt.atk != null) m.atk = opt.atk;
+  m.mark = opt.mark;
   if (opt.acc != null) m.acc = opt.acc;
   if (opt.onExpire) m.onExpire = opt.onExpire;
   if (opt.pulse) m.pulse = opt.pulse;
@@ -84,6 +90,13 @@ export function speedMul(f: Fighter): number {
 export function jumpMul(f: Fighter): number {
   let m = 1;
   for (const mod of f.mods) if (mod.kind === 'slow' && mod.left > 0) m *= mod.jump ?? 1;
+  return m;
+}
+
+/** Attack-speed multiplier. 1 when no 减速 cuts it. J/K cooldown clocks tick at this rate. */
+export function atkMul(f: Fighter): number {
+  let m = 1;
+  for (const mod of f.mods) if (mod.kind === 'slow' && mod.left > 0) m *= mod.atk ?? 1;
   return m;
 }
 

@@ -1,3 +1,4 @@
+import { assetUrl } from '../assets/loader.ts';
 import type { SfxKind } from '../game/game.ts';
 
 /* Synthesised arcade blips. No sample files to ship — except the horn, see whistle(). */
@@ -22,7 +23,7 @@ export class Sfx {
     try {
       if (!this.ctx) {
         this.ctx = new AudioContext();
-        fetch(HORN_SRC)
+        fetch(assetUrl(HORN_SRC))
           .then(r => { if (!r.ok) throw new Error('horn fetch ' + r.status); return r.arrayBuffer(); })
           .then(ab => this.ctx!.decodeAudioData(ab))
           .then(buf => { this.horn = buf; })

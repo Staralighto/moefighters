@@ -55,6 +55,8 @@ export interface Clip {
   sy: number;
   /** Cell-space body offset baked into the art. SpriteView translates it back out. */
   ox?: number;
+  /** Playback scale about the foot line. The art was pre-shrunk so the prop fits the cell. */
+  scale?: number;
 }
 
 function at(sheet: Clip['sheet'], col: number, row: number): Clip {
@@ -110,6 +112,13 @@ export function singRow(t: number, start: number, duration: number): number {
 export function grooveRow(t: number, duration: number): number {
   if (t >= duration - .3) return 2;
   return Math.floor(Math.max(0, t) / .42) % 2;
+}
+
+/** 改变世界: reach, then the hands alternate on the deck, then a settle. */
+export function changeRow(t: number, start: number, duration: number): number {
+  if (t >= duration - .35) return 2;
+  if (t < start) return 0;
+  return Math.floor((t - start) / .14) % 2;
 }
 
 /** 高性能作曲AI: the mash alternates until the last quarter-second bows out. */
@@ -259,6 +268,7 @@ export function clipFor(f: Fighter): Clip {
     if (f.attack.skill.fx === 'riff') return at('special', f.attack.index - 2, riffRow(f.attack.t, f.attack.skill.duration));
     if (f.attack.skill.fx === 'sing') return at('special', f.attack.index - 2, singRow(f.attack.t, f.attack.skill.start, f.attack.skill.duration));
     if (f.attack.skill.fx === 'groove') return at('special', f.attack.index - 2, grooveRow(f.attack.t, f.attack.skill.duration));
+    if (f.attack.skill.fx === 'change') return at('special', f.attack.index - 2, changeRow(f.attack.t, f.attack.skill.start, f.attack.skill.duration));
     if (f.attack.skill.fx === 'compose') return at('special', f.attack.index - 2, composeRow(f.attack.t, f.attack.skill.start, f.attack.skill.duration));
     if (f.attack.skill.fx === 'parfait') return at('special', f.attack.index - 2, parfaitRow(f.attack.t, f.attack.skill.start, f.attack.skill.duration));
     if (f.attack.skill.fx === 'flash') return at('special', f.attack.index - 2, flashRow(f.attack.t, f.attack.skill.start, f.attack.skill.duration));
@@ -303,6 +313,12 @@ export function clipFor(f: Fighter): Clip {
       const row = t < s.start ? 0 : t < s.start + activeLen ? 1 : 2;
       return at('special', f.attack.index - 2, row);
     }
+    // 筑紫四列都要把命中姿势留住：土笔蹲着、闹钟抛完、滚轮一直跑、姐姐叉腰。
+    if (f.attack.skill.fx === 'sprout' || f.attack.skill.fx === 'clock' || f.attack.skill.fx === 'wheel' || f.attack.skill.fx === 'sisters') {
+      const t = f.attack.t, s = f.attack.skill;
+      const row = t < s.start ? 0 : t >= s.duration - .22 ? 2 : 1;
+      return at('special', f.attack.index - 2, row);
+    }
     const phase = PHASE_COL[attackPhase(f.attack).phase];
     if (f.attack.skill.air) {
       const base = f.attack.skill.type === 'heavy' ? NORMAL.airHeavy : NORMAL.airLight;
@@ -318,6 +334,12 @@ export function clipFor(f: Fighter): Clip {
     if (f.attack.skill.fx === 'rib') return { ...at('special', f.attack.index - 2, phase), ox: RIB_OX[phase] };
     if (f.attack.skill.fx === 'skewer') return { ...at('special', f.attack.index - 2, phase), ox: SKEWER_OX[phase] };
     if (f.attack.skill.fx === 'steak') return { ...at('special', f.attack.index - 2, phase), ox: STEAK_OX[phase] };
+    // 垃圾桶: the last cell holds 0.6s. The column was drawn at 0.8, played back at 1.25 about the feet.
+    if (f.attack.skill.fx === 'trash') {
+      const t = f.attack.t, s = f.attack.skill;
+      const row = t < s.start ? 0 : t < s.duration - .6 ? 1 : 2;
+      return { ...at('special', f.attack.index - 2, row), scale: 1.25 };
+    }
     return at('special', f.attack.index - 2, phase);
   }
   const state = stateFor(f);

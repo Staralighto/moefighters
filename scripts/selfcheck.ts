@@ -1,6 +1,6 @@
 /* Headless rule check: runs the fixed-step engine without DOM or canvas. `npm run check`. */
 import { FightGame } from '../src/game/game.ts';
-import { drumShotTime, hit, violetHidden } from '../src/game/combat.ts';
+import { clockRings, drumShotTime, hit, holdNoteSpan, violetHidden } from '../src/game/combat.ts';
 import { vowBeatTime, VOW_BEATS } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
 import { PLAYABLE, ROSTER, bandMembers, guestsFor } from '../src/data/characters.ts';
@@ -10,12 +10,12 @@ import { STAGES } from '../src/data/stages.ts';
 import { FLOOR, COMBO_DECAY, STEP, W, X_MAX, X_MIN } from '../src/game/constants.ts';
 import { clipFor, crashRow, drumRow, flameFrame, riotCell } from '../src/render/clips.ts';
 import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
-import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell } from '../src/render/fx.ts';
+import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell, shouldGoLite } from '../src/render/fx.ts';
 import { teamGlowOn } from '../src/render/renderer.ts';
 import { previewFighter, gainEnergy } from '../src/game/fighter.ts';
-import { addMod, clearMod, jumpMul, speedMul } from '../src/game/mods.ts';
-import { easeLoad, imageSources, linkRate, liteFight, liteSrc, nextSrc, portraitSrc, SLOW_RATE, stageThumbSrc } from '../src/assets/loader.ts';
-import { isTouchJump, matchStickTouch, stickFingerGone, thumbBandTop, touchRelease } from '../src/game/input.ts';
+import { addMod, atkMul, clearMod, jumpMul, speedMul } from '../src/game/mods.ts';
+import { assetUrl, easeLoad, imageSources, linkRate, liteFight, liteSrc, nextSrc, portraitSrc, SLOW_RATE, stageThumbSrc } from '../src/assets/loader.ts';
+import { isTouchJump, matchStickTouch, stickFingerGone, thumbBandTop, touchRelease, turnedStickDelta } from '../src/game/input.ts';
 import { battleFrame } from '../src/ui/battleFrame.ts';
 import { TOUCH_LAYOUT } from '../src/ui/touchLayout.data.ts';
 import { DEFAULT_ULT_ICON, ultIcon } from '../src/ui/touchIcons.ts';
@@ -86,6 +86,17 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(!PLAYABLE.some(c => c.id === id), id + ' stays off the select screen');
   }
   assert.ok(PLAYABLE.some(c => c.id === 'viola'), 'viola plays without a band');
+}
+
+// slow phones: a long frame gap catches up at most 6 steps; only a slow touch device goes lite
+{
+  const g = new FightGame([ROSTER[at('gale')], ROSTER[at('boulder')]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(7) });
+  g.advance(1000);
+  g.advance(2000);
+  assert.ok(g.age > 0 && g.age <= 6 * STEP + 1e-9, 'a 1s hitch advances at most 6 steps, got ' + g.age / STEP);
+  assert.equal(shouldGoLite(16, true), false, '60fps touch stays full');
+  assert.equal(shouldGoLite(30, false), false, 'desktop never goes lite');
+  assert.equal(shouldGoLite(30, true), true, 'a ~33fps touch device goes lite');
 }
 
 // light attack lands and builds energy
@@ -1489,14 +1500,21 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.equal(mate.data.hp, 200, 'the health cap is 200, not a fraction');
     assert.equal(mate.hp, 200, 'the teammate spawns at full health on the lowered cap');
     assert.ok((mate.life ?? 0) > 11, `twelve seconds on the clock, left ${mate.life}`);
+    assert.ok(s1.noGain > 0, 'the sing locks the meter while the teammate is up');
+    const shut = s1.energy;
     const before = s2.hp;
     run(g, 2.5);
     assert.ok(Number.isFinite(g.totalHits[mate.id]), 'minion hits land in the score tables');
     assert.ok(s2.hp < before, 'the teammate swings on her own');
+    assert.equal(s1.energy, shut, 'no energy while the teammate stands');
     mate.hp = 5;
     hit(g, s2, mate, s2.data.skills[0], { hit: new Set() });
     run(g, STEP * 16); // the hit's hitstop eats the first few steps
     assert.equal(g.fighters.length, 2, 'the teammate leaves when defeated');
+    assert.equal(s1.noGain, 0, 'the meter opens when the teammate falls');
+    const opened = s1.energy;
+    run(g, .5);
+    assert.ok(s1.energy > opened, 'energy returns after the teammate leaves');
 
     s2.hp = s2.data.hp; // the master-brain teammate could wear the dummy down; keep the round alive on purpose
     s1.energy = s1.energyMax;
@@ -1507,6 +1525,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     // Hitstop steals steps from the life clock, so bow-out needs a little more than twelve sim-seconds.
     for (let i = 0; i < Math.round(16 / STEP); i++) { g.step(STEP); if (g.fighters.length === 2) break; }
     assert.equal(g.fighters.length, 2, 'the teammate bows out when time is up');
+    assert.equal(s1.noGain, 0, 'the meter opens when the teammate bows out');
   }
 
   // the round ends even with a teammate standing
@@ -1677,6 +1696,8 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.deepEqual(imageSources('/sprites/aya/special.png', true, false), ['/sprites/aya/special.png'], 'a browser without webp never requests it');
   assert.deepEqual(imageSources('/sprites/aya/special.png', false), ['/sprites/aya/special.png'], 'dev keeps the single png');
   assert.deepEqual(imageSources('/icons/ult.svg', true), ['/icons/ult.svg'], 'a non-png url is unchanged');
+  assert.equal(assetUrl('/sprites/aya/common.png', './'), './sprites/aya/common.png', 'a relative base keeps sheets inside the toy directory');
+  assert.equal(assetUrl('/bgm/garupa-pico-instrumental.m4a', '/'), '/bgm/garupa-pico-instrumental.m4a', 'the dev server still requests from the site root');
   assert.ok(readFileSync('src/assets/loader.ts', 'utf8').includes('once().catch(() => once())'), 'a dropped image is requested once more before the block figure');
   const headers = readFileSync('public/_headers', 'utf8');
   assert.ok(/\/bgm\/\*[\r\n]+\s*Cache-Control: public, max-age=2592000/.test(headers), 'bgm is cached for 30 days');
@@ -1806,6 +1827,9 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     if (line.includes('cqw')) assert.ok(line.includes('vmin') || /(\d|\.)vw\b/.test(line), 'cqw needs a same-line vmin/vw fallback: ' + raw.trim());
   }
   assert.ok(!cssText.includes('body.wide .touchpad .tp-stick') && cssText.includes('body.wide:not(.touch) .touchpad .tp-stick'), 'wide mode must scope control stripping to :not(.touch)');
+  assert.ok(cssText.includes('body.touch.turned.in-battle') && cssText.includes('rotate(90deg)'), 'portrait phones turn the battle instead of waiting for the app to rotate');
+  assert.ok(html.includes('点右上角进入横屏'), 'a portrait fight points at the turn button');
+  assert.ok(cssText.includes('.game-banner .icon-btn .btn-label { display: inline; }'), 'a phone pause menu keeps the words next to the icons');
   // Stage rows follow the stage's own width. A short landscape phone is wide enough for one row;
   // tying the 2x2 to max-height put every phone landscape into two rows.
   const atRuleBody = (css: string, needle: string): string => {
@@ -1869,6 +1893,12 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const phoneBand = thumbBandTop(297, 87);
   assert.ok(phoneBand > 297 && phoneBand - 297 < 87 * .15, 'the band starts just below the attack top');
   assert.ok((390 - phoneBand) / 390 < .28, 'a phone no longer exempts the bottom half');
+  const turnedRight = turnedStickDelta(0, 10);
+  assert.equal(turnedRight.dx, 10);
+  assert.equal(turnedRight.dy, 0);
+  const turnedUp = turnedStickDelta(10, 0);
+  assert.equal(turnedUp.dx, 0);
+  assert.equal(turnedUp.dy, -10);
 }
 
 // BGM contract: pure Web Audio only. iOS ignores a media element's volume property (the slider
@@ -1890,8 +1920,10 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const broken = resolveMusicPrefs('{', '{"enabled":true,"volume":0.5}');
   assert.equal(broken.enabled, true, 'broken local JSON falls through to the session record');
   assert.equal(broken.volume, migrateLinearSlider(0.5), 'broken local JSON does not drop the session volume');
+  const fresh = resolveMusicPrefs(null, null);
+  assert.deepEqual(fresh, { enabled: true, volume: migrateLinearSlider(0.15), writeLocal: null, dropSession: false }, 'a first visit leaves music on and does not store a choice');
   const junk = resolveMusicPrefs('null', 'nope');
-  assert.deepEqual(junk, { enabled: false, volume: migrateLinearSlider(0.15), writeLocal: null, dropSession: false }, 'unreadable prefs fall back to defaults without throwing');
+  assert.deepEqual(junk, { enabled: true, volume: migrateLinearSlider(0.15), writeLocal: null, dropSession: false }, 'unreadable prefs fall back to defaults without throwing');
   const coerced = resolveMusicPrefs('{"enabled":"true","volume":"x"}', null);
   assert.equal(coerced.enabled, false, 'a non-boolean switch stays off');
   assert.equal(coerced.volume, migrateLinearSlider(0.15), 'a bad volume uses the default detent');
@@ -1911,6 +1943,8 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(!sfx.includes('sfxAmp'), 'sfx loudness is not reshaped by the music fader');
   const main = readFileSync('src/main.ts', 'utf8');
   assert.ok(/sfx\.unlock\(\);\s*\/\*[\s\S]*?\*\/\s*pokeMusic\(\)/.test(main), 'a fight start pokes music on the click, after pointerdown already requested fullscreen');
+  assert.equal((main.match(/pokeMusic\(\)/g) ?? []).length, 1, 'only the fight start forces music on');
+  assert.equal((main.match(/nudgeMusic\(\)/g) ?? []).length, 2, 'select-screen clicks and keys only reconnect music that is already allowed to play');
 }
 
 {
@@ -3707,6 +3741,144 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   }
 }
 
+// moca: slow bubble, a die that roots without a freeze, a two-poke grab, a dusk wave that slows a block
+{
+  const moca = at('moca');
+  const data = ROSTER[moca];
+  assert.equal(data.name, '青叶摩卡', 'moca display name');
+  assert.deepEqual(data.bands, ['afterglow'], 'moca sits in Afterglow');
+  assert.equal(ROSTER[moca - 1].id, 'mitake', 'moca follows mitake');
+  assert.equal(data.trait, 'focus', 'moca keeps the ordinary walk');
+  assert.equal(data.rootFx, 'moca-ring', 'the root wears an ankle ring');
+  assert.equal(data.skills[2].cd, 4.5, '半速 cools in 4.5s');
+  assert.equal(data.skills[2].slow, 5, '半速 slows for 5s');
+  assert.equal(data.skills[2].slowMul, .5, '半速 halves the walk');
+  assert.equal(data.skills[2].slowJump, .65, '半速 dulls the jump to 65%');
+  assert.equal(data.skills[2].slowAtk, .7, '半速 cuts attack speed by 30%');
+  assert.equal(data.skills[2].slowOnBlock, undefined, '半速 does not slow a block');
+  assert.equal(data.skills[2].slowMark, 'bubble', '半速 wears the bubble');
+  assert.equal(data.skills[3].cd, 6, '扣一点 cools in 6s');
+  assert.equal(data.skills[3].root, 1.5, '扣一点 roots for 1.5s');
+  assert.equal(data.skills[3].rootBreak, 0, '扣一点 holds until the clock');
+  assert.equal(data.skills[3].slowAtk, undefined, '扣一点 does not cut attack speed');
+  assert.equal(data.skills[4].cd, 7, '捉弄 cools in 7s');
+  assert.equal(data.skills[4].count, 2, '捉弄 pokes twice');
+  assert.equal(data.skills[4].range, 150, '捉弄 reaches half again past 100');
+  assert.equal(data.skills[4].slow, 5, '捉弄 slows for 5s');
+  assert.equal(data.skills[4].slowAtk, .7, '捉弄 cuts attack speed by 30%');
+  assert.equal(data.skills[5].count, 1, '小摩卡要上了 is one wave');
+  assert.equal(data.skills[5].slowOnBlock, true, '小摩卡要上了 slows a block');
+  assert.equal(data.skills[5].cost ?? 100, 100, '小摩卡要上了 costs 100');
+  assert.equal(data.skills[5].slowBonus, 100, '小摩卡要上了 adds 100 on an existing slow');
+  assert.equal(data.skills[5].noBlockSlow, true, '小摩卡要上了 ignores a block while slowed');
+  assert.equal(data.skills[5].slowAtk, .7, '小摩卡要上了 cuts attack speed by 30%');
+
+  {
+    const g = newGame(moca, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 280; p2.facing = -1;
+    g.keyDown('KeyU');
+    let saw = false;
+    for (let i = 0; i < Math.round(2 / STEP); i++) {
+      g.step(STEP);
+      if (g.projectiles.some(p => p.fx === 'moca-bubble')) saw = true;
+    }
+    assert.ok(saw, '半速 spawns a bubble');
+    assert.ok(p2.slow > 0, '半速 slows the victim');
+    assert.equal(speedMul(p2), .5, 'the walk drops to half');
+    assert.equal(jumpMul(p2), .65, 'the jump launch drops to 65%');
+    assert.equal(atkMul(p2), .7, 'J / K clocks run at 70%');
+    assert.ok(p2.mods.some(m => m.kind === 'slow' && m.mark === 'bubble'), 'the slow wears the bubble mark');
+    p2.cooldowns[0] = 1;
+    p2.cooldowns[2] = 1;
+    run(g, .5);
+    assert.ok(Math.abs(p2.cooldowns[0] - .65) < .02, `J cooldown stretches, left ${p2.cooldowns[0]}`);
+    assert.ok(Math.abs(p2.cooldowns[2] - .5) < .02, `U cooldown does not stretch, left ${p2.cooldowns[2]}`);
+  }
+  {
+    const g = newGame(moca, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 140; p2.facing = -1;
+    g.keyDown('KeyI');
+    for (let i = 0; i < Math.round(1.2 / STEP) && p2.root <= 0; i++) g.step(STEP);
+    assert.ok(p2.root > 0, '扣一点 roots the victim');
+    assert.equal(p2.rootLevel, 'move', 'the root leaves attacks open');
+    assert.equal(p2.rootBreak, 0, 'hits do not shake the root off');
+    run(g, .4);
+    assert.ok(p2.root > 0 && p2.stun <= 0, 'the root outlasts the flinch');
+    g.keyDown('Numpad1');
+    run(g, .08);
+    assert.equal(p2.attack?.skill.type, 'light', 'a rooted fighter can still jab');
+  }
+  {
+    const g = newGame(moca, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 70; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyO');
+    run(g, 1.2);
+    assert.ok(hp - p2.hp > 20, `捉弄 lands both pokes, dealt ${hp - p2.hp}`);
+    assert.ok(p2.slow > 0, '捉弄 leaves the slow');
+    assert.equal(p2.knocked, 0, 'the pokes do not knock down');
+  }
+  {
+    const g = newGame(moca, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 140; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyO');
+    run(g, 1.2);
+    assert.ok(hp - p2.hp > 20, `捉弄 still reaches at 140, dealt ${hp - p2.hp}`);
+  }
+  {
+    const g = newGame(moca, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 220; p2.facing = -1;
+    p1.energy = p1.energyMax;
+    g.keyDown('ArrowDown');
+    run(g, .1);
+    assert.ok(p2.blocking, 'the dummy is blocking');
+    g.keyDown('KeyL');
+    run(g, 1.4);
+    assert.ok(p2.slow > 0, '小摩卡要上了 slows through a block');
+    assert.equal(atkMul(p2), .7, 'a blocked wave still cuts attack speed');
+    assert.equal(p2.root, 0, 'the wave does not root');
+    assert.ok(p2.guard < 100, 'the block caught the wave');
+  }
+  {
+    const g = newGame(moca, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 220; p2.facing = -1;
+    p1.energy = p1.energyMax;
+    const hp = p2.hp;
+    g.keyDown('KeyL');
+    run(g, 1.4);
+    const dealt = hp - p2.hp;
+    assert.ok(dealt > 30 && dealt < 50, `a fresh slow takes only the wave, dealt ${dealt}`);
+  }
+  {
+    const g = newGame(moca, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 220; p2.facing = -1;
+    p1.energy = p1.energyMax;
+    addMod(p2, 'slow', 5, { v: .5, jump: .65, mark: 'bubble' });
+    const hp = p2.hp;
+    g.keyDown('KeyL');
+    run(g, 1.4);
+    const dealt = hp - p2.hp;
+    assert.ok(dealt > 120 && dealt < 150, `an existing slow takes the extra chunk, dealt ${dealt}`);
+  }
+  {
+    const g = newGame(moca, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 220; p2.facing = -1;
+    p1.energy = p1.energyMax;
+    addMod(p2, 'slow', 5, { v: .5, jump: .65, mark: 'bubble' });
+    g.keyDown('ArrowDown');
+    run(g, .1);
+    assert.ok(p2.blocking, 'the slowed dummy is blocking');
+    const hp = p2.hp;
+    const guard = p2.guard;
+    g.keyDown('KeyL');
+    run(g, 1.4);
+    const dealt = hp - p2.hp;
+    assert.ok(dealt > 120 && dealt < 150, `a slowed block does not stop the wave, dealt ${dealt}`);
+    assert.equal(p2.guard, guard, 'a slowed block does not spend guard');
+  }
+}
+
 // mashiro: one whale on a 45° arc ticks several times; the butterfly is one shot and slows a block
 {
   const mashiro = at('mashiro');
@@ -3951,6 +4123,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.equal(data.skills[3].count, 3, '噜噜噜 hits three times');
   assert.equal(data.skills[3].range, 220, '噜噜噜 reaches a longer stretch ahead');
   assert.equal(data.skills[3].finale?.root, 1, 'the last 噜 roots for one second');
+  assert.equal(data.skills[5].cost, 150, '和姐姐在一起 costs 150');
   assert.equal(data.skills[5].onActive?.[0]?.op === 'summon' && data.skills[5].onActive[0].kind === 'named' && data.skills[5].onActive[0].id, 'sayo', 'the partner slot is sayo');
   {
     const guest = guestsFor([data], 'mygo');
@@ -4005,6 +4178,18 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     assert.equal(mate?.dmgMul, .3, 'the partner hits for three tenths');
     assert.equal(mate?.hp, 200, 'the partner spawns at two tenths');
     assert.ok((mate?.life ?? 0) > 11, 'the partner stays twelve seconds');
+    assert.equal(p1.energyMax, 150, 'the meter caps at the partner cost');
+    assert.ok(p1.noGain > 0, '纱夜在场时日菜禁回气');
+    const shut = p1.energy;
+    run(g, .5);
+    assert.equal(p1.energy, shut, '日菜在纱夜在场时不回气');
+    mate!.hp = 0;
+    run(g, STEP * 2);
+    assert.equal(g.fighters.length, 2, '纱夜被击败后离场');
+    assert.equal(p1.noGain, 0, '纱夜退场后日菜解开禁回气');
+    const opened = p1.energy;
+    run(g, .5);
+    assert.ok(p1.energy > opened, '纱夜退场后日菜开始回气');
   }
 }
 
@@ -4094,6 +4279,21 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     assert.equal(p2.hp, hp, 'leaving the floor clears the tongue');
   }
   {
+    const g = newGame(at('sayo'), at('ember')); const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = p1.energyMax;
+    p1.x = 200; p1.facing = 1;
+    p2.x = 480; p2.facing = -1;
+    const guard = p2.guard;
+    g.keyDown('ArrowDown');
+    g.keyDown('KeyL');
+    run(g, .5);
+    assert.equal(p2.blocking, true, 'the guard is up before the tongue arrives');
+    run(g, .7);
+    assert.ok(p2.hp < 1000, 'a block does not stop the tongue');
+    assert.ok(p2.knocked > 0, 'the tongue still knocks down through a block');
+    assert.equal(p2.guard, guard, 'the tongue does not spend guard');
+  }
+  {
     const g = newGame(at('sayo'), at('ember')); const [p1] = g.fighters; dummy(g);
     p1.energy = p1.energyMax;
     p1.x = X_MIN; p1.facing = 1;
@@ -4109,6 +4309,349 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     assert.ok(saw, 'the tongue is born at the left wall');
     assert.ok(last > W + 256 - 40, `the tail clears the screen, last head ${last}`);
   }
+}
+
+// tsukushi: a creeping row of sprouts, five clocks that sometimes stay silent,
+// a wheel that ticks four times, and the sisters' six-hit string
+{
+  const data = ROSTER[at('tsukushi')];
+  assert.equal(data.name, '二叶筑紫', 'tsukushi display name');
+  assert.deepEqual(data.bands, ['morfonica'], 'tsukushi sits with Morfonica');
+  assert.equal(data.trait, 'beat', 'tsukushi keeps the drum passive');
+  assert.equal(data.skills[2].fx, 'sprout', 'U is the horsetail');
+  assert.equal(data.skills[2].count, 4, 'four sprouts');
+  assert.equal(data.skills[3].fx, 'clock', 'I is the alarms');
+  assert.equal(data.skills[3].count, 5, 'five clocks');
+  assert.equal(data.skills[4].fx, 'wheel', 'O is the hamster wheel');
+  assert.equal(data.skills[4].count, 4, 'the wheel ticks four times');
+  assert.equal(data.skills[4].reach, 'low', 'the wheel only meets a standing body');
+  assert.equal(data.skills[4].finale?.react?.kind, 'knockdown', 'the last wheel tick knocks down');
+  assert.equal(data.skills[5].fx, 'sisters', 'L is the three sisters');
+  assert.equal(data.skills[5].count, 6, 'the sisters hit six times');
+  assert.equal(data.skills[5].finale?.react?.kind, 'knockdown', 'the last sister hit knocks down');
+  assert.equal(clockRings(0), false, 'a low roll tips the clock');
+  assert.equal(clockRings(.34), true, 'the rest of the rolls ring');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/tsukushi/sprout.png'), 'the sprout is preloaded');
+  assert.ok(data.view.kind === 'sprite' && !data.view.extras?.some(src => src.includes('clock')), 'the clock has no sheet');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/tsukushi/wheel.png'), 'the wheel is preloaded');
+  {
+    const g = newGame(at('tsukushi'), at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 200; p1.facing = 1;
+    p2.x = p1.x + 700; p2.facing = -1;
+    g.keyDown('KeyU');
+    run(g, .8);
+    const sprouts = g.projectiles.filter(p => p.fx === 'sprout');
+    assert.equal(sprouts.length, 4, 'four sprouts are on the floor');
+    assert.ok(sprouts.every(p => p.y === FLOOR), 'sprouts stay on the floor');
+    assert.ok(g.effects.some(e => e.type === 'sprout-break'), 'a sprout breaks the soil');
+  }
+  {
+    const g = newGame(at('tsukushi'), at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 200; p1.facing = 1;
+    p2.x = p1.x + 72; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyU');
+    run(g, .4);
+    assert.ok(p2.hp < hp, 'a standing body eats a sprout');
+  }
+  {
+    const g = newGame(at('tsukushi'), at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 200; p1.facing = 1;
+    p2.x = p1.x + 72; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyU');
+    for (let i = 0; i < Math.round(1.1 / STEP); i++) {
+      p2.y = FLOOR - 50; p2.vy = 0;
+      g.step(STEP);
+    }
+    assert.equal(p2.hp, hp, 'a jump clears the sprouts');
+  }
+  const clockGame = (roll: number) => {
+    const g = new FightGame([ROSTER[at('tsukushi')], ROSTER[at('boulder')]], {
+      mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: () => roll,
+    });
+    run(g, 2.3);
+    dummy(g);
+    return g;
+  };
+  {
+    const g = clockGame(0); const [p1, p2] = g.fighters;
+    p1.x = 180; p1.facing = 1;
+    p2.x = p1.x + 130; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyI');
+    run(g, .45);
+    const clocks = g.projectiles.filter(p => p.fx === 'clock');
+    assert.equal(clocks.length, 5, 'five clocks are in the air');
+    assert.ok(clocks.every(p => p.skill.damage === 0), 'a dud roll silences every clock');
+    run(g, 2.4);
+    assert.equal(p2.hp, hp, 'silent clocks do not hit');
+    assert.equal(g.projectiles.filter(p => p.fx === 'clock').length, 0, 'silent clocks vanish after the wait');
+  }
+  {
+    const g = clockGame(.99); const [p1, p2] = g.fighters;
+    p1.x = 180; p1.facing = 1;
+    p2.x = p1.x + 130; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyI');
+    run(g, 2);
+    assert.equal(p1.combo, 0, 'clocks wait on the ground before they ring');
+    assert.equal(p2.hp, hp, 'the wait itself does not hit');
+    run(g, 1.8);
+    assert.equal(p1.combo, 3, 'one ringing clock lands three pulses');
+  }
+  {
+    const g = clockGame(.99); const [p1, p2] = g.fighters;
+    p1.x = 180; p1.facing = 1;
+    p2.x = p1.x + 185; p2.facing = -1;
+    g.keyDown('KeyI');
+    run(g, 3.8);
+    assert.equal(p1.combo, 6, 'standing between two clocks eats both');
+  }
+  {
+    const g = clockGame(.99); const [p1, p2] = g.fighters;
+    p1.x = 180; p1.facing = 1;
+    p2.x = p1.x + 130; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyI');
+    for (let i = 0; i < Math.round(3.8 / STEP); i++) {
+      p2.x = p1.x + 700; p2.vx = 0;
+      g.step(STEP);
+    }
+    assert.equal(p2.hp, hp, 'leaving during the wait avoids the rings');
+  }
+  {
+    const g = newGame(at('tsukushi'), at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 200; p1.facing = 1;
+    p2.x = p1.x + 100; p2.facing = -1;
+    g.keyDown('KeyO');
+    run(g, 1);
+    assert.equal(p1.combo, 4, 'the wheel lands all four ticks');
+    assert.ok(p2.knocked > 0, 'the last tick knocks down');
+  }
+  {
+    const g = newGame(at('tsukushi'), at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 200; p1.facing = 1;
+    p2.x = p1.x + 70; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyO');
+    for (let i = 0; i < Math.round(1 / STEP); i++) {
+      p2.y = FLOOR - 80; p2.vy = 0;
+      g.step(STEP);
+    }
+    assert.equal(p2.hp, hp, 'a jump clears the wheel');
+  }
+  {
+    const g = newGame(at('tsukushi'), at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 220; p1.facing = 1;
+    p1.energy = p1.energyMax;
+    p2.x = p1.x + 400; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyL');
+    run(g, .7);
+    assert.equal(p2.hp, hp, 'a sister who has not arrived does not hit');
+    for (let i = 0; i < Math.round(1.6 / STEP); i++) {
+      const lead = g.projectiles.find(p => p.fx === 'sister');
+      if (lead) { p2.x = lead.x; p2.y = FLOOR; p2.vy = 0; }
+      g.step(STEP);
+      if (p1.combo >= 6) break;
+    }
+    assert.equal(p1.combo, 6, 'overlapping a sister lands all six hits');
+    assert.ok(p2.knocked > 0, 'the last sister hit knocks down');
+  }
+  {
+    const g = newGame(at('tsukushi'), at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 220; p1.facing = 1;
+    p1.energy = p1.energyMax;
+    p2.x = p1.x + 160; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyL');
+    for (let i = 0; i < Math.round(2 / STEP); i++) {
+      p2.y = FLOOR - 80; p2.vy = 0;
+      g.step(STEP);
+    }
+    assert.equal(p2.hp, hp, 'a jump clears the sisters');
+  }
+  {
+    const g = newGame(at('tsukushi'), at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = X_MAX - 40; p1.facing = 1;
+    p1.energy = p1.energyMax;
+    p2.x = 80; p2.facing = -1;
+    g.keyDown('KeyL');
+    run(g, .8);
+    const born = g.projectiles.filter(p => p.fx === 'sister');
+    assert.equal(g.fighters.length, 2, 'the little sisters are not fighters');
+    assert.equal(born.length, 2, 'two sisters take the field');
+    assert.ok(born.every(p => p.vx < 0), 'they turn after the near edge');
+    run(g, 4.2);
+    assert.equal(g.projectiles.filter(p => p.fx === 'sister').length, 0, 'they leave past the far edge');
+  }
+}
+
+// chuchu: three jerky, and the hold note clears only if you block the whole emission
+{
+  const chu = at('chuchu');
+  const data = ROSTER[chu];
+  assert.equal(data.skills[2].count, 3, '牛肉干 fires three');
+  assert.equal(data.skills[5].fx, 'change', 'the super is the hold note');
+  assert.equal(data.skills[5].start, .35, 'the note starts after the windup');
+  assert.equal(data.skills[5].duration, 2.95, 'the note stays up long enough for ten hits');
+
+  const held = newGame(chu, at('boulder')); const [h1, h2] = held.fighters; dummy(held);
+  h1.energy = h1.energyMax;
+  h2.x = h1.x + 200; h2.facing = -1;
+  const heldHp = h2.hp;
+  let hits = 0;
+  const prev = held.audio.play.bind(held.audio);
+  held.audio.play = (k) => { if (k === 'hit') hits++; prev(k); };
+  held.keyDown('KeyL'); held.keyDown('ArrowDown');
+  run(held, 3.2);
+  held.audio.play = prev;
+  assert.equal(h2.hp, heldHp, 'blocking the whole note resolves it');
+  assert.ok(held.texts.some(t => t.text === 'Good'), 'a held note prints Good');
+  assert.ok(hits >= 8, 'a held block ticks the hit sound');
+  assert.ok(h2.guard > 45 && h2.guard < 55, 'a full block spends about half the guard');
+
+  const low = newGame(chu, at('boulder')); const [n1, n2] = low.fighters; dummy(low);
+  n1.energy = n1.energyMax;
+  n2.x = n1.x + 200; n2.facing = -1; n2.guard = 20;
+  const lowHp = n2.hp;
+  let sawBad = false;
+  low.keyDown('KeyL'); low.keyDown('ArrowDown');
+  for (let i = 0; i < Math.round(2.4 / STEP); i++) {
+    low.step(STEP);
+    if (low.texts.some(t => t.text === 'Bad')) sawBad = true;
+  }
+  assert.ok(sawBad, 'running out of guard prints Bad');
+  assert.ok(n2.hp < lowHp, 'a broken guard lets the note through');
+
+  const cheek = newGame(chu, at('boulder')); const [c1, c2] = cheek.fighters; dummy(cheek);
+  c1.energy = c1.energyMax;
+  c2.x = c1.x + 70; c2.facing = -1;
+  const cheekHp = c2.hp;
+  cheek.keyDown('KeyL'); cheek.keyDown('ArrowDown');
+  run(cheek, 3.2);
+  assert.equal(c2.hp, cheekHp, 'a point-blank block still catches the note');
+
+  const lap = newGame(chu, at('boulder')); const [u1, u2] = lap.fighters; dummy(lap);
+  u1.energy = u1.energyMax;
+  u2.x = u1.x + 10; u2.facing = -1;
+  const lapHp = u2.hp;
+  lap.keyDown('KeyL'); lap.keyDown('ArrowDown');
+  run(lap, 3.2);
+  assert.equal(u2.hp, lapHp, 'a block inside the note start still catches it');
+  assert.ok(lap.texts.some(t => t.text === 'Good'), 'an overlapped block still resolves at the end');
+  assert.ok(u2.guard > 45 && u2.guard < 55, 'an overlapped block still spends half the guard');
+
+  const redo = newGame(chu, at('boulder')); const [v1, v2] = redo.fighters; dummy(redo);
+  v1.energy = v1.energyMax;
+  v2.x = v1.x + 400; v2.facing = -1;
+  const redoHp = v2.hp;
+  redo.keyDown('KeyL'); redo.keyDown('ArrowDown');
+  run(redo, .9);
+  redo.keyUp('ArrowDown');
+  run(redo, .05);
+  redo.keyDown('ArrowDown');
+  run(redo, 2.4);
+  assert.ok(v2.hp < redoHp, 'releasing an early block and pressing again still gets hit');
+  assert.ok(!redo.texts.some(t => t.text === 'Good'), 'an early block cannot be recaught');
+
+  const slip = newGame(chu, at('boulder')); const [w1, w2] = slip.fighters; dummy(slip);
+  w1.energy = w1.energyMax;
+  w2.x = w1.x + 240; w2.facing = -1; w2.guard = 5;
+  const slipHp = w2.hp;
+  slip.keyDown('KeyL'); slip.keyDown('ArrowDown');
+  run(slip, 1.9);
+  const slipMid = w2.hp;
+  assert.ok(slipMid < slipHp, 'a thin guard breaks before the head arrives');
+  run(slip, 1.3);
+  assert.ok(w2.hp < slipMid, 'guard coming back does not catch the rest of the note');
+
+  const early = newGame(chu, at('boulder')); const [e1, e2] = early.fighters; dummy(early);
+  e1.energy = e1.energyMax;
+  e2.x = e1.x + 400; e2.facing = -1;
+  const earlyHp = e2.hp;
+  early.keyDown('KeyL'); early.keyDown('ArrowDown');
+  run(early, .5);
+  assert.ok(early.texts.some(t => t.text === 'miss'), 'blocking early prints miss');
+  run(early, 1.2);
+  assert.ok(e2.hp < earlyHp, 'an early block is pierced');
+
+  const dropped = newGame(chu, at('boulder')); const [d1, d2] = dropped.fighters; dummy(dropped);
+  d1.energy = d1.energyMax;
+  d2.x = d1.x + 200; d2.facing = -1;
+  const dropHp = d2.hp;
+  dropped.keyDown('KeyL'); dropped.keyDown('ArrowDown');
+  run(dropped, 1.2);
+  assert.equal(d2.hp, dropHp, 'the note waits while the block is held');
+  const stopped = d1.attack && holdNoteSpan(d1.attack, d1, [d2]);
+  assert.ok(stopped && Math.abs(stopped[1] - (d2.x - d1.x) * d1.facing) < 2, 'the head stops on their center');
+  dropped.keyUp('ArrowDown');
+  run(dropped, .2);
+  assert.ok(d2.hp < dropHp, 'letting go of block eats the note');
+
+  const air = newGame(chu, at('boulder')); const [a1, a2] = air.fighters; dummy(air);
+  a1.energy = a1.energyMax;
+  a2.facing = -1;
+  const hp = a2.hp;
+  air.keyDown('KeyL');
+  for (let i = 0; i < Math.round(1.1 / STEP); i++) {
+    a2.x = a1.x + 180;
+    a2.y = FLOOR - 80;
+    a2.vy = 0;
+    air.step(STEP);
+  }
+  assert.ok(a2.hp < hp, 'a jump does not clear the note');
+
+  const grind = newGame(chu, at('boulder')); const [g1, g2] = grind.fighters; dummy(grind);
+  g1.energy = g1.energyMax;
+  g2.facing = -1;
+  grind.keyDown('KeyL');
+  let ticks = 0;
+  for (let i = 0; i < Math.round(4 / STEP); i++) {
+    g2.x = g1.x + 200;
+    g2.y = FLOOR;
+    g2.vy = 0;
+    g2.vx = 0;
+    g2.facing = -1;
+    grind.step(STEP);
+    ticks = Math.max(ticks, g1.combo);
+  }
+  assert.equal(ticks, 10, 'a body that stays in the note eats ten hits');
+
+  const far = newGame(chu, at('boulder')); const [r1, r2] = far.fighters; dummy(far);
+  r1.energy = r1.energyMax;
+  r1.x = 200;
+  r2.facing = -1;
+  const farHp = r2.hp;
+  far.keyDown('KeyL');
+  const until = (t: number) => {
+    for (let i = 0; i < 600 && (r1.attack?.t ?? 0) < t; i++) { r2.x = r1.x + 440; far.step(STEP); }
+  };
+  until(.35 + .6);
+  assert.equal(r2.hp, farHp, 'the far end is safe until the head flies there');
+  until(.35 + 1.15);
+  assert.ok(r2.hp < farHp, 'once the head is out the far end must hold too');
+
+  const bin = newGame(chu, at('boulder')); const [b1] = bin.fighters; dummy(bin);
+  bin.keyDown('KeyI');
+  run(bin, .15);
+  assert.equal(clipFor(b1).row, 0, 'the trash windup is the first cell');
+  assert.equal(clipFor(b1).scale, 1.25, 'the trash column plays at 1.25');
+  run(bin, .1);
+  assert.equal(clipFor(b1).row, 1, 'the kick is the middle cell');
+  assert.equal(bin.projectiles.filter(p => p.fx === 'trash').length, 1, 'the first wad leaves on the kick');
+  run(bin, .55);
+  assert.equal(clipFor(b1).row, 2, 'the last cell is still up');
+  assert.ok((b1.attack?.t ?? 0) > .75 && (b1.attack?.t ?? 0) < .9, 'the last cell is still inside its 0.6s');
+  run(bin, .12);
+  assert.equal(b1.attack, null, 'the pose ends after the 0.6s last cell');
+  const wads = bin.projectiles.filter(p => p.fx === 'trash');
+  assert.equal(wads.length, 4, 'four paper wads roll out');
+  assert.ok(wads.every(p => p.y === FLOOR && Math.sign(p.vx) === b1.facing), 'the wads stay on the floor and roll forward');
+  const xs = wads.map(p => p.x * b1.facing).sort((a, b) => a - b);
+  const gap = xs[1] - xs[0];
+  assert.ok(gap > 30 && gap < 55 && xs[3] - xs[2] > 30, 'the wads leave one spot and pull apart');
 }
 
 console.log('selfcheck ok');
