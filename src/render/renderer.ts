@@ -6,6 +6,16 @@ import { FLOOR, H, SIDE, W } from '../game/constants.ts';
 import { violetHidden } from '../game/combat.ts';
 import { drawBanSign, drawCombo, drawEffect, drawGauge, drawHoldNote, drawKuji, drawLayerBass, drawParticles, drawProjectile, drawRootFx, drawSister, drawTexts, drawWheel, isLiteFx, UI_FONT } from './fx.ts';
 
+/** Backing-store pixels per CSS pixel. The compositor then blits 1:1.
+ *  Phones use the screen ratio too: a CSS pixel is several physical pixels, and a 1× store
+ *  is filter-upscaled across the whole frame. Lite keeps its 44% pixel cut on that ratio.
+ *  ponytail: no cap. A 3× phone is ~9× the fill of the old 1× store; if that misses frame
+ *  budget, lite (sticky for the session) is the step down, not a lower default. */
+export function backingScale(dpr: number, touch: boolean, lite: boolean): number {
+  const native = dpr > 0 ? dpr : 1;
+  return touch && lite ? native * .75 : native;
+}
+
 /** Hard 1px rim, yellow for the left team and green for the right. */
 const TEAM_GLOW = SIDE;
 
@@ -110,15 +120,12 @@ export class Renderer {
   }
 
   /** Size the backing store to the on-screen box × devicePixelRatio, so the compositor blits
-      the canvas 1:1 and the fixed 960×540 world rasterises at screen resolution. Phones
-      (`body.touch`) cap that scale at 1: a 3× store is about 9× the fill, and the CSS box is
-      already near the world width. The lite tier drops phones to 0.75 (44% fewer pixels per pass).
-      Desktop, including wide mode, keeps the monitor scale.
+      the canvas 1:1 and the fixed 960×540 world rasterises at screen resolution.
       Cheap to call every frame: a no-op unless the box, the zoom or the monitor's scale moved. */
   resize(): void {
     const cw = this.canvas.clientWidth, ch = this.canvas.clientHeight;
     if (!cw || !ch) return;
-    const dpr = document.body.classList.contains('touch') ? (isLiteFx() ? .75 : 1) : (window.devicePixelRatio || 1);
+    const dpr = backingScale(window.devicePixelRatio || 1, document.body.classList.contains('touch'), isLiteFx());
     const w = Math.max(1, Math.round(cw * dpr));
     const h = Math.max(1, Math.round(ch * dpr));
     if (this.canvas.width !== w || this.canvas.height !== h) {

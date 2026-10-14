@@ -11,7 +11,7 @@ import { FLOOR, COMBO_DECAY, STEP, W, X_MAX, X_MIN } from '../src/game/constants
 import { clipFor, crashRow, drumRow, flameFrame, riotCell } from '../src/render/clips.ts';
 import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
 import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell, shouldGoLite } from '../src/render/fx.ts';
-import { teamGlowOn } from '../src/render/renderer.ts';
+import { backingScale, teamGlowOn } from '../src/render/renderer.ts';
 import { previewFighter, gainEnergy } from '../src/game/fighter.ts';
 import { addMod, atkMul, clearMod, jumpMul, speedMul } from '../src/game/mods.ts';
 import { assetUrl, easeLoad, imageSources, linkRate, liteFight, liteSrc, nextSrc, portraitSrc, SLOW_RATE, stageThumbSrc } from '../src/assets/loader.ts';
@@ -98,6 +98,10 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(shouldGoLite(16, true), false, '60fps touch stays full');
   assert.equal(shouldGoLite(30, false), false, 'desktop never goes lite');
   assert.equal(shouldGoLite(30, true), true, 'a ~33fps touch device goes lite');
+  assert.equal(backingScale(3, true, false), 3, 'a phone raster matches its screen');
+  assert.equal(backingScale(3, true, true), 2.25, 'lite sheds pixels from the screen ratio');
+  assert.equal(backingScale(2, false, true), 2, 'desktop keeps the monitor ratio');
+  assert.equal(backingScale(0, true, false), 1, 'a missing ratio falls back to 1');
 }
 
 // light attack lands and builds energy
