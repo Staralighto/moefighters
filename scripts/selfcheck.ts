@@ -16,6 +16,7 @@ import { previewFighter, gainEnergy } from '../src/game/fighter.ts';
 import { addMod, atkMul, clearMod, jumpMul, speedMul } from '../src/game/mods.ts';
 import { assetUrl, easeLoad, imageSources, linkRate, liteFight, liteSrc, nextSrc, portraitSrc, SLOW_RATE, stageThumbSrc } from '../src/assets/loader.ts';
 import { isTouchJump, matchStickTouch, stickFingerGone, thumbBandTop, touchRelease, turnedStickDelta } from '../src/game/input.ts';
+import { swipeGuardPop, swipeGuardWanted } from '../src/ui/swipeBack.ts';
 import { battleFrame } from '../src/ui/battleFrame.ts';
 import { TOUCH_LAYOUT } from '../src/ui/touchLayout.data.ts';
 import { DEFAULT_ULT_ICON, ultIcon } from '../src/ui/touchIcons.ts';
@@ -1870,6 +1871,13 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(isTouchJump(up(.8), true), 'holding at the edge does not cancel the jump');
   assert.ok(isTouchJump(up(.65), true), 'still out of the re-arm zone, the jump holds');
   assert.ok(!isTouchJump(up(.4), true), 'back inside the ring the jump re-arms');
+  assert.ok(swipeGuardWanted(true, true, true, false), 'a landscape phone fight keeps the container back swipe');
+  assert.ok(swipeGuardWanted(true, true, false, true), 'the turned portrait fight keeps it too');
+  assert.ok(!swipeGuardWanted(true, true, false, false), 'a portrait fight still lets the container go back');
+  assert.ok(!swipeGuardWanted(false, true, true, false), 'a desktop fight does not trap back');
+  assert.equal(swipeGuardPop(true, false), 'rearm', 'a back swipe during the fight stays on this page');
+  assert.equal(swipeGuardPop(false, true), 'skip', 'leaving the fight drops the extra history entry');
+  assert.equal(swipeGuardPop(true, true), 'rearm', 'turning landscape again before that pop lands still stays');
   // A thumb at the rim leaves the stick box, and some phones never deliver pointerup. The lift still has to drop it.
   assert.equal(matchStickTouch(10, 10, { id: 3, x: 12, y: 11, t: 100 }, 130), 3, 'the touch that starts with the stick pairs by contact');
   assert.equal(matchStickTouch(10, 10, { id: 3, x: 12, y: 11, t: 100 }, 150), null, 'a leftover touch does not claim the next press');

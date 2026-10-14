@@ -14,6 +14,7 @@ import { cycleSkillTier, hideEnd, setBattleGuide, setRoundLabel, showBanner, sho
 import { setIconBtn } from './ui/iconBtn.ts';
 import { applyTouchDevice, watchTouch } from './ui/device.ts';
 import { applyTouchLayout, bindBattleFrame } from './ui/touchLayout.ts';
+import { bindSwipeGuard } from './ui/swipeBack.ts';
 import { bindPick, setTrainPrefs, trainPrefs } from './ui/settings.ts';
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
@@ -34,6 +35,7 @@ input.attach();
 new TouchInput(() => game, $('touchpad')).attach();
 applyTouchLayout();
 bindBattleFrame();
+bindSwipeGuard();
 /* Phones get one on-screen key set, so body.touch caps the match at one human.
    The ruling itself lives in ui/device.ts: capability is decided in one place, not per call site. */
 applyTouchDevice();

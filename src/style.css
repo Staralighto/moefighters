@@ -402,10 +402,12 @@ body.touch.in-battle #battle {
 body.touch .battle-top #fullscreen { display: none; }
 .rotate-hint { display: none; position: absolute; inset: 0; z-index: 4; place-content: center; padding: 24px; text-align: center; background: #0b0a12dd; font-weight: 800; font-size: 20px; }
 @media (orientation: landscape) {
-  body.touch.in-battle { position: fixed; inset: 0; height: 100vh; height: 100dvh; overflow: hidden; }
+  /* 右滑是容器的返回。页面不交出横向滑动，空历史才不会把 toy 浏览器关掉。 */
+  html:has(body.touch.in-battle) { overscroll-behavior: none; }
+  body.touch.in-battle { position: fixed; inset: 0; height: 100vh; height: 100dvh; overflow: hidden; overscroll-behavior: none; touch-action: none; }
   body.touch.in-battle header, body.touch.in-battle .battle-top, body.touch.in-battle #battle-skills, body.touch.in-battle #battle-skills-bar, body.touch.in-battle #battle footer, body.touch.in-battle .site-foot { display: none; }
   /* dvh tracks the real viewport; the 100vh declaration before it is the fallback for browsers without dvh. */
-  body.touch.in-battle #battle { width: 100%; height: 100vh; height: 100dvh; max-width: none; margin: 0; padding: 0; display: block; }
+  body.touch.in-battle #battle { width: 100%; height: 100vh; height: 100dvh; max-width: none; margin: 0; padding: 0; display: block; touch-action: none; }
   /* One box owns the safe area: all four insets land on the same element, so the leftover bars stay symmetric instead of pooling at the top. */
   body.touch.in-battle .arena { position: fixed; inset: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); width: auto; height: auto; max-height: none; aspect-ratio: auto; border: 0; border-radius: 0; }
   /* Width fills the safe box. Height and top come from battleFrame so the floor stays at the desktop ratio. */
@@ -431,11 +433,13 @@ body.touch .battle-top #fullscreen { display: none; }
   body.touch.in-battle .end-overlay:not([hidden]) ~ .rotate-hint { display: none; }
 }
 /* Toy 的手机容器不转系统方向。body.turned 把战斗转 90°，尺寸对调后就和真横屏同一套键位。
-   玩家把手机横过来看。真横屏时这个类会被拿掉，避免转两次。 */
-body.touch.turned.in-battle { position: fixed; inset: 0; height: 100vh; height: 100dvh; overflow: hidden; }
+   玩家把手机横过来看。真横屏时这个类会被拿掉，避免转两次。
+   横过来之后手指往右滑是容器的返回，同样不把这次滑动交出去。 */
+html:has(body.touch.turned.in-battle) { overscroll-behavior: none; }
+body.touch.turned.in-battle { position: fixed; inset: 0; height: 100vh; height: 100dvh; overflow: hidden; overscroll-behavior: none; touch-action: none; }
 body.touch.turned.in-battle header, body.touch.turned.in-battle .battle-top, body.touch.turned.in-battle #battle-skills, body.touch.turned.in-battle #battle-skills-bar, body.touch.turned.in-battle #battle footer, body.touch.turned.in-battle .site-foot, body.touch.turned.in-battle .rotate-hint { display: none; }
 /* 竖屏时 vmin 就是手机的宽，转完正好铺满。 */
-body.touch.turned.in-battle #battle { position: fixed; z-index: 5; top: 0; left: 100%; width: 100vh; width: 100dvh; height: 100vmin; max-width: none; margin: 0; padding: 0; display: block; transform: rotate(90deg); transform-origin: top left; }
+body.touch.turned.in-battle #battle { position: fixed; z-index: 5; top: 0; left: 100%; width: 100vh; width: 100dvh; height: 100vmin; max-width: none; margin: 0; padding: 0; display: block; transform: rotate(90deg); transform-origin: top left; touch-action: none; }
 body.touch.turned.in-battle .arena { position: fixed; inset: env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left) env(safe-area-inset-top); width: auto; height: auto; max-height: none; aspect-ratio: auto; border: 0; border-radius: 0; }
 body.touch.turned.in-battle .arena canvas { position: absolute; left: 0; top: 0; width: 100%; height: auto; object-fit: fill; }
 body.touch.turned.in-battle .touchpad { display: block; }

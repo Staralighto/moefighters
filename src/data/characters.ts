@@ -954,7 +954,7 @@ export const ROSTER: CharacterData[] = [
     bands: ['raise-a-suilen'],
     ...stats('focus'),
     view: {
-      kind: 'sprite', common: '/sprites/chuchu/common.png', special: '/sprites/chuchu/special.png', height: 170, lift: 10,
+      kind: 'sprite', common: '/sprites/chuchu/common.png', special: '/sprites/chuchu/special.png', height: 170, lift: 5,
       extras: ['/sprites/chuchu/jerky.png', '/sprites/chuchu/cake.png'],
     },
     skills: [
