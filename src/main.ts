@@ -292,7 +292,6 @@ async function startGame(setup: MatchSetup): Promise<void> {
     onBanner: showBanner,
     onEnd: onFightEnd,
     onPause: paused => {
-      if (!paused && portraitHold()) { game?.togglePause(true); return; }
       setIconBtn($('pause'), paused ? '继续 ESC' : '暂停 ESC');
       $('resume').hidden = !paused;
       $('pause-quit').hidden = !paused;
@@ -307,8 +306,6 @@ async function startGame(setup: MatchSetup): Promise<void> {
   renderer = new Renderer($('game') as HTMLCanvasElement, previewViews, setup.stage, images);
   lastNow = gapSum = gapCount = 0;
   raf = requestAnimationFrame(frame);
-  // 竖屏还没转过来时先停住，玩家才有空点右上角的横屏。点进去的那一下直接开打。
-  holdIfPortrait();
   if (!document.body.classList.contains('touch')) {
     $('game').focus();
     // Desktop only. Park the arena's text bar on the top edge of the viewport, so the site header is
@@ -317,7 +314,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
     // left to scroll the browser clamps it and the header simply stays.
     const bar = document.querySelector<HTMLElement>('.battle-top');
     window.scrollTo(0, bar ? bar.getBoundingClientRect().top + window.scrollY : 0);
-  }
+  } else window.scrollTo(0, 0);
 }
 
 /** Build and run the stage the pending challenge currently points at. */
@@ -459,14 +456,6 @@ $('skill-tier').onclick = () => cycleSkillTier();
 function syncFullscreenLabel(): void {
   setIconBtn($('fullscreen'), document.body.classList.contains('touch') ? '横屏' : '宽屏');
 }
-function portraitHold(): boolean {
-  return document.body.classList.contains('touch')
-    && matchMedia('(orientation: portrait)').matches
-    && !document.body.classList.contains('turned');
-}
-function holdIfPortrait(): void {
-  if (game && game.phase !== 'finished' && portraitHold() && !game.paused) game.togglePause(true);
-}
 function showLayoutExit(paused: boolean): void {
   const turned = document.body.classList.contains('turned');
   const on = paused && (turned || document.body.classList.contains('wide'));
@@ -476,7 +465,6 @@ function showLayoutExit(paused: boolean): void {
 $('fullscreen').onclick = () => {
   if (document.body.classList.contains('touch')) {
     document.body.classList.add('turned');
-    // turned 已经加上，portraitHold 不再把这一下按回去。
     if (game?.paused) game.togglePause(false);
     return;
   }
@@ -486,16 +474,16 @@ $('fullscreen').onclick = () => {
 $('wide-exit').onclick = () => {
   document.body.classList.remove('wide', 'turned');
   $('wide-exit').hidden = true;
-  holdIfPortrait();
 };
 matchMedia('(orientation: landscape)').addEventListener('change', e => {
   if (e.matches) document.body.classList.remove('turned');
-  else holdIfPortrait();
   if (game?.paused) showLayoutExit(true);
 });
-document.querySelector('.timer')?.addEventListener('click', () => {
+// 手机点计时暂停；桌面宽屏同理——顶栏藏了，这是鼠标开暂停浮层的入口。
+// 按下即停，跟摇杆和技能键一样。横屏会吃掉 touchmove，等松开的 click 经常到不了。
+document.querySelector<HTMLElement>('.timer')?.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
   const body = document.body;
-  // 手机点计时暂停；桌面宽屏同理——顶栏藏了，这是鼠标开暂停浮层的入口。
   if (body.classList.contains('touch') || body.classList.contains('wide')) game?.togglePause();
 });
 $('resume').onclick = () => { if (game?.paused) game.togglePause(false); };
@@ -649,13 +637,4 @@ document.addEventListener('pointerdown', e => {
   nudgeMusic();
 }, { capture: true });
 document.addEventListener('keydown', e => { if (!e.repeat) { sfx.unlock(); nudgeMusic(); } }, { capture: true });
-for (const type of ['contextmenu', 'selectstart', 'dragstart', 'dblclick', 'gesturestart']) {
-  $('arena').addEventListener(type, e => e.preventDefault());
-}
-document.addEventListener('selectionchange', () => {
-  if (!document.body.classList.contains('touch') || !document.body.classList.contains('in-battle')) return;
-  const sel = document.getSelection();
-  const node = sel?.anchorNode;
-  if (!sel || sel.isCollapsed || !node || !$('battle').contains(node)) return;
-  sel.removeAllRanges();
-});
+// 选区、放大镜、双击缩放由 body.touch 的 CSS 关掉。这里再 preventDefault 会把正在进行的点击作废。

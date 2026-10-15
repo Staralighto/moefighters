@@ -1,4 +1,4 @@
-import { applyImageUrl, assignImage } from '../assets/loader.ts';
+import { assignImage } from '../assets/loader.ts';
 import type { CharacterData, SkillType } from '../data/types.ts';
 
 /** Phosphor fill icons, MIT. See public/icons/LICENSE-phosphor.txt. */
@@ -41,15 +41,6 @@ export function applyTouchIcons(c: CharacterData): void {
   put('[data-pad="s1"]', typeIcon[c.skills[2].type], c.skills[2].name);
   put('[data-pad="s2"]', typeIcon[c.skills[3].type], c.skills[3].name);
   put('[data-pad="s3"]', typeIcon[c.skills[4].type], c.skills[4].name);
-  const ult = ultIcon(c.id);
-  put('[data-pad="ult"]', ult, c.skills[5].name);
-  const ultEl = pad.querySelector<HTMLElement>('[data-pad="ult"]');
-  if (ultEl) {
-    ultEl.dataset.ico = ult;
-    applyImageUrl(ult, url => {
-      if (ultEl.dataset.ico !== ult) return;
-      ultEl.style.setProperty('--ico', `url("${url}")`);
-    });
-  }
+  put('[data-pad="ult"]', ultIcon(c.id), c.skills[5].name);
   put('[data-pad="atk"]', typeIcon.light);
 }

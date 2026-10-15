@@ -1,4 +1,4 @@
-import { battleFrame } from './battleFrame.ts';
+import { battleFrame, pictureHud } from './battleFrame.ts';
 import { TOUCH_LAYOUT } from './touchLayout.data.ts';
 
 /** Paint saved centers onto the pad. Inline styles win over the CSS defaults. Only the stick is free-placed now. */
@@ -33,9 +33,14 @@ export function bindBattleFrame(): void {
   };
   const apply = () => {
     // 宽屏（桌面全屏开关）走同一条管线，但没有横竖屏门槛：窗口什么比例都铺。
+    // 竖屏触屏且没转成横屏：按键板在画面下面，不进 in-tower。横屏 / turned / 宽屏维持原叠键。
     const turned = document.body.classList.contains('turned');
-    const touchOn = document.body.classList.contains('touch') && (landscape.matches || turned);
     const wideOn = document.body.classList.contains('wide');
+    const split = document.body.classList.contains('touch')
+      && document.body.classList.contains('in-battle')
+      && !turned && !wideOn && !landscape.matches;
+    document.body.classList.toggle('pad-split', split);
+    const touchOn = document.body.classList.contains('touch') && (landscape.matches || turned);
     const on = (touchOn || wideOn)
       && document.body.classList.contains('in-battle')
       && arena.clientWidth >= 2
@@ -46,7 +51,9 @@ export function bindBattleFrame(): void {
       canvas.style.height = '';
       pad.classList.remove('in-tower');
       pad.style.removeProperty('--atk');
-      arena.style.removeProperty('--hud');
+      // 竖屏画面只有手机那么宽。血条按桌面像素画会占掉上沿，这里跟画面宽度走，再留 1.2 倍。
+      if (split && arena.clientWidth >= 2) arena.style.setProperty('--hud', pictureHud(arena.clientWidth).toFixed(4));
+      else arena.style.removeProperty('--hud');
       applyTouchLayout();
       return;
     }
@@ -74,6 +81,6 @@ export function bindBattleFrame(): void {
   });
   window.addEventListener('resize', () => requestAnimationFrame(apply));
   window.visualViewport?.addEventListener('resize', () => requestAnimationFrame(apply));
-  new MutationObserver(() => requestAnimationFrame(apply)).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  new MutationObserver(() => apply()).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   apply();
 }

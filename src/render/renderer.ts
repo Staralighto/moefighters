@@ -4,7 +4,7 @@ import type { FighterView } from './view.ts';
 import { stageThumbSrc, type ImageCache } from '../assets/loader.ts';
 import { FLOOR, H, SIDE, W } from '../game/constants.ts';
 import { violetHidden } from '../game/combat.ts';
-import { drawBanSign, drawCombo, drawEffect, drawGauge, drawHoldNote, drawKuji, drawLayerBass, drawParticles, drawProjectile, drawRootFx, drawSister, drawTexts, drawWheel, isLiteFx, UI_FONT } from './fx.ts';
+import { drawBanSign, drawCombo, drawEffect, drawGauge, drawHoldNote, drawKuji, drawLayerBass, drawParticles, drawProjectile, drawRootFx, drawSister, drawTexts, drawWheel, isLiteFx, UI_FONT, zoomAbout } from './fx.ts';
 
 /** Backing-store pixels per CSS pixel. The compositor then blits 1:1.
  *  Phones use the screen ratio too: a CSS pixel is several physical pixels, and a 1× store
@@ -14,6 +14,11 @@ import { drawBanSign, drawCombo, drawEffect, drawGauge, drawHoldNote, drawKuji, 
 export function backingScale(dpr: number, touch: boolean, lite: boolean): number {
   const native = dpr > 0 ? dpr : 1;
   return touch && lite ? native * .75 : native;
+}
+
+/** Pad-split portrait draws bodies and their effects 1.3×. The 960×540 stage stays put. */
+export function portraitBodyScale(padSplit: boolean): number {
+  return padSplit ? 1.3 : 1;
 }
 
 /** Hard 1px rim, yellow for the left team and green for the right. */
@@ -148,16 +153,18 @@ export class Renderer {
     if (g.shake > 0) c.translate((g.random() - .5) * g.shake, (g.random() - .5) * g.shake);
     this.drawStage();
 
+    const bodyScale = portraitBodyScale(document.body.classList.contains('pad-split'));
     // 圆形地面影子：跳得越高影越小；中心比脚线高 7px（FLOOR+3 再上移 10），对齐成图的实际脚线。
     for (const f of g.fighters) {
       if (violetHidden(f)) continue;
       c.fillStyle = '#05050c40';
       c.beginPath();
-      c.ellipse(f.x, FLOOR - 7, Math.max(0, 50 - (FLOOR - f.y) * .09), 9, 0, 0, Math.PI * 2);
+      c.ellipse(f.x, FLOOR - 7, Math.max(0, 50 - (FLOOR - f.y) * .09) * bodyScale, 9 * bodyScale, 0, 0, Math.PI * 2);
       c.fill();
     }
 
     const lite = isLiteFx();
+    // 人和挂在身上的特效绕脚放大。命中、弹道、粒子绕各自的落点放大，战场贴图不动。
     for (const e of g.effects) {
       if (e.type !== 'ghost' || e.fighter === undefined) continue;
       // Lite draws only the fresher half of each trail; picked by age, so nothing blinks.
@@ -167,7 +174,7 @@ export class Renderer {
       if (!f) continue;
       // 梦想即力量！: ghosts stamped with a cell draw that frozen pose; the rest mirror the live one.
       const pose = e.sheet ? { sheet: e.sheet, col: e.col ?? 0, row: e.row ?? 0, facing: e.facing ?? f.facing } : undefined;
-      this.view(f.data.id).draw(c, f, e.x, e.y, (e.alpha ?? .3) * (e.life / e.max), e.tint, undefined, pose);
+      zoomAbout(c, bodyScale, e.x, e.y, () => this.view(f.data.id).draw(c, f, e.x, e.y, (e.alpha ?? .3) * (e.life / e.max), e.tint, undefined, pose));
     }
     const order = [...g.fighters].sort((a, b) => Number(a.hp > 0) - Number(b.hp > 0) || a.y - b.y);
     const teamRim = teamGlowOn(g);
@@ -177,49 +184,54 @@ export class Renderer {
       const view = this.view(f.data.id);
       const outline = teamRim ? TEAM_GLOW[f.team] : undefined;
       const alpha = f.hp <= 0 ? .3 : f.basic ? .55 : f.echo ? .45 : 1;
-      if (f.attack?.skill.fx === 'wheel') drawWheel(c, f, this.images);
-      view.draw(c, f, f.x, f.hp <= 0 ? FLOOR : f.y, alpha, undefined, outline);
-      drawLayerBass(c, f, this.images, alpha);
-      if (f.blocking) drawEffect(c, { type: 'shield', x: f.x + f.facing * 28, y: f.y - 80, color: '#a6eeff', life: .14, max: .22, radius: 58 });
-      if (f.root > 0 && f.hp > 0) drawRootFx(c, f, g.age);
-      if (f.slow > 0 && f.hp > 0) {
-        const bubble = f.mods.some(m => m.kind === 'slow' && m.left > 0 && m.mark === 'bubble');
-        drawEffect(c, bubble
-          ? { type: 'slow-bubble', x: f.x, y: f.y - 150, color: f.data.color, life: 1, max: 1, radius: 18, age: g.age }
-          : { type: 'petal-aura', x: f.x, y: f.y - 105, color: '#EE0022', life: 1, max: 1, radius: 44, age: g.age });
-      }
-      drawGauge(c, f);
-      if (f.feast > 0 && f.hp > 0) drawEffect(c, { type: 'feast', x: f.x, y: f.y - 92, color: '#9ad4ff', life: 1, max: 1, radius: 40 });
-      if (f.debt > 0 && f.hp > 0) {
-        drawEffect(c, { type: 'debt', x: f.x, y: FLOOR, color: f.data.color, life: 1, max: 1, radius: 52 });
-        if (f.debtDmg > 0) {
-          c.save();
-          c.font = `16px ${UI_FONT}`;
-          c.textAlign = 'center';
-          c.fillStyle = '#f4b4c8';
-          c.fillText(String(Math.round(f.debtDmg * 1.5)), Math.round(f.x), Math.round(f.y - 156));
-          c.restore();
+      const footY = f.hp <= 0 ? FLOOR : f.y;
+      zoomAbout(c, bodyScale, f.x, footY, () => {
+        if (f.attack?.skill.fx === 'wheel') drawWheel(c, f, this.images);
+        view.draw(c, f, f.x, footY, alpha, undefined, outline);
+        drawLayerBass(c, f, this.images, alpha);
+        if (f.blocking) drawEffect(c, { type: 'shield', x: f.x + f.facing * 28, y: f.y - 80, color: '#a6eeff', life: .14, max: .22, radius: 58 });
+        if (f.root > 0 && f.hp > 0) drawRootFx(c, f, g.age);
+        if (f.slow > 0 && f.hp > 0) {
+          const bubble = f.mods.some(m => m.kind === 'slow' && m.left > 0 && m.mark === 'bubble');
+          drawEffect(c, bubble
+            ? { type: 'slow-bubble', x: f.x, y: f.y - 150, color: f.data.color, life: 1, max: 1, radius: 18, age: g.age }
+            : { type: 'petal-aura', x: f.x, y: f.y - 105, color: '#EE0022', life: 1, max: 1, radius: 44, age: g.age });
         }
-      }
-      if (f.minion && f.hp > 0) {
-        const bw = 44, bx = Math.round(f.x) - bw / 2, by = Math.round(f.y) - 196;
-        c.fillStyle = '#171120aa';
-        c.fillRect(bx - 1, by - 1, bw + 2, 5);
-        c.fillStyle = f.data.color;
-        c.fillRect(bx, by, Math.max(0, bw * (f.hp / f.data.hp)), 3);
-      }
+        drawGauge(c, f);
+        if (f.feast > 0 && f.hp > 0) drawEffect(c, { type: 'feast', x: f.x, y: f.y - 92, color: '#9ad4ff', life: 1, max: 1, radius: 40 });
+        if (f.debt > 0 && f.hp > 0) {
+          drawEffect(c, { type: 'debt', x: f.x, y: FLOOR, color: f.data.color, life: 1, max: 1, radius: 52 });
+          if (f.debtDmg > 0) {
+            c.save();
+            c.font = `16px ${UI_FONT}`;
+            c.textAlign = 'center';
+            c.fillStyle = '#f4b4c8';
+            c.fillText(String(Math.round(f.debtDmg * 1.5)), Math.round(f.x), Math.round(f.y - 156));
+            c.restore();
+          }
+        }
+        if (f.minion && f.hp > 0) {
+          const bw = 44, bx = Math.round(f.x) - bw / 2, by = Math.round(f.y) - 196;
+          c.fillStyle = '#171120aa';
+          c.fillRect(bx - 1, by - 1, bw + 2, 5);
+          c.fillStyle = f.data.color;
+          c.fillRect(bx, by, Math.max(0, bw * (f.hp / f.data.hp)), 3);
+        }
+      });
     }
-    for (const f of g.fighters) if (f.attack?.skill.fx === 'change') drawHoldNote(c, f, g.opponents(f));
+    for (const f of g.fighters) if (f.attack?.skill.fx === 'change') zoomAbout(c, bodyScale, f.x, f.y, () => drawHoldNote(c, f, g.opponents(f)));
     for (const p of g.projectiles) {
-      if (p.fx !== 'sister') { drawProjectile(c, p, this.images); continue; }
-      const owner = g.fighterById(p.owner);
-      if (owner) drawSister(c, p, owner, this.view(owner.data.id));
+      const owner = p.fx === 'sister' ? g.fighterById(p.owner) : undefined;
+      zoomAbout(c, bodyScale, p.x, p.y, () => {
+        if (owner) drawSister(c, p, owner, this.view(owner.data.id));
+        else if (p.fx !== 'sister') drawProjectile(c, p, this.images);
+      });
     }
-    for (const f of g.fighters) if (f.ban > 0 && f.hp > 0) drawBanSign(c, f);
-    for (const e of g.effects) if (e.type !== 'ghost') drawEffect(c, e, this.images);
-    drawParticles(c, g.particles);
-    drawTexts(c, g.texts);
-    drawKuji(c, g);
+    for (const f of g.fighters) if (f.ban > 0 && f.hp > 0) zoomAbout(c, bodyScale, f.x, f.y, () => drawBanSign(c, f));
+    for (const e of g.effects) if (e.type !== 'ghost') zoomAbout(c, bodyScale, e.x, e.y, () => drawEffect(c, e, this.images));
+    drawParticles(c, g.particles, bodyScale);
+    drawTexts(c, g.texts, bodyScale);
+    drawKuji(c, g, bodyScale);
     drawCombo(c, g);
     if (g.mode === 'training') {
       c.textAlign = 'center'; c.font = `14px ${UI_FONT}`; c.fillStyle = '#ddd9ee';
@@ -239,7 +251,7 @@ export class Renderer {
         const v = veil.getContext('2d');
         if (v) {
           v.globalCompositeOperation = 'destination-out';
-          if (!violetHidden(her)) this.view(her.data.id).draw(v, her, her.x, her.y, 1);
+          if (!violetHidden(her)) zoomAbout(v, bodyScale, her.x, her.y, () => this.view(her.data.id).draw(v, her, her.x, her.y, 1));
           v.globalCompositeOperation = 'source-over';
         }
         c.drawImage(veil, 0, 0);
@@ -267,30 +279,32 @@ export class Renderer {
       };
       beam(-34);
       beam(W + 34);
-      // A warm halo at chest height sells the hit of the spot on her body, not just the floor.
-      if (!glowGrad) {
-        glowGrad = c.createRadialGradient(0, 0, 6, 0, 0, 90);
-        glowGrad.addColorStop(0, 'rgba(255, 244, 210, .26)');
-        glowGrad.addColorStop(1, 'rgba(255, 244, 210, 0)');
-      }
-      c.save();
-      c.translate(gx + sway, FLOOR - 88);
-      c.fillStyle = glowGrad;
-      c.beginPath();
-      c.arc(0, 0, 90, 0, Math.PI * 2);
-      c.fill();
-      c.restore();
-      c.translate(gx + sway, FLOOR);
-      c.scale(1, .3);
-      if (!poolGrad) {
-        poolGrad = c.createRadialGradient(0, 0, 8, 0, 0, 105);
-        poolGrad.addColorStop(0, 'rgba(255, 244, 210, .38)');
-        poolGrad.addColorStop(1, 'rgba(255, 244, 210, 0)');
-      }
-      c.fillStyle = poolGrad;
-      c.beginPath();
-      c.arc(0, 0, 105, 0, Math.PI * 2);
-      c.fill();
+      zoomAbout(c, bodyScale, gx, her ? her.y : FLOOR, () => {
+        // A warm halo at chest height sells the hit of the spot on her body, not just the floor.
+        if (!glowGrad) {
+          glowGrad = c.createRadialGradient(0, 0, 6, 0, 0, 90);
+          glowGrad.addColorStop(0, 'rgba(255, 244, 210, .26)');
+          glowGrad.addColorStop(1, 'rgba(255, 244, 210, 0)');
+        }
+        c.save();
+        c.translate(gx + sway, FLOOR - 88);
+        c.fillStyle = glowGrad;
+        c.beginPath();
+        c.arc(0, 0, 90, 0, Math.PI * 2);
+        c.fill();
+        c.restore();
+        c.translate(gx + sway, FLOOR);
+        c.scale(1, .3);
+        if (!poolGrad) {
+          poolGrad = c.createRadialGradient(0, 0, 8, 0, 0, 105);
+          poolGrad.addColorStop(0, 'rgba(255, 244, 210, .38)');
+          poolGrad.addColorStop(1, 'rgba(255, 244, 210, 0)');
+        }
+        c.fillStyle = poolGrad;
+        c.beginPath();
+        c.arc(0, 0, 105, 0, Math.PI * 2);
+        c.fill();
+      });
       c.restore();
     }
     // A full-canvas tint on top of the stage. Phones skip it: it is a third fullscreen pass.

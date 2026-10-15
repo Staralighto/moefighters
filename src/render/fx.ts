@@ -2943,14 +2943,26 @@ export function drawBanSign(ctx: CanvasRenderingContext2D, f: Fighter): void {
   ctx.restore();
 }
 
-export function drawParticles(ctx: CanvasRenderingContext2D, particles: Particle[]): void {
+/** Grow a draw about a world point. Scale 1 is a no-op, so the stage coordinates stay put. */
+export function zoomAbout(ctx: CanvasRenderingContext2D, scale: number, x: number, y: number, paint: () => void): void {
+  if (scale === 1) { paint(); return; }
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  ctx.translate(-x, -y);
+  paint();
+  ctx.restore();
+}
+
+export function drawParticles(ctx: CanvasRenderingContext2D, particles: Particle[], scale = 1): void {
   const lite = liteFx;
   for (const p of particles) {
     // Lite keeps about half. vx never changes after the spawn, so a particle never blinks.
     if (lite && Math.floor(Math.abs(p.vx)) & 1) continue;
     ctx.globalAlpha = Math.min(1, p.life * 5);
     ctx.fillStyle = p.color;
-    ctx.fillRect(Math.round(p.x), Math.round(p.y), p.size, p.size);
+    const x = Math.round(p.x), y = Math.round(p.y);
+    zoomAbout(ctx, scale, x + p.size / 2, y + p.size / 2, () => ctx.fillRect(x, y, p.size, p.size));
   }
   ctx.globalAlpha = 1;
 }
@@ -2976,7 +2988,7 @@ export function kujiFlash(t: number): { ch: string; alpha: number } | null {
   return { ch: KUJI[i], alpha: 1 - (k - 0.62) / 0.22 };
 }
 
-export function drawKuji(ctx: CanvasRenderingContext2D, g: FightGame): void {
+export function drawKuji(ctx: CanvasRenderingContext2D, g: FightGame, scale = 1): void {
   for (const f of g.fighters) {
     const a = f.attack;
     if (!a || a.skill.fx !== 'seal' || f.hp <= 0) continue;
@@ -2985,8 +2997,13 @@ export function drawKuji(ctx: CanvasRenderingContext2D, g: FightGame): void {
     const h = f.data.view.kind === 'sprite' ? f.data.view.height : 176;
     // Super windup hair starts 58px down the 256 cell. Baseline sits a few pixels above that.
     const head = (CELL - 58) * h / CELL;
-    ctx.save();
-    ctx.translate(Math.round(f.x), Math.round(f.y - head - 6));
+    zoomAbout(ctx, scale, f.x, f.y, () => drawKujiGlyph(ctx, f.x, f.y - head - 6, flash));
+  }
+}
+
+function drawKujiGlyph(ctx: CanvasRenderingContext2D, x: number, y: number, flash: { ch: string; alpha: number }): void {
+  ctx.save();
+  ctx.translate(Math.round(x), Math.round(y));
     ctx.globalAlpha = flash.alpha;
     const s = rasterScale(ctx);
     const baked = s && cacheText(kujiBakes, flash.ch + '|' + s, () => bakeText(KUJI_FONT, 48, flash.ch, 4, '#241433', '#e6d4ff', 'bottom', s, 'round'));
@@ -3000,10 +3017,9 @@ export function drawKuji(ctx: CanvasRenderingContext2D, g: FightGame): void {
       ctx.strokeStyle = '#241433';
       ctx.strokeText(flash.ch, 0, 0);
       ctx.fillStyle = '#e6d4ff';
-      ctx.fillText(flash.ch, 0, 0);
-    }
-    ctx.restore();
+    ctx.fillText(flash.ch, 0, 0);
   }
+  ctx.restore();
 }
 
 const KUJI_FONT = '48px "Ma Shan Zheng", KaiTi, STKaiti, serif';
@@ -3082,29 +3098,33 @@ function floatingFont(lime: boolean, size: number): string {
 /** A floating text never changes its words, colour or size, so each one bakes once per raster scale. */
 const textBakes = new WeakMap<FloatingText, BakedText>();
 
-export function drawTexts(ctx: CanvasRenderingContext2D, texts: FloatingText[]): void {
+export function drawTexts(ctx: CanvasRenderingContext2D, texts: FloatingText[], scale = 1): void {
   ctx.textAlign = 'center';
-  const s = rasterScale(ctx);
   for (const t of texts) {
-    const lime = LIME.has(t.color);
-    ctx.globalAlpha = Math.min(1, t.life * 4);
-    if (s) {
-      let b = textBakes.get(t);
-      if (!b || b.s !== s) {
-        b = bakeText(floatingFont(lime, t.size), lime ? Math.round(t.size * 1.2) : t.size, t.text, lime ? 6 : 4, lime ? '#000' : '#171120', lime ? '#fff' : t.color, 'alphabetic', s);
-        textBakes.set(t, b);
-      }
-      blitText(ctx, b, t.x, t.y);
-      continue;
-    }
-    ctx.font = floatingFont(lime, t.size);
-    ctx.lineWidth = lime ? 6 : 4;
-    ctx.strokeStyle = lime ? '#000' : '#171120';
-    ctx.strokeText(t.text, t.x, t.y);
-    ctx.fillStyle = lime ? '#fff' : t.color;
-    ctx.fillText(t.text, t.x, t.y);
+    zoomAbout(ctx, scale, t.x, t.y, () => drawFloatingText(ctx, t));
   }
   ctx.globalAlpha = 1;
+}
+
+function drawFloatingText(ctx: CanvasRenderingContext2D, t: FloatingText): void {
+  const s = rasterScale(ctx);
+  const lime = LIME.has(t.color);
+  ctx.globalAlpha = Math.min(1, t.life * 4);
+  if (s) {
+    let b = textBakes.get(t);
+    if (!b || b.s !== s) {
+      b = bakeText(floatingFont(lime, t.size), lime ? Math.round(t.size * 1.2) : t.size, t.text, lime ? 6 : 4, lime ? '#000' : '#171120', lime ? '#fff' : t.color, 'alphabetic', s);
+      textBakes.set(t, b);
+    }
+    blitText(ctx, b, t.x, t.y);
+    return;
+  }
+  ctx.font = floatingFont(lime, t.size);
+  ctx.lineWidth = lime ? 6 : 4;
+  ctx.strokeStyle = lime ? '#000' : '#171120';
+  ctx.strokeText(t.text, t.x, t.y);
+  ctx.fillStyle = lime ? '#fff' : t.color;
+  ctx.fillText(t.text, t.x, t.y);
 }
 
 export function drawCombo(ctx: CanvasRenderingContext2D, g: FightGame): void {

@@ -73,6 +73,11 @@ export function thumbBandTop(attackTop: number, attackSize: number): number {
   return attackTop + Math.max(0, attackSize) * .08;
 }
 
+/** Portrait slab owns the blank gesture. A press on the fight picture must not dodge. */
+export function acceptBlank(split: boolean, inPad: boolean): boolean {
+  return !split || inPad;
+}
+
 /** Screen offset from the stick center, in the axes of a battle rotated 90° clockwise.
  *  Content right lands on screen down; content down lands on screen left. */
 export function turnedStickDelta(screenDx: number, screenDy: number): { dx: number; dy: number } {
@@ -140,6 +145,8 @@ export class TouchInput {
   private follow = 0;
   private reflowQueued = false;
   private reflowAgain = false;
+  /** pad-split / turned / wide. A change drops a finger that is still on the old layout. */
+  private layoutSig = '';
   private guardId: number | null = null;
   private guardEl: Element | null = null;
   private readonly atkTimer = new Map<number, number>();
@@ -199,6 +206,7 @@ export class TouchInput {
   private readonly guardDown = (e: PointerEvent) => {
     if (document.body.classList.contains('pad-tune') || this.guardId !== null) return;
     const el = e.target as HTMLElement;
+    if (!acceptBlank(document.body.classList.contains('pad-split'), this.pad.contains(el))) return;
     if (el.closest(NOT_BLANK)) return;
     const band = this.thumbBandTop();
     if (band !== null && this.inThumbBand(e.clientX, e.clientY, band)) {
@@ -214,11 +222,9 @@ export class TouchInput {
     g.keyDown('KeyS');
   };
   private readonly noMenu = (e: Event) => {
-    const t = e.target;
-    // A long-press callout cancels the gesture. The stick and the buttons never want one;
-    // a blank-screen block doesn't either. HUD text stays selectable.
-    if (t instanceof Element && t.closest('.tp-stick, .tp-actions')) e.preventDefault();
-    else if (this.guardId !== null) e.preventDefault();
+    // A long-press callout or image drag cancels the gesture. Desktop right-click stays.
+    if (!document.body.classList.contains('touch')) return;
+    e.preventDefault();
   };
 
   constructor(getGame: () => FightGame | null, pad: HTMLElement) {
@@ -248,6 +254,9 @@ export class TouchInput {
     window.addEventListener('blur', this.onDrop);
     window.addEventListener('pagehide', this.onDrop);
     window.addEventListener('orientationchange', this.onDrop);
+    // Turning the phone, or the 横屏 button, moves the stick under a finger that is still down.
+    this.layoutSig = this.layoutNow();
+    new MutationObserver(this.onLayout).observe(document.body, { attributes: true, attributeFilter: ['class'] });
     document.addEventListener('visibilitychange', this.onHide);
     document.addEventListener('freeze', this.onDrop);
     // The ring is anchored to the arena, and that box is rewritten when the visual viewport
@@ -258,11 +267,14 @@ export class TouchInput {
     window.visualViewport?.addEventListener('scroll', this.scheduleReflow);
   }
 
-  /** Y of the thumb band, in viewport coordinates. Null when the attack key cannot be measured. */
+  /** Y of the thumb band, in viewport coordinates. Null when the anchor key cannot be measured.
+   *  Landscape uses the attack key, which sits on the bottom row. Portrait puts that key in the
+   *  middle, so the band follows the guard instead — otherwise the lower half of the pad goes dead. */
   private thumbBandTop(): number | null {
-    const atk = this.pad.querySelector<HTMLElement>('.tp-actions .atk');
-    if (!atk) return null;
-    const r = atk.getBoundingClientRect();
+    const split = document.body.classList.contains('pad-split');
+    const anchor = this.pad.querySelector<HTMLElement>(split ? '.tp-actions .guard' : '.tp-actions .atk');
+    if (!anchor) return null;
+    const r = anchor.getBoundingClientRect();
     if (r.height < 2) return null;
     return thumbBandTop(r.top, r.height);
   }
@@ -331,6 +343,16 @@ export class TouchInput {
     else if (kind === 'stick' || stickFingerGone(this.stickTouch, this.liveTouches)) this.releaseStick();
   };
   private readonly onDrop = () => { this.releaseAll(false, false); };
+  private layoutNow(): string {
+    const b = document.body.classList;
+    return (b.contains('pad-split') ? 's' : '') + (b.contains('turned') ? 't' : '') + (b.contains('wide') ? 'w' : '');
+  }
+  private readonly onLayout = () => {
+    const next = this.layoutNow();
+    if (next === this.layoutSig) return;
+    this.layoutSig = next;
+    this.onDrop();
+  };
   private readonly onHide = () => { if (document.hidden) this.onDrop(); };
   private readonly scheduleReflow = () => {
     if (this.reflowQueued) { this.reflowAgain = true; return; }

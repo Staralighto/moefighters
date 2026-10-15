@@ -180,6 +180,7 @@
     </div>
   </div>
   <div class="arena" id="arena">
+    <div class="arena-view">
     <canvas id="game" width="960" height="540" tabindex="0" aria-label="格斗画面"></canvas>
     <div class="hud">
       <div class="hud-side">
@@ -219,6 +220,13 @@
       <button id="wide-exit" class="icon-btn" type="button" hidden aria-label="退出宽屏"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-corners-in"/></svg><span class="btn-label">退出宽屏</span></button>
       <button id="pause-quit" class="icon-btn" type="button" hidden aria-label="返回选人"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-arrow-left"/></svg><span class="btn-label">返回选人</span></button>
     </div>
+    <div class="end-overlay" id="end" hidden>
+      <small>MATCH COMPLETE</small>
+      <h2 id="end-title"></h2>
+      <p id="end-info"></p>
+      <div><button class="start icon-btn" id="rematch" type="button" aria-label="再来一局"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-arrow-clockwise"/></svg><span class="btn-label">再来一局 ↻</span></button><button class="icon-btn" id="reselect" type="button" aria-label="重新选人"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-users"/></svg><span class="btn-label">重新选人</span></button></div>
+    </div>
+    </div>
     <div class="touchpad" id="touchpad">
       <div class="tp-stick" data-pad="stick">
         <div class="tp-ring"><i class="tp-knob-move"><b class="tp-knob"></b></i></div>
@@ -232,13 +240,6 @@
         <button type="button" class="guard" data-pad="guard" data-guard aria-label="格挡"><img alt="" loading="lazy" src="/icons/guard.png"></button>
       </div>
     </div>
-    <div class="end-overlay" id="end" hidden>
-      <small>MATCH COMPLETE</small>
-      <h2 id="end-title"></h2>
-      <p id="end-info"></p>
-      <div><button class="start icon-btn" id="rematch" type="button" aria-label="再来一局"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-arrow-clockwise"/></svg><span class="btn-label">再来一局 ↻</span></button><button class="icon-btn" id="reselect" type="button" aria-label="重新选人"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-users"/></svg><span class="btn-label">重新选人</span></button></div>
-    </div>
-    <div class="rotate-hint">点右上角进入横屏</div>
   </div>
   <div id="battle-skills" data-tier="2"></div>
   <div id="battle-skills-bar">

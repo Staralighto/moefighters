@@ -56,7 +56,7 @@ ${lines.join('\n')}
 `;
 }
 
-const PAD_IDS = ['atk', 'guard', 'jump', 's1', 's2', 's3', 'stick', 'ult'] as const;
+const PAD_IDS = ['atk', 'guard', 's1', 's2', 's3', 'stick', 'ult'] as const;
 
 /** Same idea as prop layout: drag the phone buttons, drop writes the data file, fight keeps running. */
 function touchLayout(): Plugin {
@@ -90,7 +90,8 @@ function touchLayout(): Plugin {
 function serializeTouch(raw: unknown): string {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('layout must be an object');
   const src = raw as Record<string, unknown>;
-  const lines = PAD_IDS.map(id => {
+  // 只写这次真正摆放的控件；没拖过的保持 CSS 默认，不进文件。
+  const lines = PAD_IDS.filter(id => id in src).map(id => {
     const v = src[id];
     if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('bad ' + id);
     const p = v as Record<string, unknown>;

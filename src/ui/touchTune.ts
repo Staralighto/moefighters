@@ -28,7 +28,7 @@ export function mountTouchTune(pad: HTMLElement): void {
     for (const el of pad.querySelectorAll<HTMLElement>('[data-pad]')) {
       const id = el.dataset.pad;
       const place = placeOf(el);
-      if (!id || !Number.isFinite(place.x) || !Number.isFinite(place.y)) return;
+      if (!id || !Number.isFinite(place.x) || !Number.isFinite(place.y)) continue;
       layout[id] = place;
     }
     open.textContent = '写入中…';
@@ -51,6 +51,8 @@ export function mountTouchTune(pad: HTMLElement): void {
     if (!document.body.classList.contains('pad-tune')) return;
     const el = (e.target as HTMLElement).closest<HTMLElement>('[data-pad]');
     if (!el || !pad.contains(el)) return;
+    // 竖屏板的摇杆钉在左下角，不参与拖动：它的 --x/--y 属于横屏那套键位，写了会串。
+    if (el.dataset.pad === 'stick' && document.body.classList.contains('pad-split')) return;
     e.preventDefault();
     e.stopPropagation();
     el.setPointerCapture(e.pointerId);

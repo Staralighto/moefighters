@@ -35,3 +35,9 @@ export function battleFrame(viewW: number, viewH: number): BattleFrame {
 
   return { scale, top: floorY - FLOOR * scale, floorY, imageH, hud };
 }
+
+/** Top HUD scale for a picture `pictureW` CSS pixels wide.
+ *  The 960-wide share, then 1.2× so a phone-width portrait stays readable. */
+export function pictureHud(pictureW: number): number {
+  return pictureW > 0 ? pictureW / W * 1.2 : 1;
+}

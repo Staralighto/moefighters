@@ -11,13 +11,13 @@ import { FLOOR, COMBO_DECAY, STEP, W, X_MAX, X_MIN } from '../src/game/constants
 import { clipFor, crashRow, drumRow, flameFrame, riotCell } from '../src/render/clips.ts';
 import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
 import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell, shouldGoLite } from '../src/render/fx.ts';
-import { backingScale, teamGlowOn } from '../src/render/renderer.ts';
+import { backingScale, portraitBodyScale, teamGlowOn } from '../src/render/renderer.ts';
 import { previewFighter, gainEnergy } from '../src/game/fighter.ts';
 import { addMod, atkMul, clearMod, jumpMul, speedMul } from '../src/game/mods.ts';
 import { assetUrl, easeLoad, imageSources, linkRate, liteFight, liteSrc, nextSrc, portraitSrc, SLOW_RATE, stageThumbSrc } from '../src/assets/loader.ts';
-import { isTouchJump, matchStickTouch, stickFingerGone, thumbBandTop, touchRelease, turnedStickDelta } from '../src/game/input.ts';
-import { swipeGuardPop, swipeGuardWanted } from '../src/ui/swipeBack.ts';
-import { battleFrame } from '../src/ui/battleFrame.ts';
+import { acceptBlank, isTouchJump, matchStickTouch, stickFingerGone, thumbBandTop, touchRelease, turnedStickDelta } from '../src/game/input.ts';
+import { swipeEdgeBlock, swipeEdgeHit, swipeEdgeSlide, swipeGuardPop, swipeGuardWanted, toyScriptWanted } from '../src/ui/swipeBack.ts';
+import { battleFrame, pictureHud } from '../src/ui/battleFrame.ts';
 import { TOUCH_LAYOUT } from '../src/ui/touchLayout.data.ts';
 import { DEFAULT_ULT_ICON, ultIcon } from '../src/ui/touchIcons.ts';
 import { assignSlotWho, guideIndex, skillHTML, stageCover } from '../src/ui/select.ts';
@@ -102,6 +102,8 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(backingScale(3, true, true), 2.25, 'lite sheds pixels from the screen ratio');
   assert.equal(backingScale(2, false, true), 2, 'desktop keeps the monitor ratio');
   assert.equal(backingScale(0, true, false), 1, 'a missing ratio falls back to 1');
+  assert.equal(portraitBodyScale(true), 1.3, 'a portrait split draws bodies at 1.3×');
+  assert.equal(portraitBodyScale(false), 1, 'landscape and desktop keep body scale at 1');
 }
 
 // light attack lands and builds energy
@@ -1757,6 +1759,8 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(tablet.floorY - centered < 768 * 0.18, 'tablet floor is not much lower than centered');
   assert.ok(Math.abs(ratio - tablet.floorY) <= 768 * 0.04 + 1e-6, 'tablet floor never rises past 4% off the desktop ratio');
   assert.equal(tablet.hud, 1, 'a tall tablet does not shrink the HUD');
+  assert.equal(pictureHud(960), 1.2, 'a desktop-wide picture sits 1.2× above the base HUD');
+  assert.equal(pictureHud(480), 0.6, 'a half-width portrait picture keeps that 1.2× on the smaller share');
   // The landscape keys are placed by CSS: attack in the bottom-right, three skills in a row to its left,
   // guard above the attack, the ultimate to the left of the skills once it is ready. Jump is still the stick edge.
   assert.deepEqual(Object.keys(TOUCH_LAYOUT), ['stick'], 'only the stick keeps a hand-placed spot; the keys are laid out');
@@ -1833,7 +1837,10 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
   assert.ok(!cssText.includes('body.wide .touchpad .tp-stick') && cssText.includes('body.wide:not(.touch) .touchpad .tp-stick'), 'wide mode must scope control stripping to :not(.touch)');
   assert.ok(cssText.includes('body.touch.turned.in-battle') && cssText.includes('rotate(90deg)'), 'portrait phones turn the battle instead of waiting for the app to rotate');
-  assert.ok(html.includes('点右上角进入横屏'), 'a portrait fight points at the turn button');
+  assert.ok(html.includes('class="arena-view"'), 'portrait splits the picture off the pad');
+  assert.ok(!html.includes('rotate-hint'), 'portrait plays on the split pad instead of a turn-the-phone cover');
+  assert.ok(cssText.includes('body.pad-split .touchpad') && cssText.includes('body.pad-split .tp-actions .atk'), 'a portrait fight puts a fan pad under the arena');
+  assert.ok(!readFileSync('src/main.ts', 'utf8').includes('portraitHold'), 'portrait fights stay playable instead of force-pausing');
   assert.ok(cssText.includes('.game-banner .icon-btn .btn-label { display: inline; }'), 'a phone pause menu keeps the words next to the icons');
   // Stage rows follow the stage's own width. A short landscape phone is wide enough for one row;
   // tying the 2x2 to max-height put every phone landscape into two rows.
@@ -1875,13 +1882,26 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(isTouchJump(up(.8), true), 'holding at the edge does not cancel the jump');
   assert.ok(isTouchJump(up(.65), true), 'still out of the re-arm zone, the jump holds');
   assert.ok(!isTouchJump(up(.4), true), 'back inside the ring the jump re-arms');
-  assert.ok(swipeGuardWanted(true, true, true, false), 'a landscape phone fight keeps the container back swipe');
-  assert.ok(swipeGuardWanted(true, true, false, true), 'the turned portrait fight keeps it too');
-  assert.ok(!swipeGuardWanted(true, true, false, false), 'a portrait fight still lets the container go back');
-  assert.ok(!swipeGuardWanted(false, true, true, false), 'a desktop fight does not trap back');
-  assert.equal(swipeGuardPop(true, false), 'rearm', 'a back swipe during the fight stays on this page');
-  assert.equal(swipeGuardPop(false, true), 'skip', 'leaving the fight drops the extra history entry');
-  assert.equal(swipeGuardPop(true, true), 'rearm', 'turning landscape again before that pop lands still stays');
+  assert.equal(swipeGuardWanted(true), true, 'a phone keeps the container back swipe off');
+  assert.equal(swipeGuardWanted(false), false, 'a desktop visit does not trap back');
+  assert.equal(swipeGuardPop(true, false), 'rearm', 'a back swipe on a phone stays on this page');
+  assert.equal(swipeGuardPop(false, true), 'skip', 'leaving touch drops the extra history entry');
+  assert.equal(swipeGuardPop(true, true), 'rearm', 'touch returning before that pop lands still stays');
+  assert.equal(swipeGuardPop(false, false), 'idle', 'a desktop pop is not ours');
+  assert.equal(swipeEdgeHit(0, 400), true, 'the left screen edge is the back swipe');
+  assert.equal(swipeEdgeHit(24, 400), true, 'the back-swipe slop is inside the strip');
+  assert.equal(swipeEdgeHit(25, 400), false, 'the stick past the strip is not a browser gesture');
+  assert.equal(swipeEdgeHit(376, 400), true, 'the right screen edge is the forward swipe');
+  assert.equal(swipeEdgeHit(10, 40), false, 'a viewport with no interior is not all edge');
+  assert.equal(swipeEdgeBlock(0, 400, false), true, 'a blank or stick touch at the edge is refused');
+  assert.equal(swipeEdgeBlock(0, 400, true), false, 'a button at the edge keeps its click');
+  assert.equal(swipeEdgeSlide(12, 2), true, 'a sideways edge stroke is the swipe');
+  assert.equal(swipeEdgeSlide(4, 0), false, 'a tap jitter is not a swipe');
+  assert.equal(swipeEdgeSlide(10, 30), false, 'a vertical stroke at the edge still scrolls');
+  assert.equal(toyScriptWanted('www.bilibili.com', true, false), true, 'the toy host loads its bridge script');
+  assert.equal(toyScriptWanted('moefighters.com', true, false), false, 'a normal phone does not load the toy script');
+  assert.equal(toyScriptWanted('www.bilibili.com', true, true), false, 'an existing bridge is called, not re-fetched');
+  assert.equal(toyScriptWanted('notbilibili.com', true, false), false, 'a lookalike host does not load the toy script');
   // A thumb at the rim leaves the stick box, and some phones never deliver pointerup. The lift still has to drop it.
   assert.equal(matchStickTouch(10, 10, { id: 3, x: 12, y: 11, t: 100 }, 130), 3, 'the touch that starts with the stick pairs by contact');
   assert.equal(matchStickTouch(10, 10, { id: 3, x: 12, y: 11, t: 100 }, 150), null, 'a leftover touch does not claim the next press');
@@ -1901,6 +1921,9 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(/\.tp-ring \{[^}]*pointer-events:\s*none/.test(cssText), 'the ring must not be the hit target');
   assert.ok(/\.tp-knob-move \{[^}]*pointer-events:\s*none/.test(cssText), 'knob travel must not move the hit target');
   assert.ok(/\.tp-knob \{[^}]*pointer-events:\s*none/.test(cssText), 'the knob face must not be the hit target');
+  assert.equal(acceptBlank(false, false), true, 'landscape blanks stay on the fight picture');
+  assert.equal(acceptBlank(true, false), false, 'a portrait fight picture does not dodge');
+  assert.equal(acceptBlank(true, true), true, 'portrait blanks land on the pad');
   // Band starts just below the attack top, so a ~390px phone exempts about the bottom fifth.
   const phoneBand = thumbBandTop(297, 87);
   assert.ok(phoneBand > 297 && phoneBand - 297 < 87 * .15, 'the band starts just below the attack top');
