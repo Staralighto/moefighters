@@ -30,3 +30,10 @@ local/
 
 # 出图脚本本地试跑目录，不进 git
 scripts/__probe/
+
+# Python 字节码，不进 git
+__pycache__/
+*.pyc
+
+# 本地 AI 偏好记录，不进 git
+.commandcode/

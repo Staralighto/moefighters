@@ -65,7 +65,7 @@ export function bindPick(menuId: string, binding: PickBinding): void {
   if (dialog && !dialog.dataset.picks) {
     dialog.dataset.picks = '1';
     dialog.addEventListener('close', () => {
-      for (const m of dialog.querySelectorAll<HTMLElement>('.pick-menu')) {
+      for (const m of dialog.querySelectorAll<HTMLElement>('.pick-menu, .tip-pop')) {
         if (m.matches(':popover-open')) m.hidePopover();
       }
     });
@@ -95,6 +95,10 @@ export function bindPick(menuId: string, binding: PickBinding): void {
     menu.style.left = box.left + 'px';
   };
 
+  menu.addEventListener('beforetoggle', e => {
+    if ((e as ToggleEvent).newState === 'open' && btn.disabled) e.preventDefault();
+  });
+
   menu.addEventListener('toggle', (e) => {
     const open = (e as ToggleEvent).newState === 'open';
     btn.setAttribute('aria-expanded', String(open));
@@ -107,6 +111,7 @@ export function bindPick(menuId: string, binding: PickBinding): void {
   menu.closest('dialog')?.addEventListener('scroll', reposition);
 
   btn.addEventListener('keydown', e => {
+    if (btn.disabled) return;
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     e.preventDefault();
     if (!menu.matches(':popover-open')) menu.showPopover();
@@ -134,4 +139,21 @@ export function bindPick(menuId: string, binding: PickBinding): void {
     });
   }
   sync();
+}
+
+/** 说明气泡跟下拉一样，打开前钉在按钮旁，避免先出现在屏幕正中。 */
+export function bindTip(popId: string): void {
+  const pop = document.getElementById(popId);
+  const btn = document.querySelector<HTMLButtonElement>(`[popovertarget="${popId}"]`);
+  if (!pop || !btn) return;
+  pop.addEventListener('toggle', e => {
+    if ((e as ToggleEvent).newState !== 'open') return;
+    const box = placePick(
+      btn.getBoundingClientRect(),
+      { width: pop.offsetWidth, height: pop.offsetHeight },
+      { width: window.innerWidth, height: window.innerHeight },
+    );
+    pop.style.top = box.top + 'px';
+    pop.style.left = box.left + 'px';
+  });
 }

@@ -49,7 +49,7 @@ kbd { font: 700 13px/1 var(--font); background: #0d0c14; border: 1px solid var(-
 /* Selected segment is a lifted chip, same idea as the reference: the accent color stays on 1P and the start button. */
 .seg button.active { background: var(--line); color: var(--text); border-color: transparent; }
 
-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 22px; border-bottom: 1px solid var(--line); }
+header { display: flex; justify-content: space-between; align-items: center; padding: 10px 22px; border-bottom: 1px solid var(--line); container-type: inline-size; }
 .brand { display: flex; gap: 10px; align-items: center; text-decoration: none; color: inherit; font-weight: 800; letter-spacing: .06em; }
 .brand small { display: block; font-weight: 400; color: var(--muted); letter-spacing: 0; }
 .brand-icon { display: grid; place-items: center; width: 34px; height: 34px; background: var(--p1); color: #14140c; border-radius: 8px; }
@@ -62,12 +62,20 @@ nav { display: flex; gap: 8px; align-items: center; }
 .music-wrap summary { list-style: none; font: inherit; color: inherit; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
 .music-wrap summary:hover { border-color: var(--muted); }
 .music-wrap summary::-webkit-details-marker { display: none; }
-.music-pop { position: absolute; top: calc(100% + 10px); right: 0; z-index: 30; display: flex; flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 14px; width: max-content; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 18px rgb(0 0 0 / 45%); user-select: none; }
-.music-pop-row { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+/* 宽度写死，曲名变了面板也不跟着变。窄屏用顶栏的 cqw 封顶，视口单位会把滚动条算进去、把页面撑出去。 */
+.music-pop { --music-hit: calc(1.5em + .9em + 2px); position: absolute; top: calc(100% + 10px); right: 0; z-index: 30; display: flex; flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 14px; width: 17.5rem; max-width: calc(100vmin - 1.5rem); max-width: calc(100cqw - 1.5rem); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 18px rgb(0 0 0 / 45%); user-select: none; }
+.music-pop > button { width: 100%; }
+/* 曲名格固定，短名只在中间居中。箭头盒高等于全局按钮（1.5 行高 + .45em 上下内边距 + 1px 边框）。 */
+.music-now { display: grid; grid-template-columns: var(--music-hit) minmax(0, 1fr) var(--music-hit); align-items: center; gap: 8px; }
+.music-step { display: grid; place-items: center; width: var(--music-hit); height: var(--music-hit); padding: 0; border: 0; background: transparent; border-radius: 8px; }
+.music-step:hover { background: var(--panel-2); }
+.music-step .btn-icon { display: block; width: 22px; height: 22px; }
+#music-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
+.music-pop-row { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--muted); font-size: 13px; white-space: nowrap; }
 /* output 默认是 inline，min-width 不生效，百分比进位会把面板撑宽；inline-block + 4ch 预留
    加等宽数字，宽度在任何数值下都不变。 */
 .music-pop-row output { display: inline-block; min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
-#music-volume { width: 110px; accent-color: var(--p1); touch-action: none; }
+#music-volume { width: auto; flex: 1; min-width: 0; accent-color: var(--p1); touch-action: none; }
 /* 设置弹窗宽度写死，不跟文案变。窄屏用百分比收缩，视口宽度单位含滚动条，会把页面撑出横向滚动再跳回来。
    每行是同一套两列：左边名称吃剩余空间，右边下拉是同一条 min(16em, 46%)。
    以后名称或选项变长，多出来的字进这截留白，列宽和弹窗宽都不变。 */
@@ -76,7 +84,13 @@ nav { display: flex; gap: 8px; align-items: center; }
 #settings-dialog .setting-group + .setting-group { margin-top: 28px; }
 #settings-dialog .setting-title { margin: 0 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 700; color: var(--muted); }
 #settings-dialog .setting-row { display: grid; grid-template-columns: minmax(0, 1fr) min(16em, 46%); align-items: center; column-gap: 32px; margin: 0; padding: 12px 0; border-top: 0; }
-#settings-dialog .setting-row > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#settings-dialog .setting-row > b,
+#settings-dialog .setting-name > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.setting-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tip { flex: none; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border-radius: 50%; line-height: 1; font-weight: 700; }
+.tip-pop { inset: unset; position: fixed; width: max-content; max-width: 16em; margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); box-shadow: 0 6px 18px rgb(0 0 0 / 45%); font-size: 13px; line-height: 1.5; }
+.pick-btn:disabled { color: var(--muted); cursor: not-allowed; }
+.pick-btn:disabled:hover { border-color: var(--line); }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 0; border-top: 1px solid var(--line); }
 /* 下拉跟右列一样宽，短选项留在格子里，不按文字收缩。箭头钉在右缘，所以三行长度对齐。 */
 .pick-btn { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-width: 0; text-align: left; }
@@ -571,8 +585,10 @@ body.wide .touchpad.in-tower .tp-actions { --atk: clamp(86px, 16vmin, 106px); ri
   .brand small { display: none; }
   .brand > span:last-child { white-space: nowrap; }
   nav { gap: 6px; flex: none; }
-  #music-volume { width: 84px; }
   nav button { white-space: nowrap; padding: .3em .55em; font-size: 13px; line-height: 1.2; }
+  /* 浮层在 nav 里面，上面那条会把开/关和箭头一起缩小。拨回桌面尺寸，四行才对齐。 */
+  .music-pop button { padding: .45em .9em; font-size: 15px; line-height: 1.5; }
+  .music-pop .music-step { padding: 0; }
 
   #selection > .sectionline { margin: 2px 0 8px; }
   .rules-summary { font-size: 12px; }

@@ -76,7 +76,7 @@ export const ROSTER: CharacterData[] = [
     bands: ['ave-mujica'],
     ...stats('rush'),
     view: {
-      kind: 'sprite', common: '/sprites/umiri/common.png', special: '/sprites/umiri/special.png', height: 181,
+      kind: 'sprite', common: '/sprites/umiri/common.png', special: '/sprites/umiri/special.png', height: 170,
       extras: ['/sprites/umiri/milk.png', '/sprites/umiri/bag.png'],
     },
     skills: [
@@ -284,7 +284,7 @@ export const ROSTER: CharacterData[] = [
     id: 'taki', name: '椎名立希', title: '鼓手 / 护灯', quote: '我发誓，和灯在一起的话，一辈子也可以。', color: '#7777AA',
     bands: ['mygo'],
     ...stats('beat'),
-    view: { kind: 'sprite', common: '/sprites/taki/common.png', special: '/sprites/taki/special.png', height: 181 },
+    view: { kind: 'sprite', common: '/sprites/taki/common.png', special: '/sprites/taki/special.png', height: 170, lift: 3 },
     skills: [
       skill(0, 'light', '点打'),
       skill(1, 'heavy', '怪力横扫'),
@@ -561,7 +561,7 @@ export const ROSTER: CharacterData[] = [
     // Neutral on purpose: the frenzy clock only drives the box form's king sheet swap.
     frenzy: { rate: 1, rangeMul: 1, cdMul: 1, chain: false, time: 7 },
     view: {
-      kind: 'sprite', common: '/sprites/arisa/common.png', special: '/sprites/arisa/special.png', height: 181,
+      kind: 'sprite', common: '/sprites/arisa/common.png', special: '/sprites/arisa/special.png', height: 175,
       box: '/sprites/arisa/box.png',
     },
     skills: [

@@ -193,6 +193,11 @@ export const missingImages = new Set<string>();
 
 const inflight = new Map<string, Promise<boolean>>();
 
+/** True while a portrait or sheet is still on the wire. Music lookahead waits for this. */
+export function imagesBusy(): boolean {
+  return inflight.size > 0;
+}
+
 /** One request per src, shared by the select queue and the fight preload. */
 export function loadInto(cache: ImageCache, src: string): Promise<boolean> {
   if (cache.has(src)) return Promise.resolve(true);

@@ -233,10 +233,6 @@ function boxSvg(): string {
 }
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'sprites', 'arisa');
-// common.png, special.png and box.png are finished art now (placeholder marks gone) —
-// all three left the raster list, per SOP. To redo any of them with --replace, re-add
-//   { png: join(dir, 'common.png'), svg: commonSheet(), w: 2048, h: 768 }
-//   { png: join(dir, 'special.png'), svg: specialSheet(), w: 1024, h: 768 }
-//   { png: join(dir, 'box.png'), svg: boxSvg(), w: 256, h: 256 }
-// The builders stay for that, like yukina-sheet.ts.
-console.log('arisa sheets are finished art; nothing rasterized (builders kept)');
+// box.png stays finished art and off this list. common and special are placeholders again.
+rasterSheet(join(dir, 'common.png'), commonSheet(), COMMON_COLS * CELL, COMMON_ROWS * CELL);
+rasterSheet(join(dir, 'special.png'), specialSheet(), SPECIAL_COLS * CELL, SPECIAL_ROWS * CELL);

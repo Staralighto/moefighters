@@ -22,7 +22,7 @@ import { TOUCH_LAYOUT } from '../src/ui/touchLayout.data.ts';
 import { DEFAULT_ULT_ICON, ultIcon } from '../src/ui/touchIcons.ts';
 import { assignSlotWho, guideIndex, skillHTML, stageCover } from '../src/ui/select.ts';
 import { placePick } from '../src/ui/settings.ts';
-import { resolveMusicPrefs } from '../src/audio/bgm.ts';
+import { cycleMusicOrder, nextTrack, resolveMusicPrefs, shouldShuffleOnFight, shouldWarmNext, shuffleStartIndex, stepTrack } from '../src/audio/bgm.ts';
 import { migrateLinearSlider, musicGain, MUSIC_CAP } from '../src/audio/mix.ts';
 import { POOL, aggregatePicks, bestLabel, drawThree, readBest, rollEnemies, stageSetup } from '../src/ui/challenge.ts';
 import { checkSpriteGuard } from './sprite-guard.ts';
@@ -1722,6 +1722,10 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes('const STAGE_Q = 80'), 'stage backdrops stay lossy webp at quality 80');
   assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes('idle.webp'), 'the build writes the 256px idle crop');
   assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes("'-lite.webp'"), 'the build writes the half-size lite sheet');
+  const packToy = readFileSync('scripts/pack-toy.py', 'utf8');
+  assert.ok(packToy.includes('TOY_BGM_BITRATE = "64k"'), 'the toy zip re-encodes bgm to 64 kbps');
+  assert.ok(packToy.includes('rel.startswith("bgm/") and rel.endswith(".m4a")'), '64 kbps applies only to bgm m4a');
+  assert.ok(packToy.includes('z.write(tmp, rel)'), 'the 64 kbps encode is a zip entry and does not replace dist');
   assert.equal(liteSrc('/sprites/aya/common.png', true), '/sprites/aya/common-lite.webp', 'a sheet has a half-size lite copy');
   assert.equal(liteSrc('/sprites/aya/common.png', false), '/sprites/aya/common.png', 'dev has no lite copy');
   assert.equal(liteSrc('/stages/ring.png', true), '/stages/ring.png', 'stages use the thumb, not a lite copy');
@@ -1772,7 +1776,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const end = html.indexOf('</dialog>', start);
     assert.ok(start >= 0 && end > start, 'settings dialog exists');
     const visible = html.slice(start, end).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-    assert.equal(visible, '设置 × 名册 名册显示 直接排开 直接排开 按乐队分组 训练场 无技能冷却 开 开 关 无限大招 开 开 关', 'settings dialog shows names only, no explanation');
+    assert.equal(visible, '设置 × 名册 名册显示 直接排开 直接排开 按乐队分组 训练场 无技能冷却 开 开 关 无限大招 开 开 关 音乐 开打换曲 ? 只在随机播放时生效，其他时候不能改。 开 开 关', 'settings dialog keeps control names, plus the fight-shuffle tip');
     const css = readFileSync('src/style.css', 'utf8');
     assert.ok(css.includes('width: min(760px, calc(100% - 2rem))'), 'settings dialog width is reserved, not content-sized');
     assert.ok(css.includes('minmax(0, 1fr) min(16em, 46%)'), 'settings dropdowns share one column so their lengths stay aligned');
@@ -1942,6 +1946,34 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const bgm = readFileSync('src/audio/bgm.ts', 'utf8');
   assert.ok(!/\bnew Audio\b|createMediaElementSource/.test(bgm), 'BGM stays on Web Audio buffers: no media element, no element source node');
+  assert.ok(bgm.includes("s.loop = order === 'one'"), 'only single-repeat loops the buffer');
+  assert.ok(bgm.includes('gen !== loadGen'), 'a stale decode cannot replace the track the click already moved to');
+  assert.equal(cycleMusicOrder('seq'), 'shuffle');
+  assert.equal(cycleMusicOrder('shuffle'), 'one');
+  assert.equal(cycleMusicOrder('one'), 'seq');
+  assert.equal(stepTrack(0, -1, 6), 5, 'previous wraps to the last track');
+  assert.equal(stepTrack(5, 1, 6), 0, 'next wraps to the first track');
+  assert.equal(nextTrack('one', 2, 6, () => 0), 2, 'single-repeat stays on the current track');
+  assert.equal(nextTrack('seq', 5, 6, () => 0), 0, 'sequential play wraps at the end');
+  assert.equal(nextTrack('shuffle', 2, 6, () => 4), 4, 'shuffle uses the picked track');
+  assert.equal(nextTrack('shuffle', 2, 6, () => 2), 3, 'shuffle does not replay the track that just ended');
+  assert.equal(nextTrack('seq', 0, 1, () => 0), 0, 'a single-track list has nowhere to go');
+  assert.equal(shouldShuffleOnFight('shuffle', true), true, 'a random fight can change tracks');
+  assert.equal(shouldShuffleOnFight('shuffle', false), false, 'the switch stays off when the player turned it off');
+  assert.equal(shouldShuffleOnFight('seq', true), false, 'sequential play does not change tracks on fight start');
+  assert.equal(shouldShuffleOnFight('one', true), false, 'single repeat does not change tracks on fight start');
+  assert.equal(shuffleStartIndex(6, () => 4), 4, 'a shuffle visit can open on a later track');
+  assert.equal(shuffleStartIndex(6, () => 99), 0, 'an out-of-range roll falls back to the first track');
+  assert.equal(shuffleStartIndex(1, () => 0), 0, 'one track has nothing to roll');
+  const idle = { held: false, busy: false, slow: false, haveBuffer: true };
+  assert.equal(shouldWarmNext({ ...idle, order: 'seq' }), true, 'sequential play warms the next track once this one is audible');
+  assert.equal(shouldWarmNext({ ...idle, order: 'shuffle' }), true, 'shuffle warms one later track once this one is audible');
+  assert.equal(shouldWarmNext({ ...idle, order: 'one' }), false, 'single repeat does not download another file');
+  assert.equal(shouldWarmNext({ ...idle, order: 'seq', held: true }), false, 'a sheet download holds the music lookahead');
+  assert.equal(shouldWarmNext({ ...idle, order: 'seq', busy: true }), false, 'an in-flight image holds the music lookahead');
+  assert.equal(shouldWarmNext({ ...idle, order: 'seq', slow: true }), false, 'a slow link does not prefetch');
+  assert.equal(shouldWarmNext({ ...idle, order: 'seq', haveBuffer: false }), false, 'the current track is fetched before any lookahead');
+  assert.ok(readFileSync('src/audio/bgm.ts', 'utf8').includes("priority: 'low'"), 'lookahead fetch stays at the lowest priority');
   assert.ok(bgm.includes('localStorage'), 'BGM prefs persist in localStorage');
   assert.ok(!/sessionStorage\.setItem/.test(bgm), 'BGM does not keep writing the old session key');
   assert.ok(statSync('public/bgm/garupa-pico-instrumental.m4a').size < 3_400_000, 'bgm stays a 96 kbps encode under 3.4MB');
@@ -1977,9 +2009,11 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(sfx.includes('setValueAtTime(.06, t)') && sfx.includes('exponentialRampToValueAtTime(.0001, t + duration)'), 'combat blips keep the original click envelope');
   assert.ok(!sfx.includes('sfxAmp'), 'sfx loudness is not reshaped by the music fader');
   const main = readFileSync('src/main.ts', 'utf8');
-  assert.ok(/sfx\.unlock\(\);\s*\/\*[\s\S]*?\*\/\s*pokeMusic\(\)/.test(main), 'a fight start pokes music on the click, after pointerdown already requested fullscreen');
+  assert.ok(/sfx\.unlock\(\);\s*\/\*[\s\S]*?\*\/\s*shuffleFightTrack\(\);\s*pokeMusic\(\)/.test(main), 'a fight start may reshuffle, then pokes music on the click');
   assert.equal((main.match(/pokeMusic\(\)/g) ?? []).length, 1, 'only the fight start forces music on');
+  assert.equal((main.match(/shuffleFightTrack\(\)/g) ?? []).length, 1, 'only entering a fight reshuffles');
   assert.equal((main.match(/nudgeMusic\(\)/g) ?? []).length, 2, 'select-screen clicks and keys only reconnect music that is already allowed to play');
+  assert.ok(main.includes("seq: '顺序播放', shuffle: '随机播放', one: '单曲循环'"), 'the order button cycles those three labels');
 }
 
 {

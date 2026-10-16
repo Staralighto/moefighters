@@ -1,19 +1,28 @@
-/* 站点 BGM：一条循环曲，选人和战斗共用。走 Web Audio 缓冲而不是媒体元素——iOS 忽略媒体元素
+/* 站点 BGM：固定曲目列表，选人和战斗共用。一次只解码当前这一首。走 Web Audio 缓冲而不是媒体元素——iOS 忽略媒体元素
    的 volume 属性（音量条失灵、默认音量失效，音乐盖过音效），还会把播放中的元素收编成系统
    「正在播放」会话：灵动岛接管、切后台继续出声，而页面在这条路径上收不到可靠的暂停事件。
    纯 Web Audio 两样都不沾，增益节点在 iOS 照常生效。代价是整条解码成 PCM 驻留内存（比压缩
    文件大一个数量级），所以音乐关掉时把缓冲一起释放，下次开启重新拉取再解码。
    开关是同步布尔：点击立即翻转、UI 立即跟手，出声只是跟着状态走；点击路径上没有可悬挂的
-   promise（解码异步落地后由 sync 接上）。开关与音量存 localStorage，关掉标签页也在。
+   promise（解码异步落地后由 sync 接上）。开关、音量、播放方式和当前下标存 localStorage，关掉标签页也在。
    旧的 sessionStorage 只读一次：能解析就迁到 localStorage 再删掉；坏 JSON 当成没有，
    不让存档把页面打崩。没有存档时默认开着，用户拨过开关之后以存档为准。浏览器允许时
    开着的音乐会自己响；不允许就保持开关为开，选人页先不出声，开打的点击再接上。静默
    试播只用同一个 AudioContext：手势里 resume 它，不再关掉后另建一个，避免和音效抢
    第二次创建并把这一页的音乐标死。 */
-import { assetUrl } from '../assets/loader.ts';
+import { assetUrl, imagesBusy, slowLink } from '../assets/loader.ts';
 import { migrateLinearSlider, musicGain } from './mix.ts';
 
-const MUSIC_SRC = '/bgm/garupa-pico-instrumental.m4a';
+const TRACKS = [
+  { src: '/bgm/garupa-pico-instrumental.m4a', title: 'ガルパ☆ピコ' },
+  { src: '/bgm/全速前進！.m4a', title: '全速前進！' },
+  { src: '/bgm/勝利の衝動.m4a', title: '勝利の衝動' },
+  { src: '/bgm/燃える衝動.m4a', title: '燃える衝動' },
+  { src: '/bgm/鋼鉄の詩.m4a', title: '鋼鉄の詩' },
+  { src: '/bgm/黒い劇場の序曲.m4a', title: '黒い劇場の序曲' },
+] as const;
+const ORDERS = ['seq', 'shuffle', 'one'] as const;
+export type MusicOrder = (typeof ORDERS)[number];
 const STORE_KEY = 'moefighters.bgm';
 const CURVE = 'db';
 /* 没有 curve 字段的旧档把音量当成线性滑条位置，默认 15%。先按这个读，再折成对数档。 */
@@ -38,8 +47,60 @@ function readRecord(raw: string | null): { enabled: boolean; volume: number; leg
   } catch { return null; }
 }
 
-function prefsJson(enabled: boolean, volume: number): string {
-  return JSON.stringify({ enabled, volume, curve: CURVE });
+function prefsJson(enabled: boolean, volume: number, extra?: { order: MusicOrder; index: number; fight: boolean }): string {
+  const rec: { enabled: boolean; volume: number; curve: string; order?: MusicOrder; index?: number; fight?: boolean } = { enabled, volume, curve: CURVE };
+  if (extra) { rec.order = extra.order; rec.index = extra.index; rec.fight = extra.fight; }
+  return JSON.stringify(rec);
+}
+
+/** 开打换曲只在随机播放、并且这项开着时发生。 */
+export function shouldShuffleOnFight(order: MusicOrder, on: boolean): boolean {
+  return order === 'shuffle' && on;
+}
+
+/** 进页时均匀抽一首。count 不够或抽到界外就回到 0。 */
+export function shuffleStartIndex(count: number, pick: (n: number) => number): number {
+  if (count <= 1) return 0;
+  const n = pick(count);
+  return Number.isInteger(n) && n >= 0 && n < count ? n : 0;
+}
+
+/** 当前这首已经在播、图片没在下、链路不慢，才预取下一首的压缩字节。单曲循环不用。 */
+export function shouldWarmNext(opts: { order: MusicOrder; held: boolean; busy: boolean; slow: boolean; haveBuffer: boolean }): boolean {
+  return opts.haveBuffer && !opts.held && !opts.busy && !opts.slow && opts.order !== 'one';
+}
+
+export function cycleMusicOrder(order: MusicOrder): MusicOrder {
+  const i = ORDERS.indexOf(order);
+  return ORDERS[(i < 0 ? 0 : i + 1) % ORDERS.length];
+}
+
+/** 左右箭头：始终按列表走，不看随机。 */
+export function stepTrack(index: number, dir: -1 | 1, count: number): number {
+  if (count <= 0) return 0;
+  return (index + dir + count) % count;
+}
+
+/** 播完之后的下一首。pick(n) 返回 [0, n)。随机抽到当前这首时改走下一首。 */
+export function nextTrack(order: MusicOrder, index: number, count: number, pick: (n: number) => number): number {
+  if (count <= 1 || order === 'one') return index;
+  if (order === 'seq') return stepTrack(index, 1, count);
+  const picked = pick(count);
+  return picked === index ? stepTrack(index, 1, count) : picked;
+}
+
+function readQueue(raw: string | null): { order: MusicOrder; index: number; fight: boolean } {
+  const fallback = { order: 'seq' as const, index: 0, fight: true };
+  if (!raw) return fallback;
+  try {
+    const v = JSON.parse(raw) as unknown;
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return fallback;
+    const rec = v as { order?: unknown; index?: unknown; fight?: unknown };
+    const order = ORDERS.includes(rec.order as MusicOrder) ? rec.order as MusicOrder : 'seq';
+    const index = Number.isInteger(rec.index) && (rec.index as number) >= 0 && (rec.index as number) < TRACKS.length ? rec.index as number : 0;
+    const fight = typeof rec.fight === 'boolean' ? rec.fight : true;
+    return { order, index, fight };
+  } catch { return fallback; }
 }
 
 /** local 优先。旧的线性滑条折成对数档后写回；坏 JSON 当成没有。 */
@@ -82,10 +143,12 @@ function readRaw(store: Storage | null): string | null {
   try { return store.getItem(STORE_KEY); } catch { return null; }
 }
 
-function loadPrefs(): { enabled: boolean; volume: number } {
+function loadPrefs(): { enabled: boolean; volume: number; order: MusicOrder; index: number; fight: boolean } {
   const localStore = openStorage('localStorage');
   const sessionStore = openStorage('sessionStorage');
-  const resolved = resolveMusicPrefs(readRaw(localStore), readRaw(sessionStore));
+  const localRaw = readRaw(localStore);
+  const sessionRaw = readRaw(sessionStore);
+  const resolved = resolveMusicPrefs(localRaw, sessionRaw);
   /* 迁入写失败就留着 session，下次打开还能再试；写成功才删旧键。 */
   let localReady = resolved.writeLocal == null;
   if (resolved.writeLocal && localStore) {
@@ -95,12 +158,25 @@ function loadPrefs(): { enabled: boolean; volume: number } {
   if (localReady && resolved.dropSession) {
     try { sessionStore?.removeItem(STORE_KEY); } catch { /* local 已经有了 */ }
   }
-  return resolved;
+  const queue = readQueue(readRecord(localRaw) ? localRaw : sessionRaw);
+  return { enabled: resolved.enabled, volume: resolved.volume, order: queue.order, index: queue.index, fight: queue.fight };
 }
 
 const stored = loadPrefs();
 let enabled = stored.enabled;
 let volume = stored.volume;
+let order: MusicOrder = stored.order;
+let index = stored.index;
+let fightShuffleOn = stored.fight;
+let startRolled = false;
+/* 换曲或关掉时递增。过期的解码结果看见代数对不上就丢掉，连点不会把旧歌套回来。 */
+let loadGen = 0;
+/* 只留下一首的压缩字节，不解码。解码后的 PCM 一首就要几十 MB。 */
+let warmBytes: { index: number; buf: ArrayBuffer } | null = null;
+let warmAbort: AbortController | null = null;
+let warmTimer = 0;
+/* 随机播放提前定好的下一首，这样预取的就是即将播的那首。 */
+let planned: number | null = null;
 
 /* ctx 懒建。unlocked 只在点击开关或 pokeMusic（开打）之后放开，切回前台不会在
    还没有手势时把 context 建出来。音乐关着的访客一个字节都不下载。 */
@@ -123,7 +199,7 @@ let waitForFight = enabled;
 let pending: AudioContext | null = null;
 
 function save(): void {
-  try { openStorage('localStorage')?.setItem(STORE_KEY, prefsJson(enabled, volume)); }
+  try { openStorage('localStorage')?.setItem(STORE_KEY, prefsJson(enabled, volume, { order, index, fight: fightShuffleOn })); }
   catch { /* 隐私模式等存不进：这一页的内存状态照旧 */ }
 }
 
@@ -165,42 +241,160 @@ let held = false;
 export function setMusicHeld(on: boolean): void {
   if (held === on) return;
   held = on;
-  if (!on) sync();
+  if (on) abortWarm();
+  else { sync(); scheduleWarm(); }
+}
+
+function prefetchSlow(): boolean {
+  const net = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+  if (net?.saveData) return true;
+  if (/2g|3g/.test(net?.effectiveType ?? '')) return true;
+  return slowLink();
+}
+
+function clearWarmTimer(): void {
+  if (!warmTimer) return;
+  clearTimeout(warmTimer);
+  warmTimer = 0;
+}
+
+function abortWarm(): void {
+  warmAbort?.abort();
+  warmAbort = null;
+}
+
+function nextPlanned(): number | null {
+  if (order === 'one' || TRACKS.length < 2) return null;
+  if (order === 'seq') return stepTrack(index, 1, TRACKS.length);
+  if (planned == null || planned === index) planned = nextTrack('shuffle', index, TRACKS.length, n => Math.floor(Math.random() * n));
+  return planned;
+}
+
+function takePlanned(): number {
+  if (order === 'shuffle' && planned != null && planned !== index) {
+    const n = planned;
+    planned = null;
+    return n;
+  }
+  planned = null;
+  return nextTrack(order, index, TRACKS.length, n => Math.floor(Math.random() * n));
+}
+
+/* 当前曲已经开声、图片队列空了、链路不慢，才以最低优先级拉下一首的压缩文件。
+   慢网和省流直接不预取：换曲时再下，避免和立绘抢带宽。ponytail: 只留一首压缩缓存。 */
+function scheduleWarm(): void {
+  if (warmTimer || typeof window === 'undefined') return;
+  warmTimer = window.setTimeout(tryWarm, 2000);
+}
+
+function tryWarm(): void {
+  warmTimer = 0;
+  if (!enabled || pageSuspended || !buffer) return;
+  if (held || imagesBusy()) { scheduleWarm(); return; }
+  if (!shouldWarmNext({ order, held: false, busy: false, slow: prefetchSlow(), haveBuffer: true })) return;
+  const next = nextPlanned();
+  if (next == null || next === index || warmBytes?.index === next || warmAbort) return;
+  const ctrl = new AbortController();
+  warmAbort = ctrl;
+  const gen = loadGen;
+  fetch(assetUrl(TRACKS[next].src), { priority: 'low', signal: ctrl.signal })
+    .then(r => { if (!r.ok) throw new Error('bgm warm ' + r.status); return r.arrayBuffer(); })
+    .then(bytes => {
+      if (gen !== loadGen || ctrl.signal.aborted) return;
+      warmBytes = { index: next, buf: bytes };
+    })
+    .catch(() => { /* 预取失败就等真正换曲时再下 */ })
+    .finally(() => { if (warmAbort === ctrl) warmAbort = null; });
 }
 
 function ensureBuffer(): void {
   if (buffer || decoding || bufferBroken || held || !ctx) return;
   decoding = true;
-  fetch(assetUrl(MUSIC_SRC))
-    .then(r => { if (!r.ok) throw new Error('bgm fetch ' + r.status); return r.arrayBuffer(); })
+  const gen = loadGen;
+  const cached = warmBytes?.index === index ? warmBytes.buf : null;
+  if (cached) warmBytes = null;
+  const job = cached
+    ? Promise.resolve(cached)
+    : fetch(assetUrl(TRACKS[index].src)).then(r => { if (!r.ok) throw new Error('bgm fetch ' + r.status); return r.arrayBuffer(); });
+  job
     .then(ab => ctx!.decodeAudioData(ab))
     .then(decoded => {
+      if (gen !== loadGen) return;
       decoding = false;
-      if (!enabled) return; /* 等待期间被关掉：结果直接丢，不驻留内存 */
+      if (!enabled || !ctx) return; /* 等待期间被关掉：结果直接丢，不驻留内存 */
       buffer = decoded;
       sync();
     })
-    .catch(() => { decoding = false; bufferBroken = true; });
+    .catch(() => {
+      if (gen !== loadGen) return;
+      decoding = false;
+      bufferBroken = true;
+    });
 }
 
 function startSrc(): void {
   if (src || !ctx || !gain || !buffer) return;
   const s = ctx.createBufferSource();
   s.buffer = buffer;
-  s.loop = true;
+  s.loop = order === 'one';
   s.connect(gain);
-  s.onended = () => { if (src === s) { src = null; sync(); } /* 被系统中断杀掉时自行续上 */ };
+  s.onended = () => {
+    if (src !== s) return;
+    const duration = s.buffer?.duration ?? 0;
+    const played = ctx ? ctx.currentTime - startedAt + offset : duration;
+    src = null;
+    /* 单曲循环时 onended 只可能是被系统掐断。顺序和随机播到结尾才换曲，中途掐断从原处续上。 */
+    const finished = duration > 0 && played >= duration - 0.05;
+    if (!finished || order === 'one') {
+      offset = finished ? 0 : played;
+      sync();
+      return;
+    }
+    index = takePlanned();
+    offset = 0;
+    buffer = null;
+    save();
+    sync();
+  };
   s.start(0, offset % buffer.duration);
   startedAt = ctx.currentTime;
   src = s;
+  scheduleWarm();
 }
 
 function stopSrc(): void {
   if (!src || !ctx) return;
   offset = (ctx.currentTime - startedAt + offset) % src.buffer!.duration;
-  src.stop();
-  src.disconnect();
+  const playing = src;
   src = null;
+  playing.onended = null;
+  playing.stop();
+  playing.disconnect();
+}
+
+/* 换曲：不把上一首的进度写进 offset。先摘掉 onended，stop 才不会被当成播完。 */
+function dropSrc(): void {
+  if (!src) return;
+  const playing = src;
+  src = null;
+  playing.onended = null;
+  try { playing.stop(); } catch { /* 已经停了 */ }
+  playing.disconnect();
+}
+
+function cutTrack(): void {
+  offset = 0;
+  buffer = null;
+  bufferBroken = false;
+  decoding = false;
+  loadGen++;
+  planned = null;
+  if (warmBytes?.index !== index) warmBytes = null;
+  abortWarm();
+  clearWarmTimer();
+  dropSrc();
+  save();
+  sync();
 }
 
 /* 唯一的状态汇合点：想让音乐出声 = 开关开着 && 页面在前台。幂等，差多少补多少。 */
@@ -221,16 +415,68 @@ export function musicVolume(): number {
   return volume;
 }
 
+function rollShuffleStart(): void {
+  if (startRolled || !enabled || order !== 'shuffle') return;
+  startRolled = true;
+  index = shuffleStartIndex(TRACKS.length, n => Math.floor(Math.random() * n));
+  offset = 0;
+  save();
+}
+
 export function setMusicEnabled(on: boolean): void {
   enabled = on;
+  if (on) rollShuffleStart();
   save();
   unlocked = true; /* 点开关本身就是手势 */
   waitForFight = false;
   if (!on) {
     buffer = null; /* 解码后的 PCM 比压缩文件大一个数量级，音乐关着就不驻留内存 */
+    warmBytes = null;
+    planned = null;
+    abortWarm();
+    clearWarmTimer();
+    loadGen++;
+    decoding = false;
     dropPending();
   }
   sync(); /* 关：sync 收拾播放；开：借这次手势建 ctx、拉文件、接上 */
+}
+
+export function musicOrder(): MusicOrder {
+  return order;
+}
+
+export function musicTitle(): string {
+  return TRACKS[index].title;
+}
+
+export function setMusicOrder(next: MusicOrder): void {
+  order = next;
+  save();
+  if (src) src.loop = order === 'one';
+}
+
+export function stepMusic(dir: -1 | 1): void {
+  index = stepTrack(index, dir, TRACKS.length);
+  cutTrack();
+}
+
+export function fightShuffle(): boolean {
+  return fightShuffleOn;
+}
+
+export function setFightShuffle(on: boolean): void {
+  fightShuffleOn = on;
+  save();
+}
+
+/** 开打时换一首。不是随机播放，或这项关着，就保持当前曲。 */
+export function shuffleFightTrack(): void {
+  if (!shouldShuffleOnFight(order, fightShuffleOn)) return;
+  const next = nextTrack('shuffle', index, TRACKS.length, n => Math.floor(Math.random() * n));
+  if (next === index) return;
+  index = next;
+  cutTrack();
 }
 
 /** 开打时调用：音乐开着但还没出声就在这次点击里接上；已经出声则什么都不做。 */
@@ -258,6 +504,8 @@ export function setMusicSuspended(suspended: boolean): void {
   pageSuspended = suspended;
   /* 还没接上音源的试播如果已经在跑，后台标签不要留着空转的音频线程。 */
   if (suspended && pending?.state === 'running') dropPending();
+  if (suspended) abortWarm();
+  else scheduleWarm();
   sync();
 }
 
@@ -289,4 +537,5 @@ function scheduleSilent(): void {
   }
   requestAnimationFrame(run);
 }
+rollShuffleStart();
 scheduleSilent();

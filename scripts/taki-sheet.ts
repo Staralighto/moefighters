@@ -1,13 +1,13 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertAllWritable, rasterSheet } from './sprite-guard.ts';
-import { CELL, SPECIAL_COLS, SPECIAL_ROWS } from '../src/render/clips.ts';
+import { CELL, COMMON_COLS, COMMON_LABELS, COMMON_ROWS, SPECIAL_COLS, SPECIAL_ROWS } from '../src/render/clips.ts';
 import { DIMS, NECK, SHEET_SCALE, torsoPoints, torsoRadii, type Pt } from '../src/render/proportions.ts';
 
-/* Colour-block Taki special sheet only (the common sheet is transfer-generated, see SOP 附录 A;
-   its 1024 test halves come from scripts/split-common.ts). Do not import write-sheets.ts.
+/* Colour-block Taki. Do not import write-sheets.ts.
    Special columns are U 离灯远点 (cast), I 哈？ (spread shout), O 我要拉黑他 (dash),
-   L 一辈子 (reach / both arms coiled back / slam — the cells the beat loop cycles). */
+   L 一辈子 (reach / both arms coiled back / slam — the cells the beat loop cycles).
+   Common is the shared empty-hand sheet; halves come from scripts/split-common.ts. */
 
 type Limb = [number, number];
 interface Pose {
@@ -22,6 +22,27 @@ interface Pose {
 }
 
 const IDLE: Pose = { lean: 0, crouch: 0, armF: [.45, 1.9], armB: [.25, 2.0], legF: [.25, 0], legB: [-.25, 0] };
+const BLOCK: Pose = { lean: -.05, crouch: 8, armF: [1.1, 1.5], armB: [.9, 1.7], legF: [.35, 0], legB: [-.2, 0] };
+const HURT: Pose = { lean: -.3, crouch: 4, look: -.15, armF: [-.6, -.4], armB: [-.9, -.3], legF: [.4, 0], legB: [-.3, 0] };
+const LYING: Pose = { ...HURT, crouch: 0, legF: [.1, 0], legB: [-.1, 0], lying: true };
+const JUMP: Pose = { lean: .05, crouch: 0, armF: [2.4, -.4], armB: [-1.2, -.6], legF: [.9, -1.4], legB: [.3, -1.0] };
+const PUNCH_WIND: Pose = { lean: -.08, crouch: 2, armF: [-.4, -1.9], armB: [.9, -1.6], legF: [.3, 0], legB: [-.3, 0] };
+const PUNCH_HIT: Pose = { lean: .15, crouch: 2, look: .58, armF: [1.57, 0], armB: [.5, -1.8], legF: [.5, 0], legB: [-.4, 0] };
+const KICK_WIND: Pose = { lean: -.1, crouch: 4, armF: [.5, -1.6], armB: [.8, -1.4], legF: [-.5, .8], legB: [0, 0] };
+const KICK_HIT: Pose = { lean: -.25, crouch: 0, look: .5, armF: [-.3, -1.2], armB: [1.0, -1.2], legF: [1.5, .2], legB: [-.1, 0] };
+const AIR_KICK_WIND: Pose = { ...JUMP, armF: [1.8, -.6], legF: [-.3, -1.2] };
+const AIR_KICK_HIT: Pose = { lean: -.15, crouch: 0, armF: [-.8, -.6], armB: [2.2, -.4], legF: [1.2, .5], legB: [.3, -.9] };
+const DODGE: Pose = { lean: -.35, crouch: 8, look: -.12, armF: [-.6, -.6], armB: [-.9, -.4], legF: [.9, -.4], legB: [-.7, .2] };
+const RUN: Pose[] = [
+  { lean: .1, crouch: 8, look: .55, armF: [-.85, -1.15], armB: [.95, 1.15], legF: [.55, -.4], legB: [-.55, .45] },
+  { lean: .06, crouch: 2, look: .55, armF: [.6, 1.05], armB: [-.55, -1.05], legF: [-.35, .15], legB: [.85, -1.35] },
+  { lean: .1, crouch: 8, look: .55, armF: [.95, 1.15], armB: [-.85, -1.15], legF: [-.55, .45], legB: [.55, -.4] },
+  { lean: .06, crouch: 2, look: .55, armF: [-.55, -1.05], armB: [.6, 1.05], legF: [.85, -1.35], legB: [-.35, .15] },
+];
+const LOCO: Record<string, Pose> = {
+  idle: IDLE, run0: RUN[0], run1: RUN[1], run2: RUN[2], run3: RUN[3],
+  jump: JUMP, block: BLOCK, dodge: DODGE, hurt: HURT, down: LYING, ko: LYING,
+};
 const CAST_WIND: Pose = { lean: -.1, crouch: 2, armF: [-.3, -2.4], armB: [-.5, -2.3], legF: [.3, 0], legB: [-.3, 0] };
 const CAST_HIT: Pose = { lean: .1, crouch: 2, armF: [1.4, 0], armB: [1.2, .15], legF: [.5, 0], legB: [-.35, 0] };
 
@@ -163,6 +184,18 @@ function sheet(cols: number, rows: number, poseAt: (c: number, r: number) => Pos
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${cells.join('')}</svg>\n`;
 }
 
+function commonPose(label: string): Pose | null {
+  if (!label) return null;
+  if (label in LOCO) return LOCO[label];
+  const [name, phase] = label.split('-');
+  const air = name.startsWith('air');
+  const heavy = name.endsWith('Heavy') || name === 'heavy';
+  const wind = heavy ? (air ? AIR_KICK_WIND : KICK_WIND) : (air ? JUMP : PUNCH_WIND);
+  const hit = heavy ? (air ? AIR_KICK_HIT : KICK_HIT) : PUNCH_HIT;
+  const rest = air ? JUMP : IDLE;
+  return phase === 'windup' ? wind : phase === 'active' ? hit : mix(hit, rest, .55);
+}
+
 const SPECIAL: Pose[][] = [
   [CAST_WIND, CAST_HIT, mix(CAST_HIT, IDLE, .55)],
   [HUH_W, HUH_H, mix(HUH_H, IDLE, .55)],
@@ -171,10 +204,10 @@ const SPECIAL: Pose[][] = [
 ];
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'sprites', 'taki');
+const common = sheet(COMMON_COLS, COMMON_ROWS, (c, r) => commonPose(COMMON_LABELS[r][c]), (c, r) => COMMON_LABELS[r][c]);
 const special = sheet(SPECIAL_COLS, SPECIAL_ROWS, (c, r) => SPECIAL[c][r], (c, r) => 'UIOL'[c] + '-' + ['wind', 'hit', 'back'][r]);
-/* common.png is user art now, and the 1024 test halves come from scripts/split-common.ts,
-   so this script only rasters what is still placeholder-marked here. */
-const targets = [join(dir, 'special.png')];
+const targets = ['common.png', 'special.png'].map(name => join(dir, name));
 assertAllWritable(targets);
-rasterSheet(targets[0], special, SPECIAL_COLS * CELL, SPECIAL_ROWS * CELL);
-console.log('wrote taki special sheet');
+rasterSheet(join(dir, 'common.png'), common, COMMON_COLS * CELL, COMMON_ROWS * CELL);
+rasterSheet(join(dir, 'special.png'), special, SPECIAL_COLS * CELL, SPECIAL_ROWS * CELL);
+console.log('wrote taki sheets');

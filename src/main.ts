@@ -7,7 +7,7 @@ import { isLiteFx, setLiteFx, shouldGoLite } from './render/fx.ts';
 import { createViews } from './render/view.ts';
 import { assetsFor, easeLoad, imageQueue, liteFight, loadInto, loadKujiFont, missingImages, portraitSrc, preload, slowLink, stageThumbSrc, supportsWebp, type ImageCache } from './assets/loader.ts';
 import { Sfx } from './audio/sfx.ts';
-import { musicEnabled, musicVolume, nudgeMusic, pokeMusic, setMusicEnabled, setMusicHeld, setMusicSuspended, setMusicVolume } from './audio/bgm.ts';
+import { cycleMusicOrder, fightShuffle, musicEnabled, musicOrder, musicTitle, musicVolume, nudgeMusic, pokeMusic, setFightShuffle, setMusicEnabled, setMusicHeld, setMusicOrder, setMusicSuspended, setMusicVolume, shuffleFightTrack, stepMusic } from './audio/bgm.ts';
 import { matchName, SelectScreen, type MatchSetup } from './ui/select.ts';
 import { bestLabel, challengeName, deckLabel, foeCount, hideBuffPicker, readBest, readRun, rollEnemies, showBuffPicker, stageSetup, writeBest, writeRun, type ChallengeKind, type ChallengeRun } from './ui/challenge.ts';
 import { cycleSkillTier, hideEnd, setBattleGuide, setRoundLabel, showBanner, showEnd, updateHUD } from './ui/hud.ts';
@@ -15,7 +15,7 @@ import { setIconBtn } from './ui/iconBtn.ts';
 import { applyTouchDevice, watchTouch } from './ui/device.ts';
 import { applyTouchLayout, bindBattleFrame } from './ui/touchLayout.ts';
 import { bindSwipeGuard } from './ui/swipeBack.ts';
-import { bindPick, setTrainPrefs, trainPrefs } from './ui/settings.ts';
+import { bindPick, bindTip, setTrainPrefs, trainPrefs } from './ui/settings.ts';
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
 const sfx = new Sfx();
@@ -233,7 +233,9 @@ function leaveBattleFullscreen(): void {
 async function startGame(setup: MatchSetup): Promise<void> {
   sfx.unlock();
   /* pointerdown 上的开始/重开把这次手势让给了全屏，音乐改在这条仍处于点击里的路径接上。 */
+  shuffleFightTrack();
   pokeMusic();
+  syncMusicUi();
   const cast = withGuests(setup.characters);
   const srcs = fightSources(setup.characters, setup.stage);
   const lite = litePlan(cast, setup.stage);
@@ -560,6 +562,7 @@ $('sound').onclick = () => {
    展开，点外面或 ESC 收起，音乐状态不变。
    UI 写入做 rAF 节流：拖音量时 input 事件比帧快，直接逐事件写 DOM 会抖；每帧合并成
    一次写入，且内容没变的文本不重写。 */
+const ORDER_LABEL = { seq: '顺序播放', shuffle: '随机播放', one: '单曲循环' } as const;
 let musicUiRaf = 0;
 function syncMusicUi(): void {
   if (musicUiRaf) return;
@@ -570,12 +573,21 @@ function syncMusicUi(): void {
     const btn = $('music-toggle');
     if (btn.textContent !== label) btn.textContent = label;
     btn.setAttribute('aria-pressed', String(on));
+    const orderBtn = $('music-order');
+    const orderLabel = ORDER_LABEL[musicOrder()];
+    if (orderBtn.textContent !== orderLabel) orderBtn.textContent = orderLabel;
+    const title = $('music-title');
+    const name = musicTitle();
+    if (title.textContent !== name) title.textContent = name;
     const out = $('music-volume-value') as HTMLOutputElement;
     const text = ($('music-volume') as HTMLInputElement).value + '%';
     if (out.textContent !== text) out.textContent = text;
   });
 }
 $('music-toggle').onclick = () => { setMusicEnabled(!musicEnabled()); syncMusicUi(); };
+$('music-order').onclick = () => { setMusicOrder(cycleMusicOrder(musicOrder())); syncMusicUi(); syncFightShuffleLock(); };
+$('music-prev').onclick = () => { stepMusic(-1); syncMusicUi(); };
+$('music-next').onclick = () => { stepMusic(1); syncMusicUi(); };
 $('music-volume').oninput = () => {
   setMusicVolume(Number(($('music-volume') as HTMLInputElement).value) / 100);
   syncMusicUi();
@@ -601,6 +613,7 @@ document.addEventListener('keydown', e => {
 /* 设置弹窗目前只有名册显示。战斗中打开会像帮助弹窗一样先暂停；ESC 与原生 dialog 行为一致。 */
 const settingsDialog = $('settings-dialog') as HTMLDialogElement;
 $('settings').onclick = () => {
+  syncFightShuffleLock();
   if (game && !game.paused) game.togglePause(true);
   openDialog(settingsDialog);
 };
@@ -621,6 +634,20 @@ bindPick('set-ult-menu', {
   get: () => trainPrefs().infiniteUlt ? 'on' : 'off',
   set: value => { setTrainPrefs({ infiniteUlt: value === 'on' }); select.refresh(); },
 });
+bindPick('set-fight-shuffle-menu', {
+  get: () => fightShuffle() ? 'on' : 'off',
+  set: value => { setFightShuffle(value === 'on'); },
+});
+bindTip('set-fight-shuffle-tip');
+function syncFightShuffleLock(): void {
+  const btn = document.querySelector<HTMLButtonElement>('[popovertarget="set-fight-shuffle-menu"]');
+  const menu = document.getElementById('set-fight-shuffle-menu');
+  if (!btn) return;
+  const locked = musicOrder() !== 'shuffle';
+  btn.disabled = locked;
+  if (locked && menu?.matches(':popover-open')) menu.hidePopover();
+}
+syncFightShuffleLock();
 
 document.addEventListener('visibilitychange', () => setMusicSuspended(document.hidden));
 window.addEventListener('blur', () => setMusicSuspended(true));
