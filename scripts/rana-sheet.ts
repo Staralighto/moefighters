@@ -9,7 +9,7 @@ import { DIMS, NECK, torsoPoints, torsoRadii, type Pt, SHEET_SCALE } from '../sr
    Do not import write-sheets.ts. Special columns are U 吉他激奏 (bent-over strum; the block is
    guitar-less on purpose — the img2img prompt paints the guitar into these cells from image 1),
    I 来去如风 (crouch / step-through / land), O 高踢腿 (chamber / vertical kick / settle),
-   L 抹茶大芭菲 (present / arms spread / lower — the parfait itself is the external prop). */
+   L 抹茶芭菲 (present / arms spread / lower — the parfait itself is the external prop). */
 
 type Limb = [number, number];
 interface Pose {
@@ -45,7 +45,7 @@ const WIND_R: Pose = { lean: .1, crouch: 2, armF: [.6, .9], armB: [.3, 1.2], leg
 const HIKE_W: Pose = { lean: -.18, crouch: 6, armF: [-.6, -1.3], armB: [1.1, -.8], legF: [1.5, -1.9], legB: [-.15, 0], look: .45 };
 const HIKE_H: Pose = { lean: -.35, crouch: 2, armF: [-1.5, -.5], armB: [2.0, -.4], legF: [2.65, -.25], legB: [-.1, 0], look: .5 };
 const HIKE_R: Pose = { lean: .1, crouch: 4, armF: [.7, .5], armB: [.4, .4], legF: [.5, -.1], legB: [-.3, 0] };
-/* L 抹茶大芭菲: both hands lower it, arms fling wide, then everything comes down. */
+/* L 抹茶芭菲: both hands lower it, arms fling wide, then everything comes down. */
 const SERVE_W: Pose = { lean: .15, crouch: 8, armF: [1.35, .35], armB: [1.15, .5], legF: [.4, -.1], legB: [-.35, .15], look: .35 };
 const SERVE_H: Pose = { lean: -.05, crouch: 2, armF: [2.1, .2], armB: [-2.3, .15], legF: [.4, -.1], legB: [-.4, .1], look: .55 };
 const SERVE_R: Pose = { lean: .05, crouch: 3, armF: [1.0, .6], armB: [-.9, .5], legF: [.35, 0], legB: [-.3, 0] };

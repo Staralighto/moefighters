@@ -4,6 +4,7 @@ import type { FighterView } from './view.ts';
 import { stageThumbSrc, type ImageCache } from '../assets/loader.ts';
 import { FLOOR, H, SIDE, W } from '../game/constants.ts';
 import { violetHidden } from '../game/combat.ts';
+import { IAIDO_PHASE, iaidoCharge } from './clips.ts';
 import { drawBanSign, drawCombo, drawEffect, drawGauge, drawHoldNote, drawKuji, drawLayerBass, drawParticles, drawProjectile, drawRootFx, drawSister, drawTexts, drawWheel, isLiteFx, UI_FONT, zoomAbout } from './fx.ts';
 
 /** Backing-store pixels per CSS pixel. The compositor then blits 1:1.
@@ -183,7 +184,8 @@ export class Renderer {
       if (violetHidden(f)) continue;
       const view = this.view(f.data.id);
       const outline = teamRim ? TEAM_GLOW[f.team] : undefined;
-      const alpha = f.hp <= 0 ? .3 : f.basic ? .55 : f.echo ? .45 : 1;
+      const veiled = f.mods.some(m => m.kind === 'veil' && m.left > 0);
+      const alpha = (f.hp <= 0 ? .3 : f.basic ? .55 : f.echo ? .45 : 1) * (veiled ? .4 : 1);
       const footY = f.hp <= 0 ? FLOOR : f.y;
       zoomAbout(c, bodyScale, f.x, footY, () => {
         if (f.attack?.skill.fx === 'wheel') drawWheel(c, f, this.images);
@@ -191,6 +193,11 @@ export class Renderer {
         drawLayerBass(c, f, this.images, alpha);
         if (f.blocking) drawEffect(c, { type: 'shield', x: f.x + f.facing * 28, y: f.y - 80, color: '#a6eeff', life: .14, max: .22, radius: 58 });
         if (f.root > 0 && f.hp > 0) drawRootFx(c, f, g.age);
+        // 剑道三连: the stance charges — a wide ring collapses into her as the meter fills.
+        if (f.attack?.skill.fx === 'iaido' && (f.attack.mode ?? IAIDO_PHASE.pending) === IAIDO_PHASE.stance) {
+          const q = iaidoCharge(f.attack.t);
+          drawEffect(c, { type: 'charge-ring', x: f.x, y: f.y - 88, color: '#d9c6ff', life: 1 - q, max: 1, radius: 100, age: f.attack.t });
+        }
         if (f.slow > 0 && f.hp > 0) {
           const bubble = f.mods.some(m => m.kind === 'slow' && m.left > 0 && m.mark === 'bubble');
           drawEffect(c, bubble

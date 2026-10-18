@@ -5,7 +5,7 @@ import { AIR_SKILLS } from '../data/skills.ts';
 import { bandMembers, ROSTER_BY_ID } from '../data/characters.ts';
 import type { BandId } from '../data/bands.ts';
 import { advanceAnim } from './animState.ts';
-import { easeSealSwells, effectSettled, stepProjectiles, updateAttack } from './combat.ts';
+import { easeSealSwells, effectSettled, ESCAPE_INVULN, stepProjectiles, updateAttack } from './combat.ts';
 import { addMod, atkMul, clearMod, has, jumpMul, regenPerSec, speedMul, tickMods } from './mods.ts';
 import { SCRIPTS } from './scripts.ts';
 import { stepAI } from './ai.ts';
@@ -471,11 +471,10 @@ export class FightGame {
       f.rootHits = 0;
       f.rootLevel = 'move';
       f.ban = 0;
-      f.invuln = Math.max(f.invuln, skill.invuln ?? .34);
       f.hitBySuper = false;
-    } else if (skill.breakout && skill.invuln) {
-      f.invuln = Math.max(f.invuln, skill.invuln);
     }
+    // 解控 always pays a short invuln, escape or not; a longer one on the skill is the extra.
+    if (skill.breakout) f.invuln = Math.max(f.invuln, skill.invuln ?? ESCAPE_INVULN);
     // Frenzy shortens the recast wait of the ground jab and kick to match the faster clock.
     const cdBoost = boosted ? (cfg?.cdMul ?? .6) : 1;
     f.cooldowns[slot] = skill.cd * f.cdMul * cdBoost;

@@ -139,8 +139,21 @@ function duskGrad(ctx: CanvasRenderingContext2D, color: string, w: number): Canv
   duskGrads.set(key, grad);
   return grad;
 }
-const JELLY_SRC = '/sprites/mashiro/jelly.png';
-const WHALE_SRC = '/sprites/mashiro/whale.png';
+/** 忍法·隐身术: soft smoke edge — one unit-radius radial gradient, scaled per puff.
+    Gradients stick to the context that built them, so it is rebuilt when the context swaps. */
+let cloakOwner: CanvasRenderingContext2D | null = null;
+let cloakGrad: CanvasGradient | null = null;
+function smokeGrad(ctx: CanvasRenderingContext2D): CanvasGradient {
+  if (cloakOwner !== ctx || !cloakGrad) {
+    cloakOwner = ctx;
+    cloakGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+    cloakGrad.addColorStop(0, 'rgba(246, 241, 255, .95)');
+    cloakGrad.addColorStop(.5, 'rgba(226, 214, 255, .5)');
+    cloakGrad.addColorStop(1, 'rgba(210, 196, 255, 0)');
+  }
+  return cloakGrad;
+}
+const JELLY_SRC = '/sprites/mashiro/jelly.png';const WHALE_SRC = '/sprites/mashiro/whale.png';
 const SPROUT_SRC = '/sprites/tsukushi/sprout.png';
 const WHEEL_SRC = '/sprites/tsukushi/wheel.png';
 const MORTIS_H = 181;
@@ -255,6 +268,24 @@ function slashSpindle(ctx: CanvasRenderingContext2D, len: number, wid: number, f
   ctx.strokeStyle = edge;
   ctx.lineWidth = 1.4;
   ctx.stroke();
+}
+
+/** 剑道三连: a crescent blade trail — an arc of half-width `halfW` that tapers to sharp points
+    at both ends (thin at a0, fat in the middle, thin again at a1). One filled path, no shadow.
+    Caller sets fillStyle / globalAlpha. */
+function arcBladePath(ctx: CanvasRenderingContext2D, cx: number, cy: number, R: number, a0: number, a1: number, halfW: number, samples = 12): void {
+  const w = (s: number) => halfW * Math.pow(Math.sin(Math.PI * s), .7);
+  ctx.beginPath();
+  for (let i = 0; i <= samples; i++) {
+    const s = i / samples, a = a0 + (a1 - a0) * s, ro = R + w(s);
+    const px = cx + Math.cos(a) * ro, py = cy + Math.sin(a) * ro;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  for (let i = samples; i >= 0; i--) {
+    const s = i / samples, a = a0 + (a1 - a0) * s, ri = R - w(s);
+    ctx.lineTo(cx + Math.cos(a) * ri, cy + Math.sin(a) * ri);
+  }
+  ctx.closePath();
 }
 
 /** The even-width heart: short blunt tip, full lower arcs — no long tapering point.
@@ -438,6 +469,103 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.beginPath(); ctx.arc(-22, 12, r * (.8 + p * .4), -1.5, .7); ctx.stroke();
       ctx.strokeStyle = '#fff7de'; ctx.lineWidth = 3; ctx.stroke();
       break;
+    case 'iaido':
+    case 'bushido': {
+      // 剑道三连: the wooden cut. A crescent blade trail sweeps the arc while two dim
+      // afterimages lag behind a white-hot leading edge — a cheap motion streak, no shadow/filter.
+      const heavy = e.type === 'bushido';
+      const cx = -10, cy = 4;
+      const a0 = -1.36, a1 = .86;
+      const R = r * (heavy ? .82 : .74);
+      const lead = a0 + (a1 - a0) * Math.min(1, p * 1.22);
+      ctx.translate(e.x, e.y);
+      ctx.scale(e.dir ?? 1, 1);
+      ctx.lineCap = 'round';
+      // trailing afterimages, farthest behind first
+      const ghosts = liteFx ? 1 : 3;
+      for (let i = ghosts; i >= 1; i--) {
+        const to = lead - i * (a1 - a0) * .2;
+        if (to <= a0 + .05) continue;
+        ctx.globalAlpha = (1 - p) * (heavy ? .34 : .3) * (1 - i * .22);
+        ctx.fillStyle = i === 1 ? '#e7dbff' : '#b79bff';
+        arcBladePath(ctx, cx, cy, R, a0, to, (heavy ? 12 : 9) * (1 - i * .18));
+        ctx.fill();
+      }
+      // the blade: violet edge, near-white body
+      ctx.globalAlpha = Math.min(1, (1 - p) * 1.2);
+      arcBladePath(ctx, cx, cy, R, a0, lead, heavy ? 15 : 11);
+      ctx.fillStyle = '#cdb8ff';
+      ctx.fill();
+      arcBladePath(ctx, cx, cy, R - 1, a0, lead, heavy ? 8 : 6);
+      ctx.fillStyle = '#f5f0ff';
+      ctx.fill();
+      // white-hot core riding the lit edge of the blade
+      ctx.globalAlpha = (1 - p) * .95;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = (heavy ? 5 : 3.5) * (1 - p * .5) + 1;
+      ctx.beginPath(); ctx.arc(cx, cy, R, a0, lead); ctx.stroke();
+      // sparks flicking off the tip
+      const tx = cx + Math.cos(lead) * R, ty = cy + Math.sin(lead) * R;
+      ctx.fillStyle = '#ffffff';
+      for (let i = 0; i < 3; i++) {
+        const d = 3 + p * (12 + i * 10), a = lead + (i - 1) * .5;
+        ctx.globalAlpha = (1 - p) * (i ? .6 : .95);
+        ctx.beginPath(); ctx.arc(tx + Math.cos(a) * d, ty + Math.sin(a) * d, Math.max(1.2, 3.2 * (1 - p) - i * .5), 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+    case 'tea':
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = 1 - p;
+      ctx.fillStyle = '#f4e2b8';
+      ctx.beginPath(); ctx.ellipse(0, 4, 11, 7, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.globalAlpha = (1 - p) * .7;
+      ctx.beginPath(); ctx.arc(0, -6, 8 + p * 12, Math.PI, 0); ctx.stroke();
+      break;
+    case 'cloak': {
+      // 忍法·隐身术: a smoke bomb swallows her — billows burst outward and thin away as she fades.
+      ctx.translate(e.x, e.y);
+      const burst = 1 - Math.pow(1 - p, 2.5);
+      const fade = Math.pow(1 - p, 1.3);
+      const grad = smokeGrad(ctx);
+      // dense core right as it pops, then billows take over
+      if (p < .3) {
+        ctx.globalAlpha = (1 - p / .3) * .8;
+        ctx.save();
+        ctx.scale(r * .72, r * .72);
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.arc(0, 0, 1, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+      const n = liteFx ? 9 : 18;
+      const frac = (x: number) => x - Math.floor(x);
+      for (let i = 0; i < n; i++) {
+        const h1 = frac(Math.sin(i * 12.9898) * 43758.5453);
+        const h2 = frac(Math.sin(i * 78.233) * 12543.21);
+        const h3 = frac(Math.sin(i * 37.719) * 9871.13);
+        const a = i * 2.399 + .4;
+        const dist = r * (.08 + h1 * .68) * (.5 + burst * .85);
+        const size = r * (.18 + h2 * .28) * (.6 + burst * .95);
+        ctx.save();
+        ctx.translate(Math.cos(a) * dist, Math.sin(a) * dist * .72 - p * (12 + h3 * 24));
+        ctx.rotate(a + h1 * 1.6);
+        ctx.scale(size, size);
+        ctx.globalAlpha = fade * (.3 + h3 * .34);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 1 + h2 * .35, .7 + h3 * .35, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+      // the seal flashes white for the first instant
+      if (p < .38) {
+        ctx.globalAlpha = (1 - p / .38) * .85;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(0, 0, r * (.4 + p * 1.6), 0, Math.PI * 2); ctx.stroke();
+      }
+      break;
+    }
     case 'slow-bubble': {
       const t = e.age ?? 0;
       ctx.translate(e.x, e.y);
@@ -1062,7 +1190,7 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       break;
     }
     case 'parfait': {
-      // 抹茶大芭菲: the parfait stands on the floor; a green glow pulses under the eruption.
+      // 抹茶芭菲: the parfait stands on the floor; a green glow pulses under the eruption.
       // Silhouette flash (残影 without the travel): same-size flat tinted copies appear at once and
       // fade, staggered, behind the parfait as it lands and again as it leaves — no scaling at all.
       const t = e.max - e.life;
@@ -1427,6 +1555,34 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
         ctx.beginPath(); ctx.ellipse(0, 0, 9 * (1 - t * .3), 4, 0, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
       }
+      break;
+    }
+    case 'charge-ring': {
+      // 剑道三连: the held stance gathers. A wide ring collapses into her as the charge fills,
+      // spinning rune ticks and inward motes tightening the read. p is the charge (0 → 1).
+      const ease = Math.pow(1 - p, 1.05);
+      const R = r * ease;
+      const spin = (e.age ?? 0) * 4.2;
+      const gather = .34 + p * .52;
+      ctx.translate(e.x, e.y);
+      ctx.lineCap = 'round';
+      ctx.globalAlpha = gather * .62;
+      ctx.strokeStyle = e.color;
+      ctx.lineWidth = 8 + p * 8;
+      ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = Math.min(1, gather + .12);
+      ctx.strokeStyle = '#f6efff';
+      ctx.lineWidth = 2 + p * 2;
+      ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      for (let i = 0; i < 6; i++) {
+        const a = -spin * 1.4 + i * Math.PI / 3;
+        ctx.globalAlpha = (1 - p) * .9;
+        ctx.beginPath(); ctx.arc(Math.cos(a) * R * .82, Math.sin(a) * R * .82, 2.6 * (1 - p) + .8, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = Math.min(1, p * 1.3);
+      ctx.fillStyle = '#f6efff';
+      ctx.beginPath(); ctx.arc(0, 0, 3 + p * 9, 0, Math.PI * 2); ctx.fill();
       break;
     }
     case 'record': {
@@ -1849,7 +2005,7 @@ function noteRibbon(ctx: CanvasRenderingContext2D, p: Projectile, outer = '#e7a0
 }
 
 export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, images?: ImageCache): void {
-  // 抹茶大芭菲: the standing parfait is drawn by its effect, never as a shot.
+  // 抹茶芭菲: the standing parfait is drawn by its effect, never as a shot.
   if (p.fx === 'parfait') return;
   ctx.save();
   // 火的故事: the arrow art rides ten pixels above its flight band so the flame head reads on the body.
@@ -1857,7 +2013,7 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   if (p.fx === 'mutsumi-note' || p.fx === 'chord') noteRibbon(ctx, p);
   else if (p.fx === 'sob') noteRibbon(ctx, p, '#f4e7b4', '#e8c96a');
   else if (p.fx === 'arrow') noteRibbon(ctx, p, '#1a3a8a', '#7ec8ff');
-  else if (p.fx !== 'fuga' && p.fx !== 'smile-ship' && p.fx !== 'whale' && p.fx !== 'butterfly' && p.fx !== 'jewel' && p.fx !== 'shigure' && p.fx !== 'moca-dusk' && p.fx !== 'sprout' && p.fx !== 'clock') {
+  else if (p.fx !== 'fuga' && p.fx !== 'smile-ship' && p.fx !== 'whale' && p.fx !== 'butterfly' && p.fx !== 'jewel' && p.fx !== 'shigure' && p.fx !== 'moca-dusk' && p.fx !== 'sprout' && p.fx !== 'clock' && p.fx !== 'iaido') {
     // 火的故事 skips the stock dots — they read as purple balls; its case draws gold afterimages.
     // 微笑号 is a screen-sized sweep, so the travelling point must not leave a dot trail.
     ctx.fillStyle = p.color;
@@ -2714,6 +2870,24 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
       ctx.moveTo(x(128), y(148));
       ctx.lineTo(x(156), y(148));
       ctx.stroke();
+      break;
+    }
+    case 'iaido': {
+      // 剑道三连 wave: the same crescent blade riding the shot, fading as it dies.
+      ctx.scale(Math.sign(p.vx) || 1, 1);
+      const R = Math.max(18, p.size * .62);
+      const fade = Math.min(1, p.life / .18);
+      ctx.globalAlpha = fade;
+      ctx.lineCap = 'round';
+      ctx.fillStyle = '#cdb8ff';
+      arcBladePath(ctx, -6, 0, R, -1.25, .9, 7);
+      ctx.fill();
+      ctx.fillStyle = '#f5f0ff';
+      arcBladePath(ctx, -6, 0, R - 1, -1.25, .9, 3.6);
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(-6, 0, R, -1.25, .9); ctx.stroke();
       break;
     }
     case 'wail':

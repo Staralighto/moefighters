@@ -150,7 +150,7 @@ export function flameFrame(age: number, life: number): [number, number] {
   return [Math.floor(age * 12) % 4, 1];
 }
 
-/** 抹茶大芭菲: the arms-wide beat holds 0.25s — well past the default 0.1s active — then the bow. */
+/** 抹茶芭菲: the arms-wide beat holds 0.25s — well past the default 0.1s active — then the bow. */
 export function parfaitRow(t: number, start: number, duration: number): number {
   if (t < start) return 0;
   if (t < duration - .15) return 1;
@@ -213,6 +213,39 @@ export function crashRow(t: number, tossAt: number, shots: number, start: number
   if (tossAt < 0 || t >= duration - .3) return 2;
   const u = (t - tossAt - shots * interval) / Math.max(.05, interval);
   return u < .5 ? 0 : 1;
+}
+
+/** 剑道三连: per-move phase — 0 pending, 1 tap, 2 stance, 3 waves. */
+export const IAIDO_PHASE = { pending: 0, tap: 1, stance: 2, waves: 3 } as const;
+/** 请你喝茶: the pin cycle — 0 lunge, 1 caught, 2 whiff. */
+export const TEA_PHASE = { lunge: 0, caught: 1, whiff: 2 } as const;
+/** 剑道三连: the press is still a tap until this moment. Past it, a held key is the stance. */
+export const IAIDO_DECIDE = .2;
+/** Stance auto-fires the three waves once it has been held this long. */
+export const IAIDO_CHARGE = .7;
+/** Recover tail shared by the tap and the waves. */
+export const IAIDO_RECOVER = .28;
+/** The tap lands three wooden cuts, one beat per gap. */
+export const IAIDO_HITS = 3;
+export const IAIDO_GAP = .14;
+/** The wave branch fires the same three beats, tighter. */
+export const IAIDO_WAVE_GAP = .08;
+/** 剑道三连: how full the held stance's charge is, 0 → 1. 1 is where it auto-fires. */
+export function iaidoCharge(t: number): number {
+  return Math.min(1, Math.max(0, (t - IAIDO_DECIDE) / IAIDO_CHARGE));
+}
+/** 请你喝茶: after the catch, the tail is the long whiff or the settle. */
+export const TEA_RECOVER = .3;
+
+/** 武士道: windup and sheathe stay on special column L. The twelve cells in between are all cuts. */
+export const BUSHIDO_TAIL = .32;
+
+export function bushidoClip(t: number, s: { start: number; duration: number }): Clip {
+  if (t < s.start) return at('special', 3, 0);
+  if (t >= s.duration - BUSHIDO_TAIL) return at('special', 3, 2);
+  const span = Math.max(.05, s.duration - BUSHIDO_TAIL - s.start);
+  const cell = Math.min(11, Math.floor((t - s.start) / span * 12));
+  return at('world', cell % 4, Math.floor(cell / 4));
 }
 
 /** 大闹一场: seven hits, then the follow-through. The combo escape fires on the seventh
@@ -289,6 +322,28 @@ export function clipFor(f: Fighter): Clip {
       if (f.attack.t < s.start) return at('special', 3, 0);
       const cell = riotCell(f.attack.t, s.start);
       return at('world', cell % 4, Math.floor(cell / 4));
+    }
+    if (f.attack.skill.fx === 'bushido') return bushidoClip(f.attack.t, f.attack.skill);
+    if (f.attack.skill.fx === 'iaido') {
+      const a = f.attack, s = a.skill;
+      const mode = a.mode ?? IAIDO_PHASE.pending;
+      if (mode === IAIDO_PHASE.pending || mode === IAIDO_PHASE.stance) return at('special', 0, 0);
+      // 剑道三连: each of the three beats replays the whole cut column (windup / hit / recover),
+      // so the tap reads as three quick swings instead of one held pose.
+      const start = mode === IAIDO_PHASE.tap ? IAIDO_DECIDE : a.tossAt;
+      const interval = mode === IAIDO_PHASE.tap ? IAIDO_GAP : IAIDO_WAVE_GAP;
+      return at('special', 0, volleyRow(a.t, { start, duration: s.duration, count: IAIDO_HITS, interval }));
+    }
+    if (f.attack.skill.fx === 'tea') {
+      const a = f.attack;
+      if ((a.mode ?? TEA_PHASE.lunge) === TEA_PHASE.lunge) return at('special', 1, 0);
+      if (a.mode === TEA_PHASE.whiff || a.t >= a.skill.duration - TEA_RECOVER) return at('special', 1, 2);
+      return at('special', 1, 1);
+    }
+    if (f.attack.skill.fx === 'cloak') {
+      const t = f.attack.t, s = f.attack.skill;
+      const row = t < s.start ? 0 : t < s.start + .4 ? 1 : 2;
+      return at('special', 2, row);
     }
     if (f.attack.skill.fx === 'spin') {
       const t = f.attack.t, s = f.attack.skill;

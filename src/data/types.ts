@@ -59,9 +59,12 @@ export interface Skill {
   interval?: number;
   size?: number;
   life?: number;
-  /** Startup invuln for dashes; for breakout skills, the invuln granted on every cast. */
+  /** Startup invuln for dashes; for breakout skills, a longer invuln than the shared escape default. */
   invuln?: number;
-  /** Combo escape (e.g. 恐湖, 轮奏). Cuts in through hitstun, knockdown and earlier inputs; that cast hits on the press. */
+  /** 解控 (e.g. 恐湖, 轮奏). Castable out of any control state — hitstun, knockdown, root, lock —
+   *  and the press cuts earlier inputs. The kernel grants the shared short invuln on every cast and
+   *  fires the shared shockwave (combat.ts escapePulse) at the active frame. Damage, brace, veil
+   *  and a longer invuln stay on the skill as extras. */
   breakout?: boolean;
   /** Per-skill hit knockback velocity; falls back to the type default when unset.
    *  A blocked hit is 75 unless knockOnBlock is set, in which case this value is used (including 0). */
@@ -180,6 +183,8 @@ export type ViewSpec =
   | { kind: 'sprite'; common: string; special: string; height: number; frenzy?: string; king?: string; kingScale?: number; world?: string; box?: string; extras?: string[];
       /** Special-sheet playback scale, pivoted on the foot line so the feet stay. */
       specialScale?: number;
+      /** World-sheet playback scale, pivoted on the foot line so the feet stay. */
+      worldScale?: number;
       /** Pixels to draw the whole cell above the fighter origin. Positive is up. */
       lift?: number };
 

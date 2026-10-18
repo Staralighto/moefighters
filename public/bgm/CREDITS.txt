@@ -1,13 +1,13 @@
 garupa-pico-instrumental.m4a
-Source: 《ピコっと!パピっと!!ガルパ☆ピコ!!!》（《BanG Dream! 少女乐团派对！☆PICO》第一季 ED）的伴奏分离轨（no vocals），由项目使用者提供。
+Source: 《BanG Dream! 少女乐团派对！☆PICO》第一季片尾曲的伴奏分离轨（no vocals），由项目使用者提供。播放列表里显示为「少女乐团PICO」。
 License: 词曲及录音权利归原权利方（Craft Egg / Bushiroad 及各权利人）所有。本项目为非官方同人游戏，仅供非商业学习交流，不纳入本项目代码的授权范围。
 Changes: 由使用者提供的 AAC 源（约 196 kbps）重编码为 128 kbps AAC，衰减 6 dB 增益，加 faststart 便于网页流式播放。40 kbps 一版听感发闷，已弃用。现从 git 里的 128 kbps 版再编码为 96 kbps AAC-LC（约 3.0MB），未再改增益，仍加 faststart。
 
-全速前進！.m4a
-勝利の衝動.m4a
-燃える衝動.m4a
-鋼鉄の詩.m4a
-黒い劇場の序曲.m4a
+全速前进！.m4a
+胜利的冲动.m4a
+燃烧的冲动.m4a
+钢铁之诗.m4a
+黑色剧场序曲.m4a
 Source: 项目使用者提供，随播放列表加入。本记录不另考证曲目出处。
 License: 词曲及录音权利归原权利方所有。本项目为非官方同人游戏，仅供非商业学习交流，不纳入本项目代码的授权范围。
-Changes: 按提供的 AAC 入库（约 129 kbps）。站点播放这份文件。Toy 包只在打 zip 时另压成 64 kbps，不改这里的文件。
+Changes: 按提供的 AAC 入库（约 129 kbps），曲名标签改为与文件名相同的中文。站点播放这份文件。Toy 包只在打 zip 时另压成 64 kbps，不改这里的音频。

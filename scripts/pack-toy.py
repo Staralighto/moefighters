@@ -7,7 +7,7 @@ import os, re, subprocess, tempfile, zipfile
 
 root, cap = "dist", 50 * 1024 * 1024
 out = os.path.join("\u7d20\u6750", "moefighters-toy.zip")
-# Listening check on 全速前進: 96k and 64k are acceptable, 48k is not.
+# Listening check on 全速前进: 96k and 64k are acceptable, 48k is not.
 TOY_BGM_BITRATE = "64k"
 
 def encode_bgm(src, dst):

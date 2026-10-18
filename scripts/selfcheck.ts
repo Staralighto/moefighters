@@ -1,6 +1,6 @@
 /* Headless rule check: runs the fixed-step engine without DOM or canvas. `npm run check`. */
 import { FightGame } from '../src/game/game.ts';
-import { clockRings, drumShotTime, hit, holdNoteSpan, violetHidden } from '../src/game/combat.ts';
+import { BUSHIDO_CREEP, BUSHIDO_LUNGE, BUSHIDO_SPAN, VEIL_NORMAL, VEIL_SHOT, clockRings, drumShotTime, hit, holdNoteSpan, violetHidden } from '../src/game/combat.ts';
 import { vowBeatTime, VOW_BEATS } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
 import { PLAYABLE, ROSTER, bandMembers, guestsFor } from '../src/data/characters.ts';
@@ -8,7 +8,7 @@ import { BANDS, BAND_BY_ID } from '../src/data/bands.ts';
 import { AIR_SKILLS, skill } from '../src/data/skills.ts';
 import { STAGES } from '../src/data/stages.ts';
 import { FLOOR, COMBO_DECAY, STEP, W, X_MAX, X_MIN } from '../src/game/constants.ts';
-import { clipFor, crashRow, drumRow, flameFrame, riotCell } from '../src/render/clips.ts';
+import { BUSHIDO_TAIL, bushidoClip, clipFor, crashRow, drumRow, flameFrame, IAIDO_DECIDE, IAIDO_GAP, IAIDO_RECOVER, riotCell } from '../src/render/clips.ts';
 import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
 import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell, shouldGoLite } from '../src/render/fx.ts';
 import { backingScale, portraitBodyScale, teamGlowOn } from '../src/render/renderer.ts';
@@ -3783,7 +3783,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   // O: no damage, a shove, and a brace armed for the window
   {
     const g = newGame(mitake, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
-    p2.x = p1.x + 120; p2.facing = -1;
+    p2.x = p1.x + 80; p2.facing = -1;
     const hp = p2.hp;
     g.keyDown('KeyO'); run(g, .4);
     assert.equal(p2.hp, hp, '像以前一样 deals no damage');
@@ -4721,6 +4721,186 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   const xs = wads.map(p => p.x * b1.facing).sort((a, b) => a - b);
   const gap = xs[1] - xs[0];
   assert.ok(gap > 30 && gap < 55 && xs[3] - xs[2] > 30, 'the wads leave one spot and pull apart');
+}
+
+// eve: tap is three cuts, a held key stances then waves, tea drains 30 and whiffs long,
+// the cloak misses normals, bushido is seven cuts with no meter
+{
+  const eve = at('eve');
+  const data = ROSTER[eve];
+  assert.ok(data.view.kind === 'sprite' && data.view.specialScale === 0.95, 'the special sheet draws at 0.95 around the feet');
+  assert.ok(data.view.kind === 'sprite' && data.view.worldScale === 1.1, 'the super sheet draws at 1.1 around the feet');
+  assert.equal(data.bands?.[0], 'pastel-palettes', 'eve sits with Pastel*Palettes');
+  assert.equal(ROSTER[eve - 1]?.id, 'hina', 'eve follows hina');
+  assert.equal(data.trait, 'rush', 'eve is rush');
+  assert.equal(data.skills[2].fx, 'iaido', 'U is the wooden trio');
+  assert.equal(data.skills[3].drain, 10, 'each sip drains 10');
+  assert.equal(data.skills[4].cd, 10, 'the cloak waits 10s');
+  assert.equal(data.skills[4].breakout, true, 'the cloak is a breakout');
+  assert.equal(data.skills[5].cost, 120, 'bushido costs 120');
+  assert.equal(data.skills[5].count, 7, 'bushido is seven cuts');
+  const ult = data.skills[5];
+  assert.equal(bushidoClip(0, ult).sheet, 'special', 'the raise lives on the special sheet');
+  assert.equal(bushidoClip(ult.start, ult).sheet, 'world', 'the flurry lives on the super sheet');
+  assert.equal(bushidoClip(ult.duration - .05, ult).row, 2, 'the sheathe is the last special cell');
+
+  // clip routing: the tap replays the whole cut column once per wooden beat, not one held pose
+  const pf = previewFighter(data, 0);
+  pf.attack = { skill: data.skills[2], index: 2, serial: 1, t: 0, emitted: false, shots: 0, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: 0, mode: 1 };
+  assert.deepEqual([clipFor(pf).col, clipFor(pf).row], [0, 0], 'the tap starts on the windup cell');
+  pf.attack.t = IAIDO_DECIDE + .03;
+  assert.equal(clipFor(pf).row, 1, 'the middle cell lands on the first cut');
+  pf.attack.t = IAIDO_DECIDE + IAIDO_GAP * 2 + .03;
+  assert.equal(clipFor(pf).row, 1, 'the third cut plays the middle cell again');
+  pf.attack.t = data.skills[2].duration - IAIDO_RECOVER;
+  assert.equal(clipFor(pf).row, 2, 'the tail holds the recover cell');
+
+  const tap = newGame(eve, at('boulder')); const [t1, t2] = tap.fighters; dummy(tap);
+  t2.x = t1.x + 70; t2.facing = -1;
+  const tapHp = t2.hp;
+  tap.keyDown('KeyU');
+  run(tap, .05);
+  tap.keyUp('KeyU');
+  run(tap, 1.2);
+  assert.ok(t2.hp < tapHp, 'a tap connects the wooden combo');
+  assert.equal(tap.projectiles.filter(p => p.fx === 'iaido').length, 0, 'a tap fires no waves');
+
+  const held = newGame(eve, at('boulder')); const [h1] = held.fighters; dummy(held);
+  held.fighters[1].x = h1.x + 420;
+  held.keyDown('KeyU');
+  run(held, IAIDO_DECIDE + .12);
+  assert.equal(h1.attack?.mode, 2, 'holding past the window is the stance');
+  held.keyUp('KeyU');
+  run(held, .25);
+  assert.equal(held.projectiles.filter(p => p.fx === 'iaido').length, 3, 'release fires three waves');
+
+  const cut = newGame(eve, at('boulder')); const [c1, c2] = cut.fighters; dummy(cut);
+  c2.x = c1.x + 70; c2.facing = -1;
+  cut.keyDown('KeyU');
+  run(cut, IAIDO_DECIDE + .08);
+  assert.equal(c1.attack?.mode, 2, 'she is still in the stance');
+  cut.keyDown('Numpad1');
+  run(cut, .45);
+  assert.equal(cut.projectiles.filter(p => p.fx === 'iaido').length, 0, 'a hit during the stance fires nothing');
+
+  const tea = newGame(eve, at('boulder')); const [e1, e2] = tea.fighters; dummy(tea);
+  e2.x = e1.x + 140; e2.facing = -1; e2.energy = 100;
+  tea.keyDown('KeyI');
+  tea.keyUp('KeyI');
+  let sips = 0, prev = 0;
+  for (let i = 0; i < Math.round(1.2 / STEP); i++) {
+    tea.step(STEP);
+    const n = tea.texts.filter(t => t.text === '-10 气').length;
+    if (n > prev) sips += n - prev;
+    prev = n;
+  }
+  assert.equal(sips, 3, 'tea drains in three sips');
+  assert.equal(e2.knocked, 0, 'tea does not knock down');
+
+  const whiff = newGame(eve, at('boulder')); const [w1, w2] = whiff.fighters; dummy(whiff);
+  w2.x = w1.x + 520;
+  whiff.keyDown('KeyI');
+  whiff.keyUp('KeyI');
+  let whiffT = 0;
+  for (let i = 0; i < Math.round(2 / STEP); i++) {
+    whiff.step(STEP);
+    if (w1.attack?.index === 3) whiffT = Math.max(whiffT, w1.attack.t);
+  }
+  assert.ok(whiffT > 1.5, `a tea whiff plays out, saw ${whiffT.toFixed(2)}`);
+
+  const cloak = newGame(eve, at('boulder')); const [k1, k2] = cloak.fighters; dummy(cloak);
+  cloak.keyDown('KeyO');
+  cloak.keyUp('KeyO');
+  run(cloak, .5);
+  assert.ok(k1.mods.some(m => m.kind === 'veil' && m.left > 4), 'the cloak lasts about 5s');
+  assert.ok(k1.braced > 4, 'the cloak is also brace');
+
+  // 解控 shares one shockwave: the cloak has no melee of its own, yet still shoves and interrupts the ring
+  const pulse = newGame(eve, at('boulder')); const [g1, g2] = pulse.fighters; dummy(pulse);
+  g2.x = g1.x + 90; g2.facing = -1;
+  const gx = g2.x;
+  pulse.keyDown('KeyO');
+  pulse.keyUp('KeyO');
+  let stunSeen = 0, invAt = 0;
+  for (let i = 0; i < Math.round(.5 / STEP); i++) {
+    pulse.step(STEP);
+    stunSeen = Math.max(stunSeen, g2.stun);
+    invAt = Math.max(invAt, g1.invuln);
+  }
+  assert.ok(g2.x > gx + 40, `the shared escape shoves the ring, moved ${(g2.x - gx).toFixed(1)}`);
+  assert.ok(stunSeen >= .28, `the shared escape interrupts, saw ${stunSeen}`);
+  assert.ok(invAt >= .3, `a breakout cast grants the shared invuln, saw ${invAt}`);
+
+  // the cloak cuts out of hitstun: the press comes out even while stunned, and clears it
+  const bail = newGame(eve, at('boulder')); const [x1] = bail.fighters; dummy(bail);
+  x1.stun = .5;
+  x1.queue.push({ index: 4, ttl: .18 });
+  let out = false;
+  for (let i = 0; i < Math.round(.25 / STEP); i++) {
+    bail.step(STEP);
+    if (x1.attack?.index === 4) out = true;
+  }
+  assert.ok(out, 'the cloak comes out of hitstun');
+  assert.equal(x1.stun, 0, 'the escape clears the stun');
+  assert.ok(x1.mods.some(m => m.kind === 'veil'), 'the escape still veils her');
+  const jab = k2.data.skills[0];
+  const shot = { ...jab, type: 'projectile' as const, key: 'U', damage: 5 };
+  const veiled = (roll: number) => {
+    const g = new FightGame([ROSTER[eve], ROSTER[at('boulder')]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: () => roll });
+    const [a, b] = g.fighters;
+    addMod(a, 'veil', 5);
+    return { g, a, b };
+  };
+  {
+    const { g, a, b } = veiled(0);
+    const hp = a.hp;
+    assert.equal(hit(g, b, a, jab, { hit: new Set() }), false, 'a normal misses under 20%');
+    assert.equal(a.hp, hp, 'the miss deals no damage');
+    assert.equal(hit(g, b, a, shot, { hit: new Set() }), false, 'a shot misses under 90%');
+  }
+  {
+    const { g, a, b } = veiled(VEIL_NORMAL);
+    assert.equal(hit(g, b, a, jab, { hit: new Set() }), true, 'a normal connects at 20%');
+    assert.equal(hit(g, b, a, shot, { hit: new Set() }), false, 'a shot still misses at 20%');
+  }
+  {
+    const { g, a, b } = veiled(VEIL_SHOT);
+    assert.equal(hit(g, b, a, shot, { hit: new Set() }), true, 'a shot connects at 90%');
+  }
+  const grab = { ...jab, type: 'grab' as const, key: 'I', damage: 10 };
+  const rooted = { ...shot, root: 1 };
+  const { g, a, b } = veiled(0);
+  assert.equal(hit(g, b, a, grab, { hit: new Set() }), true, 'a grab connects through the veil');
+  assert.equal(hit(g, b, a, rooted, { hit: new Set() }), true, 'a rooting shot connects through the veil');
+
+  const bush = newGame(eve, at('boulder')); const [b1, b2] = bush.fighters; dummy(bush);
+  b2.x = b1.x + 50; b2.facing = -1;
+  b1.energy = b1.energyMax;
+  const x0 = b1.x;
+  bush.keyDown('KeyL');
+  run(bush, BUSHIDO_LUNGE);
+  assert.equal(b1.attack?.shots ?? 0, 0, 'the cuts wait until the lunge ends');
+  assert.ok(Math.abs(b1.x - x0 - BUSHIDO_SPAN) < 1.5, `the lunge covers 15% of the stage, moved ${(b1.x - x0).toFixed(1)}`);
+  const planted = b1.x;
+  run(bush, .1);
+  assert.equal(b1.attack?.shots ?? 0, 0, 'the cuts have not started');
+  assert.ok(Math.abs(b1.x - planted) < 1, 'she plants after the lunge');
+  let swings = 0, down = false, energyAt = -1, cutX = NaN, sheatheX = NaN;
+  for (let i = 0; i < Math.round(2 / STEP); i++) {
+    bush.step(STEP);
+    if (b1.attack?.index === 5) {
+      const a = b1.attack;
+      if (Number.isNaN(cutX) && a.t >= a.skill.start) cutX = b1.x;
+      if (Number.isNaN(sheatheX) && a.t >= a.skill.duration - BUSHIDO_TAIL) sheatheX = b1.x;
+      swings = Math.max(swings, a.shots);
+      if (swings === 7) energyAt = b1.energy;
+    }
+    if (b2.knocked > 0) down = true;
+  }
+  assert.ok(Math.abs(sheatheX - cutX - BUSHIDO_CREEP) < 2, `the cuts creep about 70px, moved ${(sheatheX - cutX).toFixed(1)}`);
+  assert.equal(swings, 7, 'bushido swings seven times');
+  assert.equal(energyAt, 0, 'bushido grants no meter');
+  assert.ok(down, 'the last cut knocks down');
 }
 
 console.log('selfcheck ok');

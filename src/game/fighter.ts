@@ -33,6 +33,8 @@ export interface Attack {
   anchor: number;
   /** This cast cut in (escape or ahead of another input). Its hit ignores invuln and armour. */
   pierce?: boolean;
+  /** Per-move phase. 剑道三连: 0 pending, 1 tap, 2 stance, 3 waves. 请你喝茶: 0 lunge, 1 caught, 2 whiff. */
+  mode?: number;
 }
 
 export interface QueuedInput { index: number; ttl: number }

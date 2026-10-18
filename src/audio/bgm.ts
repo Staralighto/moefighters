@@ -14,12 +14,12 @@ import { assetUrl, imagesBusy, slowLink } from '../assets/loader.ts';
 import { migrateLinearSlider, musicGain } from './mix.ts';
 
 const TRACKS = [
-  { src: '/bgm/garupa-pico-instrumental.m4a', title: 'ガルパ☆ピコ' },
-  { src: '/bgm/全速前進！.m4a', title: '全速前進！' },
-  { src: '/bgm/勝利の衝動.m4a', title: '勝利の衝動' },
-  { src: '/bgm/燃える衝動.m4a', title: '燃える衝動' },
-  { src: '/bgm/鋼鉄の詩.m4a', title: '鋼鉄の詩' },
-  { src: '/bgm/黒い劇場の序曲.m4a', title: '黒い劇場の序曲' },
+  { src: '/bgm/garupa-pico-instrumental.m4a', title: '少女乐团PICO' },
+  { src: '/bgm/全速前进！.m4a', title: '全速前进！' },
+  { src: '/bgm/胜利的冲动.m4a', title: '胜利的冲动' },
+  { src: '/bgm/燃烧的冲动.m4a', title: '燃烧的冲动' },
+  { src: '/bgm/钢铁之诗.m4a', title: '钢铁之诗' },
+  { src: '/bgm/黑色剧场序曲.m4a', title: '黑色剧场序曲' },
 ] as const;
 const ORDERS = ['seq', 'shuffle', 'one'] as const;
 export type MusicOrder = (typeof ORDERS)[number];

@@ -4,7 +4,7 @@ import { addDebt, addMod, dmgDealtMul, dmgTakenMul, has } from './mods.ts';
 import type { FightGame, Projectile, SealVolley } from './game.ts';
 import { CONTROLS, FLOOR, GRAVITY, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
 import { attackPhase } from './animState.ts';
-import { clipFor, drumRow, RIOT_GAP, RIOT_HITS } from '../render/clips.ts';
+import { BUSHIDO_TAIL, clipFor, drumRow, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, TEA_PHASE, TEA_RECOVER } from '../render/clips.ts';
 import { SCRIPTS } from './scripts.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
@@ -69,11 +69,16 @@ export const FEAST_REGEN = 18;
 /** 无敌仓库大王: damage taken while boxed — grabs and supers punch through — and hp dripped per second. */
 const BOX_CUT = .5;
 export const BOX_REGEN = 15;
-/** 绊创膏: seconds of no-flinch, the damage cut while it holds, and the shove the plaster gives the people around her. */
+/** 绊创膏: seconds of no-flinch and the damage cut while the brace holds. */
 const BRACED_TIME = 6;
 const BRACED_DAMAGE = .67;
-const PLASTER_REPEL_RANGE = 190;
-const PLASTER_REPEL_PUSH = 500;
+/** 解控: every breakout cast buys one shared shockwave — no damage, no meter. The reach, the
+ *  shove and the stun are identical for everyone; damage, brace, veil and a longer invuln
+ *  stay on the skill as extras. Fired at the active frame, so it rides the cast's own pose. */
+export const ESCAPE_RANGE = 110;
+export const ESCAPE_PUSH = 560;
+export const ESCAPE_STUN = .3;
+export const ESCAPE_INVULN = .8;
 /** 火鸟: two pillars this far ahead and two this far behind, each burning a body twice on this clock. */
 const FIREBIRD_OFFSETS = [85, 170];
 const FIREBIRD_TICK = .18;
@@ -116,7 +121,7 @@ const GROOVE_WAVES = 6;
 const GROOVE_CD_TAP = 3, GROOVE_CD_MAX = 7.5;
 /** 韵律直觉 notes steer this many radians per second, and only on the horizontal. */
 const GROOVE_TURN = 1.4;
-/** 抹茶大芭菲: the parfait stands this far ahead and lobs blobs on its own clock. */
+/** 抹茶芭菲: the parfait stands this far ahead and lobs blobs on its own clock. */
 const PARFAIT_DIST = 120;
 /** 剪: the locked field catches this wide and this tall around the marked spot. */
 const SNIP_BAND_X = 96;
@@ -284,11 +289,29 @@ function applySlow(defender: Fighter, skill: Skill): void {
   });
 }
 
+/** 忍法·隐身术. Grabs, supers and anything that applies 定身 always connect.
+ *  J / K miss at VEIL_NORMAL, projectiles at VEIL_SHOT. */
+function veilMiss(g: FightGame, defender: Fighter, skill: Skill): boolean {
+  const m = defender.mods.find(x => x.kind === 'veil' && x.left > 0);
+  if (!m) return false;
+  if (skill.type === 'grab' || skill.super || (skill.root ?? 0) > 0) return false;
+  const chance = skill.type === 'projectile' ? VEIL_SHOT : skill.key === 'J' || skill.key === 'K' ? VEIL_NORMAL : 0;
+  if (chance <= 0) return false;
+  return g.random() < chance;
+}
+
 export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: Skill, source: HitSource, originX = attacker.x): boolean {
   // friendly is the one blast that reads everyone on the field (火的故事).
   const blast = !!skill.friendly;
   if ((!g.isEnemy(attacker, defender) && !blast) || defender.echo || defender.hp <= 0 || source.hit.has(defender.id)) return false;
   if (defender.invuln > 0 && !cuts(source, defender)) return false;
+  // 忍法·隐身术: normals and shots roll once per swing. Marking the hit set is what keeps a
+  // multi-frame dash from rolling every tick until the miss chance becomes always or never.
+  if (veilMiss(g, defender, skill)) {
+    source.hit.add(defender.id);
+    g.text('打空', defender.x, defender.y - 170, '#efe8ff', .4, 16);
+    return false;
+  }
   source.hit.add(defender.id);
   // 我会保护小睦: every hitstun this defender takes runs through the stack multiplier.
   const hitStun = (v: number) => v * defender.stunMul;
@@ -623,7 +646,7 @@ export function spawnShot(g: FightGame, f: Fighter, a: Attack, offsetY = 0, arc 
   const place = SCRIPTS[s.fx]?.spawn;
   const lob = place === 'milk' ? MILK_ARC : place === 'bag' ? BAG_ARCS[arc % BAG_ARCS.length] : null;
   if (place === 'milk') g.projectiles = g.projectiles.filter(p => !(p.fx === s.fx && p.owner === f.id));
-  // 奇独点: the well takes a fixed spot ahead and never travels. 抹茶大芭菲 stands on the floor the same way.
+  // 奇独点: the well takes a fixed spot ahead and never travels. 抹茶芭菲 stands on the floor the same way.
   const hole = place === 'well';
   const parfait = place === 'zone';
   const juggle = place === 'juggle';
@@ -733,7 +756,7 @@ function spawnRain(g: FightGame, f: Fighter, a: Attack, index: number): void {
   g.projectiles.push(p);
 }
 
-/** 抹茶大芭菲: fixed lob table, sides alternate through near-to-far pairs. Retune the pairs if the spread drifts. */
+/** 抹茶芭菲: fixed lob table, sides alternate through near-to-far pairs. Retune the pairs if the spread drifts. */
 const PARFAIT_ARCS = [
   { vx: 90, vy: -720 },
   { vx: 160, vy: -660 },
@@ -837,6 +860,13 @@ function repel(g: FightGame, f: Fighter, range: number, push: number, stun = .2)
       if (open) o.attack = null;
     }
   }
+}
+
+/** 解控冲击: the shared half of a breakout cast — shove and interrupt the ring, no damage.
+ *  Called once at the active frame of any `breakout` skill. No effect of its own: the cast's
+ *  own visual carries it. */
+export function escapePulse(g: FightGame, f: Fighter): void {
+  repel(g, f, ESCAPE_RANGE, ESCAPE_PUSH, ESCAPE_STUN);
 }
 
 /** Active-frame and finish ops. A missing mod time uses the form this list just armed. */
@@ -1067,6 +1097,8 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
       if (sc?.flash) sc.flash(g, f, a);
       else g.effect(s.fx, f.x + f.facing * 65, f.y - (s.type === 'sweep' ? 22 : 83), f.data.color, .22, { dir: f.facing, radius: s.range * .5 });
     }
+    // 解控 rides after the cast's own frame: the move lands first, the shared shockwave cleans up after.
+    if (s.breakout) escapePulse(g, f);
     if (a.index >= 2 && !s.super) g.text(s.name, f.x, f.y - 190, f.data.color, .65, 17);
   }
 
@@ -1894,7 +1926,7 @@ function volley_parfait(g: FightGame, f: Fighter, a: Attack): void {
   const s = a.skill;
   const volley = a.burst || s.count || 1;
   {
-      // 抹茶大芭菲: one standing zone; the blobs erupt from it on the zone's own clock in stepProjectiles.
+      // 抹茶芭菲: one standing zone; the blobs erupt from it on the zone's own clock in stepProjectiles.
       if (!a.emitted && a.t >= s.start) {
         a.emitted = true;
         spawnShot(g, f, a);
@@ -2323,6 +2355,132 @@ SCRIPTS['riot'] = Object.assign(SCRIPTS['riot'] ?? {}, {
     if (s) addMod(f, 'noGain', s.duration, { max: true });
   },
 });
+
+/** 剑道三连: a tap is three wooden cuts. Holding past IAIDO_DECIDE is the stance;
+ *  release or a full charge fires three waves. A hit cancels the attack, so the waves never leave.
+ *  ponytail: CPU never holds a key, so it always takes the tap. */
+const IAIDO_WAVE = { damage: 16, speed: 680, size: 40, life: .58, knock: 70, solid: false as const };
+
+function step_iaido(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  const mode = a.mode ?? IAIDO_PHASE.pending;
+  if (mode === IAIDO_PHASE.pending && a.t >= IAIDO_DECIDE) a.mode = attackHeld(g, f) ? IAIDO_PHASE.stance : IAIDO_PHASE.tap;
+  if (a.mode === IAIDO_PHASE.tap) {
+    while (a.shots < IAIDO_HITS && a.t >= IAIDO_DECIDE + a.shots * IAIDO_GAP) {
+      a.hit = new Set();
+      applyMelee(g, f, a);
+      g.effect('iaido', f.x + f.facing * 72, f.y - 88, '#f7f4ff', .16, { dir: f.facing, radius: 80 });
+      a.shots++;
+    }
+    if (a.shots >= IAIDO_HITS && a.t < s.duration - IAIDO_RECOVER) a.t = s.duration - IAIDO_RECOVER;
+    return;
+  }
+  if (a.mode === IAIDO_PHASE.stance) {
+    if (iaidoCharge(a.t) >= 1 || !attackHeld(g, f)) {
+      a.mode = IAIDO_PHASE.waves;
+      a.shots = 0;
+      a.tossAt = a.t;
+    }
+    return;
+  }
+  if (a.mode !== IAIDO_PHASE.waves) return;
+  const prev = a.skill;
+  while (a.shots < IAIDO_HITS && a.t >= a.tossAt + a.shots * IAIDO_WAVE_GAP) {
+    a.skill = { ...s, type: 'projectile', ...IAIDO_WAVE, count: 1 };
+    spawnShot(g, f, a, (a.shots - 1) * 12);
+    a.shots++;
+  }
+  a.skill = prev;
+  if (a.shots >= IAIDO_HITS && a.t < s.duration - IAIDO_RECOVER) a.t = s.duration - IAIDO_RECOVER;
+}
+
+/** 请你喝茶: dash, catch a standing body, sip meter three times. A miss keeps the long tail. */
+const TEA_SPEED = 780;
+const TEA_REACH = 90;
+const TEA_BEATS = 3;
+const TEA_GAP = .22;
+
+function teaTarget(g: FightGame, f: Fighter): Fighter | undefined {
+  let best: Fighter | undefined;
+  let bestD = TEA_REACH;
+  for (const o of g.opponents(f)) {
+    if (o.hp <= 0 || o.y < FLOOR - 48) continue;
+    if ((o.x - f.x) * f.facing < -16) continue;
+    const d = Math.hypot(o.x - f.x, o.y - f.y);
+    if (d < bestD) { best = o; bestD = d; }
+  }
+  return best;
+}
+
+function step_tea(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if ((a.mode ?? TEA_PHASE.lunge) === TEA_PHASE.lunge) {
+    const lunging = a.t < s.start;
+    if (lunging) f.x = clamp(f.x + f.facing * TEA_SPEED * dt, X_MIN, X_MAX);
+    const o = teaTarget(g, f);
+    if (o) { a.mode = TEA_PHASE.caught; a.hold = o.id; a.tossAt = a.t; }
+    else if (!lunging) a.mode = TEA_PHASE.whiff;
+    if ((a.mode ?? TEA_PHASE.lunge) === TEA_PHASE.lunge) return;
+  }
+  if (a.mode === TEA_PHASE.whiff) return;
+  const o = g.fighters.find(p => p.id === a.hold);
+  if (!o || o.hp <= 0) { a.t = s.duration; return; }
+  o.x = clamp(f.x + f.facing * 72, X_MIN, X_MAX);
+  o.y = FLOOR;
+  o.vx = 0;
+  o.vy = 0;
+  o.knocked = 0;
+  o.stun = Math.max(o.stun, .3);
+  o.facing = (-f.facing) as 1 | -1;
+  if (a.shots >= TEA_BEATS || a.t < a.tossAt + a.shots * TEA_GAP) return;
+  a.hit = new Set();
+  hit(g, f, o, s, a);
+  g.effect('tea', o.x, o.y - 96, '#f4e2b8', .3, { radius: 24 });
+  a.shots++;
+  if (a.shots >= TEA_BEATS) a.t = Math.max(a.t, s.duration - TEA_RECOVER);
+}
+
+const CLOAK_TIME = 5;
+export const VEIL_NORMAL = .2;
+export const VEIL_SHOT = .9;
+
+function emit_cloak(g: FightGame, f: Fighter): void {
+  addMod(f, 'brace', CLOAK_TIME, { v: BRACED_DAMAGE });
+  addMod(f, 'veil', CLOAK_TIME);
+  g.effect('cloak', f.x, f.y - 90, '#efe8ff', .5, { radius: 78 });
+}
+
+SCRIPTS['iaido'] = { update: step_iaido, noMelee: true, hitY: 56 };
+SCRIPTS['tea'] = { update: step_tea, skipCount: true, noMelee: true };
+SCRIPTS['cloak'] = { emit: emit_cloak, noMelee: true };
+/** 武士道: the lunge is over before the first cut. The cuts then creep forward. */
+export const BUSHIDO_LUNGE = .14;
+export const BUSHIDO_SPAN = W * .15;
+export const BUSHIDO_CREEP = 70;
+
+function step_bushido(_g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  const t0 = a.t - dt;
+  if (t0 < BUSHIDO_LUNGE) {
+    const span = Math.min(dt, BUSHIDO_LUNGE - t0);
+    f.x = clamp(f.x + f.facing * (BUSHIDO_SPAN / BUSHIDO_LUNGE) * span, X_MIN, X_MAX);
+  }
+  const cut0 = s.start;
+  const cut1 = s.duration - BUSHIDO_TAIL;
+  const lo = Math.max(t0, cut0);
+  const hi = Math.min(a.t, cut1);
+  if (hi <= lo || cut1 <= cut0) return;
+  f.x = clamp(f.x + f.facing * (BUSHIDO_CREEP / (cut1 - cut0)) * (hi - lo), X_MIN, X_MAX);
+}
+
+SCRIPTS['bushido'] = {
+  // 武士道: the seven cuts must not pay the bar back. The lock is the pose, then it drops.
+  cast(_g: FightGame, f: Fighter) {
+    const s = f.attack?.skill;
+    if (s) addMod(f, 'noGain', s.duration, { max: true });
+  },
+  update: step_bushido,
+};
 SCRIPTS['invade'] = Object.assign(SCRIPTS['invade'] ?? {}, { update: step_invade, customDash: true });
 SCRIPTS['onegai'] = Object.assign(SCRIPTS['onegai'] ?? {}, { update: step_onegai, noMelee: true });
 SCRIPTS['arc-kick'] = Object.assign(SCRIPTS['arc-kick'] ?? {}, { update: step_arc_kick });

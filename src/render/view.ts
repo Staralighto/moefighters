@@ -28,7 +28,7 @@ export function createView(data: CharacterData, images: ImageCache): FighterView
   const spec = data.view;
   const geometry = new GeometryView(data.color, buildFor(data));
   if (spec.kind === 'geometry') return geometry;
-  return new SpriteView(images, spec.common, spec.special, spec.height, geometry, spec.frenzy, spec.king, spec.kingScale, spec.world, spec.box, spec.specialScale, spec.lift);
+  return new SpriteView(images, spec.common, spec.special, spec.height, geometry, spec.frenzy, spec.king, spec.kingScale, spec.world, spec.box, spec.specialScale, spec.worldScale, spec.lift);
 }
 
 export function createViews(characters: CharacterData[], images: ImageCache): Map<string, FighterView> {

@@ -165,6 +165,7 @@ export class SpriteView implements FighterView {
     private readonly world?: string,
     private readonly box?: string,
     private readonly specialScale?: number,
+    private readonly worldScale?: number,
     private readonly lift = 0,
   ) {}
 
@@ -233,8 +234,11 @@ export class SpriteView implements FighterView {
       if (boxed) ctx.translate(0, BOX_SINK);
       // Undo the body offset baked into the cell so only the prop hangs off the fighter origin.
       if (!boxed && clip.ox) ctx.translate(-Math.round(clip.ox * h / CELL), 0);
-      // 必杀表单独放大时绕脚线，脚不动、身子向上长。一列自己的 scale 优先于整表。
-      const sheetScale = !boxed && clip.sheet === 'special' ? (clip.scale ?? this.specialScale) : undefined;
+      // 必杀表、超必杀表单独缩放时绕脚线，脚不动。一列自己的 scale 优先于整表。
+      const sheetScale = boxed ? undefined
+        : clip.sheet === 'special' ? (clip.scale ?? this.specialScale)
+        : clip.sheet === 'world' ? (clip.scale ?? this.worldScale)
+        : undefined;
       if (sheetScale) {
         const pivot = -h * FOOT_MARGIN / CELL;
         ctx.translate(0, pivot);

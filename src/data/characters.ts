@@ -60,7 +60,7 @@ export const ROSTER: CharacterData[] = [
       skill(0, 'light', '点拨'),
       skill(1, 'heavy', '拂踢'),
       skill(2, 'projectile', '回旋黄瓜', { fx: 'cucumber', speed: 420, size: 48, life: 2.4, brief: '飞到尽头折返', detail: '飞到尽头折返' }),
-      skill(3, 'heavy', '轮奏', { range: 188, start: .16, duration: .7, cd: 5, knock: 320, breakout: true, invuln: .8, brief: '横扫击退身前；出招即无敌，可解控', detail: '横扫击退身前；出招即无敌 0.8 秒，可解控' }),
+      skill(3, 'heavy', '轮奏', { range: 188, start: .16, duration: .7, cd: 5, knock: 320, breakout: true, brief: '横扫击退身前；出招即无敌，可解控', detail: '横扫击退身前；出招即无敌 0.8 秒，可解控' }),
       skill(4, 'projectile', '三音', {
         damage: 28, count: 3, interval: .16, speed: 520, size: 36, start: .2, duration: .85, fx: 'mutsumi-note',
         brief: '向前连发三枚', detail: '向前连发三枚',
@@ -164,7 +164,6 @@ export const ROSTER: CharacterData[] = [
         onActive: [
           { op: 'mod', kind: 'brace', time: 6, set: true },
           { op: 'fx', life: 1.2, dir: true },
-          { op: 'repel', range: 190, push: 500 },
         ],
         brief: '震开周围并霸体；可解控', detail: '震开周围敌人，6 秒内霸体、受伤降低 33%；可解控',
       }),
@@ -235,7 +234,7 @@ export const ROSTER: CharacterData[] = [
         brief: '原地消失重现；穿过一切', detail: '原地消失重现；穿过一切',
       }),
       skill(4, 'launch', '高踢腿', { damage: 24, range: 180, cd: 4.5 }),
-      skill(5, 'projectile', '抹茶大芭菲', {
+      skill(5, 'projectile', '抹茶芭菲', {
         cost: 130, damage: 14, count: 22, interval: .28, start: .45, duration: .85, life: 6.5, size: 56, knock: 90, fx: 'parfait',
         motion: 'fall', solid: false,
         brief: '放下大芭菲喷发熔岩；自身可自由行动', detail: '放下大芭菲，持续喷发抹茶熔岩；放下后自身可自由行动',
@@ -822,6 +821,46 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'eve', name: '若宫伊芙', title: '键盘 / 武士道', quote: '武士道！', color: '#DDBBFF',
+    bands: ['pastel-palettes'],
+    ...stats('rush'),
+    view: {
+      kind: 'sprite', common: '/sprites/eve/common.png', special: '/sprites/eve/special.png', height: 177,
+      world: '/sprites/eve/super.png',
+      specialScale: 0.95,
+      worldScale: 1.1,
+    },
+    skills: [
+      skill(0, 'light', '拨弦'),
+      skill(1, 'heavy', '横踢'),
+      skill(2, 'heavy', '剑道三连', {
+        damage: 20, range: 128, start: .12, duration: 1.55, cd: 5.5, knock: 100, fx: 'iaido',
+        brief: '点按三连；架势不能走，被打作废可挡跳',
+        detail: '点按三连斩每下 20 伤害；按住居合不能移动，松手或蓄满 0.7 秒放出三道剑气各 16 伤害，可格挡或跳过，被击中则作废',
+      }),
+      skill(3, 'grab', '请你喝茶', {
+        damage: 8, count: 3, range: 90, start: .18, duration: 1.7, cd: 7, drain: 10, knock: 0, fx: 'tea',
+        react: { kind: 'pin', stun: .3, holdStill: true },
+        brief: '前冲抓住钉住；三段削气，不击倒，抓空更久',
+        detail: '前冲抓住并钉住，三段各削去 10 气共 30 气，不击倒；跳起或离远则抓空且收招更长',
+      }),
+      skill(4, 'heavy', '忍法·隐身术', {
+        damage: 0, range: 0, start: .34, duration: .9, cd: 10, knock: 0, fx: 'cloak', breakout: true,
+        brief: '出招解控；隐身减伤，普攻少空，飞弹多空，其余必中',
+        detail: '出招即解控，可脱出硬直、击倒、定身与封锁；结印后半透明 5 秒，普攻 20% 打空，飞弹 90% 打空，抓投、必杀和带定身的招必中；同时霸体 5 秒，受伤降低 33%',
+      }),
+      skill(5, 'heavy', '武士道', {
+        cost: 120, damage: 24, count: 7, interval: .12, range: 190, start: .32, duration: 1.55,
+        knock: 40, hitbox: 'disc', hitAll: true, fx: 'bushido', gain: 0,
+        shake: 3, hitstop: .03,
+        react: { kind: 'stand', stun: .16 },
+        finale: { damage: 28, shake: 8, hitstop: .1, react: { kind: 'knockdown', vy: -280, knocked: .72 } },
+        brief: '前冲后边斩边移；末击击倒，期间无法回气',
+        detail: '先向前冲 15% 战场，斩击时再前移 70，七段乱斩并命中身周所有人，前六段各 24 伤害，末段 28 伤害并击倒、震屏和击停；期间无法获得气',
+      }),
+    ],
+  },
+  {
     id: 'mitake', name: '美竹兰', title: '主唱 / 挑染', quote: 'いつも通り、行こう。', color: '#EE0022',
     bands: ['afterglow'],
     ...stats('rush'),
@@ -853,7 +892,6 @@ export const ROSTER: CharacterData[] = [
         holdEndure: true,
         onActive: [
           { op: 'fx', life: .55, radius: 250, dir: true },
-          { op: 'repel', range: 250, push: 620, stun: .3 },
           { op: 'mod', kind: 'brace', time: 5 },
         ],
         brief: '无伤害震开并解控；随后霸体',
