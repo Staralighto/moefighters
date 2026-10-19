@@ -296,7 +296,10 @@ export class Link {
     this.sendFastText(typeof msg === 'string' ? msg : JSON.stringify(msg));
   }
 
-  /** Already-encoded frame. Dev builds can drop or delay it through window.__netChaos (the E2E run does). */
+  /** Already-encoded frame. Dev builds can drop or delay it through window.__netChaos (the E2E run does).
+   *  `delay` / `jitter` are one-way milliseconds before the bytes reach the socket. Production builds
+   *  ignore the hook. scripts/latency-recording.mjs sets the same values on both peers when the kernel
+   *  has no sch_netem, so a relay-like RTT is about 2×delay plus the mean jitter. */
   sendFastText(text: string): void {
     const ch = this.fast;
     if (!ch || ch.readyState !== 'open' || ch.bufferedAmount > 65536) return;
