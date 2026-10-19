@@ -1,0 +1,14 @@
+{
+  "envId": "moefighters-d7gnzc76zf4101f31",
+  "functionRoot": "cloudbase/functions/mailbox",
+  "functions": [
+    {
+      "name": "handshake",
+      "timeout": 5,
+      "memorySize": 256,
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "installDependency": true
+    }
+  ]
+}

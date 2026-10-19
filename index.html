@@ -93,6 +93,7 @@
     <div class="fighter-preview left" id="preview-left" data-slot="0">
       <div class="slot-head">
         <span class="side-label" id="p1tag">1P</span>
+        <small class="net-codename" id="p1code" hidden></small>
         <div class="slot-control" id="control-left" data-lead="0" role="group" aria-label="1P 控制">
           <button type="button" class="icon-btn" data-who="player" aria-label="玩家"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-user"/></svg><span class="btn-label">玩家</span></button>
           <button type="button" class="icon-btn" data-who="cpu" aria-label="人机"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-robot"/></svg><span class="btn-label">人机</span></button>
@@ -116,13 +117,46 @@
     <div class="fighter-preview right" id="preview-right" data-slot="1">
       <div class="slot-head">
         <span class="side-label p2" id="p2tag">2P</span>
+        <small class="net-codename" id="p2code" hidden></small>
         <div class="slot-control" id="control-right" data-lead="1" role="group" aria-label="右侧控制">
           <button type="button" class="icon-btn" data-who="player" aria-label="玩家"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-user"/></svg><span class="btn-label">玩家</span></button>
           <button type="button" class="icon-btn" data-who="cpu" aria-label="人机"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-robot"/></svg><span class="btn-label">人机</span></button>
         </div>
       </div>
       <canvas id="portrait2" width="240" height="290" aria-label="右侧角色预览"></canvas>
+      <div class="net-mystery-badge" id="net-mystery-badge" aria-hidden="true">
+        <svg viewBox="0 0 256 256"><use href="#i-question"/></svg>
+      </div>
       <h1 id="name2"></h1>
+      <span id="net-status" hidden></span>
+      <div class="net-slot-card" id="net-slot-card" hidden>
+        <div class="net-card-view" id="net-card-idle" hidden></div>
+
+        <div class="net-card-view" id="net-card-active" hidden>
+          <div class="net-badge" id="net-active-badge">房间号</div>
+          <div class="net-code-box" id="net-code-box">
+            <span class="net-code-num" id="net-code-text">----</span>
+            <button type="button" class="net-copy-btn" id="net-copy-btn" title="复制房间号">复制</button>
+          </div>
+          <div class="net-step-row">
+            <span class="net-pulse-dot" aria-hidden="true"></span>
+            <span class="net-step-desc" id="net-step-desc">正在建立连接…</span>
+          </div>
+          <div class="net-timer-row" id="net-timer">00:00</div>
+          <div class="net-note-text" id="net-wait-note" hidden></div>
+        </div>
+
+        <div class="net-card-view" id="net-card-fail" hidden>
+          <div class="net-fail-badge">⚠ 连接未完成</div>
+          <div class="net-fail-desc" id="net-fail-desc">房间号无效</div>
+          <div class="net-fail-btns">
+            <button type="button" class="net-fail-btn retry" id="net-retry-btn">重试</button>
+            <button type="button" class="net-fail-btn back" id="net-back-btn">返回</button>
+          </div>
+        </div>
+
+        <ol id="net-steps" class="net-steps-compat" hidden></ol>
+      </div>
     </div>
     <div class="fighter-preview" id="preview-enemy2" data-slot="3" hidden>
       <div class="slot-head">
@@ -142,20 +176,35 @@
   </div>
   </div>
 
-  <div class="action-bar">
-    <div class="action-mode seg" role="group" aria-label="对战模式">
-      <button type="button" data-mode="cpu">1V1</button>
-      <button type="button" data-mode="team">2V2</button>
-      <button type="button" data-mode="challenge">挑战</button>
-      <button type="button" data-mode="training">训练场</button>
-    </div>
-    <div class="action-foot">
-      <div class="action-options">
-        <span class="seg" id="difficulty-row" role="group" aria-label="人机强度"><span>人机强度</span><button type="button" data-difficulty="0">轻松</button><button type="button" class="active" data-difficulty="1">标准</button><button type="button" data-difficulty="2">大师</button></span>
-        <span class="seg" id="challenge-kind-row" role="group" aria-label="挑战类型" hidden><span>挑战类型</span><button type="button" data-challenge-kind="climb">无尽闯关</button><button type="button" data-challenge-kind="brawl">无尽激战</button></span>
-        <button id="abandon" type="button" hidden>放弃本次挑战</button>
+  <div class="lobby-actions">
+    <div class="action-bar">
+      <div class="action-mode seg" role="group" aria-label="对战模式">
+        <button type="button" data-mode="cpu">1V1</button>
+        <button type="button" data-mode="team">2V2</button>
+        <button type="button" data-mode="challenge">挑战</button>
+        <button type="button" data-mode="training">训练场</button>
+        <button type="button" data-place="net" id="net-tab" hidden>联机</button>
       </div>
-      <button class="start action-start" id="start">准备好了，开打！ <span>↗</span></button>
+      <div class="action-foot" id="local-actions">
+        <div class="action-options">
+          <span class="seg" id="difficulty-row" role="group" aria-label="人机强度"><span>人机强度</span><button type="button" data-difficulty="0">轻松</button><button type="button" class="active" data-difficulty="1">标准</button><button type="button" data-difficulty="2">大师</button></span>
+          <span class="seg" id="challenge-kind-row" role="group" aria-label="挑战类型" hidden><span>挑战类型</span><button type="button" data-challenge-kind="climb">无尽闯关</button><button type="button" data-challenge-kind="brawl">无尽激战</button></span>
+          <button id="abandon" type="button" hidden>放弃本次挑战</button>
+        </div>
+        <button class="start action-start" id="start">准备好了，开打！ <span>↗</span></button>
+      </div>
+      <div class="net-actions-foot" id="net-actions" hidden>
+        <div class="net-btns-grid" id="net-btns-idle">
+          <button type="button" class="net-action-btn" id="net-host">创建房间</button>
+          <button type="button" class="net-action-btn" id="net-join-btn">加入房间</button>
+          <button type="button" class="net-action-btn primary" id="net-match">快速匹配 <span>↗</span></button>
+        </div>
+        <div class="net-btns-ready" id="net-btns-ready" hidden>
+          <button type="button" class="net-action-btn" id="net-leave">退出房间</button>
+          <button type="button" class="net-action-btn primary" id="net-ready"><span id="net-ready-text">我准备好了</span><span class="net-ready-cd" id="net-ready-cd">(10s)</span></button>
+        </div>
+        <button type="button" class="net-cancel" id="net-cancel" hidden>取消</button>
+      </div>
     </div>
   </div>
 
@@ -272,6 +321,23 @@
   <p>选中的卡保留到本局结束，同名卡叠加，叠满上限后不再出现；每关开始前再选一张</p>
   <div class="buff-cards" id="buff-cards"></div>
 </div>
+
+<dialog id="net-join-dialog">
+  <div class="dialog-head"><h2>加入房间</h2><button id="close-net-join" type="button" aria-label="关闭">×</button></div>
+  <p class="net-dialog-desc">输入对手的 4 位房间号即可直连对战：</p>
+  <div class="net-dialog-code-row">
+    <span class="net-cells" id="net-dialog-cells">
+      <input maxlength="1" placeholder="·" aria-label="房间号第1位" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text">
+      <input maxlength="1" placeholder="·" aria-label="房间号第2位" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text">
+      <input maxlength="1" placeholder="·" aria-label="房间号第3位" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text">
+      <input maxlength="1" placeholder="·" aria-label="房间号第4位" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text">
+    </span>
+  </div>
+  <div class="quit-actions">
+    <button id="cancel-net-join" type="button">取消</button>
+    <button id="net-join" type="button" class="net-dialog-submit" disabled>加入房间</button>
+  </div>
+</dialog>
 
 <dialog id="quit-dialog">
   <div class="dialog-head"><h2 id="quit-title">结束本次挑战？</h2><button id="quit-close" aria-label="关闭">×</button></div>
@@ -412,6 +478,38 @@
       </div>
     </div>
   </section>
+  <section class="setting-group" id="set-online-group">
+    <h3 class="setting-title">联机</h3>
+    <div class="setting-row">
+      <b id="set-codename">联机代号</b>
+      <button type="button" class="codename-open-btn" id="open-codename" aria-labelledby="set-codename set-codename-value">
+        <span class="pick-value" id="set-codename-value">修改代号</span>
+      </button>
+    </div>
+  </section>
+</dialog>
+
+<dialog id="codename-dialog">
+  <div class="dialog-head"><h2>联机代号</h2><button id="close-codename" type="button" aria-label="关闭">×</button></div>
+  <div class="codename-preview"><b id="codename-preview-text"></b></div>
+  <div class="setting-row">
+    <b id="codename-adj-label">描述词</b>
+    <button type="button" class="pick-btn" popovertarget="codename-adj-menu" aria-haspopup="listbox" aria-expanded="false" aria-controls="codename-adj-menu" aria-labelledby="codename-adj-label codename-adj-value">
+      <span class="pick-value" id="codename-adj-value"></span>
+    </button>
+    <div id="codename-adj-menu" class="pick-menu" popover role="listbox" aria-labelledby="codename-adj-label"></div>
+  </div>
+  <div class="setting-row">
+    <b id="codename-char-label">角色名</b>
+    <button type="button" class="pick-btn" popovertarget="codename-char-menu" aria-haspopup="listbox" aria-expanded="false" aria-controls="codename-char-menu" aria-labelledby="codename-char-label codename-char-value">
+      <span class="pick-value" id="codename-char-value"></span>
+    </button>
+    <div id="codename-char-menu" class="pick-menu" popover role="listbox" aria-labelledby="codename-char-label"></div>
+  </div>
+  <div class="setting-row">
+    <b>数字代号</b>
+    <span class="codename-num-lock" id="codename-num-lock">#0000</span>
+  </div>
 </dialog>
 
 <script type="module" src="/src/main.ts"></script>

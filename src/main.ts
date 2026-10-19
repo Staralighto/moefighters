@@ -1,4 +1,5 @@
-import { PLAYABLE, guestsFor } from './data/characters.ts';
+import { PLAYABLE, ROSTER_BY_ID, guestsFor } from './data/characters.ts';
+import { STAGES } from './data/stages.ts';
 import type { CharacterData, StageData } from './data/types.ts';
 import { FightGame, MINION_BAND } from './game/game.ts';
 import { KeyboardInput, TouchInput } from './game/input.ts';
@@ -16,6 +17,11 @@ import { applyTouchDevice, watchTouch } from './ui/device.ts';
 import { applyTouchLayout, bindBattleFrame } from './ui/touchLayout.ts';
 import { bindSwipeGuard } from './ui/swipeBack.ts';
 import { bindPick, bindTip, setTrainPrefs, trainPrefs } from './ui/settings.ts';
+import { bindOnline, CODENAME_ADJS, CODENAME_CHARS, ensureCodename, formatCodename, setCodenameWords, type NetPlan } from './ui/online.ts';
+import { beginNet, endNet, keepLink, netAfter, netAudio, netBefore, netEpoch, netHidden, netLock, netLockFrame, netLog, netRematch, noteEnd, type NetEnd } from './net/play.ts';
+import type { Link } from './net/rtc.ts';
+import { LocalPad } from './net/localPad.ts';
+import { Rng } from './net/lock.ts';
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
 const sfx = new Sfx();
@@ -23,6 +29,8 @@ const images: ImageCache = new Map();
 
 let game: FightGame | null = null;
 let renderer: Renderer | null = null;
+/* Dev builds only: the online E2E run reads the live match from here. */
+if (import.meta.env.DEV) (window as unknown as { __mf?: unknown }).__mf = { game: () => game, lock: () => netLock(), log: () => netLog };
 let raf = 0;
 let lastSetup: MatchSetup | null = null;
 /** Live endless run of whichever sub-mode is being played: set when a challenge fight starts,
@@ -30,9 +38,12 @@ let lastSetup: MatchSetup | null = null;
     storage only — holding it here would make other modes' end screens read as "in challenge". */
 let challenge: ChallengeRun | null = null;
 
-const input = new KeyboardInput(() => game);
+/** Lockstep: inputs write to this device's pad, which the session samples; the sim never sees a raw key. */
+let localPad: LocalPad | null = null;
+const inputGame = (): FightGame | null => (game?.netRole === 'lock' && localPad ? localPad as unknown as FightGame : game);
+const input = new KeyboardInput(inputGame);
 input.attach();
-new TouchInput(() => game, $('touchpad')).attach();
+new TouchInput(inputGame, $('touchpad')).attach();
 applyTouchLayout();
 bindBattleFrame();
 bindSwipeGuard();
@@ -176,6 +187,24 @@ const select = new SelectScreen(PLAYABLE, previewViews, setup => {
 });
 select.liteStage = slowLink();
 select.mount();
+let pendingLink: Link | null = null;
+bindOnline(() => select.onlinePick(), (role, hostChar, guestChar, stageId, link, plan: NetPlan) => {
+  const host = ROSTER_BY_ID.get(hostChar);
+  const guest = ROSTER_BY_ID.get(guestChar);
+  const stage = STAGES.find(s => s.id === stageId);
+  if (!host || !guest || !stage) { link.close(); return; }
+  pendingLink = link;
+  void startGame({
+    characters: [host, guest],
+    mode: 'cpu',
+    difficulty: 1,
+    // Lockstep runs the full sim on both sides; the snapshot guest locally pre-animates 2P on 1P keys.
+    controllers: role === 'host' || plan.mode === 'lock' ? [0, 1] : [null, 0],
+    stage,
+    online: role,
+    lock: plan.mode === 'lock' ? { seed: plan.seed } : undefined,
+  });
+}, on => select.setNetLocked(on), (charId, codename) => select.setOnlinePeer(charId, codename));
 {
   const idles = portraitOf(select.cast());
   const stageSrc = select.stage.image && select.liteStage ? stageThumbSrc(select.stage.image) : select.stage.image;
@@ -269,18 +298,27 @@ async function startGame(setup: MatchSetup): Promise<void> {
   document.body.classList.add('in-battle');
   hideEnd();
   hideBuffPicker();
-  $('battle-mode').textContent = setup.mode === 'challenge'
+  $('battle-mode').textContent = setup.online
+    ? '联机 · ' + setup.stage.name
+    : setup.mode === 'challenge'
     ? challengeName(setup.challengeKind ?? 'brawl') + ' · 第 ' + setup.stageNumber + ' 关'
     : matchName(setup) + ' · ' + setup.stage.name;
   setRoundLabel(setup.mode === 'challenge' ? '第 ' + setup.stageNumber + ' 关' : '');
-  setBattleGuide(setup.characters, setup.controllers);
+  setBattleGuide(setup.characters, setup.online === 'guest' ? [null, 0] : setup.controllers);
   setIconBtn($('pause'), '暂停 ESC');
   $('resume').hidden = true;
   $('pause-quit').hidden = true;
   $('wide-exit').hidden = true;
   setIconBtn($('rematch'), '再来一局 ↻');
+  $('rematch').hidden = false;
   setIconBtn($('reselect'), setup.mode === 'challenge' ? '返回选人' : '重新选人');
 
+  const lockRng = setup.lock ? new Rng(setup.lock.seed) : null;
+  // Lockstep plays its own sounds; a resync replay runs with them off, so nothing is heard twice.
+  // A fallback mid-match turns this host into a snapshot host, so its sounds also feed the guest.
+  let muted = false;
+  const hostAudio = netAudio(sfx);
+  const lockSound = setup.lock ? { play: (k: Parameters<typeof sfx.play>[0]) => { if (muted) return; if (game?.netRole === 'host') hostAudio.play(k); else sfx.play(k); } } : null;
   game = new FightGame(setup.characters, {
     mode: setup.mode,
     difficulty: setup.difficulty,
@@ -289,10 +327,31 @@ async function startGame(setup: MatchSetup): Promise<void> {
     roundsToWin: setup.mode === 'challenge' ? 1 : undefined,
     stage: setup.stage,
     training: trainPrefs(),
-    audio: sfx,
+    random: lockRng?.next,
+    audio: lockSound ?? (setup.online === 'host' ? netAudio(sfx) : sfx),
+    netRole: setup.lock ? 'lock' : setup.online,
     onHUD: updateHUD,
     onBanner: showBanner,
-    onEnd: onFightEnd,
+    onEnd: (title, stats) => {
+      if (!setup.online || !game) { onFightEnd(title, stats); return; }
+      if (game.netRole === 'lock') {
+        // Both sides ran the match: each says it from its own seat.
+        const me = setup.online === 'host' ? 0 : 1;
+        const f = game.fighters[me];
+        noteEnd();
+        showEnd(game.winnerTeam === me ? '你赢了' : '你输了',
+          f ? `${game.wins[me]} : ${game.wins[1 - me]} · ${f.data.name} 最高 ${game.maxCombo[me]} 连击 · ${game.totalHits[f.id]} 次命中` : stats);
+        return;
+      }
+      // Mirror matches share a name: say who won from this seat. The guest reads its own line.
+      const g = game;
+      const guest = g.fighters[1];
+      const guestStats = guest ? `${g.wins[1]} : ${g.wins[0]} · ${guest.data.name} 最高 ${g.maxCombo[1]} 连击 · ${g.totalHits[guest.id]} 次命中` : stats;
+      const end: NetEnd = { title, stats, win: g.winnerTeam, guestStats };
+      g.netEnd = end;
+      noteEnd();
+      showEnd(g.winnerTeam === 0 ? '你赢了' : g.winnerTeam === 1 ? '你输了' : title, stats);
+    },
     onPause: paused => {
       setIconBtn($('pause'), paused ? '继续 ESC' : '暂停 ESC');
       $('resume').hidden = !paused;
@@ -304,6 +363,38 @@ async function startGame(setup: MatchSetup): Promise<void> {
       $('deck-label').textContent = deck;
     },
   });
+  const wire = pendingLink;
+  pendingLink = null;
+  if (setup.online && wire) {
+    const label = '联机 · ' + setup.stage.name;
+    beginNet(setup.online, wire, {
+      hud: updateHUD,
+      banner: showBanner,
+      end: (title, stats) => { showEnd(title, stats); if (title === '对手已离开' || title === '连接已断开') $('rematch').hidden = true; },
+      quality: text => { $('battle-mode').textContent = text ? label + ' · ' + text : label; },
+      again: (state, seed) => {
+        if (state === 'go') { rematchOnline(seed); return; }
+        setIconBtn($('rematch'), state === 'wait' ? '等待对手…' : '对手想再来一局 ↻');
+      },
+      fallback: () => {
+        // The rest of the match is host snapshots with guest local pre-animation.
+        if (!game) return;
+        game.netRole = setup.online === 'host' ? 'host' : 'guest';
+        if (game.netRole === 'guest') {
+          if (game.fighters[0]) game.fighters[0].controller = null;
+          if (game.fighters[1]) game.fighters[1].controller = 0;
+        }
+        localPad = null;
+      },
+    }, setup.match ?? 0, setup.lock && lockRng && game ? {
+      g: game,
+      rng: lockRng,
+      sample: () => localPad?.sample(document.body.classList.contains('touch')) ?? { bits: 0, taps: [0, 0, 0, 0, 0, 0, 0, 0] },
+      mute: on => { muted = on; },
+    } : undefined);
+  }
+  localPad = setup.lock && game ? new LocalPad(game) : null;
+  hostTicker(setup.online === 'host' || !!setup.lock);
   // previewViews covers the whole roster: a 诗超绊 bandmate borrows their sheets mid-match.
   renderer = new Renderer($('game') as HTMLCanvasElement, previewViews, setup.stage, images);
   lastNow = gapSum = gapCount = 0;
@@ -376,13 +467,18 @@ function frame(now: number): void {
   if (!game || !renderer) return;
   const gap = lastNow ? now - lastNow : 0;
   lastNow = now;
-  game.advance(now);
-  if (gap > 0 && gap < 250 && !game.paused && game.phase === 'fight') {
-    gapSum += gap;
-    if (++gapCount >= 90) {
-      avgGap = gapSum / gapCount;
-      gapSum = gapCount = 0;
-      if (!isLiteFx() && shouldGoLite(avgGap, document.body.classList.contains('touch'))) setLiteFx(true);
+  if (game.netRole === 'lock') netLockFrame(now);
+  else if (game.netRole === 'guest') netAfter(game, now);
+  else {
+    if (game.netRole === 'host') hostTick(now);
+    else game.advance(now);
+    if (gap > 0 && gap < 250 && !game.paused && game.phase === 'fight') {
+      gapSum += gap;
+      if (++gapCount >= 90) {
+        avgGap = gapSum / gapCount;
+        gapSum = gapCount = 0;
+        if (!isLiteFx() && shouldGoLite(avgGap, document.body.classList.contains('touch'))) setLiteFx(true);
+      }
     }
   }
   renderer.draw(game);
@@ -390,8 +486,57 @@ function frame(now: number): void {
   raf = requestAnimationFrame(frame);
 }
 
+/** Online host: fold the guest in, step, publish. */
+function hostTick(now: number): void {
+  if (!game || game.netRole !== 'host') return;
+  netBefore(game);
+  game.advance(now);
+  netAfter(game, now);
+}
+
+/* A hidden tab gets no animation frames and its main-thread timers are throttled to about once a
+   second. A dedicated worker's timer is not, so while the host tab is hidden the worker's beat
+   steps the match (no drawing). Visible again, requestAnimationFrame takes back over. */
+let ticker: Worker | null = null;
+function hostTicker(on: boolean): void {
+  if (!on) { ticker?.terminate(); ticker = null; return; }
+  if (ticker || typeof Worker === 'undefined') return;
+  try {
+    const src = 'setInterval(() => postMessage(0), 16);';
+    ticker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+    ticker.onmessage = () => {
+      if (!document.hidden || !game) return;
+      if (game.netRole === 'lock') netLockFrame(performance.now());
+      else hostTick(performance.now());
+    };
+  } catch {
+    ticker = null;
+  }
+}
+
+/** Both sides asked: the same link carries the next match, same picks, counted up. */
+function rematchOnline(seed?: number): void {
+  const setup = lastSetup;
+  const match = netEpoch() + 1;
+  const wire = keepLink();
+  if (!setup?.online || !wire) return;
+  pendingLink = wire;
+  void startGame({ ...setup, match, lock: setup.lock && seed !== undefined ? { seed } : setup.lock });
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) netHidden(); });
+// Closing or reloading the tab says bye on the reliable channel, so the other side reads 对手已离开 at once.
+window.addEventListener('pagehide', () => { if (game?.netRole) endNet(); });
+
+/** The pause overlay is up: a real pause offline, just the menu online. */
+function menuUp(): boolean {
+  return !!game && (game.paused || game.netMenu);
+}
+
 /** Leave the battle screen for the select one; any waiting run stays parked, storage untouched. */
 function restBack(): void {
+  endNet();
+  hostTicker(false);
+  pendingLink = null;
   cancelAnimationFrame(raf);
   game = null;
   renderer = null;
@@ -450,6 +595,7 @@ $('rematch').onclick = () => {
     });
     return;
   }
+  if (game?.netRole) { netRematch(); return; }
   if (lastSetup) void startGame(lastSetup);
 };
 $('pause').onclick = () => game?.togglePause();
@@ -467,11 +613,11 @@ function showLayoutExit(paused: boolean): void {
 $('fullscreen').onclick = () => {
   if (document.body.classList.contains('touch')) {
     document.body.classList.add('turned');
-    if (game?.paused) game.togglePause(false);
+    if (menuUp()) game?.togglePause(false);
     return;
   }
   document.body.classList.add('wide');
-  if (game?.paused) showLayoutExit(true);
+  if (menuUp()) showLayoutExit(true);
 };
 $('wide-exit').onclick = () => {
   document.body.classList.remove('wide', 'turned');
@@ -479,7 +625,7 @@ $('wide-exit').onclick = () => {
 };
 matchMedia('(orientation: landscape)').addEventListener('change', e => {
   if (e.matches) document.body.classList.remove('turned');
-  if (game?.paused) showLayoutExit(true);
+  if (menuUp()) showLayoutExit(true);
 });
 // 手机点计时暂停；桌面宽屏同理——顶栏藏了，这是鼠标开暂停浮层的入口。
 // 按下即停，跟摇杆和技能键一样。横屏会吃掉 touchmove，等松开的 click 经常到不了。
@@ -488,7 +634,7 @@ document.querySelector<HTMLElement>('.timer')?.addEventListener('pointerdown', e
   const body = document.body;
   if (body.classList.contains('touch') || body.classList.contains('wide')) game?.togglePause();
 });
-$('resume').onclick = () => { if (game?.paused) game.togglePause(false); };
+$('resume').onclick = () => { if (menuUp()) game?.togglePause(false); };
 $('pause-quit').onclick = battleExit;
 
 const quitDialog = $('quit-dialog') as HTMLDialogElement;
@@ -513,7 +659,7 @@ function openDialog(dialog: HTMLDialogElement): void {
   lockScroll();
   dialog.showModal();
 }
-for (const dialog of [$('quit-dialog'), $('help-dialog'), $('settings-dialog')] as HTMLDialogElement[]) {
+for (const dialog of [$('quit-dialog'), $('help-dialog'), $('settings-dialog'), $('codename-dialog')] as HTMLDialogElement[]) {
   dialog.addEventListener('close', unlockScroll);
 }
 
@@ -612,8 +758,44 @@ document.addEventListener('keydown', e => {
 
 /* 设置弹窗目前只有名册显示。战斗中打开会像帮助弹窗一样先暂停；ESC 与原生 dialog 行为一致。 */
 const settingsDialog = $('settings-dialog') as HTMLDialogElement;
+const codenameDialog = $('codename-dialog') as HTMLDialogElement;
+function syncCodenameUi(): void {
+  const cn = ensureCodename();
+  const full = formatCodename(cn);
+  $('set-codename-value').textContent = full;
+  $('codename-preview-text').textContent = full;
+  $('codename-adj-value').textContent = cn.adj;
+  $('codename-char-value').textContent = cn.charName;
+  $('codename-num-lock').textContent = '#' + cn.num;
+}
+$('codename-adj-menu').innerHTML = CODENAME_ADJS.map(a => `<button type="button" role="option" data-value="${a}">${a}</button>`).join('');
+$('codename-char-menu').innerHTML = CODENAME_CHARS.map(n => `<button type="button" role="option" data-value="${n}">${n}</button>`).join('');
+syncCodenameUi();
+bindPick('codename-adj-menu', {
+  get: () => ensureCodename().adj,
+  set: value => {
+    setCodenameWords(value, ensureCodename().charName);
+    syncCodenameUi();
+    select.refresh();
+  },
+});
+bindPick('codename-char-menu', {
+  get: () => ensureCodename().charName,
+  set: value => {
+    setCodenameWords(ensureCodename().adj, value);
+    syncCodenameUi();
+    select.refresh();
+  },
+});
+$('open-codename').onclick = () => {
+  syncCodenameUi();
+  openDialog(codenameDialog);
+};
+$('close-codename').onclick = () => codenameDialog.close();
+codenameDialog.addEventListener('click', e => { if (e.target === codenameDialog) codenameDialog.close(); });
 $('settings').onclick = () => {
   syncFightShuffleLock();
+  syncCodenameUi();
   if (game && !game.paused) game.togglePause(true);
   openDialog(settingsDialog);
 };

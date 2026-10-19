@@ -16,6 +16,7 @@
 | 招式、受击、buff、弹道 | `docs/public/moves.md` | `npm run check` |
 | 安全排查、密钥泄露、准备公开仓库 | `docs/SECURITY_AUDIT.md` | 文档内扫描命令 + `npm run check` |
 | 构建或上传 Bilibili Toy 包 | `docs/toy-release.md` | 文档内的路径核对 + `npm run check` |
+| 联机信令、CloudBase、TURN、房间匹配 | `docs/online-security.md` | `node cloudbase/functions/mailbox/local.js --check` + `npm run check` |
 
 ## 通用
 

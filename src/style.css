@@ -1,4 +1,5 @@
 :root {
+  color-scheme: dark;
   --bg: #111119;
   --panel: #1a1826;
   --panel-2: #221f33;
@@ -11,6 +12,14 @@
   --font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
 }
 * { box-sizing: border-box; }
+/* 全站默认滚动条：走深色面板与描边 token，所有滚动容器（页面、弹窗、下拉菜单）自动继承，各面板不自制皮肤。 */
+*::-webkit-scrollbar { width: 6px; height: 6px; }
+*::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; }
+*::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+}
 html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--font); }
 /* These locks are touch-only. A mouse can still select text, zoom, and use the back button.
    body.touch is the capability class from device.ts. Vertical pan stays so the roster still
@@ -46,6 +55,264 @@ kbd { font: 700 13px/1 var(--font); background: #0d0c14; border: 1px solid var(-
 .seg { display: flex; align-items: center; gap: 2px; padding: 3px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
 .seg > span { color: var(--muted); font-size: 13px; padding: 0 8px 0 6px; white-space: nowrap; }
 .seg button { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: transparent; border-color: transparent; padding: .4em .8em; font-weight: 700; }
+.seg input { flex: 1 1 4.2em; min-width: 4.2em; max-width: 6.5em; background: #0d0c14; border: 1px solid var(--line); border-radius: 8px; padding: .4em .4em; font: inherit; font-weight: 700; color: inherit; text-align: center; text-transform: uppercase; }
+.seg input::placeholder { color: var(--muted); text-transform: none; font-weight: 400; }
+.lobby-actions { display: grid; gap: 10px; margin: 12px 0 16px; }
+/* Net actions: 3 equal-width buttons across remaining columns with zero layout shift */
+.net-actions-foot {
+  grid-column: 2 / -1;
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: stretch;
+  min-width: 0;
+  width: 100%;
+}
+.net-btns-grid {
+  grid-area: 1 / 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+}
+.net-btns-ready {
+  grid-area: 1 / 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+}
+.net-ready-cd {
+  display: inline-block;
+  min-width: 4.5ch;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.net-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  padding: .6em .4em;
+  font-size: 16px;
+  font-weight: 700;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  box-sizing: border-box;
+  text-align: center;
+  transition: border-color .15s, background .15s;
+}
+.net-action-btn:hover {
+  border-color: var(--muted);
+  background: var(--panel-2);
+}
+.net-action-btn.primary {
+  background: var(--p1);
+  color: #14140c;
+  border-color: var(--p1);
+  font-weight: 800;
+}
+.net-action-btn.primary:hover {
+  filter: brightness(1.08);
+}
+.net-action-btn.primary span {
+  font-weight: 900;
+  font-size: 1.1em;
+}
+.net-action-btn:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+.net-cancel {
+  grid-area: 1 / 1;
+  width: 100%;
+  font-size: 16px;
+  font-weight: 700;
+  padding: .6em .7em;
+  text-align: center;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+.net-cancel:hover {
+  border-color: var(--muted);
+}
+
+/* Join room modal dialog */
+#net-join-dialog {
+  width: min(380px, calc(100% - 2rem));
+  max-width: min(380px, calc(100% - 2rem));
+  padding: 20px 24px;
+}
+.net-dialog-desc {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 12px 0 16px;
+  text-align: center;
+}
+.net-dialog-code-row {
+  display: flex;
+  justify-content: center;
+  margin: 8px 0 20px;
+}
+.net-dialog-code-row .net-cells {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  max-width: 260px;
+  justify-content: center;
+}
+.net-dialog-code-row .net-cells input {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 54px;
+  padding: 0;
+  background: #0d0c14;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 24px;
+  font-weight: 900;
+  font-family: monospace, var(--font);
+  color: var(--cyan);
+  text-align: center;
+  text-transform: uppercase;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.net-dialog-code-row .net-cells input:focus {
+  border-color: var(--cyan);
+  outline: none;
+}
+.net-dialog-code-row .net-cells input::placeholder {
+  color: var(--line);
+  font-weight: 900;
+}
+.net-dialog-submit {
+  background: var(--p1);
+  color: #14140c;
+  font-weight: 800;
+  border: 1px solid var(--p1);
+  border-radius: 8px;
+  padding: .5em 1.2em;
+  font-size: 14px;
+  cursor: pointer;
+}
+.net-dialog-submit:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+.net-dialog-submit:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+/* Opponent slot net silhouette & frameless overlay (stacked on grid-area: art) */
+.select-stage.net { grid-template-columns: 1fr 1fr; }
+.select-stage.net #preview-left,
+.select-stage.net #preview-right { grid-column: auto; grid-area: auto; }
+.select-stage.net #preview-right { cursor: default; }
+.select-stage.net #preview-right canvas {
+  filter: brightness(0) invert(0.46) opacity(0.78);
+  pointer-events: none;
+  transition: opacity .2s;
+}
+.select-stage.net #preview-right:has(#net-slot-card:not([hidden])) canvas {
+  opacity: 0.42;
+}
+.select-stage.net #preview-right h1 {
+  color: var(--muted);
+}
+.select-stage.net.net-ready #preview-right canvas {
+  filter: none;
+  opacity: 1;
+}
+.select-stage.net.net-ready #preview-right h1 {
+  color: var(--text);
+}
+.net-mystery-badge {
+  display: none;
+  grid-area: art;
+  align-self: center;
+  justify-self: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: rgba(13, 12, 20, 0.7);
+  backdrop-filter: blur(4px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55), inset 0 0 0 1px var(--line);
+  color: var(--text);
+  place-items: center;
+  pointer-events: none;
+  z-index: 2;
+  animation: net-mystery-pulse 2.4s ease-in-out infinite;
+}
+.select-stage.net #net-mystery-badge {
+  display: grid;
+}
+.net-mystery-badge svg {
+  width: 40px;
+  height: 40px;
+  display: block;
+}
+@keyframes net-mystery-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .net-mystery-badge { animation: none; }
+}
+.net-slot-card {
+  grid-area: art;
+  align-self: center;
+  justify-self: center;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: min(240px, 100%);
+  padding: 8px;
+  background: transparent;
+  border: 0;
+  box-sizing: border-box;
+  text-align: center;
+  user-select: none;
+  text-shadow: 0 2px 6px #000, 0 0 12px #000;
+}
+.net-card-view { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 100%; }
+.net-badge { font-size: 12px; font-weight: 800; color: var(--p1); letter-spacing: .1em; text-transform: uppercase; }
+.net-code-box { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 2px 0; }
+.net-code-num { font: 900 28px/1 monospace, var(--font); color: var(--cyan); letter-spacing: 0.16em; text-shadow: 0 2px 8px #000, 0 0 16px #000; }
+.net-copy-btn { font-size: 12px; font-weight: 700; padding: .3em .75em; border-radius: 6px; background: rgba(13, 12, 20, 0.78); border: 1px solid var(--line); color: var(--text); cursor: pointer; text-shadow: none; }
+.net-copy-btn:hover { border-color: var(--muted); }
+.net-step-row { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; font-weight: 800; color: var(--text); }
+.net-pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--p1); box-shadow: 0 0 8px var(--p1); animation: net-pulse 1.4s ease-in-out infinite; }
+@keyframes net-pulse { 0%, 100% { opacity: .35; transform: scale(.85); } 50% { opacity: 1; transform: scale(1.15); } }
+.net-timer-row { font-size: 13px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.net-note-text { font-size: 12px; color: var(--muted); }
+.net-fail-badge { font-size: 14px; font-weight: 800; color: #ff8585; }
+.net-fail-desc { font-size: 13px; font-weight: 700; color: var(--text); max-width: 92%; }
+.net-fail-btns { display: flex; gap: 8px; margin-top: 6px; text-shadow: none; }
+.net-fail-btn { font-size: 13px; font-weight: 700; padding: .4em 1em; border-radius: 8px; background: rgba(13, 12, 20, 0.85); border: 1px solid var(--line); color: var(--text); cursor: pointer; }
+.net-fail-btn.retry { background: var(--p1); color: #14140c; border-color: var(--p1); }
+.net-steps-compat { display: none; }
+
+body.net-locked #roster,
+body.net-locked #stage-grid,
+body.net-locked #random,
+body.net-ready-phase #stage-grid { pointer-events: none; opacity: .55; transition: opacity .2s; }
 /* Selected segment is a lifted chip, same idea as the reference: the accent color stays on 1P and the start button. */
 .seg button.active { background: var(--line); color: var(--text); border-color: transparent; }
 
@@ -83,9 +350,15 @@ nav { display: flex; gap: 8px; align-items: center; }
 #settings-dialog .setting-group:first-of-type { margin-top: 26px; }
 #settings-dialog .setting-group + .setting-group { margin-top: 28px; }
 #settings-dialog .setting-title { margin: 0 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 700; color: var(--muted); }
-#settings-dialog .setting-row { display: grid; grid-template-columns: minmax(0, 1fr) min(16em, 46%); align-items: center; column-gap: 32px; margin: 0; padding: 12px 0; border-top: 0; }
+#settings-dialog .setting-row,
+#codename-dialog .setting-row { display: grid; grid-template-columns: minmax(0, 1fr) min(16em, 46%); align-items: center; column-gap: 32px; margin: 0; padding: 12px 0; border-top: 0; }
 #settings-dialog .setting-row > b,
-#settings-dialog .setting-name > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#settings-dialog .setting-name > b,
+#codename-dialog .setting-row > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#codename-dialog { width: min(520px, calc(100% - 2rem)); max-width: min(520px, calc(100% - 2rem)); max-height: calc(100% - 2rem); padding: 22px 28px 26px; overflow: auto; overscroll-behavior: contain; }
+.codename-preview { margin: 16px 0 8px; padding: 10px 14px; background: #0d0c14; border: 1px solid var(--line); border-radius: 10px; text-align: center; color: var(--p1); font-variant-numeric: tabular-nums; }
+.codename-open-btn { display: flex; align-items: center; justify-content: center; width: 100%; min-width: 0; text-align: center; font-weight: 700; }
+.codename-num-lock { color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
 .setting-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .tip { flex: none; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border-radius: 50%; line-height: 1; font-weight: 700; }
 .tip-pop { inset: unset; position: fixed; width: max-content; max-width: 16em; margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); box-shadow: 0 6px 18px rgb(0 0 0 / 45%); font-size: 13px; line-height: 1.5; }
@@ -98,7 +371,7 @@ nav { display: flex; gap: 8px; align-items: center; }
 .pick-btn::after { content: ""; flex: none; width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid currentColor; }
 /* 菜单走 popover 顶层，不进文档流。清掉浏览器默认的 inset:0 + margin:auto，否则打开时先跳到屏幕正中。
    宽度由脚本写成和触发器一样，长选项在浮层里省略，不把浮层撑得比按钮宽。底色、描边、圆角、阴影抄音乐面板。 */
-.pick-menu { inset: unset; position: fixed; width: min(16em, 46%); height: max-content; margin: 0; padding: 4px; overflow: visible; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); box-shadow: 0 6px 18px rgb(0 0 0 / 45%); }
+.pick-menu { inset: unset; position: fixed; width: min(16em, 46%); height: max-content; max-height: min(260px, calc(100vh - 24px)); margin: 0; padding: 4px; overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); box-shadow: 0 6px 18px rgb(0 0 0 / 45%); }
 .pick-menu button { display: block; width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; white-space: nowrap; background: transparent; border-color: transparent; padding: .4em .8em; font-weight: 700; }
 .pick-menu button:hover, .pick-menu button:focus-visible { background: var(--panel-2); border-color: transparent; }
 .pick-menu button[aria-selected="true"] { background: var(--line); border-color: transparent; }
@@ -141,9 +414,15 @@ footer { display: flex; justify-content: space-between; gap: 16px; color: var(--
 .select-stage.challenge.solo #preview-left,
 .select-stage.challenge.solo #preview-right { grid-column: auto; }
 .select-stage.challenge #preview-right, .select-stage.challenge #preview-enemy2 { cursor: default; }
-.fighter-preview { display: grid; justify-items: center; gap: 2px; cursor: pointer; }
-.fighter-preview h1 { margin: 0; font-size: 18px; font-weight: 800; }
-.slot-head { display: grid; justify-items: center; align-content: start; gap: 16px; min-height: 72px; }
+.fighter-preview { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "chip" "art" "name"; justify-items: center; gap: 2px; cursor: pointer; }
+.fighter-preview h1 { grid-area: name; margin: 0; font-size: 18px; font-weight: 800; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.slot-head { grid-area: chip; display: grid; justify-items: center; align-content: start; gap: 16px; min-height: 72px; }
+.select-stage.net .slot-head { gap: 4px; min-height: 52px; }
+.net-codename { min-height: 1.25em; font-size: 12px; color: var(--muted); line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; font-variant-numeric: tabular-nums; }
+#preview-left .net-codename,
+#p1code { color: var(--p1); }
+#preview-right .net-codename,
+#p2code { color: var(--p2); }
 .side-label { font-size: 15px; font-weight: 800; letter-spacing: .14em; color: var(--p1); }
 .side-label.p2 { color: var(--p2); }
 .fighter-preview.active .side-label { text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 4px; }
@@ -153,7 +432,7 @@ footer { display: flex; justify-content: space-between; gap: 16px; color: var(--
 #preview-ally .slot-control button.active { background: var(--p1); color: #14140c; border-color: var(--p1); }
 #preview-right .slot-control button.active,
 #preview-enemy2 .slot-control button.active { background: var(--p2); color: #14140c; border-color: var(--p2); }
-.fighter-preview canvas { width: min(240px, 100%); height: 290px; object-fit: contain; object-position: center bottom; image-rendering: pixelated; }
+.fighter-preview canvas { grid-area: art; width: min(240px, 100%); height: 290px; object-fit: contain; object-position: center bottom; image-rendering: pixelated; }
 /* VS 钉在舞台正中，不进网格。格子再怎么分，字都在同一点。副标题挂在字下面，不把字顶偏。 */
 .select-stage > .versus { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; padding: 0; margin: 0; pointer-events: none; }
 .versus span { font: italic 900 48px Impact, sans-serif; color: var(--p2); }
@@ -570,7 +849,7 @@ body.wide:not(.touch) .touchpad .ult:not(.ready) img { opacity: .4; }
 body.wide .touchpad.in-tower .tp-actions { --atk: clamp(86px, 16vmin, 106px); right: 16px; bottom: 16px; }
 
 /* 三列固定轨道：模式、强度（或挑战类型）、开打。文案再变也只在自己的格子里，不会把旁边挤走。 */
-.action-bar { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) 14rem; gap: 10px; align-items: stretch; margin: 12px 0 16px; }
+.action-bar { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) 14rem; gap: 10px; align-items: stretch; margin: 0; }
 .action-mode { min-width: 0; width: 100%; }
 .action-foot { display: contents; }
 .action-options { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: stretch; min-width: 0; }
@@ -597,6 +876,7 @@ body.wide .touchpad.in-tower .tp-actions { --atk: clamp(86px, 16vmin, 106px); ri
   /* 1V1 仍是一行两格。芯片在名字下面。2V2 / 激战的行列见 @container stage。 */
   .select-stage { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; padding: 10px; border-radius: 12px; }
   .fighter-preview { min-width: 0; grid-template-columns: minmax(0, 1fr); grid-template-areas: "art" "name" "chip"; justify-items: center; }
+  .select-stage.net .fighter-preview { grid-template-areas: "chip" "art" "name"; }
   .fighter-preview canvas,
   .select-stage.team .fighter-preview canvas { grid-area: art; width: 100%; height: 152px; aspect-ratio: auto; }
   .fighter-preview h1,
@@ -606,6 +886,9 @@ body.wide .touchpad.in-tower .tp-actions { --atk: clamp(86px, 16vmin, 106px); ri
   .select-stage.team .slot-head { grid-area: chip; justify-self: center; display: flex; flex-direction: row; align-items: center; gap: 0; height: auto; min-height: 0; padding: 0; overflow: visible; background: #0d0c14; border: 1px solid var(--line); border-radius: 999px; }
   .slot-head:has(.slot-control[hidden]) { background: transparent; border-color: transparent; }
   .side-label { font-size: 12px; letter-spacing: .04em; line-height: 1.2; padding: .12em .3em .12em .5em; pointer-events: none; }
+  .select-stage.net .slot-head { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 4px; width: 100%; max-width: 100%; min-height: 42px; height: 42px; padding: 2px 0 4px; overflow: hidden; background: transparent; border: 0; border-radius: 0; }
+  .select-stage.net .side-label { padding: 0; font-size: 13px; line-height: 1.25; text-align: center; }
+  .select-stage.net .net-codename { font-size: 11px; line-height: 1.25; min-height: 1.25em; text-align: center; max-width: 100%; }
   .slot-control { max-width: 100%; padding: 0; background: transparent; border: 0; }
   .slot-control button:not(.active) { display: none; }
   .slot-control button { padding: .12em .5em .12em .15em; font-size: 12px; line-height: 1.2; }
@@ -620,9 +903,32 @@ body.wide .touchpad.in-tower .tp-actions { --atk: clamp(86px, 16vmin, 106px); ri
   .versus span { font-size: 20px; }
   .versus small { top: calc(50% + 16px); font-size: 11px; }
 
-  .action-bar { grid-template-columns: 1fr; gap: 8px; margin: 12px 0 0; }
+  .lobby-actions { gap: 8px; margin: 12px 0 0; }
+  .action-bar { grid-template-columns: 1fr; gap: 8px; margin: 0; }
   .seg > span { font-size: 12px; padding: 0 6px 0 4px; }
-  .seg button { padding: .45em .2em; font-size: 13px; }
+  .seg button, .seg input { padding: .45em .2em; font-size: 13px; }
+  .net-actions-foot { grid-column: 1; width: 100%; }
+  .net-btns-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .net-btns-ready { gap: 6px; }
+  .net-action-btn, .net-cancel { font-size: 13px; padding: .45em .2em; }
+  .select-stage.net #net-mystery-badge { grid-area: art; width: 44px; height: 44px; }
+  .select-stage.net #net-mystery-badge svg { width: 30px; height: 30px; }
+  .fighter-preview .net-slot-card { grid-area: art; width: 100%; padding: 4px 6px; }
+  .net-card-view { gap: 4px; }
+  .net-card-avatar { width: 34px; height: 34px; }
+  .net-card-icon { width: 18px; height: 18px; }
+  .net-card-title { font-size: 12px; }
+  .net-card-sub { font-size: 11px; }
+  .net-badge { font-size: 10px; padding: 1px 8px; }
+  .net-code-box { padding: 3px 6px; margin: 0; gap: 4px; }
+  .net-code-num { font-size: 15px; letter-spacing: 0.08em; white-space: nowrap; }
+  .net-copy-btn { font-size: 10px; padding: 2px 6px; white-space: nowrap; }
+  .net-step-row { font-size: 11px; gap: 4px; white-space: nowrap; }
+  .net-pulse-dot { width: 6px; height: 6px; }
+  .net-timer-row { font-size: 11px; }
+  .net-fail-badge { font-size: 12px; }
+  .net-fail-desc { font-size: 11px; }
+  .net-fail-btn { font-size: 11px; padding: .25em .6em; }
 
   #roster { margin-top: 14px; gap: 6px; }
   .character { padding: 4px 2px 6px; }
@@ -664,9 +970,11 @@ body.wide .touchpad.in-tower .tp-actions { --atk: clamp(86px, 16vmin, 106px); ri
 @media (orientation: landscape) and (max-height: 500px) {
   main#selection { max-width: none; padding: 8px max(8px, env(safe-area-inset-right)) 20px max(8px, env(safe-area-inset-left)); }
   .select-stage { width: 100%; }
-  .action-bar { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) 14rem; }
+  .lobby-actions { margin: 12px 0 16px; }
+  .action-bar { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) 14rem; margin: 0; }
   .action-foot { display: contents; }
-  .action-start { position: static; width: 100%; font-size: 16px; box-shadow: none; }
+  .action-start { position: static; box-shadow: none; width: 100%; font-size: 16px; }
+  .net-actions-foot { grid-column: 2 / -1; width: 100%; }
   .roster { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); }
 }
 
@@ -688,3 +996,4 @@ body.wide .touchpad.in-tower .tp-actions { --atk: clamp(86px, 16vmin, 106px); ri
   .select-stage.team .fighter-preview canvas,
   .select-stage.challenge:not(.solo) .fighter-preview canvas { height: clamp(72px, calc((100vh - 220px) / 2), 152px); height: clamp(72px, calc((100dvh - 220px) / 2), 152px); }
 }
+

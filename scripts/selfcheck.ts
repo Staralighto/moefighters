@@ -16,11 +16,18 @@ import { previewFighter, gainEnergy } from '../src/game/fighter.ts';
 import { addMod, atkMul, clearMod, jumpMul, speedMul } from '../src/game/mods.ts';
 import { assetUrl, easeLoad, imageSources, linkRate, liteFight, liteSrc, nextSrc, portraitSrc, SLOW_RATE, stageThumbSrc } from '../src/assets/loader.ts';
 import { acceptBlank, isTouchJump, matchStickTouch, stickFingerGone, thumbBandTop, touchRelease, turnedStickDelta } from '../src/game/input.ts';
+import { BIT_ATK, BIT_LEFT, BIT_SOFT, NET_BUILD, InputClock, RemotePad, TAP_SLOTS, applyRemoteBits, cleanCode, packBits, readEvents, readPad, tapSlot, type PadEvent } from '../src/net/proto.ts';
+import { GAME_FIELDS, IdBook, NO_WIRE, PART_BYTES, applyState, captureState, diffState, partText, patchState, readPart, splitParts, type WireState } from '../src/net/state.ts';
+import { iceList, parseIce } from '../src/net/config.ts';
+import { HASH_EVERY, LockSession, Rng, SNAP_RTT_MS, TICK_MS, TICK_STEPS, dumpGame, hashGame, loadGame } from '../src/net/lock.ts';
+import { applyClaimHit, reconcileGuestPred, snapshotGuestPred, stepSoftOffset, syncHostGuestPos, type SoftOffset } from '../src/net/play.ts';
+import { decodeFrame, sealCandidates } from '../src/net/rtc.ts';
 import { swipeEdgeBlock, swipeEdgeHit, swipeEdgeSlide, swipeGuardPop, swipeGuardWanted, toyScriptWanted } from '../src/ui/swipeBack.ts';
 import { battleFrame, pictureHud } from '../src/ui/battleFrame.ts';
 import { TOUCH_LAYOUT } from '../src/ui/touchLayout.data.ts';
 import { DEFAULT_ULT_ICON, ultIcon } from '../src/ui/touchIcons.ts';
 import { assignSlotWho, guideIndex, skillHTML, stageCover } from '../src/ui/select.ts';
+import { CODENAME_ADJS, CODENAME_CHARS, READY_SECONDS, formatCodename, isBlockedCodeNum, rollCodeNum, validCodenameText } from '../src/ui/online.ts';
 import { placePick } from '../src/ui/settings.ts';
 import { cycleMusicOrder, nextTrack, resolveMusicPrefs, shouldShuffleOnFight, shouldWarmNext, shuffleStartIndex, stepTrack } from '../src/audio/bgm.ts';
 import { migrateLinearSlider, musicGain, MUSIC_CAP } from '../src/audio/mix.ts';
@@ -1775,14 +1782,20 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const start = html.indexOf('<dialog id="settings-dialog">');
     const end = html.indexOf('</dialog>', start);
     assert.ok(start >= 0 && end > start, 'settings dialog exists');
-    const visible = html.slice(start, end).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-    assert.equal(visible, '设置 × 名册 名册显示 直接排开 直接排开 按乐队分组 训练场 无技能冷却 开 开 关 无限大招 开 开 关 音乐 开打换曲 ? 只在随机播放时生效，其他时候不能改。 开 开 关', 'settings dialog keeps control names, plus the fight-shuffle tip');
+    const dialogHtml = html.slice(start, end);
+    const onlineGroup = dialogHtml.match(/<section class="setting-group" id="set-online-group">[\s\S]*?<\/section>/)?.[0] ?? '';
+    assert.equal(onlineGroup.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(), '联机 联机代号 修改代号', 'online codename setting row has control name and button only');
+    const visible = dialogHtml.replace(onlineGroup, '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    assert.equal(visible, '设置 × 名册 名册显示 直接排开 直接排开 按乐队分组 训练场 无技能冷却 开 开 关 无限大招 开 开 关 音乐 开打换曲 ? 只在随机播放时生效，其他时候不能改。 开 开 关', 'settings dialog keeps control names, plus the fight-shuffle tip (with #set-online-group exempted)');
     const css = readFileSync('src/style.css', 'utf8');
     assert.ok(css.includes('width: min(760px, calc(100% - 2rem))'), 'settings dialog width is reserved, not content-sized');
     assert.ok(css.includes('minmax(0, 1fr) min(16em, 46%)'), 'settings dropdowns share one column so their lengths stay aligned');
     assert.ok(css.includes('popover') || html.includes('popover'), 'settings menus are popovers so opening one does not grow the dialog');
     assert.ok(css.includes('inset: unset'), 'popover menus drop the browser centering that flashes mid-screen');
     assert.ok(!css.includes('100vw'), 'dialog width must not use 100vw; it includes the scrollbar and shifts the page');
+    assert.ok(css.includes('color-scheme: dark'), ':root declares dark color-scheme so native controls and scrollbars never fall back to light OS white+grey');
+    assert.ok(css.includes('*::-webkit-scrollbar {') && css.includes('*::-webkit-scrollbar-thumb { background: var(--line)'), 'global scrollbar uses site tokens (--line / --muted) by default for all scrollable containers');
+    assert.ok(!/[^\s*(]::-webkit-scrollbar/.test(css), 'scrollbar styling lives only on the global * selector; panels do not invent separate scrollbar skins');
     assert.deepEqual(
       placePick({ right: 200, top: 40, bottom: 70 }, { width: 80, height: 60 }, { width: 400, height: 300 }),
       { top: 74, left: 120 },
@@ -1870,6 +1883,20 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(!shortLandscape.includes('grid-area'), 'short landscape does not choose stage rows');
   assert.ok(!shortLandscape.includes('/ 2)'), 'short landscape does not halve portrait height');
   assert.ok(stageRows.includes('(100dvh - 220px) / 2'), 'two-row portraits shrink only inside the narrow stage');
+  // Visual alignment locks: .fighter-preview strictly uses 3 named grid tracks ("chip" / "art" / "name")
+  // on both desktop and mobile so left/right slots share horizontal baselines and online overlays stack inside "art".
+  assert.ok(cssText.includes('grid-template-areas: "chip" "art" "name"'), 'desktop fighter-preview locks 3-track grid-template-areas');
+  assert.ok(cssText.includes('grid-template-areas: "art" "name" "chip"'), 'mobile fighter-preview locks 3-track grid-template-areas');
+  assert.ok(cssText.includes('.select-stage.net .fighter-preview { grid-template-areas: "chip" "art" "name"; }'), 'mobile online fighter-preview keeps tag and codename above the character');
+  assert.ok(/\.slot-head\s*\{[^}]*grid-area:\s*chip/.test(cssText), '.slot-head is pinned to grid-area: chip');
+  assert.ok(/\.fighter-preview canvas\s*\{[^}]*grid-area:\s*art/.test(cssText), '.fighter-preview canvas is pinned to grid-area: art');
+  assert.ok(/\.fighter-preview h1\s*\{[^}]*grid-area:\s*name/.test(cssText), '.fighter-preview h1 is pinned to grid-area: name');
+  assert.ok(/\.net-mystery-badge\s*\{[^}]*grid-area:\s*art/.test(cssText), '.net-mystery-badge stacks in grid-area: art');
+  assert.ok(/\.net-slot-card\s*\{[^}]*grid-area:\s*art/.test(cssText), '.net-slot-card stacks in grid-area: art');
+  assert.ok(/\.net-slot-card\s*\{[^}]*background:\s*transparent/.test(cssText) && /\.net-slot-card\s*\{[^}]*border:\s*0/.test(cssText), '.net-slot-card is frameless over the silhouette');
+  assert.ok(/<span id="net-status" hidden><\/span>/.test(html), '#net-status is hidden so #preview-right has strictly one visible name line matching #preview-left');
+  assert.ok(!/class="[^"]*action-foot[^"]*"[^>]*id="net-actions"/.test(html), '#net-actions does not use .action-foot (display: contents) which would swap action-bar columns');
+  assert.ok(/\.net-actions-foot\s*\{[^}]*grid-column:\s*2\s*\/\s*-1/.test(cssText), '.net-actions-foot spans columns 2..-1 to stay on the right of .action-mode');
   assert.equal(ultIcon('gale'), '/icons/ult-gale.png', 'a drawn ultimate keeps its own icon');
   assert.equal(ultIcon('soyo'), DEFAULT_ULT_ICON, 'an ultimate without art uses the shared mark');
   for (const c of ROSTER) {
@@ -4901,6 +4928,504 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.equal(swings, 7, 'bushido swings seven times');
   assert.equal(energyAt, 0, 'bushido grants no meter');
   assert.ok(down, 'the last cut knocks down');
+}
+
+{
+  assert.equal(cleanCode('k7qm'), 'K7QM', 'room codes uppercase');
+  assert.equal(cleanCode('o0i1'), '', 'room codes drop ambiguous characters');
+  assert.equal(packBits(new Set(['KeyA', 'KeyJ']), false), BIT_LEFT | BIT_ATK, 'held left and light pack to those bits');
+  assert.equal(packBits(new Set(), true) & BIT_SOFT, BIT_SOFT, 'a touch pad sets the soft bit');
+  const hello = JSON.stringify({ t: 'hello', build: NET_BUILD, charId: 'uika' });
+  assert.deepEqual(await decodeFrame(hello), { t: 'hello', build: NET_BUILD, charId: 'uika' }, 'a text frame is a hello');
+  assert.deepEqual(await decodeFrame(new TextEncoder().encode(hello).buffer), { t: 'hello', build: NET_BUILD, charId: 'uika' }, 'an arraybuffer frame is a hello');
+  assert.deepEqual(await decodeFrame(new Blob([hello])), { t: 'hello', build: NET_BUILD, charId: 'uika' }, 'a blob frame is a hello');
+  assert.equal(await decodeFrame(new Uint8Array([1, 2, 3])), null, 'a non-json frame is dropped');
+  const base = 'v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n';
+  const line = 'candidate:1 1 udp 1 10.0.0.2 9 typ host';
+  const sealed = sealCandidates(base, [line, 'a=' + line]);
+  assert.equal(sealed, base + 'a=' + line + '\r\n', 'a gathered candidate is sealed once');
+  assert.equal(sealCandidates(sealed, [line]), sealed, 'sealing again does not duplicate');
+}
+
+// online: the guest's normals and skills come out on the host, through the same pad the wire carries
+{
+  const pair = (soft: boolean) => {
+    const opts = { mode: 'cpu' as const, difficulty: 1, stage: STAGES[0], audio: silent, random: rng(5) };
+    const host = new FightGame([ROSTER[at('gale')], ROSTER[at('ember')]], { ...opts, controllers: [0, 1], netRole: 'host' });
+    const guest = new FightGame([ROSTER[at('gale')], ROSTER[at('ember')]], { ...opts, controllers: [null, null], netRole: 'guest' });
+    const taps = new Array(TAP_SLOTS).fill(0);
+    guest.onKey = code => { const i = tapSlot(code); if (i >= 0) taps[i] = (taps[i] + 1) % 256; };
+    const remote = new RemotePad();
+    let inbox: string[] = [];
+    const book = new IdBook();
+    const objs = new Map<string, object>();
+    let painted: WireState | null = null;
+    // One wire message per guest frame, JSON like the data channel; the host folds them all next frame.
+    const send = () => inbox.push(JSON.stringify({ t: 'in', n: 0, bits: packBits(guest.keys, soft), taps: taps.slice() }));
+    const hostFrame = () => {
+      for (const raw of inbox) remote.apply(host, readPad(JSON.parse(raw))!);
+      inbox = [];
+      for (let i = 0; i < 2; i++) host.step(STEP);
+      const cur = captureState(host, book);
+      applyState(guest, cur, painted, objs);
+      painted = cur;
+    };
+    run(host, 2.3);
+    assert.equal(host.phase, 'fight', 'online host reaches the fight');
+    const p2 = host.fighters[1];
+    p2.cooldowns.fill(0);
+    const settle = () => { for (let i = 0; i < 160; i++) { send(); hostFrame(); } p2.cooldowns.fill(0); p2.x = 700; host.fighters[0].x = 200; };
+    const watch = (frames: number) => {
+      let seen: { index: number; air: boolean } | null = null;
+      for (let i = 0; i < frames && !seen; i++) {
+        hostFrame();
+        if (p2.attack) seen = { index: p2.attack.index, air: !!p2.attack.skill.air };
+      }
+      return seen;
+    };
+    return { host, guest, p2, send, hostFrame, settle, watch, drop: () => { inbox = []; } };
+  };
+
+  // Keyboard J, K, U held for a few frames.
+  {
+    const w = pair(false);
+    for (const [code, index] of [['KeyJ', 0], ['KeyK', 1], ['KeyU', 2]] as const) {
+      w.settle();
+      w.guest.keyDown(code); w.send();
+      const seen = w.watch(6);
+      w.guest.keyUp(code); w.send();
+      assert.equal(seen?.index, index, 'guest ' + code + ' fires slot ' + index + ' on the host');
+      assert.equal(seen?.air, false, 'guest ' + code + ' is a ground move');
+    }
+    // A keyboard tap that presses and lets go between two host frames still lands.
+    w.settle();
+    w.guest.keyDown('KeyJ'); w.send(); w.guest.keyUp('KeyJ'); w.send();
+    assert.equal(w.watch(6)?.index, 0, 'a press+release folded into one host frame is still a light');
+    // The press packet is lost; the later one still carries the count.
+    w.settle();
+    w.guest.keyDown('KeyK'); w.send(); w.drop(); w.guest.keyUp('KeyK'); w.send();
+    assert.equal(w.watch(6)?.index, 1, 'a lost press packet does not lose the heavy');
+    // Jump, then J and K in the air.
+    for (const [code, index] of [['KeyJ', 0], ['KeyK', 1]] as const) {
+      w.settle();
+      w.guest.keyDown('KeyW'); w.send(); w.hostFrame(); w.guest.keyUp('KeyW'); w.send();
+      for (let i = 0; i < 6; i++) w.hostFrame();
+      assert.ok(w.p2.y < FLOOR - 10, 'guest jump leaves the floor');
+      w.guest.keyDown(code); w.send();
+      const seen = w.watch(6);
+      w.guest.keyUp(code); w.send();
+      assert.equal(seen?.index, index, 'guest air ' + code + ' fires slot ' + index);
+      assert.equal(seen?.air, true, 'guest air ' + code + ' is the air version');
+    }
+  }
+
+  // Touch: a short tap is keyDown+keyUp in one call (light), a long press holds K (heavy).
+  {
+    const w = pair(true);
+    w.settle();
+    w.guest.keyDown('KeyJ'); w.guest.keyUp('KeyJ'); w.send();
+    assert.equal(w.watch(6)?.index, 0, 'a touch tap is a light on the host');
+    w.settle();
+    w.guest.keyDown('KeyK'); w.send();
+    for (let i = 0; i < 12; i++) w.send();
+    const seen = w.watch(6);
+    w.guest.keyUp('KeyK'); w.send();
+    assert.equal(seen?.index, 1, 'a touch long press is a heavy on the host');
+    // The held-bits-only wire this replaces never saw the tap.
+    w.settle();
+    w.guest.keyDown('KeyJ'); w.guest.keyUp('KeyJ');
+    applyRemoteBits(w.host, packBits(w.guest.keys, true));
+    let old = false;
+    for (let i = 0; i < 6; i++) { w.host.step(STEP); if (w.p2.attack) old = true; }
+    assert.equal(old, false, 'held bits alone drop a same-tick tap (the bug this fixes)');
+  }
+
+  // The host's own keyboard drives 1P only; 2P keys belong to the wire.
+  {
+    const w = pair(false);
+    assert.equal(w.host.isLocalControl('KeyJ'), true, 'host J is local');
+    assert.equal(w.host.isLocalControl('Numpad1'), false, 'host numpad is not local online');
+    assert.equal(w.host.isLocalControl('ArrowLeft'), false, 'host arrows are not local online');
+    assert.equal(newGame().isLocalControl('ArrowLeft'), true, 'offline every control is local');
+    w.host.togglePause(true);
+    assert.equal(w.host.paused, false, 'online pause never stops the match');
+    assert.equal(w.host.netMenu, true, 'online pause opens the menu');
+  }
+  assert.equal(readPad({ bits: 1, taps: [1] }), null, 'a short tap list is refused');
+}
+
+// online wire: every fighter field the host has reaches the guest, deltas fit one packet, loss heals
+{
+  const opts = { mode: 'cpu' as const, difficulty: 2, stage: STAGES[0], audio: silent };
+  const sample = rng(31);
+  let maxPart = 0;
+  let parts = 0;
+  for (let a = 0; a < PLAYABLE.length; a++) {
+    const b = (a + 7) % PLAYABLE.length;
+    const host = new FightGame([PLAYABLE[a], PLAYABLE[b]], { ...opts, random: rng(a + 3), controllers: [null, null], netRole: 'host' });
+    const guest = new FightGame([PLAYABLE[a], PLAYABLE[b]], { ...opts, random: rng(1), controllers: [null, null], netRole: 'guest' });
+    const book = new IdBook();
+    const sent = new Map<number, WireState>();
+    const have = new Map<number, WireState>();
+    const objs = new Map<string, object>();
+    let painted: WireState | null = null;
+    let ack = 0;
+    let shownN = 0;
+    for (let n = 1; n <= 240; n++) {
+      for (let i = 0; i < 4; i++) host.step(STEP);
+      const cur = captureState(host, book);
+      const base = ack ? sent.get(ack)! : null;
+      const { changes, gone } = diffState(base, cur);
+      sent.set(n, cur);
+      const texts = splitParts(n, ack, changes, gone).map((items, i, all) => partText({ t: 's', m: 0, n, b: ack, i, k: all.length }, items, gone));
+      const got: ReturnType<typeof readPart>[] = [];
+      for (const text of texts) {
+        const size = new TextEncoder().encode(text).length;
+        maxPart = Math.max(maxPart, size);
+        parts++;
+        // 20% loss, both ways.
+        if (sample() < .2) continue;
+        got.push(readPart(JSON.parse(text)));
+      }
+      if (got.length !== texts.length) continue;
+      const b0 = got[0]!.b;
+      const st = patchState(b0 ? have.get(b0)! : null, got.flatMap(p => p!.d), got[0]!.x);
+      have.set(n, st);
+      applyState(guest, st, painted, objs);
+      painted = st;
+      shownN = n;
+      if (sample() >= .2) ack = shownN;
+    }
+    assert.ok(shownN > 200, PLAYABLE[a].id + ': the guest keeps up under 20% loss (' + shownN + ')');
+    // The guest's own objects, captured the same way, must match the host's last painted state field for field.
+    const back = captureState(guest, new IdBook());
+    const want = sent.get(shownN)!;
+    for (const [key, fields] of want) {
+      if (key[0] !== 'f' && key !== 'g') continue;
+      const mine = back.get(key);
+      assert.ok(mine, PLAYABLE[a].id + ': guest has ' + key);
+      for (const [k, v] of fields) {
+        if (k === 'charId') continue;
+        assert.equal(mine!.get(k), v, PLAYABLE[a].id + ' vs ' + PLAYABLE[b].id + ': ' + key + '.' + k + ' reaches the guest');
+      }
+    }
+    const shotsHost = [...want.keys()].filter(k => k[0] === 'p' || k[0] === 'e').sort();
+    const shotsGuest = [...objs.keys()].filter(k => k[0] === 'p' || k[0] === 'e').sort();
+    assert.deepEqual(shotsGuest, shotsHost, PLAYABLE[a].id + ': the guest holds the same shots and effects, by id');
+  }
+  assert.ok(maxPart <= PART_BYTES, 'every snapshot message fits one packet, largest ' + maxPart + ' bytes');
+  // NO_WIRE must name real Fighter fields, or it is hiding nothing and a rename slipped through.
+  const f = newGame().fighters[0] as unknown as Record<string, unknown>;
+  for (const k of NO_WIRE) assert.ok(k in f, 'NO_WIRE ' + k + ' is a Fighter field');
+  for (const k of GAME_FIELDS) assert.ok(k in newGame(), 'GAME_FIELDS ' + k + ' is a FightGame field');
+  const book = new IdBook();
+  const o = {};
+  assert.equal(book.of(o), book.of(o), 'an object keeps its wire id');
+  assert.ok(book.of({}) !== book.of(o), 'two objects get two ids');
+}
+
+// online input: samples play on the guest's clock, so jitter does not change spacing or hold length
+{
+  const clock = new InputClock();
+  const jit = rng(5);
+  const idle = [0, 0, 0, 0, 0, 0, 0, 0];
+  const taps = [0, 0, 0, 1, 0, 0, 0, 0];
+  // A second of 30Hz heartbeats at 40–100ms one-way, then press K at 1000, still held at 1100, release at 1180.
+  const sent: PadEvent[] = [];
+  for (let i = 0; i < 30; i++) sent.push([i + 1, i * 33, 0, idle]);
+  sent.push([31, 1000, BIT_ATK << 1, taps], [32, 1100, BIT_ATK << 1, taps], [33, 1180, 0, taps]);
+  const arrivals = sent.map(e => [Math.round(e[1] + 40 + jit() * 60), e] as [number, PadEvent]);
+  const played: [number, PadEvent][] = [];
+  for (let now = 0; now < 1600; now++) {
+    for (const [at, e] of arrivals) if (at === now) clock.push([e], now);
+    for (const e of clock.due(now)) if (e[0] > 30) played.push([now, e]);
+  }
+  assert.equal(played.length, 3, 'all three samples play');
+  const held = played[2][0] - played[0][0];
+  assert.ok(Math.abs(held - 180) <= 8, 'a 180ms hold plays as ' + held + 'ms despite 40–100ms jitter');
+  assert.ok(clock.jitter > 0 && clock.jitter <= 120, 'the jitter margin adapts (' + clock.jitter.toFixed(0) + 'ms)');
+  // Redundancy: a packet repeating old samples adds nothing twice.
+  clock.push([played[0][1], played[1][1]], 2000);
+  assert.equal(clock.due(5000).length, 0, 'repeated samples do not replay');
+  assert.deepEqual(readEvents([[1, 2, 3, [0, 0, 0, 0, 0, 0, 0, 0]], ['x'], [2, 3, 4, [1]]]), [[1, 2, 3, [0, 0, 0, 0, 0, 0, 0, 0]]], 'malformed samples are dropped');
+  assert.equal(parseIce(undefined).length, 2, 'no ICE setting keeps the two STUN servers');
+  assert.deepEqual(parseIce('[{"urls":"turn:t.example:3478","username":"u","credential":"c"}]').map(s => s.urls), ['turn:t.example:3478'], 'VITE_ICE_SERVERS takes a TURN');
+  assert.equal(parseIce('not json').length, 2, 'a broken ICE setting falls back');
+  assert.deepEqual(iceList([{ urls: 'turn:t.example:3478' }, {}, null, { urls: ['turn:a:3478'] }]).map(s => s.urls), ['turn:t.example:3478', ['turn:a:3478']], 'iceList keeps only entries with urls');
+  const endpointSrc = readFileSync('src/net/endpoint.ts', 'utf8');
+  assert.ok(!endpointSrc.includes('tcloudbase.com'), 'src/net/endpoint.ts must not hardcode the live CloudBase URL');
+  const mailboxSrc = readFileSync('cloudbase/functions/mailbox/index.js', 'utf8');
+  assert.ok(mailboxSrc.includes('const TURN_TTL = 600;'), 'mailbox TURN credentials must stay short-lived (600s)');
+  assert.ok(mailboxSrc.includes('TURN_DAILY_MAX'), 'mailbox must enforce a daily TURN mint cap');
+  assert.ok(mailboxSrc.includes('TURN_IP_DAILY_MAX') && mailboxSrc.includes('TURN_IP_CD_MS'), 'mailbox must enforce per-IP TURN cooldown and daily cap');
+  assert.ok(mailboxSrc.includes('TURN_DAILY_BYTES_MAX') && mailboxSrc.includes('TURN_MONTHLY_BYTES_MAX') && mailboxSrc.includes('TURN_SPIKE_BYTES_MAX'), 'mailbox must enforce daily, monthly, and spike Cloudflare TURN byte caps');
+  assert.ok(mailboxSrc.includes('callsTurnUsageAdaptiveGroups') && mailboxSrc.includes('/revoke'), 'mailbox must query Cloudflare GraphQL usage and actively revoke credentials on trip');
+  assert.ok(mailboxSrc.includes('revokePending') && mailboxSrc.includes("op === 'patrol'"), 'mailbox must persist failed TURN revokes and patrol without a new mint');
+  assert.ok(!mailboxSrc.includes('slice(-30)') && !mailboxSrc.includes('slice(-29)'), 'mailbox must not drop live TURN usernames before revoke');
+  assert.ok(mailboxSrc.includes('QUEUE_MAX = 20') && mailboxSrc.includes('OPEN_MAX = 30'), 'mailbox must cap concurrent queue waiters and unjoined open rooms');
+  assert.ok(mailboxSrc.includes('!room.joined'), 'mailbox turn endpoint must reject unjoined rooms');
+  const onlineSrc = readFileSync('src/ui/online.ts', 'utf8');
+  assert.ok(onlineSrc.includes('res.joined === true'), 'asHost must wait for a guest to join before minting TURN credentials');
+}
+
+// lockstep: the seeded sim is deterministic for every character, frame by frame, and an exact dump resumes it
+{
+  const pads = (seed: number) => {
+    const r = rng(seed);
+    const taps = [0, 0, 0, 0, 0, 0, 0, 0];
+    let bits = 0;
+    return () => {
+      if (r() < .15) bits = Math.floor(r() * 1024) & ~(1 << 10);
+      if (r() < .1) { const i = Math.floor(r() * 8); taps[i] = (taps[i] + 1) % 256; }
+      return { bits, taps: taps.slice() };
+    };
+  };
+  const make = (a: number, b: number, seed: number) => {
+    const r = new Rng(seed);
+    const g = new FightGame([PLAYABLE[a], PLAYABLE[b]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: r.next, controllers: [0, 1], netRole: 'lock' });
+    return { g, r, p: [new RemotePad(0), new RemotePad(1)] };
+  };
+  let resumed = 0;
+  for (let a = 0; a < PLAYABLE.length; a++) {
+    const b = (a + 3) % PLAYABLE.length;
+    const x = make(a, b, 1000 + a), y = make(a, b, 1000 + a);
+    const p0 = pads(a * 7 + 1), p1 = pads(a * 7 + 2);
+    let z: ReturnType<typeof make> | null = null;
+    for (let t = 0; t < 1800; t++) {
+      const i0 = p0(), i1 = p1();
+      for (const w of z ? [x, y, z] : [x, y]) {
+        w.p[0].apply(w.g, i0); w.p[1].apply(w.g, i1);
+        for (let k = 0; k < TICK_STEPS; k++) w.g.step(STEP);
+      }
+      const hx = hashGame(x.g, x.r);
+      assert.equal(hashGame(y.g, y.r), hx, PLAYABLE[a].id + ' vs ' + PLAYABLE[b].id + ': same seed and pads, same sim at tick ' + t);
+      if (z && hashGame(z.g, z.r) === hx) resumed++;
+      if (t === 600) {
+        z = make(a, b, 1);
+        loadGame(z.g, z.r, dumpGame(x.g, x.r));
+        z.p[0].taps = x.p[0].taps.slice(); z.p[1].taps = x.p[1].taps.slice();
+      }
+    }
+  }
+  // A resync is exact when no closure-carrying mod is live; most pairs stay in step for the whole 20s after.
+  assert.ok(resumed > PLAYABLE.length * 1199 * .9, 'an exact dump resumes the sim in step (' + resumed + ' of ' + PLAYABLE.length * 1199 + ' ticks)');
+}
+
+// lockstep sessions over a lossy, laggy link: in step, a forced desync resyncs, repeated ones fall back
+{
+  const run = (opts: { loss: number; delay: number; jitter: number; poisonAt?: number[]; seconds: number }) => {
+    const r = rng(77);
+    const seed = 4242;
+    const logs: string[] = [];
+    let fellBack = '';
+    const muted = [0, 0];
+    type Wire = { at: number; to: 0 | 1; text?: string; rel?: Record<string, unknown> };
+    let wire: Wire[] = [];
+    let now = 0;
+    const sessions: LockSession[] = [];
+    const pad = pads2(5);
+    for (const side of [0, 1] as const) {
+      const rr = new Rng(seed);
+      const g = new FightGame([PLAYABLE[0], PLAYABLE[4]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: rr.next, controllers: [0, 1], netRole: 'lock' });
+      const other = (1 - side) as 0 | 1;
+      sessions.push(new LockSession(g, rr, side, {
+        sendFast: text => { if (r() >= opts.loss) wire.push({ at: now + opts.delay + r() * opts.jitter, to: other, text }); },
+        sendRel: msg => wire.push({ at: now + opts.delay + opts.jitter, to: other, rel: JSON.parse(JSON.stringify(msg)) }),
+        sample: () => pad[side](),
+        mute: on => { muted[side] += on ? 1 : 0; },
+        fallback: why => { fellBack = why; },
+        log: t => logs.push(t),
+      }));
+    }
+    for (let frame = 0; frame < opts.seconds * 60; frame++) {
+      now += TICK_MS;
+      const due = wire.filter(w => w.at <= now).sort((a, b) => a.at - b.at);
+      wire = wire.filter(w => w.at > now);
+      for (const w of due) {
+        const msg = w.rel ?? JSON.parse(w.text!);
+        if (msg.t === 'giveup') sessions[w.to].onGiveUp(String(msg.why));
+        else sessions[w.to].onMessage(msg, now);
+      }
+      if (opts.poisonAt?.includes(frame)) sessions[1].poison();
+      for (const s of sessions) s.frame(now);
+      if (fellBack) break;
+    }
+    return { sessions, logs, fellBack, muted };
+  };
+  function pads2(seed: number) {
+    const r = rng(seed);
+    return [0, 1].map(() => {
+      const taps = [0, 0, 0, 0, 0, 0, 0, 0];
+      let bits = 0;
+      return () => {
+        if (r() < .1) bits = Math.floor(r() * 1024) & ~(1 << 10);
+        if (r() < .08) { const i = Math.floor(r() * 8); taps[i] = (taps[i] + 1) % 256; }
+        return { bits, taps: taps.slice() };
+      };
+    });
+  }
+  const clean = run({ loss: .2, delay: 50, jitter: 60, seconds: 20 });
+  const [h, gst] = clean.sessions;
+  assert.ok(h.tick > 20 * 60 * .7, 'lockstep keeps up under 20% loss and 50–110ms (tick ' + h.tick + ')');
+  assert.ok(h.delay >= 3 && h.delay <= 8, 'input delay adapts within 3–8 ticks (' + h.delay + ')');
+  assert.equal(clean.logs.filter(l => l.includes('resync')).length, 0, 'no desync on a clean run: ' + clean.logs.join(' | '));
+  const k = Math.min(h.tick, gst.tick);
+  assert.ok(Math.abs(h.tick - gst.tick) <= 10, 'the two sides stay within a few ticks');
+  assert.equal(clean.fellBack, '', 'no fallback on a clean run');
+  void k;
+  const once = run({ loss: .1, delay: 40, jitter: 30, seconds: 12, poisonAt: [200] });
+  assert.equal(once.logs.filter(l => l.includes('resync #')).length, 1, 'a poisoned guest is caught and resynced once: ' + once.logs.join(' | '));
+  assert.ok(once.logs.some(l => l.includes('resynced to tick')), 'the guest restores from the host');
+  assert.ok(once.muted[1] >= 1, 'the replay after a resync is muted');
+  assert.equal(once.fellBack, '', 'one desync does not fall back');
+  const many = run({ loss: .1, delay: 40, jitter: 30, seconds: 30, poisonAt: [200, 500, 800, 1100, 1400] });
+  assert.ok(many.fellBack.length > 0, 'repeated desyncs hand the match to snapshots: ' + many.logs.join(' | '));
+  const dead = run({ loss: .97, delay: 40, jitter: 30, seconds: 12 });
+  assert.ok(dead.fellBack.length > 0, 'a link that cannot keep up falls back');
+  // High-RTT links (> SNAP_RTT_MS = 230ms, e.g. China LAX TURN at 290–435ms or extreme 950ms) hand off on the first ping reply during the round intro
+  assert.equal(SNAP_RTT_MS, 230, 'lockstep RTT ceiling is 230ms');
+  for (const [label, oneWay, jitter, maxFrames] of [
+    ['LAX fast 290ms', 145, 10, 26],
+    ['LAX median 350ms', 160, 35, 30],
+    ['LAX slow 435ms', 210, 15, 34],
+    ['extreme 950ms', 465, 20, 66],
+  ] as const) {
+    const hi = run({ loss: .05, delay: oneWay, jitter, seconds: 3 });
+    assert.equal(hi.fellBack, '高延迟直切快照', label + ' hands off immediately on first RTT sample');
+    assert.ok(hi.sessions[0].tick <= maxFrames, label + ' finishes handoff while still in ROUND 1 intro (< 135 ticks, got ' + hi.sessions[0].tick + ')');
+  }
+}
+
+// China LAX TURN (350ms RTT) local-first guest prediction + host soft snapshot reconciliation + lenient hit claim
+{
+  const hostGame = new FightGame([PLAYABLE[0], PLAYABLE[4]], {
+    mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(101), controllers: [0, 1], netRole: 'host',
+  });
+  const guestGame = new FightGame([PLAYABLE[0], PLAYABLE[4]], {
+    mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(101), controllers: [null, 0], netRole: 'guest',
+  });
+  hostGame.phase = 'fight'; guestGame.phase = 'fight';
+  hostGame.phaseTime = 0; guestGame.phaseTime = 0;
+
+  let lastClaim: [number, number, number] | null = null;
+  guestGame.onClaimHit = (slot, gx, hx) => { lastClaim = [slot, gx, hx]; };
+
+  const hostBook = new IdBook();
+  const objs = new Map<string, object>();
+  let hostSent: WireState | null = null;
+  let guestWire: WireState | null = null;
+  const softOffset: SoftOffset = { dx: 0, dy: 0 };
+
+  const sendSnap = () => {
+    const snap = captureState(hostGame, hostBook);
+    const { changes, gone } = diffState(hostSent, snap);
+    hostSent = snap;
+    const next = patchState(guestWire, changes, gone);
+    applyState(guestGame, next, guestWire, objs);
+    guestWire = next;
+  };
+
+  // 1) Initial full snapshot syncs both sides
+  sendSnap();
+  reconcileGuestPred(guestGame, null, true, softOffset);
+
+  const startX = guestGame.fighters[1].x;
+  // 2) Guest presses walk left (KeyA) — responds on frame 1 (0ms network wait)
+  guestGame.keyDown('KeyA');
+  for (let i = 0; i < TICK_STEPS; i++) guestGame.stepGuestLocal(STEP);
+  assert.ok(guestGame.fighters[1].x < startX, 'guest local step moves fighter[1] on the very first frame');
+  assert.equal(guestGame.fighters[1].animState, 'run', 'guest local step switches animation to run immediately');
+
+  // Advance guest locally for 10 ticks (~167ms, one-way LAX delay) while host has not yet received KeyA
+  for (let t = 0; t < 10; t++) {
+    for (let i = 0; i < TICK_STEPS; i++) {
+      hostGame.step(STEP);
+      guestGame.stepGuestLocal(STEP);
+    }
+  }
+  const predictedX = guestGame.fighters[1].x;
+  assert.ok(startX - predictedX > 40, 'guest walked >40px locally during the 175ms one-way window');
+
+  // 3) Host sends a delta snapshot where host's fighter[1] is still at startX; guest preserves local prediction
+  const predBeforeStale = snapshotGuestPred(guestGame.fighters[1]);
+  sendSnap();
+  reconcileGuestPred(guestGame, predBeforeStale, true, softOffset);
+  assert.equal(guestGame.fighters[1].x, predictedX, 'stale host snapshot does not rubber-band guest back to 175ms-old position');
+  assert.equal(guestGame.fighters[1].animState, 'run', 'stale host snapshot does not cancel guest run animation');
+  guestGame.keyUp('KeyA');
+
+  // 4) Soft host position sync + lenient hit claim across 350ms drift
+  // Place host's p1 and p2 slightly apart on host (so host melee alone wouldn't connect yet), but within range on guest
+  hostGame.fighters[0].x = 460; hostGame.fighters[1].x = 585;
+  guestGame.fighters[0].x = 460; guestGame.fighters[1].x = 510;
+  hostGame.fighters[1].facing = -1; guestGame.fighters[1].facing = -1;
+  const hpBefore = hostGame.fighters[0].hp;
+
+  guestGame.keyDown('KeyJ');
+  guestGame.keyUp('KeyJ');
+  for (let f = 0; f < 18; f++) {
+    for (let i = 0; i < TICK_STEPS; i++) guestGame.stepGuestLocal(STEP);
+  }
+  assert.ok(lastClaim !== null, 'guest local melee hit triggers onClaimHit');
+  assert.equal(guestGame.fighters[0].hp, hpBefore, 'guest local hit does not mutate host fighter[0].hp locally (avoids false resurrection)');
+  assert.equal(guestGame.fighters[0].stun, 0, 'guest local hit does not put fighter[0] into fake local stun');
+  assert.ok(guestGame.effects.some(e => e.local), 'guest local hit spawns immediate local hit sparks');
+
+  // Host receives guest's attack + position + hit claim and honors it once (no double damage)
+  syncHostGuestPos(hostGame, Math.round(guestGame.fighters[1].x));
+  assert.ok(hostGame.fighters[1].x < 585, 'syncHostGuestPos pulls host p2 smoothly toward guest x');
+  const [slot, gx, hx] = lastClaim!;
+  assert.ok(applyClaimHit(hostGame, slot, gx, hx), 'applyClaimHit returns true for valid hit claim');
+  const hpAfterOneClaim = hostGame.fighters[0].hp;
+  assert.ok(hpAfterOneClaim < hpBefore, 'host honors guest lenient hit claim within drift tolerance');
+  // Even if the claim is resent in the next packet, the same attack swing cannot deal double damage
+  assert.equal(applyClaimHit(hostGame, slot, gx, hx), false, 'lenient hit claim is idempotent per attack swing (no double damage)');
+  assert.equal(hostGame.fighters[0].hp, hpAfterOneClaim, 'hp unchanged on duplicate hit claim');
+
+  // 5) When host hits guest (authoritative stun + knockback), guest accepts host state and blends via 8-tick softOffset
+  hostGame.fighters[1].stun = 0.35;
+  hostGame.fighters[1].x = 640;
+  guestGame.fighters[1].x = 560;
+  const predBeforeHit = snapshotGuestPred(guestGame.fighters[1]);
+  sendSnap();
+  reconcileGuestPred(guestGame, predBeforeHit, true, softOffset);
+  assert.equal(guestGame.fighters[1].x, 640, 'authoritative stun overrides guest simulation x');
+  assert.equal(Math.round(softOffset.dx), -80, 'softOffset absorbs the -80px jump so rendered x starts at 560 without a 1-frame snap');
+  let prevVisualX = guestGame.fighters[1].x + softOffset.dx;
+  for (let tick = 0; tick < 8; tick++) {
+    stepSoftOffset(softOffset, TICK_MS / 1000);
+    const curVisualX = guestGame.fighters[1].x + softOffset.dx;
+    assert.ok(Math.abs(curVisualX - prevVisualX) <= 25, 'per-tick visual correction stays smooth (<= 25px/tick)');
+    prevVisualX = curVisualX;
+  }
+  assert.ok(Math.abs(softOffset.dx) < 5, 'after 8 ticks (~133ms), softOffset has decayed >94% toward authoritative x');
+}
+
+// Online codename & 10s ready phase invariants
+{
+  assert.equal(READY_SECONDS, 10, 'online ready phase lasts 10 seconds');
+  assert.ok(CODENAME_ADJS.length >= 16, 'codename adjective pool has moe personality/mood words');
+  assert.equal(CODENAME_CHARS.length, PLAYABLE.length, 'codename character pool matches playable roster');
+  for (const bad of [
+    '0604', '8964', '1989', '0425', '0720', '0314', '0705', '0512', '1013', '1124',
+    '0707', '0918', '1213', '0731', '0911', '1488', '0420',
+    '0000', '1111', '4444', '8888', '9999', '1234', '4321',
+    '0250', '0438', '7480', '5418', '0110', '0119',
+  ]) {
+    assert.equal(isBlockedCodeNum(bad), true, `blocked number ${bad} is rejected`);
+  }
+  assert.equal(isBlockedCodeNum('0923'), false, 'normal number 0923 is allowed');
+  assert.equal(isBlockedCodeNum('2024'), false, 'normal year 2024 is allowed');
+  const r = rng(42);
+  for (let i = 0; i < 200; i++) {
+    const num = rollCodeNum(r);
+    assert.ok(/^\d{4}$/.test(num) && !isBlockedCodeNum(num), 'rollCodeNum never emits a blocked or malformed number');
+  }
+  const sample = formatCodename({ adj: '胆小的', charName: '高松灯', num: '0923' });
+  assert.equal(sample, '胆小的' + '高松灯#0923', 'formatCodename concatenates adj + charName + #num');
+  assert.equal(validCodenameText(sample), sample, 'validCodenameText accepts registered adj + playable char + safe 4-digit num');
+  assert.equal(validCodenameText('胆小的高松灯#8964'), '', 'validCodenameText rejects blocked 4-digit numbers');
+  assert.equal(validCodenameText('自定义的随便写#0923'), '', 'validCodenameText rejects arbitrary free-text names');
 }
 
 console.log('selfcheck ok');

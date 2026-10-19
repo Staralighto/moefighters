@@ -8,14 +8,22 @@ export class KeyboardInput {
   private readonly down = (e: KeyboardEvent) => {
     const g = this.getGame();
     if (!g || (e.target as HTMLElement | null)?.closest?.('dialog, [data-prop-tune]')) return;
-    if (!g.isControl(e.code)) return;
+    if (!g.isLocalControl(e.code)) return;
     e.preventDefault();
     if (!e.repeat) g.keyDown(e.code);
   };
-  private readonly up = (e: KeyboardEvent) => this.getGame()?.keyUp(e.code);
+  private readonly up = (e: KeyboardEvent) => {
+    const g = this.getGame();
+    if (g?.isLocalControl(e.code)) g.keyUp(e.code);
+  };
   private readonly blur = () => {
     const g = this.getGame();
     if (!g) return;
+    // Online: drop only this device's keys. The host's set also holds the guest's, and the match keeps running.
+    if (g.netRole) {
+      for (const code of [...g.keys]) if (g.isLocalControl(code)) g.keys.delete(code);
+      return;
+    }
     g.keys.clear();
     if (!g.paused && g.phase !== 'finished') g.togglePause(true);
   };

@@ -151,7 +151,8 @@ export class Renderer {
     c.imageSmoothingEnabled = false;
     c.clearRect(0, 0, W, H);
     c.save();
-    if (g.shake > 0) c.translate((g.random() - .5) * g.shake, (g.random() - .5) * g.shake);
+    // Screen shake is a picture, not the match: it must not draw from the seeded sim random (online lockstep).
+    if (g.shake > 0) c.translate((Math.random() - .5) * g.shake, (Math.random() - .5) * g.shake);
     this.drawStage();
 
     const bodyScale = portraitBodyScale(document.body.classList.contains('pad-split'));

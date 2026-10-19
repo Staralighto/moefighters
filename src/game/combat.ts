@@ -305,6 +305,21 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   const blast = !!skill.friendly;
   if ((!g.isEnemy(attacker, defender) && !blast) || defender.echo || defender.hp <= 0 || source.hit.has(defender.id)) return false;
   if (defender.invuln > 0 && !cuts(source, defender)) return false;
+  if (g.netRole === 'guest') {
+    // Guest local pre-animation: play contact feel and send a hit claim, while the host arbitrates hp and knockback.
+    source.hit.add(defender.id);
+    const dir = defender.x >= originX ? 1 : -1;
+    const effLen = g.effects.length;
+    g.audio.play(skill.super ? 'super' : 'hit');
+    if (!skill.noSparks) {
+      g.sparks(defender.x - dir * 20, defender.y - 85, attacker.data.color, 8, .65);
+      g.effect('hit', defender.x - dir * 20, defender.y - 85, attacker.data.color, .18, { radius: 36 });
+    }
+    for (let i = effLen; i < g.effects.length; i++) g.effects[i].local = true;
+    g.hitstop = skill.react?.kind === 'none' ? 0 : .025;
+    g.onClaimHit?.(attacker.attack?.index ?? 0, attacker.x, defender.x);
+    return true;
+  }
   // 忍法·隐身术: normals and shots roll once per swing. Marking the hit set is what keeps a
   // multi-frame dash from rolling every tick until the miss chance becomes always or never.
   if (veilMiss(g, defender, skill)) {
@@ -652,7 +667,7 @@ export function spawnShot(g: FightGame, f: Fighter, a: Attack, offsetY = 0, arc 
   const juggle = place === 'juggle';
   const speed = lob ? lob.vx : (s.speed ?? (s.super ? 650 : 480)) * (f.data.trait === 'focus' ? 1.15 : 1);
   // 抛球杂耍: the toss leaves at a small random climb or drop, so two balls never fly the same lane.
-  const juggleAng = juggle ? (Math.random() * 2 - 1) * .3 : 0;
+  const juggleAng = juggle ? (g.random() * 2 - 1) * .3 : 0;
   const p: Projectile = {
     owner: f.id,
     x: parfait ? clamp(f.x + f.facing * PARFAIT_DIST, X_MIN, X_MAX) : hole ? clamp(f.x + f.facing * BLACKHOLE_DIST, X_MIN, X_MAX) : f.x + f.facing * 53,
@@ -2899,7 +2914,7 @@ export function stepProjectiles(g: FightGame, dt: number): void {
         const outX = reflectX ? -p.vx : p.vx;
         const outY = reflectY ? -p.vy : p.vy;
         const speed = Math.min(Math.hypot(outX, outY) * JUGGLE_ACCEL, (p.v0 ?? Math.hypot(outX, outY)) * JUGGLE_MAX_MUL);
-        const ang = Math.atan2(outY, outX) + (Math.random() * 2 - 1) * JUGGLE_JITTER;
+        const ang = Math.atan2(outY, outX) + (g.random() * 2 - 1) * JUGGLE_JITTER;
         let cs = Math.cos(ang);
         let sn = Math.sin(ang);
         if (Math.abs(cs) < JUGGLE_MIN_CROSS) cs = Math.sign(outX || 1) * JUGGLE_MIN_CROSS;

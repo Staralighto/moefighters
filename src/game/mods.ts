@@ -8,8 +8,8 @@ export type ModKind =
 
 /**
  * One running buff.
- * ponytail: onExpire and pulse are closures. Ceiling: there is no replay and no netcode.
- * If either arrives, store the bill on the mod (the debt acc already is) and drop the functions.
+ * ponytail: onExpire and pulse are closures. The guest copies kind/left/mark only;
+ * closures are not replayed. A replay would store the bill on the mod (the debt acc already is) and drop the functions.
  */
 export interface Mod {
   kind: ModKind;

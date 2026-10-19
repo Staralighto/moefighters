@@ -67,6 +67,8 @@ export interface Effect {
   age?: number;
   /** 梦想即力量！: the cell a frenzy ghost was stamped with; ghosts carrying these draw frozen instead of live. */
   sheet?: string; col?: number; row?: number; facing?: number;
+  /** Online guest: spawned by local pre-animation and kept alive until its own clock expires. */
+  local?: boolean;
 }
 export interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string; size: number }
 export interface FloatingText { text: string; x: number; y: number; color: string; life: number; max: number; size: number }
@@ -122,6 +124,8 @@ export interface GameOptions {
   /** Live training switches. The same object is mutated from the settings dialog.
    *  Absent keeps both on, so a training match with no prefs still has no skill cooldown and a full meter. */
   training?: { noCd: boolean; infiniteUlt: boolean };
+  /** Online role. Guest games are painted from snapshots and do not step. */
+  netRole?: 'host' | 'guest' | 'lock';
   onHUD?(g: FightGame): void;
   onBanner?(title: string, sub: string): void;
   onEnd?(title: string, stats: string): void;
@@ -194,6 +198,20 @@ export class FightGame {
   flash = 0;
   /** 此即世界: the fighter id whose chant holds the world still. Null while time runs. */
   timeStop: number | null = null;
+  /** Online: host runs the sim, guest is a painting of the host's snapshots. */
+  netRole: 'host' | 'guest' | 'lock' | null = null;
+  bannerTitle = '';
+  bannerSub = '';
+  /** Set when the match ends so a snapshot can carry the result to the guest. */
+  netEnd: { title: string; stats: string } | null = null;
+  /** Online: the pause menu is up. The match never stops for it, the other side is still playing. */
+  netMenu = false;
+  /** Online guest: every fresh press, so a tap that ends inside one frame still reaches the host. */
+  onKey: ((code: string) => void) | null = null;
+  /** Online guest: local melee contact claim (attack slot, guest x, host x) sent to the host for lenient hit arbitration. */
+  onClaimHit: ((slot: number, gx: number, hx: number) => void) | null = null;
+  /** Online host: floating texts and spark bursts, which the guest replays as events. */
+  onFx: ((fx: [string, ...unknown[]]) => void) | null = null;
   totalHits: number[];
   maxCombo: number[];
   winnerTeam = -1;
@@ -213,6 +231,7 @@ export class FightGame {
     this.mode = options.mode;
     this.difficulty = clamp(options.difficulty, 0, 2);
     this.roundsToWin = Math.max(1, Math.round(options.roundsToWin ?? 2));
+    this.netRole = options.netRole ?? null;
     this.audio = options.audio;
     this.random = options.random ?? Math.random;
     this.totalHits = characters.map(() => 0);
@@ -249,6 +268,12 @@ export class FightGame {
     return members.reduce((n, f) => n + f.hp, 0) / members.reduce((n, f) => n + f.data.hp, 0);
   }
   teamAlive(team: number): boolean { return this.fighters.some(f => f.team === team && f.hp > 0 && !f.minion && !f.echo); }
+  /** Online, this device only drives the 1P keys; the 2P keys belong to the wire. */
+  isLocalControl(code: string): boolean {
+    if (!this.netRole) return this.isControl(code);
+    const c = CONTROLS[0];
+    return code === 'Escape' || c.left === code || c.right === code || c.block === code || c.jump.includes(code) || c.attacks.includes(code);
+  }
   isControl(code: string): boolean {
     return code === 'Escape' || CONTROLS.some(c => c.left === code || c.right === code || c.block === code || c.jump.includes(code) || c.attacks.includes(code));
   }
@@ -307,6 +332,7 @@ export class FightGame {
    *  At most 6 per frame: below 20fps the match slows down instead of spending the next frame
    *  catching up, which on a slow phone only makes that frame late too. */
   advance(nowMs: number): void {
+    if (this.netRole === 'guest') return;
     if (!this.lastFrame) this.lastFrame = nowMs;
     const delta = Math.min((nowMs - this.lastFrame) / 1000, .05);
     this.lastFrame = nowMs;
@@ -319,6 +345,11 @@ export class FightGame {
 
   togglePause(force?: boolean): void {
     if (this.phase === 'finished') return;
+    if (this.netRole) {
+      this.netMenu = force ?? !this.netMenu;
+      this.options.onPause?.(this.netMenu);
+      return;
+    }
     this.paused = force ?? !this.paused;
     this.keys.clear();
     for (const f of this.fighters) { f.queue = []; f.jumpRequest = false; f.jumpBuffer = 0; f.dodgeRequest = false; f.dodgeBuffer = 0; f.blockTap = -1; f.blockBuffer = 0; f.blockLeft = 0; }
@@ -331,6 +362,7 @@ export class FightGame {
     if (code === 'Escape') { this.togglePause(); return; }
     if (this.keys.has(code)) return;
     this.keys.add(code);
+    this.onKey?.(code);
     if (this.paused || this.phase !== 'fight') return;
     for (const f of this.fighters) {
       if (f.controller === null || f.hp <= 0) continue;
@@ -363,6 +395,8 @@ export class FightGame {
 
   /* ---- fx as data ---- */
   setBanner(title: string, sub = '', duration = 0): void {
+    this.bannerTitle = title;
+    this.bannerSub = sub;
     this.lastBanner = title;
     this.options.onBanner?.(title, sub);
     this.bannerLeft = duration;
@@ -372,8 +406,10 @@ export class FightGame {
   }
   text(text: string, x: number, y: number, color = '#fff', life = .65, size = 22): void {
     this.texts.push({ text, x, y, color, life, max: life, size });
+    this.onFx?.(['t', text, x, y, color, life, size]);
   }
   sparks(x: number, y: number, color: string, count = 16, power = 1): void {
+    this.onFx?.(['p', x, y, color, count, power]);
     for (let i = 0; i < count; i++) {
       const a = this.random() * Math.PI * 2, v = (75 + this.random() * 200) * power;
       this.particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: .15 + this.random() * .4, color, size: 2 + Math.floor(this.random() * 5) });
@@ -1079,11 +1115,42 @@ export class FightGame {
 
   /** ponytail: compacts the three visual lists in place — the per-step filter chains here
    *  allocated a fresh array apiece even when nothing expired. */
-  private updateVisuals(dt: number): void {
+  /** Online guest: step the local fighter (2P) immediately on 1P keys so movement, jumps, dodges
+   *  and attack startups respond at 0ms; projectiles and opponent damage wait for the host snapshot. */
+  stepGuestLocal(dt: number): void {
+    if (this.netRole !== 'guest' || this.paused) return;
+    const p1 = this.fighters[0];
+    const p2 = this.fighters[1];
+    if (p1) p1.controller = null;
+    if (p2) p2.controller = 0;
+    this.accumulator = Math.min(this.accumulator + dt, STEP * 6);
+    while (this.accumulator >= STEP) {
+      this.accumulator -= STEP;
+      if (this.hitstop > 0) {
+        this.hitstop = Math.max(0, this.hitstop - STEP);
+        continue;
+      }
+      if (this.phase !== 'fight' || this.timeStop !== null) continue;
+      if (p2) {
+        const projLen = this.projectiles.length;
+        const effLen = this.effects.length;
+        this.stepFighter(p2, STEP);
+        advanceAnim(p2, STEP);
+        this.projectiles.length = projLen;
+        for (let i = effLen; i < this.effects.length; i++) this.effects[i].local = true;
+      }
+      if (p1) advanceAnim(p1, STEP);
+    }
+  }
+
+  /** Online guest: the host owns which effects exist, the guest only runs their clocks. */
+  netVisuals(dt: number): void { this.updateVisuals(dt, true); }
+
+  private updateVisuals(dt: number, holdEffects = false): void {
     let w = 0;
     for (let i = 0; i < this.effects.length; i++) {
       const e = this.effects[i];
-      e.life -= dt;
+      e.life = holdEffects ? Math.max(.001, e.life - dt) : e.life - dt;
       if (e.life > 0) this.effects[w++] = e;
     }
     this.effects.length = w;

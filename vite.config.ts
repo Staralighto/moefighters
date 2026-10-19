@@ -1,4 +1,7 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig, type Plugin } from 'vite';
 
 /** Dev panel posts the live numbers here. The fight keeps running; this file is not hot-reloaded. */
@@ -109,7 +112,25 @@ ${lines.join('\n')}
 `;
 }
 
+/** Online pairing refuses two pages whose game source differs. Line endings do not count. */
+function sourceHash(): string {
+  const root = fileURLToPath(new URL('./src/', import.meta.url));
+  const files: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir).sort()) {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) walk(path);
+      else if (/\.(ts|js|json)$/.test(name) && !/(propLayout|touchLayout)\.data\.ts$/.test(name)) files.push(path);
+    }
+  };
+  walk(root);
+  const h = createHash('sha256');
+  for (const f of files) h.update(f.slice(root.length).replaceAll('\\', '/') + '\0' + readFileSync(f, 'utf8').replace(/\r\n/g, '\n') + '\0');
+  return h.digest('hex').slice(0, 12);
+}
+
 export default defineConfig(({ command }) => ({
+  define: { __NET_HASH__: JSON.stringify(sourceHash()) },
   // Toy hosts the built page under /toy/<slug>/. Dev stays at the site root.
   base: command === 'build' ? './' : '/',
   plugins: [propLayout(), touchLayout()],

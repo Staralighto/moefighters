@@ -1,0 +1,8 @@
+{
+  "name": "mailbox",
+  "private": true,
+  "main": "index.js",
+  "dependencies": {
+    "@cloudbase/node-sdk": "^3.7.0"
+  }
+}

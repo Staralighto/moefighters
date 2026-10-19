@@ -8,6 +8,8 @@ import { previewFighter, type Fighter } from '../game/fighter.ts';
 import { FLOOR, H, W } from '../game/constants.ts';
 import { bestLabel, challengeName, foeCount, readBest, readRun, rollEnemies, type ChallengeKind } from './challenge.ts';
 import { trainPrefs } from './settings.ts';
+import { MAILBOX_URL, mailboxUsable } from '../net/endpoint.ts';
+import { cancelOnline, ensureCodename, formatCodename, noteOnlinePlace, notifyOnlinePick } from './online.ts';
 
 export interface MatchSetup {
   characters: CharacterData[];
@@ -22,6 +24,12 @@ export interface MatchSetup {
   stageNumber?: number;
   /** Challenge only: which sub-mode the match belongs to. */
   challengeKind?: ChallengeKind;
+  /** Set when this 1V1 is a network match. The sim role is host or a snapshot guest. */
+  online?: 'host' | 'guest';
+  /** Online: which match this is on the same link. A rematch counts up. */
+  match?: number;
+  /** Online lockstep: the shared seed. Absent runs host snapshots. */
+  lock?: { seed: number };
 }
 
 const STATE_KEY = 'mf-select-state';
@@ -134,6 +142,13 @@ export class SelectScreen {
   private selected: number[] = [0, 1];
   /** Per slot, earlier player slots take the first key set. */
   private who: ('player' | 'cpu')[] = ['player', 'cpu'];
+  /** 本地 keeps the mode bar. 联网 replaces it with the lobby. Not saved. */
+  private place: 'local' | 'net' = 'local';
+  /** True while an online flow is on the step board. Picks stay put until 取消. */
+  private netLocked = false;
+  /** Online ready phase: peer's currently picked character id and codename. */
+  private netPeerCharId = '';
+  private netPeerCode = '';
   /** Stage-1 opponents, rolled on entering challenge mode and shown in the two enemy slots. */
   private challengeEnemies: CharacterData[] = rollEnemies();
   private side = 0;
@@ -166,12 +181,20 @@ export class SelectScreen {
     return this.stageId === 'random' ? STAGES[Math.floor(Math.random() * STAGES.length)] : this.stage;
   }
 
+  /** The character this player takes online, and the stage a host would use. */
+  onlinePick(): { charId: string; stageId: string } {
+    const slot = this.who.findIndex(w => w === 'player');
+    const index = this.selected[slot < 0 ? 0 : slot];
+    return { charId: this.roster[index].id, stageId: this.resolveStage().id };
+  }
+
   mount(): void {
     this.renderRoster();
     $('stage-grid').innerHTML = '<button type="button" class="stage-card stage-random" data-stage="random" aria-pressed="false"><span class="stage-random-art" aria-hidden="true">?</span><b>随机场景</b></button>'
       + STAGES.map(s => `<button type="button" class="stage-card" data-stage="${s.id}" aria-pressed="false">${s.image ? `<img data-src="${s.image}" alt="${s.name}场景预览">` : ''}<b>${s.name}</b></button>`).join('');
     this.watchStageCards();
     $('stage-grid').querySelectorAll<HTMLButtonElement>('button').forEach(b => b.onclick = () => {
+      if (this.netLocked || document.body.classList.contains('net-ready-phase')) return;
       this.stageId = b.dataset.stage ?? 'random';
       this.onPick();
       this.refresh();
@@ -204,7 +227,12 @@ export class SelectScreen {
       this.onPick();
       this.refresh();
     }));
-    $('random').onclick = () => this.pick(Math.floor(Math.random() * this.roster.length));
+    $('random').onclick = () => {
+      if (this.netLocked) return;
+      if (this.place === 'net') this.side = 0;
+      this.pick(Math.floor(Math.random() * this.roster.length));
+    };
+    document.querySelectorAll<HTMLButtonElement>('[data-place]').forEach(b => b.onclick = () => this.setPlace(b.dataset.place === 'net' ? 'net' : 'local'));
     document.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach(b => b.onclick = () => this.setMode(b.dataset.mode as Mode));
     document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach(b => b.onclick = () => { this.difficulty = Number(b.dataset.difficulty); this.refresh(); });
     document.querySelectorAll<HTMLButtonElement>('[data-challenge-kind]').forEach(b => b.onclick = () => this.setChallengeKind(b.dataset.challengeKind as ChallengeKind));
@@ -316,7 +344,38 @@ export class SelectScreen {
     return this.who[slot] === 'player' ? (this.controllers()[slot] ?? 0) : 0;
   }
 
+  /** Switch the whole action bar. Leaving 联网 cancels a room or a queue. */
+  setNetLocked(on: boolean): void {
+    if (on === this.netLocked) return;
+    this.netLocked = on;
+    document.body.classList.toggle('net-locked', on);
+    this.refresh();
+  }
+
+  /** Update peer preview and codename during the 10-second online ready phase. */
+  setOnlinePeer(charId: string, codename: string): void {
+    if (this.netPeerCharId === charId && this.netPeerCode === codename) return;
+    this.netPeerCharId = charId;
+    this.netPeerCode = codename;
+    this.refresh();
+  }
+
+  private setPlace(place: 'local' | 'net'): void {
+    if (place === 'net' && !mailboxUsable(MAILBOX_URL)) return;
+    if (place === this.place) return;
+    const leaving = this.place === 'net';
+    this.place = place;
+    if (place === 'net') this.side = 0;
+    this.netLocked = false;
+    this.netPeerCharId = '';
+    this.netPeerCode = '';
+    document.body.classList.remove('net-locked');
+    if (leaving) cancelOnline();
+    this.refresh();
+  }
+
   private focus(side: number): void {
+    if (this.place === 'net') return;
     if (this.mode === 'challenge') return; // the enemy pair is never focusable
     if (side === this.side) return;
     this.side = side;
@@ -366,7 +425,16 @@ export class SelectScreen {
   }
 
   private setMode(mode: Mode): void {
-    if (mode === this.mode) return;
+    if (this.place === 'net') {
+      this.place = 'local';
+      this.netLocked = false;
+      document.body.classList.remove('net-locked');
+      cancelOnline();
+    }
+    if (mode === this.mode) {
+      this.refresh();
+      return;
+    }
     if (mode === 'challenge') {
       // A fresh look at the stage-1 foe(s) every time the mode is entered — unless a run is
       // waiting, then the locked pair comes back exactly as it was.
@@ -404,9 +472,12 @@ export class SelectScreen {
   }
 
   private pick(index: number): void {
+    if (this.netLocked) return;
+    if (this.place === 'net') this.side = 0;
     // A waiting run locks the cast: the stage keeps its character until it is fought or abandoned.
-    if (this.mode === 'challenge' && readRun(this.challengeKind)) return;
+    if (this.place !== 'net' && this.mode === 'challenge' && readRun(this.challengeKind)) return;
     this.selected[this.side] = index;
+    if (this.place === 'net') notifyOnlinePick(this.roster[this.selected[0]].id);
     this.onPick();
     this.refresh();
   }
@@ -481,9 +552,11 @@ export class SelectScreen {
   }
 
   refresh(): void {
+    const net = this.place === 'net' && mailboxUsable(MAILBOX_URL);
+    if (!mailboxUsable(MAILBOX_URL)) this.place = 'local';
     const team = this.mode === 'team';
     const challenge = this.mode === 'challenge';
-    const run = challenge ? readRun(this.challengeKind) : null;
+    const run = challenge && !net ? readRun(this.challengeKind) : null;
     if (run) {
       // A waiting run owns the foe(s) and the cast: show them locked, not the last thing browsed.
       this.challengeEnemies = run.enemies;
@@ -493,19 +566,33 @@ export class SelectScreen {
       // Landing on a kind with no run: field the right number of foes for its preview.
       this.challengeEnemies = rollEnemies(foeCount(this.challengeKind));
     }
-    $('select-stage').classList.toggle('team', team);
-    $('select-stage').classList.toggle('challenge', challenge);
-    $('select-stage').classList.toggle('solo', challenge && this.challengeKind === 'climb');
-    $('preview-ally').hidden = !team;
-    $('preview-enemy2').hidden = !(team || (challenge && this.challengeKind === 'brawl'));
+    if (net && this.side !== 0) this.side = 0;
+    const netTab = document.getElementById('net-tab') as HTMLButtonElement | null;
+    if (netTab) {
+      netTab.hidden = !mailboxUsable(MAILBOX_URL);
+      netTab.classList.toggle('active', net);
+    }
+    const localActs = document.getElementById('local-actions');
+    if (localActs) localActs.hidden = net;
+    const netActs = document.getElementById('net-actions');
+    if (netActs) netActs.hidden = !net;
+    document.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach(b => b.classList.toggle('active', !net && b.dataset.mode === this.mode));
+    if (net) noteOnlinePlace(true);
+    $('select-stage').classList.toggle('team', team && !net);
+    $('select-stage').classList.toggle('challenge', challenge && !net);
+    $('select-stage').classList.toggle('solo', challenge && !net && this.challengeKind === 'climb');
+    $('select-stage').classList.toggle('net', net);
+    $('select-stage').classList.toggle('net-ready', net && !!this.netPeerCharId);
+    $('preview-ally').hidden = net || !team;
+    $('preview-enemy2').hidden = net || !(team || (challenge && this.challengeKind === 'brawl'));
     $('preview-enemy2').dataset.slot = String(team ? 3 : 2);
     $('preview-right').dataset.slot = String(team ? 2 : 1);
     $('control-right').dataset.lead = String(team ? 2 : 1);
     // Challenge fixes the sides: solo player left, the CPU(s) right, nobody toggles a slot.
-    document.querySelectorAll<HTMLElement>('.slot-control').forEach(el => { el.hidden = challenge; });
+    document.querySelectorAll<HTMLElement>('.slot-control').forEach(el => { el.hidden = challenge || net; });
     (document.getElementById('difficulty-row') as HTMLElement).hidden = challenge;
     (document.getElementById('challenge-kind-row') as HTMLElement).hidden = !challenge;
-    $('rules-text').textContent = this.summary();
+    $('rules-text').textContent = net ? '联机 · 1V1 对战' : this.summary();
     document.querySelectorAll<HTMLElement>('.fighter-preview').forEach(el => {
       el.classList.toggle('active', !el.hidden && Number(el.dataset.slot) === this.side);
     });
@@ -532,10 +619,48 @@ export class SelectScreen {
       $(v.name).textContent = c.name;
       $(v.tag).textContent = this.mode === 'challenge' && v.slot > 0 ? '人机' : this.slotMark(v.slot);
     }
-    document.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === this.mode));
+    const p1code = document.getElementById('p1code');
+    const p2code = document.getElementById('p2code');
+    if (net) {
+      $('p1tag').textContent = '你';
+      $('p2tag').textContent = '对手';
+      const peerChar = this.netPeerCharId ? this.roster.find(c => c.id === this.netPeerCharId) : undefined;
+      $('name2').textContent = peerChar ? peerChar.name : '等待对手';
+      if (p1code) {
+        p1code.textContent = formatCodename(ensureCodename());
+        p1code.hidden = false;
+      }
+      if (p2code) {
+        p2code.textContent = this.netPeerCode;
+        p2code.hidden = false;
+      }
+    } else {
+      if (p1code) p1code.hidden = true;
+      if (p2code) p2code.hidden = true;
+    }
+    const mystery = document.getElementById('net-mystery-badge');
+    const netCard = document.getElementById('net-slot-card');
+    if (!net) {
+      if (netCard) netCard.hidden = true;
+      if (mystery) mystery.hidden = true;
+    } else if (mystery) {
+      mystery.hidden = !!this.netPeerCharId || !!(netCard && !netCard.hidden);
+    }
+    document.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach(b => b.classList.toggle('active', !net && b.dataset.mode === this.mode));
     document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach(b => b.classList.toggle('active', Number(b.dataset.difficulty) === this.difficulty));
     document.querySelectorAll<HTMLButtonElement>('[data-challenge-kind]').forEach(b => b.classList.toggle('active', b.dataset.challengeKind === this.challengeKind));
     $('roster').querySelectorAll<HTMLButtonElement>('button').forEach((b, i) => {
+      if (net) {
+        const on = this.selected[0] === i;
+        b.classList.toggle('p1', on);
+        b.classList.toggle('ally', false);
+        b.classList.toggle('p2', false);
+        b.setAttribute('aria-pressed', String(on));
+        const mine = b.querySelector('.slot-tag') as HTMLElement;
+        mine.hidden = !on;
+        mine.textContent = '你';
+        return;
+      }
       const chosen = challenge
         ? (this.selected[0] === i ? [0] : [])
         : this.selected.flatMap((pick, p) => pick === i ? [p] : []);
@@ -549,12 +674,14 @@ export class SelectScreen {
     });
     const c = this.roster[this.selected[this.side]];
     const scheme = this.scheme(this.side);
-    $('skill-owner').textContent = this.slotMark(this.side) + ' · ' + c.name + (scheme ? ' · 小键盘' : '');
+    $('skill-owner').textContent = (net ? '你' : this.slotMark(this.side)) + ' · ' + c.name + (scheme ? ' · 小键盘' : '');
     $('flavor').textContent = c.title + ' · ' + c.quote;
     $('passive').textContent = c.passive[0] + '：' + c.passive[1];
     $('skills').innerHTML = skillHTML(c, scheme);
     const train = trainPrefs();
-    $('round-rules').textContent = this.mode === 'training'
+    $('round-rules').textContent = net
+      ? '两胜制 · 60 秒 / 回合'
+      : this.mode === 'training'
       ? '训练场 · 不计时 · 不计胜负'
         + (train.noCd ? ' · 无技能冷却' : '')
         + (train.infiniteUlt ? ' · 无限大招' : '')
@@ -572,11 +699,15 @@ export class SelectScreen {
       b.setAttribute('aria-pressed', String(on));
     });
     const stage = this.stage;
-    $('stage-choice').textContent = this.stageId === 'random' ? '默认随机' : '已选 · ' + stage.name;
+    $('stage-choice').textContent = net
+      ? '开房和匹配使用 · ' + (this.stageId === 'random' ? '随机' : stage.name)
+      : this.stageId === 'random' ? '默认随机' : '已选 · ' + stage.name;
     $('stage-caption').textContent = this.stageId === 'random' ? '随机场景 · 开打时揭晓' : stage.name;
     $('start').innerHTML = this.startLabel();
     const humans = this.controllers().filter(x => x !== null).length;
-    $('select-keys').textContent = humans === 0
+    $('select-keys').textContent = net
+      ? (isTouch() ? KEYS_TOUCH : KEYS_1P)
+      : humans === 0
       ? '两边都是人机，开始后只看不打 · ESC 暂停'
       : isTouch() ? KEYS_TOUCH : humans === 2 ? KEYS_1P + ' · ' + KEYS_2P : KEYS_1P;
     this.save();
@@ -607,8 +738,11 @@ export class SelectScreen {
     }
   }
 
-  /** Challenge enemy slots read the rolled pair; every other slot reads the roster selection. */
+  /** Challenge enemy slots read the rolled pair; online slot 1 shows peer's choice when known, or mirrors player's choice; every other slot reads the roster selection. */
   private slotChar(v: SlotView): CharacterData {
+    if (this.place === 'net' && v.slot === 1) {
+      return (this.netPeerCharId && this.roster.find(c => c.id === this.netPeerCharId)) || this.roster[this.selected[0]];
+    }
     return this.mode === 'challenge' && v.slot > 0 ? this.challengeEnemies[v.slot - 1] : this.roster[this.selected[v.slot]];
   }
 
