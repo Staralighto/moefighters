@@ -1417,7 +1417,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(data.skills[4].fx, 'blackhole', 'O is the well');
   assert.equal(data.skills[4].knock, 0, 'the well does not knock back, the pull owns the body');
   assert.equal(data.skills[5].fx, 'poem', 'the super is the sing');
-  assert.equal(data.skills[5].cost, 150, 'the sing costs 150');
+  assert.equal(data.skills[5].cost, 200, 'the sing costs 200');
   assert.ok(data.skills[5].start >= 1, 'the sing lasts a second');
 
   // U: the stone flies and shoves the dummy
@@ -3028,17 +3028,17 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   supe.keyDown('KeyL');
   run(supe, .75);
   assert.equal(s1.energy, 0, 'the super spends the bar');
-  assert.ok(s1.noGain > 3, `gains are locked, left ${s1.noGain}`);
-  assert.ok(s1.debt > 3, `the bill window is open, left ${s1.debt}`);
+  assert.ok(s1.noGain > 7, `gains are locked, left ${s1.noGain}`);
+  assert.ok(s1.debt > 7, `the bill window is open, left ${s1.debt}`);
   const full = s1.hp;
   hit(supe, s2, s1, s2.data.skills[1], { hit: new Set() });
   assert.equal(s1.hp, full, 'a hit during the window does not spend hp');
   assert.ok(s1.debtDmg > 40, `the hit is billed, saw ${s1.debtDmg}`);
   assert.equal(s1.energy, 0, 'the window does not refund energy');
-  const owed = Math.round(s1.debtDmg * 1.5);
+  const owed = Math.round(s1.debtDmg * 0.8);
   run(supe, s1.debt + .05);
   assert.equal(s1.debt, 0, 'the window ends');
-  assert.equal(s1.hp, full - owed, `the bill is 150%, wanted ${full - owed} got ${s1.hp}`);
+  assert.equal(s1.hp, full - owed, `the bill is 80%, wanted ${full - owed} got ${s1.hp}`);
 }
 
 // viola: the snip pins four cuts, a blocked snip does not siphon, the violet warps to the far edge,
@@ -3213,6 +3213,18 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     g.keyDown('KeyL'); run(g, 1.2);
     assert.ok(hp2 - p2.hp > 100, `the point-blank blast caught the foe, dealt ${hp2 - p2.hp}`);
     assert.ok(hp1 - p1.hp > 100, `hugging the foe burns her too, took ${hp1 - p1.hp}`);
+  }
+  // L: a block takes 50% damage
+  {
+    const g = newGame(viola, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = 100;
+    p1.x = 200; p2.x = 480; p2.facing = -1;
+    const hp = p2.hp;
+    g.keyDown('KeyL');
+    g.keyDown('ArrowDown');
+    run(g, 1.8);
+    const taken = hp - p2.hp;
+    assert.ok(taken >= 75 && taken <= 85, `blocked fuga deals 50% damage, took ${taken}`);
   }
   // clips: U/I/O/L columns, and the vanish hides mid-warp
   {
@@ -4074,7 +4086,11 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.ok(riotCell(2.2, 1) >= 7 && riotCell(2.2, 1) <= 11, 'the tail walks the follow-through');
   const layer = at('layer');
   const data = ROSTER[layer];
-  assert.equal(data.name, 'LAYER', 'layer displays the stage name');
+  assert.equal(data.skills[2].superArmor, true, '入侵秀 has superArmor');
+  assert.equal(data.skills[3].superArmor, true, '燃尽 has superArmor');
+  assert.equal(data.skills[4].superArmor, true, '全力碰撞 has superArmor');
+  assert.equal(data.skills[4].start, .28, '全力碰撞 starts faster');
+  assert.equal(data.skills[4].range, 150, '全力碰撞 range is wider');
   assert.equal(data.skills[3].fx, 'burnout', '燃尽 owns its fx');
   assert.equal(data.skills[5].cost, 120, '大闹一场 costs 120');
   assert.equal(data.skills[5].fx, 'riot', 'the super is the riot');
@@ -4203,10 +4219,10 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   hit(hold, h2, h1, jab, { hit: new Set() });
   assert.equal(h1.attack?.skill.fx, 'crash', 'a jab does not drop 全力碰撞');
   assert.equal(h1.stun, 0, 'the jab does not flinch the slam');
-  assert.ok(heldHp - h1.hp > 20, `the jab still hurts, took ${heldHp - h1.hp}`);
-  assert.ok(Math.abs(h1.vx) > 80, `knockback stays full, vx ${h1.vx}`);
+  assert.ok(heldHp - h1.hp > 15, `the jab still hurts, took ${heldHp - h1.hp}`);
+  assert.ok(Math.abs(h1.vx) > 40, `knockback is braced, vx ${h1.vx}`);
   assert.equal(h1.poise, 0, '抗打断 is the pose, not a poise buff');
-  assert.equal(h1.braced, 0, 'the slam is not 霸体');
+  assert.equal(h1.attack?.skill.superArmor, true, 'the slam has 霸体');
   hit(hold, h2, h1, { ...jab, type: 'grab' }, { hit: new Set() });
   assert.equal(h1.attack, null, 'a grab still drops 全力碰撞');
 }
@@ -4219,7 +4235,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.equal(data.skills[3].count, 3, '噜噜噜 hits three times');
   assert.equal(data.skills[3].range, 220, '噜噜噜 reaches a longer stretch ahead');
   assert.equal(data.skills[3].finale?.root, 1, 'the last 噜 roots for one second');
-  assert.equal(data.skills[5].cost, 150, '和姐姐在一起 costs 150');
+  assert.equal(data.skills[5].cost, 200, '和姐姐在一起 costs 200');
   assert.equal(data.skills[5].onActive?.[0]?.op === 'summon' && data.skills[5].onActive[0].kind === 'named' && data.skills[5].onActive[0].id, 'sayo', 'the partner slot is sayo');
   {
     const guest = guestsFor([data], 'mygo');
@@ -4274,7 +4290,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     assert.equal(mate?.dmgMul, .3, 'the partner hits for three tenths');
     assert.equal(mate?.hp, 200, 'the partner spawns at two tenths');
     assert.ok((mate?.life ?? 0) > 11, 'the partner stays twelve seconds');
-    assert.equal(p1.energyMax, 150, 'the meter caps at the partner cost');
+    assert.equal(p1.energyMax, 200, 'the meter caps at the partner cost');
     assert.ok(p1.noGain > 0, '纱夜在场时日菜禁回气');
     const shut = p1.energy;
     run(g, .5);

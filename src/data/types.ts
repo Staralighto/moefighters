@@ -97,6 +97,8 @@ export interface Skill {
   slowAtk?: number;
   /** 蝶变: a blocked hit still applies `slow`. 花道·缠 leaves this unset and only slows clean hits. */
   slowOnBlock?: boolean;
+  /** Fraction of damage that pierces a guard (e.g. 火的故事 .5). Defaults to .24 for supers, .13 otherwise. */
+  blockMul?: number;
   /** Status mark while 减速 holds. Unset keeps the shared petal aura. */
   slowMark?: string;
   /** Flat extra damage on a clean hit when the target is already 减速. This hit's own slow does not qualify. */

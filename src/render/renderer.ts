@@ -214,7 +214,7 @@ export class Renderer {
             c.font = `16px ${UI_FONT}`;
             c.textAlign = 'center';
             c.fillStyle = '#f4b4c8';
-            c.fillText(String(Math.round(f.debtDmg * 1.5)), Math.round(f.x), Math.round(f.y - 156));
+            c.fillText(String(Math.round(f.debtDmg * 0.8)), Math.round(f.x), Math.round(f.y - 156));
             c.restore();
           }
         }

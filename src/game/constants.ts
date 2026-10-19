@@ -1,6 +1,6 @@
 export const W = 960;
 export const H = 540;
-export const FLOOR = 443;
+export const FLOOR = 453;
 export const GRAVITY = 1650;
 export const STEP = 1 / 120;
 /** How long a press stays queued once the fighter can act. Locks pause this clock. */

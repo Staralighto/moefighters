@@ -173,7 +173,7 @@ export const ROSTER: CharacterData[] = [
         brief: '黑洞吸住敌人；跳出可躲，冲刺可挣脱', detail: '前方生成黑洞，吸住敌人并多段低伤，1.4 秒后消失；出手后即可行动，跳出可躲伤害、冲刺可挣脱',
       }),
       skill(5, 'endure', '诗超绊', {
-        cost: 150, damage: 0, start: 1.0, duration: 1.35, fx: 'poem',
+        cost: 200, damage: 0, start: 1.0, duration: 1.35, fx: 'poem',
         onActive: [{ op: 'summon', kind: 'ally' }],
         brief: '震退并召唤队友；在场禁回气，被击败退场', detail: '原地歌唱 1 秒震退对手，随后召唤 1 名 MyGO 队友并肩 12 秒；生命两成、伤害三成，队友在场时无法获得气，被击败提前退场',
       }),
@@ -508,11 +508,11 @@ export const ROSTER: CharacterData[] = [
       skill(5, 'endure', '直接无限大', {
         damage: 0, range: 0, start: .4, duration: .7, fx: 'infinite',
         onActive: [
-          { op: 'mod', kind: 'debt', time: 4 },
-          { op: 'mod', kind: 'noGain', time: 4, max: true },
+          { op: 'mod', kind: 'debt', time: 8 },
+          { op: 'mod', kind: 'noGain', time: 8, max: true },
           { op: 'fx', type: 'burst', life: .7, radius: 120 },
         ],
-        brief: '霸体记账；期间不掉血且禁回气，结束时一起结算', detail: '4 秒霸体记账且禁回气：期间不掉血，结束时一次承受期间伤害的 150%',
+        brief: '霸体记账；期间不掉血且禁回气，结束时一起结算', detail: '8 秒霸体记账且禁回气：期间不掉血，结束时一次承受期间伤害的 80%',
       }),
     ],
   },
@@ -666,13 +666,13 @@ export const ROSTER: CharacterData[] = [
       }),
       skill(3, 'projectile', '秋时雨', {
         // Five drops at the release frame. interval 0 dumps the volley in one step, then a short tail.
-        damage: 14, count: 5, interval: 0, cd: 8, start: .32, duration: .44, knock: 40, size: 36, life: 1.1,
+        damage: 40, count: 5, interval: 0, cd: 4.5, start: .32, duration: .44, knock: 40, size: 36, life: 1.1,
         motion: 'fall', floor: 'splash', solid: false, fx: 'shigure',
         brief: '五道雨打不掉；间隙躲且可行动',
         detail: '五道雨在出手时一起从身前直直落下，间距比人宽，站定只吃到一道。走到两道之间躲过。这些雨打不掉。出手后可行动。',
       }),
       skill(4, 'light', '忧伤节拍器', {
-        damage: 14, count: 4, interval: .22, cd: 7, start: .36, duration: 1.3, range: 156, reach: 'low', fx: 'metronome',
+        damage: 24, count: 4, interval: .22, cd: 7, start: .36, duration: 1.3, range: 156, reach: 'low', fx: 'metronome',
         finale: { knock: 340, react: { kind: 'knockdown', vy: -200, knocked: .72 } },
         brief: '四下等间隔；跳起可躲，中了连到击倒',
         detail: '四下等间隔扫弦，判定只到站立胸口，跳起躲过整段。第一下命中后硬直接上下面三下，最后一下击倒。',
@@ -814,7 +814,7 @@ export const ROSTER: CharacterData[] = [
         brief: '短距离贴到面前打一下', detail: '短距离突进，贴到面前打一下',
       }),
       skill(5, 'endure', '和姐姐在一起', {
-        cost: 150, damage: 0, range: 0, start: .4, duration: .9, fx: 'burst',
+        cost: 200, damage: 0, range: 0, start: .4, duration: .9, fx: 'burst',
         onActive: [{ op: 'summon', kind: 'named', id: HINA_PARTNER }],
         brief: '召唤纱夜到身侧；在场禁回气，被击败退场', detail: '召唤冰川纱夜到身侧并肩 12 秒，生命两成、伤害三成；纱夜在场时无法获得气，被击败提前退场',
       }),
@@ -963,18 +963,21 @@ export const ROSTER: CharacterData[] = [
       skill(1, 'heavy', '不败', { damage: 76, range: 148, start: .26, duration: .82, knock: 440 }),
       skill(2, 'dash', '入侵秀', {
         damage: 86, range: 70, start: .2, duration: .9, cd: 6, speed: 640, knock: 400, fx: 'invade',
-        brief: '肩撞前冲；撞上收势，击退随距离，远段击倒',
-        detail: '肩撞前冲；撞上就原地收势，打实击退随距离增加，最远一段才击倒，打空则跑完',
+        superArmor: true,
+        brief: '肩撞前冲；霸体，撞上收势，击退随距离，半程击倒',
+        detail: '肩撞前冲；释放时霸体，撞上就原地收势，打实击退随距离增加，冲过 50% 距离即击倒，打空则跑完',
       }),
       skill(3, 'heavy', '燃尽', {
         damage: 100, range: 255, start: .48, duration: 1.1, cd: 8, knock: 520, fx: 'burnout',
-        brief: '高举琴身砸下；被挡或空挥是大破绽',
-        detail: '琴身从头顶砸下并击退；前摇很长，被格挡或空挥都是大破绽',
+        superArmor: true,
+        brief: '高举琴身砸下；霸体，被挡或空挥是大破绽',
+        detail: '琴身从头顶砸下并击退；释放时霸体，前摇很长，被格挡或空挥都是大破绽',
       }),
       skill(4, 'grab', '全力碰撞', {
-        damage: 24, range: 100, start: .36, duration: 1.95, cd: 8, count: 5, interval: .22, gain: 3, fx: 'crash',
-        brief: '近身连摔五次；释放期间不受普攻打断，跳开则空',
-        detail: '近身抓住往地上连摔；释放期间受击不掉招，伤害和击退照常，抓取和必杀仍能打断。出手慢，跳开则打空',
+        damage: 24, range: 150, start: .28, duration: 1.95, cd: 8, count: 5, interval: .22, gain: 3, fx: 'crash',
+        superArmor: true,
+        brief: '近身连摔五次；释放期间霸体，跳开则空',
+        detail: '近身抓住往地上连摔；释放期间霸体，抓取和必杀仍能打断。出手略快，范围扩大，跳开则打空',
       }),
       skill(5, 'grab', '大闹一场', {
         cost: 120,
@@ -1017,7 +1020,7 @@ export const ROSTER: CharacterData[] = [
         detail: '一整只蛋糕慢速飞过，击退 280；可格挡或跳过',
       }),
       skill(5, 'light', '改变世界', {
-        damage: 40, count: 10, interval: .1, range: 480, knock: 180,
+        damage: 24, count: 10, interval: .1, range: 480, knock: 180,
         start: .35, duration: 2.95, fx: 'change',
         brief: '圆点靠近才挡；按早显示miss',
         detail: '身前蓝色长条发出 2.6 秒并停在对方身上；圆点靠近后再格挡才算，按早会被击穿并显示 miss，全程格挡均匀削去一半破防，归零被击中显示 Bad，不挡至多挨 10 下，跳不掉',
@@ -1130,8 +1133,8 @@ export const ROSTER: CharacterData[] = [
       skill(5, 'projectile', '火的故事', {
         damage: 0, count: 1, speed: 300, size: 160, life: 6, start: .55, duration: .9, knock: 0, fx: 'fuga',
         solid: false,
-        friendly: true, noSiphon: true,
-        brief: '火焰箭命中或到边缘即引爆；敌我不分，满跳可躲', detail: '虚空巨弓射出缓慢火焰箭，命中或到边缘即引爆：范围 170 伤，敌我不分，贴身会炸到自己；满跳可躲，格挡付半管破防值',
+        friendly: true, noSiphon: true, blockMul: .5,
+        brief: '火焰箭命中或到边缘即引爆；敌我不分，满跳可躲', detail: '虚空巨弓射出缓慢火焰箭，命中或到边缘即引爆：范围 170 伤，敌我不分，贴身会炸到自己；满跳可躲，格挡也承受 50% 伤害并付半管破防值',
       }),
     ],
   },

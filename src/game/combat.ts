@@ -389,7 +389,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
 
   if (blocked) {
     const fullHit = damage;
-    damage *= skill.super ? .24 : .13;
+    damage *= skill.blockMul ?? (skill.super ? .24 : .13);
     defender.guard -= skill.super ? 42 : skill.type === 'heavy' ? 26 : 15;
     if (!quiet) defender.stun = hitStun(.075);
     defender.blockTap = 1;
@@ -944,7 +944,7 @@ function runOps(g: FightGame, f: Fighter, s: Skill, ops: Op[]): void {
         onExpire: (game, who) => {
           const acc = who.mods.find(m => m.kind === 'debt')?.acc ?? 0;
           if (acc <= 0) return;
-          const bill = Math.round(acc * 1.5);
+          const bill = Math.round(acc * 0.8);
           who.hp = Math.max(0, who.hp - bill);
           who.stun = Math.max(who.stun, .35);
           game.text('-' + bill, who.x, who.y - 170, '#ff4d6a', .8, 28);
@@ -1709,7 +1709,7 @@ function step_invade(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   a.skill = {
     ...prev,
     knock: px * (1 - Math.exp(-9 * dt)) / dt,
-    ...(px > 160 ? { react: { kind: 'knockdown' as const, vy: -240, knocked: .72 } } : {}),
+    ...(run >= maxRun * .5 ? { react: { kind: 'knockdown' as const, vy: -240, knocked: .72 } } : {}),
   };
   const before = a.hit.size;
   applyMelee(g, f, a);

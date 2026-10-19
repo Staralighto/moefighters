@@ -90,13 +90,13 @@ export function nextTrack(order: MusicOrder, index: number, count: number, pick:
 }
 
 function readQueue(raw: string | null): { order: MusicOrder; index: number; fight: boolean } {
-  const fallback = { order: 'seq' as const, index: 0, fight: true };
+  const fallback = { order: 'shuffle' as const, index: 0, fight: true };
   if (!raw) return fallback;
   try {
     const v = JSON.parse(raw) as unknown;
     if (!v || typeof v !== 'object' || Array.isArray(v)) return fallback;
     const rec = v as { order?: unknown; index?: unknown; fight?: unknown };
-    const order = ORDERS.includes(rec.order as MusicOrder) ? rec.order as MusicOrder : 'seq';
+    const order = ORDERS.includes(rec.order as MusicOrder) ? rec.order as MusicOrder : 'shuffle';
     const index = Number.isInteger(rec.index) && (rec.index as number) >= 0 && (rec.index as number) < TRACKS.length ? rec.index as number : 0;
     const fight = typeof rec.fight === 'boolean' ? rec.fight : true;
     return { order, index, fight };
