@@ -1715,10 +1715,26 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(assetUrl('/bgm/garupa-pico-instrumental.m4a', '/'), '/bgm/garupa-pico-instrumental.m4a', 'the dev server still requests from the site root');
   assert.ok(readFileSync('src/assets/loader.ts', 'utf8').includes('once().catch(() => once())'), 'a dropped image is requested once more before the block figure');
   const headers = readFileSync('public/_headers', 'utf8');
-  assert.ok(/\/bgm\/\*[\r\n]+\s*Cache-Control: public, max-age=2592000/.test(headers), 'bgm is cached for 30 days');
-  assert.ok(/\/sfx\/\*[\r\n]+\s*Cache-Control: public, max-age=2592000/.test(headers), 'sfx is cached for 30 days');
-  assert.ok(/(^|\n)\/\r?\n\s*Cache-Control: public, max-age=0, stale-while-revalidate=604800/.test(headers), 'the document can paint from cache while it revalidates');
-  assert.ok(/\/index\.html[\r\n]+\s*Cache-Control: public, max-age=0, stale-while-revalidate=604800/.test(headers), 'index.html uses the same document cache');
+  const rules: [string, string][] = [];
+  let cachePath = '';
+  for (const line of headers.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t || t.startsWith('#')) continue;
+    if (t.startsWith('/')) { cachePath = t; continue; }
+    const m = /^Cache-Control:\s*(.+)$/.exec(t);
+    if (!m || !cachePath) throw Error('FAIL: public/_headers has a line the cache check cannot read');
+    rules.push([cachePath, m[1]]);
+    cachePath = '';
+  }
+  if (cachePath) throw Error('FAIL: public/_headers path without Cache-Control');
+  const rule = (path: string) => rules.find(r => r[0] === path)?.[1];
+  assert.equal(rule('/bgm/*'), 'public, max-age=2592000', 'bgm is cached for 30 days');
+  assert.equal(rule('/sfx/*'), 'public, max-age=2592000', 'sfx is cached for 30 days');
+  assert.equal(rule('/'), 'public, max-age=0, stale-while-revalidate=604800', 'the document can paint from cache while it revalidates');
+  assert.equal(rule('/index.html'), 'public, max-age=0, stale-while-revalidate=604800', 'index.html uses the same document cache');
+  const edge = JSON.parse(readFileSync('edgeone.json', 'utf8')) as { nodeVersion?: string; headers?: { source: string; headers: { key: string; value: string }[] }[] };
+  assert.equal(edge.nodeVersion, '22.21.1', 'EdgeOne builds on preinstalled Node 22.21');
+  assert.deepEqual(edge.headers?.map(h => [h.source, h.headers.length === 1 && h.headers[0].key === 'Cache-Control' ? h.headers[0].value : '']), rules, 'edgeone.json carries the same cache rules as public/_headers');
   assert.ok(!readFileSync('src/assets/loader.ts', 'utf8').includes('loadPortrait'), 'a failed idle crop does not download the full sheet');
   assert.ok(readFileSync('src/render/spriteView.ts', 'utf8').includes('missingImages.has(stand)'), 'a failed idle crop shows the block figure');
   assert.equal(portraitSrc('/sprites/aya/common.png', true), '/sprites/aya/idle.png', 'the select screen asks for the idle cell, not the whole sheet');

@@ -1,3 +1,4 @@
+# Cloudflare Pages reads this file. EdgeOne Pages reads /edgeone.json. Same rules; npm run check locks both.
 # The document URL never changes. A return visit paints the cached page and revalidates
 # in the background, so a slow link does not sit on a blank tab.
 /
