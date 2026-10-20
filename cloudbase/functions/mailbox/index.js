@@ -648,9 +648,45 @@ async function noteMintedUsers(mintedUsers, now, day, month) {
   return false;
 }
 
-/* Short-lived TURN credentials (600s, UDP only), bound to a joined room, cached per room,
+/* Bare hostname or IPv4. A port, userinfo, or path would retarget the credential. */
+function sgHostOk(host) {
+  if (typeof host !== 'string' || host.length < 1 || host.length > 253) return false;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
+    return host.split('.').every(p => Number(p) <= 255 && String(Number(p)) === p);
+  }
+  return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i.test(host);
+}
+
+/* The static secret is a master key: a leaked username/password can be brute-forced offline
+   when it is short, and a forged credential skips every mailbox valve until the secret rotates. */
+function sgSecretOk(secret) {
+  return typeof secret === 'string' && secret.length >= 32 && /^[\x21-\x7e]+$/.test(secret);
+}
+
+/* Coturn REST credential (draft-uberti time-limited username). Null when the Singapore
+   host is not configured, so local checks and a missing env keep today's Cloudflare-only list.
+   The username is not a Cloudflare user and must not be passed to /revoke. */
+function sgTurnServer(code, now) {
+  const host = (process.env.SG_TURN_HOST || '').trim().toLowerCase();
+  const secret = (process.env.SG_TURN_SECRET || '').trim();
+  if (!sgHostOk(host) || !sgSecretOk(secret)) return null;
+  const username = Math.floor(now / 1000) + TURN_TTL + ':room-' + code;
+  const credential = crypto.createHmac('sha1', secret).update(username).digest('base64');
+  return {
+    urls: [
+      'turn:' + host + ':3478?transport=udp',
+      'turn:' + host + ':3478?transport=tcp',
+    ],
+    username,
+    credential,
+  };
+}
+
+/* Short-lived TURN credentials (600s), bound to a joined room, cached per room,
    rate-limited per IP, and guarded by a daily/monthly Cloudflare GraphQL egress circuit breaker
-   that actively revokes in-flight credentials on abnormal traffic spikes. */
+   that actively revokes in-flight Cloudflare credentials on abnormal traffic spikes.
+   Singapore is attached only after those gates. A Cloudflare HTTP failure still returns it;
+   a trip returns nothing and does not cache it. */
 async function turn(body, now, reply, event) {
   const room = await liveRoom(body.code, now);
   if (!room || !room.joined) return reply(403, { error: 'auth', iceServers: [] });
@@ -756,12 +792,21 @@ async function turn(body, now, reply, event) {
     // Re-read the quota doc. A trip written while Cloudflare was minting must stick,
     // and this username has to be revoked instead of wiping trippedDay.
     if (await noteMintedUsers(mintedUsers, now, day, month)) return reply(200, { iceServers: [] });
-    if (iceServers.length > 0) {
-      try { await db.collection('rooms').doc(body.code).update({ data: { iceServers } }); } catch { /* best effort cache */ }
-    }
-    return reply(200, { iceServers });
+    return publish(iceServers);
   } catch {
-    return reply(200, { iceServers: [] });
+    // Quota, join, and the probe already passed. Cloudflare being down must not hide the
+    // self-hosted server. A trip planted during the failed call still returns nothing.
+    if (tripped(await readQuota(), day, month)) return reply(200, { iceServers: [] });
+    return publish([]);
+  }
+
+  async function publish(cfServers) {
+    const sg = sgTurnServer(body.code, now);
+    const issued = sg ? [sg, ...cfServers] : cfServers;
+    if (issued.length > 0) {
+      try { await db.collection('rooms').doc(body.code).update({ data: { iceServers: issued } }); } catch { /* best effort cache */ }
+    }
+    return reply(200, { iceServers: issued });
   }
 }
 

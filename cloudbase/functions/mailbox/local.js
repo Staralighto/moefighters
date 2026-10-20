@@ -4,6 +4,7 @@
 
 const Module = require('module');
 const http = require('http');
+const crypto = require('crypto');
 
 const tables = new Map();
 const table = name => {
@@ -88,6 +89,7 @@ async function check() {
   let userSeq = 0;
   let failRevoke = false;
   let failGraphql = false;
+  let failMint = false;
   let plantTripDuringMint = false;
 
   // Intercept https.request so `postJsonIpv4` tests real request construction, URL filtering, GraphQL, and /revoke.
@@ -110,29 +112,34 @@ async function check() {
       if (path.endsWith('/credentials/generate-ice-servers')) {
         cfMintCalls++;
         const uname = 'cf-user-' + (++userSeq);
-        status = 201;
-        respText = JSON.stringify({
-          iceServers: [
-            { urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.cloudflare.com:53'] },
-            {
-              urls: [
-                'turn:turn.cloudflare.com:3478?transport=udp',
-                'turn:turn.cloudflare.com:53?transport=udp',
-                'turn:turn.cloudflare.com:3478?transport=tcp',
-                'turns:turn.cloudflare.com:5349?transport=tcp',
-              ],
-              username: uname,
-              credential: 'secret-' + uname,
-            },
-          ],
-        });
-        if (plantTripDuringMint) {
-          plantTripDuringMint = false;
-          const row = table('rooms').get('_turn_quota');
-          if (row && row.data) {
-            row.data.trippedDay = new Date(simNow).toISOString().slice(0, 10);
-            const extra = { u: 'already-live', exp: simNow + 600 * 1000 };
-            row.data.activeUsers = Array.isArray(row.data.activeUsers) ? row.data.activeUsers.concat([extra]) : [extra];
+        if (failMint) {
+          status = 500;
+          respText = '{}';
+        } else {
+          status = 201;
+          respText = JSON.stringify({
+            iceServers: [
+              { urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.cloudflare.com:53'] },
+              {
+                urls: [
+                  'turn:turn.cloudflare.com:3478?transport=udp',
+                  'turn:turn.cloudflare.com:53?transport=udp',
+                  'turn:turn.cloudflare.com:3478?transport=tcp',
+                  'turns:turn.cloudflare.com:5349?transport=tcp',
+                ],
+                username: uname,
+                credential: 'secret-' + uname,
+              },
+            ],
+          });
+          if (plantTripDuringMint) {
+            plantTripDuringMint = false;
+            const row = table('rooms').get('_turn_quota');
+            if (row && row.data) {
+              row.data.trippedDay = new Date(simNow).toISOString().slice(0, 10);
+              const extra = { u: 'already-live', exp: simNow + 600 * 1000 };
+              row.data.activeUsers = Array.isArray(row.data.activeUsers) ? row.data.activeUsers.concat([extra]) : [extra];
+            }
           }
         }
       } else if (path === '/client/v4/graphql') {
@@ -517,9 +524,102 @@ async function check() {
       throw new Error('changed egress must record the new sample');
     }
 
+    // Singapore coturn is prepended only when configured, and its username stays out of /revoke.
+    const sgSecret = 'sg-test-secret-0123456789abcdef01';
+    process.env.SG_TURN_HOST = '203.0.113.10';
+    process.env.SG_TURN_SECRET = sgSecret;
+    const sgEarly = await post({ op: 'open' });
+    const sgDenied = await rawPost({ op: 'turn', code: sgEarly.code, key: sgEarly.key }, {}, '198.51.100.120');
+    if (sgDenied.status !== 403 || (sgDenied.body.iceServers || []).length !== 0) {
+      throw new Error('Singapore TURN must stay behind the joined-room gate');
+    }
+    const sgRoom = await post({ op: 'open' });
+    await post({ op: 'take', code: sgRoom.code });
+    const beforeSg = cfMintCalls;
+    const sgTurn = await rawPost({ op: 'turn', code: sgRoom.code, key: sgRoom.key }, {}, '198.51.100.120');
+    const expiry = Math.floor(simNow / 1000) + 600;
+    const sgUser = expiry + ':room-' + sgRoom.code;
+    const sgPass = crypto.createHmac('sha1', sgSecret).update(sgUser).digest('base64');
+    const sgFirst = sgTurn.body.iceServers[0];
+    if (sgTurn.status !== 200 || cfMintCalls !== beforeSg + 1 || !sgFirst || sgFirst.username !== sgUser || sgFirst.credential !== sgPass) {
+      throw new Error('configured Singapore TURN must be minted locally and placed first');
+    }
+    if (!sgFirst.urls.includes('turn:203.0.113.10:3478?transport=udp') || !sgFirst.urls.includes('turn:203.0.113.10:3478?transport=tcp')) {
+      throw new Error('Singapore TURN must offer UDP and TCP on 3478');
+    }
+    const sgUsers = (table('rooms').get('_turn_quota').data.activeUsers || []).map(x => x.u);
+    if (sgUsers.includes(sgUser)) throw new Error('Singapore username must not be queued for Cloudflare revoke');
+    await post({ op: 'offer', code: sgRoom.code, key: sgRoom.key, sdp: validSdp });
+    const sgGuest = await rawPost({ op: 'turn', code: sgRoom.code }, {}, '198.51.100.121');
+    if (sgGuest.body.iceServers.length !== sgTurn.body.iceServers.length || cfMintCalls !== beforeSg + 1) {
+      throw new Error('guest must reuse the cached list including Singapore');
+    }
+    if (sgGuest.body.iceServers[0].credential !== sgPass) {
+      throw new Error('guest must reuse the cached Singapore credential');
+    }
+
+    const quotaRowSg = table('rooms').get('_turn_quota');
+    const prevTripDay = quotaRowSg.data.trippedDay;
+    quotaRowSg.data.trippedDay = new Date(simNow).toISOString().slice(0, 10);
+    const held = await rawPost({ op: 'turn', code: sgRoom.code, key: sgRoom.key }, {}, '198.51.100.120');
+    quotaRowSg.data.trippedDay = prevTripDay;
+    if (held.status !== 200 || held.body.iceServers.length !== 0 || cfMintCalls !== beforeSg + 1) {
+      throw new Error('a tripped breaker must not return cached Singapore credentials');
+    }
+    simNow += 61 * 1000;
+
+    failGraphql = true;
+    const probeRoom = await post({ op: 'open' });
+    await post({ op: 'take', code: probeRoom.code });
+    const beforeProbe = cfMintCalls;
+    const probeTurn = await rawPost({ op: 'turn', code: probeRoom.code, key: probeRoom.key }, {}, '198.51.100.140');
+    failGraphql = false;
+    if (probeTurn.body.iceServers.length !== 0 || cfMintCalls !== beforeProbe) {
+      throw new Error('graphql blip must not mint Singapore TURN either');
+    }
+
+    failMint = true;
+    const downRoom = await post({ op: 'open' });
+    await post({ op: 'take', code: downRoom.code });
+    const beforeDown = cfMintCalls;
+    const downTurn = await rawPost({ op: 'turn', code: downRoom.code, key: downRoom.key }, {}, '198.51.100.130');
+    failMint = false;
+    const downUser = Math.floor(simNow / 1000) + 600 + ':room-' + downRoom.code;
+    const downPass = crypto.createHmac('sha1', sgSecret).update(downUser).digest('base64');
+    const downFirst = downTurn.body.iceServers[0];
+    if (downTurn.status !== 200 || cfMintCalls !== beforeDown + 1 || downTurn.body.iceServers.length !== 1 || !downFirst || downFirst.username !== downUser || downFirst.credential !== downPass) {
+      throw new Error('Cloudflare mint failure must still return the self-hosted TURN');
+    }
+    await post({ op: 'offer', code: downRoom.code, key: downRoom.key, sdp: validSdp });
+    const downGuest = await rawPost({ op: 'turn', code: downRoom.code }, {}, '198.51.100.131');
+    if (downGuest.body.iceServers.length !== 1 || cfMintCalls !== beforeDown + 1) {
+      throw new Error('guest must reuse the self-hosted TURN cached after a Cloudflare failure');
+    }
+
+    process.env.SG_TURN_HOST = '203.0.113.10:3478';
+    const badRoom = await post({ op: 'open' });
+    await post({ op: 'take', code: badRoom.code });
+    const badTurn = await rawPost({ op: 'turn', code: badRoom.code, key: badRoom.key }, {}, '198.51.100.132');
+    const badUrls = (badTurn.body.iceServers || []).flatMap(s => s.urls || []);
+    if (badTurn.body.iceServers.length === 0 || badUrls.some(u => String(u).includes('203.0.113.10:3478:3478') || String(u).includes('@'))) {
+      throw new Error('a TURN host with a port must not be written into the credential URL');
+    }
+    process.env.SG_TURN_HOST = '203.0.113.10';
+
+    process.env.SG_TURN_SECRET = 'short-secret';
+    const weakRoom = await post({ op: 'open' });
+    await post({ op: 'take', code: weakRoom.code });
+    const weakTurn = await rawPost({ op: 'turn', code: weakRoom.code, key: weakRoom.key }, {}, '198.51.100.133');
+    const weakUsers = (weakTurn.body.iceServers || []).map(s => s.username).filter(Boolean);
+    if (weakTurn.body.iceServers.length === 0 || weakUsers.some(u => String(u).includes(':room-'))) {
+      throw new Error('a short self-hosted TURN secret must not mint a forgeable credential');
+    }
+
     console.log('mailbox pair & all 8 security valve attack simulations ok');
   } finally {
     https.request = origHttpsRequest;
+    delete process.env.SG_TURN_HOST;
+    delete process.env.SG_TURN_SECRET;
   }
 }
 

@@ -22,7 +22,7 @@ import { iceList, parseIce } from '../src/net/config.ts';
 import { HASH_EVERY, LockSession, Rng, SNAP_RTT_MS, TICK_MS, TICK_STEPS, dumpGame, hashGame, loadGame } from '../src/net/lock.ts';
 import { EchoBook, HOST_LEAD_MS, applyClaimHit, coastHost, guestFrame, netAudio, queueGuestState, reconcileGuestPred, resetNetForTest, snapshotGuestPred, stepSoftOffset, syncHostGuestPos, type SoftOffset } from '../src/net/play.ts';
 import { stateFor } from '../src/game/animState.ts';
-import { decodeFrame, sealCandidates } from '../src/net/rtc.ts';
+import { decodeFrame, relayAddressCount, relaysCovered, sealCandidates, turnHosts, turnUrlHost } from '../src/net/rtc.ts';
 import { swipeEdgeBlock, swipeEdgeHit, swipeEdgeSlide, swipeGuardPop, swipeGuardWanted, toyScriptWanted } from '../src/ui/swipeBack.ts';
 import { battleFrame, pictureHud } from '../src/ui/battleFrame.ts';
 import { TOUCH_LAYOUT } from '../src/ui/touchLayout.data.ts';
@@ -4978,6 +4978,20 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   const sealed = sealCandidates(base, [line, 'a=' + line]);
   assert.equal(sealed, base + 'a=' + line + '\r\n', 'a gathered candidate is sealed once');
   assert.equal(sealCandidates(sealed, [line]), sealed, 'sealing again does not duplicate');
+  assert.equal(relayAddressCount([
+    'candidate:1 1 udp 1 139.59.106.152 50000 typ relay raddr 1.2.3.4 rport 9',
+    'candidate:2 1 udp 1 139.59.106.152 50001 typ relay',
+    'a=candidate:3 1 tcp 1 1.1.1.1 3478 typ relay',
+  ]), 2, 'relay addresses count distinct TURN hosts');
+  assert.deepEqual(turnHosts([
+    { urls: ['stun:stun.cloudflare.com:3478', 'turn:turn.cloudflare.com:3478?transport=udp', 'turns:turn.cloudflare.com:5349?transport=tcp'] },
+    { urls: ['turn:203.0.113.10:3478?transport=udp', 'turn:203.0.113.10:3478?transport=tcp'] },
+  ]), ['turn.cloudflare.com', '203.0.113.10'], 'UDP and TCP on one TURN host count once');
+  assert.equal(turnUrlHost('turn:user@203.0.113.10:3478'), '', 'a TURN URL with userinfo is not a host');
+  const two = ['turn.cloudflare.com', '203.0.113.10'];
+  assert.equal(relaysCovered(two, ['turn.cloudflare.com'], 2), false, 'two relay IPs from the fast TURN host do not cover the other host');
+  assert.equal(relaysCovered(two, ['turn.cloudflare.com', '203.0.113.10'], 1), true, 'one relay from each TURN host is enough');
+  assert.equal(relaysCovered(two, [], 2), true, 'missing candidate.url falls back to distinct relay addresses');
 }
 
 // online: the guest's normals and skills come out on the host, through the same pad the wire carries
@@ -5197,6 +5211,8 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.ok(!mailboxSrc.includes('slice(-30)') && !mailboxSrc.includes('slice(-29)'), 'mailbox must not drop live TURN usernames before revoke');
   assert.ok(mailboxSrc.includes('QUEUE_MAX = 20') && mailboxSrc.includes('OPEN_MAX = 30'), 'mailbox must cap concurrent queue waiters and unjoined open rooms');
   assert.ok(mailboxSrc.includes('!room.joined'), 'mailbox turn endpoint must reject unjoined rooms');
+  assert.ok(mailboxSrc.includes('secret.length >= 32'), 'self-hosted TURN secret must be at least 32 characters');
+  assert.ok(mailboxSrc.includes('function sgHostOk'), 'self-hosted TURN host must be a bare hostname or IPv4');
   const onlineSrc = readFileSync('src/ui/online.ts', 'utf8');
   assert.ok(onlineSrc.includes('res.joined === true'), 'asHost must wait for a guest to join before minting TURN credentials');
 }

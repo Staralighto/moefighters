@@ -2,12 +2,63 @@
 
 import { ICE_SERVERS } from './config.ts';
 
-function hasTurn(ice: readonly RTCIceServer[]): boolean {
+/** Hostname of a turn: or turns: URL. Empty when the URL is not TURN or the host is not bare. */
+export function turnUrlHost(url: unknown): string {
+  if (typeof url !== 'string') return '';
+  const lower = url.toLowerCase();
+  const scheme = lower.startsWith('turns:') ? 'turns:' : lower.startsWith('turn:') ? 'turn:' : '';
+  if (!scheme) return '';
+  let rest = url.slice(scheme.length);
+  if (rest.startsWith('//')) rest = rest.slice(2);
+  if (/[\s@\\]/.test(rest)) return '';
+  let host = '';
+  if (rest.startsWith('[')) {
+    const end = rest.indexOf(']');
+    if (end < 2) return '';
+    host = rest.slice(1, end);
+  } else {
+    host = rest.split(/[:/?#]/)[0] ?? '';
+  }
+  host = host.trim().toLowerCase();
+  if (!host || host.length > 253 || /[\s/@?#\\[\]]/.test(host)) return '';
+  return host;
+}
+
+/** Distinct TURN hosts. UDP, TCP, and TLS on one host count once. */
+export function turnHosts(ice: readonly RTCIceServer[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
   for (const s of ice) {
     const list = Array.isArray(s.urls) ? s.urls : [s.urls];
-    if (list.some(u => typeof u === 'string' && (u.startsWith('turn:') || u.startsWith('turns:')))) return true;
+    for (const u of list) {
+      const host = turnUrlHost(u);
+      if (!host || seen.has(host)) continue;
+      seen.add(host);
+      out.push(host);
+    }
   }
-  return false;
+  return out;
+}
+
+/** Distinct relay addresses. UDP and TCP from one TURN host usually share an address. */
+export function relayAddressCount(chunks: readonly string[]): number {
+  const ips = new Set<string>();
+  for (const chunk of chunks) {
+    for (const raw of chunk.split(/\r?\n/)) {
+      const m = /(?:^a=)?candidate:\S+ \d+ \S+ \d+ (\S+) \d+ typ relay\b/.exec(raw.trim());
+      if (m) ips.add(m[1]);
+    }
+  }
+  return ips.size;
+}
+
+/** Each configured host has produced a relay. With no candidate.url at all, distinct relay
+    addresses are the fallback — one host that emits two IPs can then look like two servers. */
+export function relaysCovered(need: readonly string[], got: readonly string[], bareRelayAddresses: number): boolean {
+  if (need.length === 0) return true;
+  const have = new Set(got);
+  if (need.every(h => have.has(h))) return true;
+  return got.length === 0 && bareRelayAddresses >= need.length;
 }
 
 // ICE servers come from config.ts, or per-match credentials the mailbox mints (op 'turn').
@@ -106,7 +157,9 @@ export async function decodeFrame(data: unknown): Promise<Record<string, unknown
   }
 }
 
-function waitIce(pc: RTCPeerConnection, signal?: AbortSignal, expectRelay = false): Promise<string[]> {
+function waitIce(pc: RTCPeerConnection, signal?: AbortSignal, hosts: readonly string[] = []): Promise<string[]> {
+  const need = hosts.filter(h => h.length > 0);
+  const got = new Set<string>();
   const seen: string[] = [];
   if (pc.iceGatheringState === 'complete') return Promise.resolve(seen);
   return new Promise((resolve, reject) => {
@@ -127,17 +180,23 @@ function waitIce(pc: RTCPeerConnection, signal?: AbortSignal, expectRelay = fals
       else resolve(seen);
     };
     const has = () => seen.length > 0 || (pc.localDescription?.sdp ?? '').includes('a=candidate:');
-    const hasRelay = () => seen.some(c => /\btyp\s+relay\b/.test(c)) || /\btyp\s+relay\b/.test(pc.localDescription?.sdp ?? '');
+    const addresses = () => relayAddressCount(seen.concat(pc.localDescription?.sdp ?? ''));
+    const covered = () => relaysCovered(need, [...got], addresses());
     const arm = () => {
       if (!has()) return;
-      if (expectRelay && !hasRelay()) return;
+      if (!covered() && pc.iceGatheringState !== 'complete') return;
       clearTimeout(quiet);
       quiet = window.setTimeout(() => finish(), 1000);
     };
     const onState = () => { if (pc.iceGatheringState === 'complete') finish(); };
     const onCand = (e: RTCPeerConnectionIceEvent) => {
       if (!e.candidate) { finish(); return; }
-      if (e.candidate.candidate) seen.push(e.candidate.candidate);
+      const line = e.candidate.candidate;
+      if (line) seen.push(line);
+      if (e.candidate.type === 'relay' || (line != null && /\btyp\s+relay\b/.test(line))) {
+        const host = turnUrlHost(e.candidate.url);
+        if (host) got.add(host);
+      }
       arm();
     };
     const onAbort = () => finish(signal?.reason ?? new DOMException('aborted', 'AbortError'));
@@ -148,8 +207,14 @@ function waitIce(pc: RTCPeerConnection, signal?: AbortSignal, expectRelay = fals
     arm();
     // ponytail: qq/miwifi STUN never reaches complete. Ship 1s after the last candidate so the
     // guest is not stuck checking for 5s before an answer exists. No candidate at 5s is not done.
-    // Hard ceiling 20s — upgrade path is a STUN server that answers.
-    early = window.setTimeout(() => { if (has()) finish(); }, 5000);
+    // Two TURN hosts: a fast server that emits two relay IPs must not finish this early, or the
+    // other server's relay never enters the SDP. Hard ceiling 20s — upgrade path is a STUN server
+    // that answers.
+    early = window.setTimeout(() => {
+      if (!has()) return;
+      if (need.length > 1 && (got.size > 0 || addresses() > 0) && !covered() && pc.iceGatheringState !== 'complete') return;
+      finish();
+    }, 5000);
     hard = window.setTimeout(() => finish(), 20000);
   });
 }
@@ -342,7 +407,7 @@ export class Link {
 export async function createHost(signal?: AbortSignal, ice: RTCIceServer[] = ICE_SERVERS): Promise<{ sdp: string; link: Link }> {
   const pc = new RTCPeerConnection(rtcConfig(ice));
   try {
-    const gathering = waitIce(pc, signal, hasTurn(ice));
+    const gathering = waitIce(pc, signal, turnHosts(ice));
     const rel = pc.createDataChannel('rel');
     const fast = pc.createDataChannel('fast', { ordered: false, maxRetransmits: 0 });
     rel.binaryType = 'arraybuffer';
@@ -367,7 +432,7 @@ export async function createGuest(offer: string, signal?: AbortSignal, ice: RTCI
   let fast: RTCDataChannel | null = null;
   let have: (pair: [RTCDataChannel, RTCDataChannel]) => void = () => {};
   const channels = new Promise<[RTCDataChannel, RTCDataChannel]>(resolve => { have = resolve; });
-  const gathering = waitIce(pc, signal, hasTurn(ice));
+  const gathering = waitIce(pc, signal, turnHosts(ice));
   pc.ondatachannel = e => {
     e.channel.binaryType = 'arraybuffer';
     if (e.channel.label === 'rel') rel = e.channel;
