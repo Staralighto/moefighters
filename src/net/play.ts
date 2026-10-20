@@ -3,9 +3,9 @@
    the newest complete state, eases positions between states, and runs only visual clocks. */
 
 import { hit } from '../game/combat.ts';
-import { FLOOR, X_MAX, X_MIN, clamp } from '../game/constants.ts';
+import { FLOOR, GRAVITY, X_MAX, X_MIN, clamp } from '../game/constants.ts';
 import type { Attack, Fighter } from '../game/fighter.ts';
-import type { FightGame, SfxKind } from '../game/game.ts';
+import type { Effect, FightGame, SfxKind } from '../game/game.ts';
 import { SILENT_MS } from './config.ts';
 import { InputClock, RemotePad, TAP_SLOTS, packBits, readEvents, tapSlot, type PadEvent } from './proto.ts';
 import type { Link } from './rtc.ts';
@@ -44,7 +44,7 @@ const RESTAMP_MS = 100;
 /** Host: a guest that stopped reporting lets go of every key after this. */
 const STALE_MS = 400;
 /** Events (sound, text, sparks) kept for resend until the guest acks them. */
-const EVENT_KEEP = 32;
+const EVENT_KEEP = 96;
 /** Unacked guest input samples repeated in each packet (~533ms at 60Hz). */
 const PAD_KEEP = 32;
 /** Silence past this shows 连接不稳; normal 350ms–950ms relay latency stays quiet. */
@@ -101,7 +101,7 @@ let pendingClaim: [number, number, number, number] | null = null;
 
 // guest
 let states = new Map<number, WireState>();
-let pending = new Map<number, { b: number; parts: Map<number, Part>; k: number }>();
+let pending = new Map<number, { b: number; parts: Map<number, Part>; k: number; ts?: number; ev?: FxEvent[] }>();
 let shown: WireState | null = null;
 let shownN = 0;
 let objs = new Map<string, object>();
@@ -116,6 +116,45 @@ let lastSendAt = 0;
 let hostTs = 0;
 let hostTsAt = 0;
 let bannerKey = '';
+export class EchoBook {
+  private records: { key: string; at: number; x?: number; y?: number }[] = [];
+
+  note(key: string, now: number, x?: number, y?: number): void {
+    this.records.push({ key, at: now, x, y });
+    // Lockstep guests may never take (no host echo). Keep only enough history for one fallback window.
+    if (this.records.length > 256) this.records.splice(0, this.records.length - 256);
+  }
+
+  /**
+   * Consume one matching local play. Positions are optional: audio matches by kind, sparks
+   * match by colour and proximity so a different hit of the same colour is not swallowed.
+   */
+  take(key: string, now: number, win: number, x?: number, y?: number, reach = Infinity): boolean {
+    this.prune(now, win);
+    const idx = this.records.findIndex(r => {
+      if (r.key !== key || now - r.at > win || now - r.at < -50) return false;
+      if (x === undefined || y === undefined || r.x === undefined || r.y === undefined) return true;
+      return Math.abs(r.x - x) <= reach && Math.abs(r.y - y) <= reach;
+    });
+    if (idx >= 0) {
+      this.records.splice(idx, 1);
+      return true;
+    }
+    return false;
+  }
+
+  prune(now: number, win: number): void {
+    const minAt = now - win;
+    while (this.records.length > 0 && this.records[0].at < minAt) {
+      this.records.shift();
+    }
+  }
+
+  clear(): void {
+    this.records.length = 0;
+  }
+}
+
 let ease = new Map<string, { fx: number; fy: number; tx: number; ty: number }>();
 let easeAt = 0;
 let easeSpan = SNAP_MS;
@@ -123,6 +162,24 @@ let lastPaintAt = 0;
 let lastLocalActAt = 0;
 let p2SoftOffset: SoftOffset = { dx: 0, dy: 0 };
 let p2OffsetApplied = false;
+let p2LogicalX = 0;
+let p2LogicalY = 0;
+let f0SoftOffset: SoftOffset = { dx: 0, dy: 0 };
+let f0OffsetApplied = false;
+let f0Vx = 0;
+let f0Prev: { x: number; ts: number } | null = null;
+let f0TargetX = 0;
+let f0Extrap = 0;
+let f0Seen = false;
+export const HOST_LEAD_MS = 50;
+/** Do not dead-reckon farther than this past the newest snapshot (a gap means packet loss). */
+const F0_EXTRAP_MAX = .1;
+const F0_SPEED_MAX = 1100;
+const sfxBook = new EchoBook();
+const sparkBook = new EchoBook();
+let echoing = false;
+let localFx: { type: string; fighter?: number; x: number; y: number; color: string; radius?: number; dir?: number; at: number }[] = [];
+let localFxSeen = new WeakSet<Effect>();
 let claimSeq = 0;
 let outClaim: [number, number, number, number] | null = null;
 
@@ -166,6 +223,20 @@ function reset(): void {
   lastLocalActAt = 0;
   p2SoftOffset = { dx: 0, dy: 0 };
   p2OffsetApplied = false;
+  p2LogicalX = 0;
+  p2LogicalY = 0;
+  f0SoftOffset = { dx: 0, dy: 0 };
+  f0OffsetApplied = false;
+  f0Vx = 0;
+  f0Prev = null;
+  f0TargetX = 0;
+  f0Extrap = 0;
+  f0Seen = false;
+  sfxBook.clear();
+  sparkBook.clear();
+  echoing = false;
+  localFx = [];
+  localFxSeen = new WeakSet();
   claimSeq = 0;
   outClaim = null;
 }
@@ -212,9 +283,25 @@ export function endNet(): void {
 
 export function netEpoch(): number { return epoch; }
 
-/** Online host: every sound the sim plays also goes to the guest. */
-export function netAudio(inner: { play(kind: SfxKind): void }): { play(kind: SfxKind): void } {
-  return { play: kind => { inner.play(kind); if (role === 'host') pushEvent(['a', kind]); } };
+function sfxKey(kind: SfxKind, source: number): string {
+  return kind + '@' + source;
+}
+
+/** Online host: every sound the sim plays also goes to the guest; guest records local plays to dedup echo. */
+export function netAudio(inner: { play(kind: SfxKind, source?: number): void }): { play(kind: SfxKind, source?: number): void } {
+  return {
+    play: (kind, source = -1) => {
+      if (role === 'host') {
+        inner.play(kind, source);
+        pushEvent(['a', kind, source]);
+      } else if (role === 'guest') {
+        if (!echoing) sfxBook.note(sfxKey(kind, source), performance.now());
+        inner.play(kind, source);
+      } else {
+        inner.play(kind, source);
+      }
+    },
+  };
 }
 
 function pushEvent(e: [string, ...unknown[]]): void {
@@ -253,13 +340,21 @@ export function netLock(): LockSession | null { return lock; }
 /** Host: lockstep is over for this match. Tell the guest, then run as a snapshot host. */
 function toSnapshots(why: string): void {
   if (role !== 'host' || !link) return;
+  const lag = rtt || lock?.rtt || 0;
   lock = null;
-  link.sendRel({ t: 'F', m: epoch, why });
+  link.sendRel({ t: 'F', m: epoch, why, r: Math.round(lag) });
   const heard = lastHeard;
   const asked = [wantAgain, peerAgain];
   reset();
   lastHeard = heard;
+  rtt = lag;
   [wantAgain, peerAgain] = asked;
+  // lockSound decides by netRole whether this host's audio is mirrored to the guest.
+  if (gameRef) {
+    gameRef.netRole = 'host';
+    // Lockstep installs no snapshot hooks; from now on the host must publish sparks/text too.
+    gameRef.onFx = e => pushEvent(e);
+  }
   ui?.fallback?.(why);
 }
 
@@ -273,8 +368,10 @@ function onRel(msg: Record<string, unknown>): void {
     lock = null;
     netLog.push('lockstep: host switched to snapshots (' + String(msg.why ?? '') + ')');
     const heard = lastHeard;
+    const lag = typeof msg.r === 'number' ? msg.r : rtt;
     reset();
     lastHeard = heard;
+    rtt = lag;
     if (gameRef) { gameRef.netRole = 'guest'; gameRef.keys.clear(); }
     gameRef = null;
     ui?.fallback?.(String(msg.why ?? ''));
@@ -333,6 +430,9 @@ function onFast(msg: Record<string, unknown>): void {
     return;
   }
   if (msg.t === 's' && role === 'guest') {
+    // F and snapshots travel on different channels. Until the reliable F arrives this socket
+    // still owns the lockstep match; painting a snapshot here would fight its local sim.
+    if (lock) return;
     const part = readPart(msg);
     if (!part || part.n <= shownN) return;
     lastHeard = now;
@@ -341,10 +441,13 @@ function onFast(msg: Record<string, unknown>): void {
     // Samples the host already took need no resend.
     if (typeof msg.ia === 'number') pad = pad.filter(e => e[0] > (msg.ia as number));
     if (typeof msg.ca === 'number' && outClaim && outClaim[0] <= msg.ca) outClaim = null;
-    if (Array.isArray(msg.ev)) takeEvents(msg.ev as FxEvent[]);
     let slot = pending.get(part.n);
     if (!slot) { slot = { b: part.b, k: part.k, parts: new Map() }; pending.set(part.n, slot); }
     slot.parts.set(part.i, part);
+    // Keep this snapshot's own send time. hostTs is the newest timestamp seen and may belong
+    // to a later snapshot that arrived while this one was still waiting for its parts.
+    if (typeof msg.ts === 'number') slot.ts = msg.ts;
+    if (Array.isArray(msg.ev)) slot.ev = msg.ev as FxEvent[];
     if (slot.parts.size < slot.k) return;
     const base = part.b ? states.get(part.b) : null;
     if (part.b && !base) return;
@@ -352,23 +455,51 @@ function onFast(msg: Record<string, unknown>): void {
     const state = patchState(base ?? null, changes, part.x);
     states.set(part.n, state);
     for (const key of [...pending.keys()]) if (key <= part.n) pending.delete(key);
-    for (const key of [...states.keys()]) if (key < part.n - 40) states.delete(key);
-    nextState = { n: part.n, s: state };
+    for (const key of [...states.keys()]) if (key < part.n - 70) states.delete(key);
+    // The channel is unordered: a slow older snapshot must not replace a newer one that is
+    // already waiting to be painted. Its events are still safe to take once it is complete.
+    if (!nextState || part.n > nextState.n) nextState = { n: part.n, s: state, ts: slot.ts ?? hostTs };
+    if (slot.ev) takeEvents(slot.ev);
   }
 }
 
-let nextState: { n: number; s: WireState } | null = null;
+let nextState: { n: number; s: WireState; ts?: number } | null = null;
 
 function takeEvents(list: FxEvent[]): void {
   const g = gameRef;
+  // One round trip plus jitter. A longer window starts swallowing unrelated host sounds.
+  const win = Math.max(350, Math.min(2000, (rtt || 0) * 1.2 + 200));
+  const now = performance.now();
   for (const e of list) {
     if (!Array.isArray(e) || typeof e[0] !== 'number' || e[0] <= eventSeen) continue;
-    eventSeen = e[0];
+    // Do not acknowledge events while the game is between hook()/fallback; the host keeps
+    // resending unacked events, so they can arrive on a later snapshot.
     if (!g) continue;
+    eventSeen = e[0];
     const [, kind, ...a] = e;
-    if (kind === 'a' && typeof a[0] === 'string') g.audio.play(a[0] as SfxKind);
-    else if (kind === 't') g.text(String(a[0]), Number(a[1]), Number(a[2]), String(a[3]), Number(a[4]), Number(a[5]));
-    else if (kind === 'p') g.sparks(Number(a[0]), Number(a[1]), String(a[2]), Number(a[3]), Number(a[4]));
+    if (kind === 'a' && typeof a[0] === 'string') {
+      const sfxKind = a[0] as SfxKind;
+      const source = typeof a[1] === 'number' ? a[1] : -1;
+      if (!sfxBook.take(sfxKey(sfxKind, source), now, win)) {
+        echoing = true;
+        try { g.audio.play(sfxKind); } finally { echoing = false; }
+      }
+    } else if (kind === 't') {
+      const text = String(a[0]);
+      const x = Number(a[1]);
+      const y = Number(a[2]);
+      // Guest prediction may already have shown this line; the host echo should not stack a twin.
+      const twin = g.texts.some(t => t.text === text && Math.abs(t.x - x) <= 60 && Math.abs(t.y - y) <= 60);
+      if (!twin) g.text(text, x, y, String(a[3]), Number(a[4]), Number(a[5]));
+    } else if (kind === 'p') {
+      const x = Number(a[0]);
+      const y = Number(a[1]);
+      const color = String(a[2]);
+      if (!sparkBook.take(color, now, win, x, y, 90)) {
+        echoing = true;
+        try { g.sparks(x, y, color, Number(a[3]), Number(a[4])); } finally { echoing = false; }
+      }
+    }
   }
 }
 
@@ -460,6 +591,12 @@ function hook(g: FightGame): void {
   if (role === 'guest') {
     if (g.fighters[0]) g.fighters[0].controller = null;
     if (g.fighters[1]) g.fighters[1].controller = 0;
+    g.onFx = e => {
+      if (echoing) return;
+      if (Array.isArray(e) && e[0] === 'p') {
+        sparkBook.note(String(e[3]), performance.now(), Number(e[1]), Number(e[2]));
+      }
+    };
     g.onKey = code => {
       const slot = tapSlot(code);
       if (slot >= 0) taps[slot] = (taps[slot] + 1) % 256;
@@ -475,6 +612,8 @@ function hook(g: FightGame): void {
 function publish(g: FightGame, now: number): void {
   if (!link) return;
   if (lastSnapAt && now - lastSnapAt < SNAP_MS) return;
+  // Stamp the real send time. A synthetic 33ms slot alternates 33/67ms on 20fps displays,
+  // which makes the guest's velocity estimate (and 50ms lead) oscillate.
   lastSnapAt = now;
   const n = ++snapN;
   const cur = captureState(g, book);
@@ -515,7 +654,9 @@ function report(g: FightGame, now: number): void {
     t: 'i', m: epoch, a: shownN, e: eventSeen, q: pad,
     pt: hostTs, pd: hostTs ? Math.round(now - hostTsAt) : 0,
   };
-  if (p2) { pkt.gx = Math.round(p2.x); pkt.gy = Math.round(p2.y); }
+  // Report the predicted (pre-rubber-band) position. The visual offset exists only to
+  // hide host corrections and must never be fed back as the guest's authoritative x.
+  if (p2) { pkt.gx = Math.round(p2LogicalX); pkt.gy = Math.round(Math.min(FLOOR, p2LogicalY)); }
   if (outClaim) pkt.ch = outClaim;
   link.sendFast(pkt);
 }
@@ -582,32 +723,134 @@ export function stepSoftOffset(softOffset: SoftOffset, dt: number): void {
   if (Math.abs(softOffset.dy) < .5) softOffset.dy = 0;
 }
 
-function paintState(g: FightGame, now: number): void {
+/**
+ * Read a number straight from the full patched wire state. applyState skips fields whose
+ * text did not change, so the live object may still hold our dead-reckoned visual x.
+ */
+function wireNumber(s: WireState, key: string, field: string): number | null {
+  const raw = s.get(key)?.get(field);
+  if (raw === undefined) return null;
+  try {
+    const v = JSON.parse(raw);
+    return typeof v === 'number' && Number.isFinite(v) ? v : null;
+  } catch { return null; }
+}
+
+/** True when the host's fighter must not be extrapolated (freeze, stun, knockback, respawn). */
+function f0Stopped(g: FightGame, f: Fighter): boolean {
+  return g.phase !== 'fight' || g.paused || g.timeStop !== null || g.hitstop > 0 ||
+    f.hp <= 0 || f.stun > 0 || f.knocked > 0 || f.root > 0 || f.ban > 0;
+}
+
+function paintState(g: FightGame, now: number): boolean {
   const next = nextState;
-  if (!next || next.n <= shownN) return;
+  if (!next || next.n <= shownN) return false;
   nextState = null;
   const wasShown = shown !== null;
   const pred = wasShown && g.fighters[1] ? snapshotGuestPred(g.fighters[1]) : null;
+
+  const f0 = g.fighters[0];
+  const prevAttack = f0?.attack ? { serial: f0.attack.serial, t: f0.attack.t } : null;
+  const prevAnim = f0 ? { state: f0.animState, serial: f0.animSerial, time: f0.animTime } : null;
+  const visX = f0 ? f0.x + f0SoftOffset.dx : 0;
+  const visY = f0 ? f0.y + f0SoftOffset.dy : 0;
+
   const from = new Map<string, { x: number; y: number }>();
   for (const [key, o] of objs) {
     const p = o as { x?: number; y?: number };
     if (typeof p.x === 'number' && typeof p.y === 'number') from.set(key, { x: p.x, y: p.y });
   }
+
+  const known = new Set(objs.keys());
+  const localStop = g.hitstop;
   applyState(g, next.s, shown, objs);
+  // Host hitstop is authoritative, but a local predicted hit may have started a longer freeze.
+  g.hitstop = Math.max(localStop, g.hitstop);
+
   shown = next.s;
   shownN = next.n;
+
+  const win = Math.max(450, Math.min(2000, (rtt || 0) * 1.2 + 250));
+  for (const [key, obj] of objs) {
+    if (key[0] !== 'e' || known.has(key)) continue;
+    const e = obj as Effect;
+    const idx = localFx.findIndex(l => {
+      if (l.type !== e.type || l.color !== e.color || now - l.at > win) return false;
+      if (l.radius !== undefined && e.radius !== undefined && Math.abs(l.radius - e.radius) > 4) return false;
+      if (l.dir !== undefined && e.dir !== undefined && l.dir !== e.dir) return false;
+      if (typeof l.fighter === 'number' && typeof e.fighter === 'number') {
+        return l.fighter === e.fighter && Math.abs(l.x - e.x) <= 60 && Math.abs(l.y - e.y) <= 60;
+      }
+      return Math.abs(l.x - e.x) <= 40 && Math.abs(l.y - e.y) <= 40;
+    });
+    if (idx >= 0) {
+      localFx.splice(idx, 1);
+      e.dup = true;
+      const gIdx = g.effects.indexOf(e);
+      if (gIdx >= 0) g.effects.splice(gIdx, 1);
+    }
+  }
+
+  const auth0 = g.fighters[0];
+  if (auth0) {
+    const ts = next.ts || now;
+    const wireX = wireNumber(next.s, 'f0', 'x');
+    const wireY = wireNumber(next.s, 'f0', 'y');
+    const rawAuthX = wireX ?? auth0.x;
+    if (wireY !== null) auth0.y = wireY;
+    if (f0Prev && ts > f0Prev.ts) {
+      const dtMs = ts - f0Prev.ts;
+      if (dtMs >= 8 && dtMs <= 200) {
+        const vx = (rawAuthX - f0Prev.x) / (dtMs / 1000);
+        f0Vx = clamp(vx, -F0_SPEED_MAX, F0_SPEED_MAX);
+      } else if (dtMs > 200) {
+        f0Vx = 0;
+      }
+      f0Prev = { x: rawAuthX, ts };
+    } else if (!f0Prev) {
+      f0Prev = { x: rawAuthX, ts };
+      f0Vx = 0;
+    }
+    if (f0Stopped(g, auth0)) f0Vx = 0;
+
+    const leadDt = HOST_LEAD_MS > 0 && rtt > 0 ? Math.min(rtt / 2, HOST_LEAD_MS) / 1000 : 0;
+    f0TargetX = clamp(rawAuthX + f0Vx * leadDt, X_MIN, X_MAX);
+    auth0.x = f0TargetX;
+    f0Extrap = 0;
+    f0Seen = true;
+
+    if (prevAttack && auth0.attack && auth0.attack.serial === prevAttack.serial && prevAttack.t > auth0.attack.t) {
+      auth0.attack.t = prevAttack.t;
+    }
+    if (prevAnim && auth0.animState === prevAnim.state && auth0.animSerial === prevAnim.serial && prevAnim.time > auth0.animTime) {
+      auth0.animTime = prevAnim.time;
+    }
+
+    const dx = visX - f0TargetX;
+    const dy = visY - auth0.y;
+    // A first snapshot may start far from the local spawn; only ease a small correction.
+    // During normal play a real teleport snaps too.
+    const limit = wasShown ? 320 : 120;
+    if (Math.abs(dx) > limit || Math.abs(dy) > limit) {
+      f0SoftOffset.dx = 0;
+      f0SoftOffset.dy = 0;
+    } else {
+      f0SoftOffset.dx = clamp(dx, -220, 220);
+      f0SoftOffset.dy = clamp(dy, -220, 220);
+    }
+  }
+
   const activeWindow = Math.max(260, rtt + 120);
   const active = now - lastLocalActAt < activeWindow || !!pred?.attack || (pred?.dodge ?? 0) > 0 || (pred?.y ?? FLOOR) < FLOOR - .5 || !!pred?.blocking || g.keys.size > 0;
   reconcileGuestPred(g, pred, active, p2SoftOffset);
+
   easeSpan = Math.min(100, Math.max(16, easeAt ? now - easeAt : SNAP_MS));
   easeAt = now;
   ease = new Map();
   for (const [key, o] of objs) {
-    // f1 (guest's own fighter) uses local prediction + p2SoftOffset; f0 (host) and projectiles use snapshot ease.
-    if ((key[0] !== 'f' && key[0] !== 'p') || key === 'f1') continue;
+    if (key[0] !== 'p') continue;
     const p = o as { x: number; y: number };
     const a = from.get(key);
-    // A jump of more than a screen third is a teleport or a respawn: no slide.
     if (!a || Math.abs(a.x - p.x) > 320 || Math.abs(a.y - p.y) > 320) continue;
     ease.set(key, { fx: a.x, fy: a.y, tx: p.x, ty: p.y });
     p.x = a.x; p.y = a.y;
@@ -622,6 +865,7 @@ function paintState(g: FightGame, now: number): void {
     endTold = true;
     ui?.end(end.win === 1 ? '你赢了' : end.win === 0 ? '你输了' : end.title, end.guestStats || end.stats);
   }
+  return true;
 }
 
 function slide(now: number): void {
@@ -631,6 +875,103 @@ function slide(now: number): void {
     if (!o) continue;
     o.x = e.fx + (e.tx - e.fx) * k;
     o.y = e.fy + (e.ty - e.fy) * k;
+  }
+}
+
+/** Guest-only visual clock for the host's fighter. x is dead-reckoned by guestFrame. */
+export function coastHost(f: Fighter, dt: number, frozen = false): void {
+  if (frozen || f.hp <= 0 || (f.root > 0 && f.rootLevel === 'freeze')) return;
+  if (f.landing > 0) f.landing = Math.max(0, f.landing - dt);
+  if (f.attack) f.attack.t = Math.min(f.attack.t + dt, f.attack.skill.duration);
+  if (f.y < FLOOR - .1 || f.vy < 0) {
+    const juggled = f.y < FLOOR - .1 && f.stun > 0 && f.knocked <= 0;
+    f.vy += GRAVITY * (juggled ? .6 : 1) * dt;
+    f.y += f.vy * dt;
+    if (f.y >= FLOOR) {
+      f.y = FLOOR;
+      f.vy = 0;
+      if (f.attack?.skill.air) f.attack = null;
+    }
+  }
+}
+
+export function guestFrame(g: FightGame, now: number): void {
+  const f0Before = g.fighters[0];
+  if (f0Before && f0OffsetApplied) {
+    f0Before.x = clamp(f0Before.x - f0SoftOffset.dx, X_MIN, X_MAX);
+    f0Before.y = Math.min(FLOOR, f0Before.y - f0SoftOffset.dy);
+    f0OffsetApplied = false;
+  }
+  const p2Before = g.fighters[1];
+  if (p2Before && p2OffsetApplied) {
+    p2Before.x = clamp(p2Before.x - p2SoftOffset.dx, X_MIN, X_MAX);
+    p2Before.y = Math.min(FLOOR, p2Before.y - p2SoftOffset.dy);
+    p2OffsetApplied = false;
+  }
+  const dt = lastPaintAt ? Math.min(.1, (now - lastPaintAt) / 1000) : 0;
+  lastPaintAt = now;
+
+  // Advance last frame's correction before the new snapshot is measured against it. Decaying
+  // after assigning the new offset would throw away ~30% of every fresh correction.
+  stepSoftOffset(f0SoftOffset, dt);
+  stepSoftOffset(p2SoftOffset, dt);
+
+  g.stepGuestLocal(dt);
+
+  for (let i = 0; i < g.effects.length; i++) {
+    const e = g.effects[i];
+    if (e.local && !localFxSeen.has(e)) {
+      localFxSeen.add(e);
+      localFx.push({ type: e.type, fighter: e.fighter, x: e.x, y: e.y, color: e.color, radius: e.radius, dir: e.dir, at: now });
+    }
+  }
+  const fxCutoff = now - 1500;
+  while (localFx.length > 0 && localFx[0].at < fxCutoff) {
+    localFx.shift();
+  }
+
+  const f0Now = g.fighters[0];
+  const frozen = !f0Now || f0Stopped(g, f0Now);
+  if (f0Now && f0Seen) {
+    if (frozen) {
+      // Freeze where the eye currently is; restarting from the old snapshot point would snap.
+      f0TargetX = f0Now.x;
+      f0Extrap = 0;
+    } else {
+      f0Extrap = Math.min(F0_EXTRAP_MAX, f0Extrap + dt);
+      f0Now.x = clamp(f0TargetX + f0Vx * f0Extrap, X_MIN, X_MAX);
+    }
+  }
+  if (f0Now) coastHost(f0Now, dt, frozen);
+
+  g.netVisuals(dt);
+  paintState(g, now);
+  slide(now);
+
+  const f0After = g.fighters[0];
+  if (f0After && (f0SoftOffset.dx !== 0 || f0SoftOffset.dy !== 0)) {
+    const baseX = f0After.x;
+    const baseY = f0After.y;
+    f0After.x = clamp(baseX + f0SoftOffset.dx, X_MIN, X_MAX);
+    f0After.y = Math.min(FLOOR, baseY + f0SoftOffset.dy);
+    // Keep the offset exactly reversible after a wall/floor clamp.
+    f0SoftOffset.dx = f0After.x - baseX;
+    f0SoftOffset.dy = f0After.y - baseY;
+    f0OffsetApplied = true;
+  }
+  const p2After = g.fighters[1];
+  if (p2After) {
+    p2LogicalX = p2After.x;
+    p2LogicalY = p2After.y;
+    if (p2SoftOffset.dx !== 0 || p2SoftOffset.dy !== 0) {
+      const baseX = p2After.x;
+      const baseY = p2After.y;
+      p2After.x = clamp(baseX + p2SoftOffset.dx, X_MIN, X_MAX);
+      p2After.y = Math.min(FLOOR, baseY + p2SoftOffset.dy);
+      p2SoftOffset.dx = p2After.x - baseX;
+      p2SoftOffset.dy = p2After.y - baseY;
+      p2OffsetApplied = true;
+    }
   }
 }
 
@@ -645,27 +986,20 @@ export function netAfter(g: FightGame, now: number): void {
     publish(g, now);
     return;
   }
-  const p2Before = g.fighters[1];
-  if (p2Before && p2OffsetApplied) {
-    p2Before.x = clamp(p2Before.x - p2SoftOffset.dx, X_MIN, X_MAX);
-    p2Before.y = Math.min(FLOOR, p2Before.y - p2SoftOffset.dy);
-    p2OffsetApplied = false;
-  }
-  const dt = lastPaintAt ? Math.min(.1, (now - lastPaintAt) / 1000) : 0;
-  lastPaintAt = now;
-  g.stepGuestLocal(dt);
+  guestFrame(g, now);
   report(g, now);
-  g.netVisuals(dt);
-  paintState(g, now);
-  slide(now);
-  stepSoftOffset(p2SoftOffset, dt);
-  const p2After = g.fighters[1];
-  if (p2After && (p2SoftOffset.dx !== 0 || p2SoftOffset.dy !== 0)) {
-    p2After.x = clamp(p2After.x + p2SoftOffset.dx, X_MIN, X_MAX);
-    p2After.y = Math.min(FLOOR, p2After.y + p2SoftOffset.dy);
-    p2OffsetApplied = true;
-  }
   ui?.hud(g);
+}
+
+export function queueGuestState(n: number, s: WireState, ts?: number, ev?: FxEvent[]): void {
+  nextState = { n, s, ts: ts ?? performance.now() };
+  if (ev) takeEvents(ev);
+}
+
+export function resetNetForTest(g?: FightGame): void {
+  reset();
+  role = 'guest';
+  if (g) hook(g);
 }
 
 /** Guest: the tab is going away; let go of everything now rather than after the host's timeout. */

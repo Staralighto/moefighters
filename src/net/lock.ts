@@ -140,10 +140,12 @@ export class LockSession {
   private lastNow = 0;
   private stallAt = 0;
   private windowAt = 0;
+  private windowGap = 0;
   private windowTicks = 0;
   private pingT = 0;
   private pingAt = 0;
   private lastPingSent = -1000;
+  private rttSamples: number[] = [];
   private resyncing = false;
 
   constructor(g: FightGame, rng: Rng, side: 0 | 1, hooks: LockHooks) {
@@ -162,6 +164,7 @@ export class LockSession {
     this.lastNow = now;
     if (!this.windowAt) this.windowAt = now;
     this.acc += gap;
+    this.windowGap += gap;
     let ran = 0;
     let stalled = false;
     while (this.acc >= TICK_MS && ran < 6) {
@@ -179,10 +182,11 @@ export class LockSession {
       this.stallMs = now - this.stallAt;
     } else { this.stallAt = 0; this.stallMs = 0; }
     this.windowTicks += ran;
-    if (now - this.windowAt >= WINDOW_MS) {
-      const expected = (now - this.windowAt) / TICK_MS;
+    if (this.windowGap >= WINDOW_MS) {
+      const expected = this.windowGap / TICK_MS;
       const slow = this.windowTicks < expected * KEEP_UP && !this.g.paused && this.g.phase !== 'finished';
       this.windowAt = now;
+      this.windowGap = 0;
       this.windowTicks = 0;
       if (slow) this.giveUp('跟不上');
     }
@@ -251,7 +255,12 @@ export class LockSession {
       if (typeof msg.et === 'number' && typeof msg.ed === 'number') {
         const sample = Math.max(0, now - msg.et - msg.ed);
         this.rtt = this.rtt ? this.rtt * .8 + sample * .2 : sample;
-        if (this.rtt > SNAP_RTT_MS) {
+        this.rttSamples.push(sample);
+        if (this.rttSamples.length > 4) this.rttSamples.shift();
+        // Three of the last four samples over the ceiling: a single spike is ignored, but one
+        // lucky low sample cannot mask a link that is persistently too slow.
+        const high = this.rttSamples.filter(v => v > SNAP_RTT_MS).length;
+        if (this.rttSamples.length >= 3 && high >= 3) {
           this.giveUp('高延迟直切快照');
           return;
         }

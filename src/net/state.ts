@@ -255,7 +255,7 @@ export function applyState(g: FightGame, s: WireState, prev: WireState | null, o
     } else if (before !== fields || key === 'f1') paint(obj as Record<string, unknown>, fields, before, GUEST_SKIP, key === 'f1');
     if (kind === 'f') fighters.push(obj as Fighter);
     else if (kind === 'p') shots.push(obj as Projectile);
-    else if (kind === 'e') effects.push(obj as Effect);
+    else if (kind === 'e' && !(obj as Effect).dup) effects.push(obj as Effect);
   }
   for (const e of g.effects) if (e.local && e.life > 0 && !effects.includes(e)) effects.push(e);
   for (const key of [...objs.keys()]) if (!s.has(key)) objs.delete(key);

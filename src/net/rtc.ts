@@ -300,7 +300,11 @@ export class Link {
   sendFastText(text: string): void {
     const ch = this.fast;
     if (!ch || ch.readyState !== 'open' || ch.bufferedAmount > 65536) return;
-    const chaos = import.meta.env?.DEV ? (globalThis as { __netChaos?: { drop?: number; delay?: number; jitter?: number } }).__netChaos : undefined;
+    // Opt-in only: a dev run must not silently behave like a 300ms RTT link unless the
+    // E2E harness explicitly installs window.__netChaos.
+    const chaos = import.meta.env?.DEV
+      ? (globalThis as { __netChaos?: { drop?: number; delay?: number; jitter?: number } }).__netChaos
+      : undefined;
     if (!chaos) { ch.send(text); return; }
     if (Math.random() < (chaos.drop ?? 0)) return;
     const wait = (chaos.delay ?? 0) + Math.random() * (chaos.jitter ?? 0);

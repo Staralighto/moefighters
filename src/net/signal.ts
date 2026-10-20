@@ -25,7 +25,8 @@ export async function postMail(body: Record<string, unknown>, signal?: AbortSign
   try {
     res = await fetch(MAILBOX_URL, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      // text/plain is CORS-safelisted, so the browser skips the preflight OPTIONS.
+      headers: { 'content-type': 'text/plain' },
       body: JSON.stringify(body),
       signal,
     });

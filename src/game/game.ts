@@ -69,6 +69,8 @@ export interface Effect {
   sheet?: string; col?: number; row?: number; facing?: number;
   /** Online guest: spawned by local pre-animation and kept alive until its own clock expires. */
   local?: boolean;
+  /** Online guest: host-echo duplicate of an effect already rendered locally. */
+  dup?: boolean;
 }
 export interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string; size: number }
 export interface FloatingText { text: string; x: number; y: number; color: string; life: number; max: number; size: number }
@@ -119,7 +121,8 @@ export interface GameOptions {
   /** Rounds a side needs to win the match. Defaults to the classic best-of-three (first to 2). */
   roundsToWin?: number;
   stage: StageData;
-  audio: { play(kind: SfxKind): void };
+  /** Source is the fighter id when the sound belongs to one; online echo matching uses it. */
+  audio: { play(kind: SfxKind, source?: number): void };
   random?: () => number;
   /** Live training switches. The same object is mutated from the settings dialog.
    *  Absent keeps both on, so a training match with no prefs still has no skill cooldown and a full meter. */
@@ -523,11 +526,11 @@ export class FightGame {
       SCRIPTS[skill.fx]?.cast?.(this, f);
       this.flash = .15;
       this.shake = 5;
-      this.audio.play('super');
+      this.audio.play('super', f.id);
       this.setBanner(skill.name, f.data.name + ' · SUPER', 1.0);
       this.effect('super', f.x, f.y - 80, f.data.color, .8, { radius: 160 });
     } else {
-      this.audio.play(slot === 0 ? 'light' : slot === 1 ? 'heavy' : 'cast');
+      this.audio.play(slot === 0 ? 'light' : slot === 1 ? 'heavy' : 'cast', f.id);
     }
     if (skill.type === 'dash') f.invuln = skill.super ? .42 : (skill.invuln ?? 0);
     if (skill.type === 'upper') { f.vy = -580; f.invuln = Math.max(f.invuln, .2); }
@@ -892,7 +895,7 @@ export class FightGame {
         else if (ev.kind === 'jump') {
           if (m.y >= FLOOR - .1) {
             m.vy = -600;
-            this.audio.play('jump');
+            this.audio.play('jump', m.id);
             this.effect('dust', m.x, FLOOR, '#afa1c1', .3, { radius: 25 });
           }
         } else if (ev.kind === 'atk') this.attack(m, ev.v ?? 0);
@@ -922,7 +925,7 @@ export class FightGame {
     f.invuln = Math.max(f.invuln, DODGE_INVULN);
     f.blocking = false;
     f.walk = 0;
-    this.audio.play('jump');
+    this.audio.play('jump', f.id);
     this.effect('dust', f.x, FLOOR, '#afa1c1', .3, { radius: 25 });
     this.effect('ghost', f.x, f.y, f.data.color, .2, { fighter: f.id, alpha: .35 });
   }
@@ -1042,7 +1045,7 @@ export class FightGame {
       f.vy = -600 * jumpMul(f);
       f.jumpBuffer = 0;
       if (f.recLeft > 0) f.recTape.push({ t: RECORD_TIME - f.recLeft, kind: 'jump' });
-      this.audio.play('jump');
+      this.audio.play('jump', f.id);
       this.effect('dust', f.x, FLOOR, '#afa1c1', .3, { radius: 25 });
       if (convert >= 0) this.attack(f, convert);
     }
@@ -1054,7 +1057,7 @@ export class FightGame {
         f.attack = null;
         f.vy = -600 * jumpMul(f);
         if (f.recLeft > 0) f.recTape.push({ t: RECORD_TIME - f.recLeft, kind: 'jump' });
-        this.audio.play('jump');
+        this.audio.play('jump', f.id);
         this.effect('dust', f.x, FLOOR, '#afa1c1', .3, { radius: 25 });
       } else if (grounded && !inputLocked(f)) f.jumpBuffer = Math.max(0, f.jumpBuffer - dt);
     }
@@ -1150,7 +1153,7 @@ export class FightGame {
     let w = 0;
     for (let i = 0; i < this.effects.length; i++) {
       const e = this.effects[i];
-      e.life = holdEffects ? Math.max(.001, e.life - dt) : e.life - dt;
+      e.life = holdEffects && !e.local ? Math.max(.001, e.life - dt) : e.life - dt;
       if (e.life > 0) this.effects[w++] = e;
     }
     this.effects.length = w;

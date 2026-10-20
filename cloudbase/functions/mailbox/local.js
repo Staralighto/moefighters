@@ -226,6 +226,14 @@ async function check() {
     }
     rows.clear();
 
+    // A failed search leaves a live waiter. Retrying with a new ticket must not pair with it.
+    await post({ op: 'queue', ticket: 'ghost1111', build: 7, hash: 'same' });
+    const dropped = await post({ op: 'queue', ticket: 'ghost1111', drop: true });
+    const alone = await post({ op: 'queue', ticket: 'ghost2222', build: 7, hash: 'same' });
+    if (dropped.ok !== true || rows.has('ghost1111')) throw new Error('leaving the queue must remove that ticket');
+    if (alone.role || alone.wait !== true) throw new Error('a new ticket must not pair with the waiter that just left');
+    rows.clear();
+
     // 3. Origin whitelist enforcement
     const evil = await rawPost({ op: 'ping' }, { origin: 'https://evil.example' });
     if (evil.status !== 403 || evil.headers['Access-Control-Allow-Origin']) throw new Error('evil origin should be rejected');
@@ -409,8 +417,10 @@ async function check() {
     const cacheTurn = await rawPost({ op: 'turn', code: cacheRoom.code, key: cacheRoom.key }, {}, '198.51.100.110');
     if (cacheTurn.body.iceServers.length === 0) throw new Error('setup mint for cache must succeed');
     const mintsAtCache = cfMintCalls;
+    // Room TTL is 60s, so move the clock and keep the room. Memory and checkedAt both go stale.
+    simNow += 61 * 1000;
+    table('rooms').get(cacheRoom.code).data.expireAt = simNow + 60 * 1000;
     const quotaRow = table('rooms').get('_turn_quota');
-    quotaRow.data.checkedAt = simNow - 61 * 1000;
     failGraphql = true;
     const stillCached = await rawPost({ op: 'turn', code: cacheRoom.code, key: cacheRoom.key }, {}, '198.51.100.110');
     if (stillCached.body.iceServers.length === 0 || cfMintCalls !== mintsAtCache) {
@@ -462,6 +472,7 @@ async function check() {
     const seeded = table('rooms').get('_turn_quota');
     seeded.data.activeUsers = Array.from({ length: 35 }, (_, i) => ({ u: 'bulk-' + i, exp: simNow + 600 * 1000 }));
     seeded.data.checkedAt = simNow - 61 * 1000;
+    simNow += 61 * 1000;
     failRevoke = true;
     cfDayBytes = 3.5 * 1000 * 1000 * 1000;
     cfMonthBytes = 4 * 1000 * 1000 * 1000;
@@ -475,6 +486,32 @@ async function check() {
     const pendingAfter = table('rooms').get('_turn_quota').data.revokePending || [];
     if (pendingAfter.length !== 0 || !revokedUsers.includes('bulk-0') || !revokedUsers.includes('bulk-34')) {
       throw new Error('patrol must retry revoke until the pending list is empty');
+    }
+
+    // 13. A quiet sample is remembered. Unchanged egress is re-checked and not written back.
+    simNow += 24 * 3600 * 1000;
+    cfDayBytes = 1000;
+    cfMonthBytes = 4 * 1000 * 1000 * 1000;
+    const quiet = await openAndJoin('198.51.100.115');
+    const quietTurn = await rawPost({ op: 'turn', code: quiet.code, key: quiet.key }, {}, '198.51.100.115');
+    if (quietTurn.body.iceServers.length === 0) throw new Error('quiet mint must succeed');
+    const stamped = table('rooms').get('_turn_quota').data.checkedAt;
+    const gql = cfGraphqlCalls;
+    await rawPost({ op: 'patrol' });
+    if (cfGraphqlCalls !== gql || table('rooms').get('_turn_quota').data.checkedAt !== stamped) {
+      throw new Error('patrol inside the window must not re-query usage or rewrite quota');
+    }
+    simNow += 61 * 1000;
+    await rawPost({ op: 'patrol' });
+    if (cfGraphqlCalls !== gql + 1 || table('rooms').get('_turn_quota').data.checkedAt !== stamped) {
+      throw new Error('unchanged egress must be re-checked without rewriting quota');
+    }
+    cfDayBytes = 5000;
+    simNow += 61 * 1000;
+    await rawPost({ op: 'patrol' });
+    const moved = table('rooms').get('_turn_quota');
+    if (moved.data.checkedAt !== simNow || moved.data.dayBytes !== 5000) {
+      throw new Error('changed egress must record the new sample');
     }
 
     console.log('mailbox pair & all 8 security valve attack simulations ok');

@@ -128,6 +128,7 @@ function readBody(event) {
       try { body = Buffer.from(body, 'base64').toString('utf8'); } catch { body = ''; }
       if (body.length > BODY_MAX) return {};
     }
+    // Clients send JSON as text/plain. The gateway still hands over the raw text.
     try { body = body ? JSON.parse(body) : {}; } catch { body = {}; }
   }
   if (body && typeof body === 'object') return body;
@@ -135,28 +136,60 @@ function readBody(event) {
   return {};
 }
 
-const BLOCKED_CODES = new Set([
-  '8964', '6489', '0604', '6400', '0064', '1989', '8906', '0427', '0535',
-  '0425', '0720', '0314', '0705', '0301', '0522', '1028', '0913', '0723',
-  '1013', '1124', '1126', '1127',
-  '0707', '0731', '7310', '0918', '9180', '1213',
-  '0512', '0404', '0807',
-  '0911', '1488', '8814', '0419', '4190', '0420', '0315', '0722',
-  '0250', '2500', '0438', '4380', '0038', '3800', '9438', '5438',
-  '7456', '7480', '0748', '7484', '5174', '5418', '5488', '5942',
-  '0213', '2130',
-  '0110', '0119', '0120', '0122', '9110',
-  '0123', '1234', '2345', '3456', '4567', '5678', '6789',
-  '9876', '8765', '7654', '6543', '5432', '4321', '3210',
+const CODE_SALT = 'mf_codename_salt_v1';
+
+function hashCode(code) {
+  let h = 0x811c9dc5;
+  const s = CODE_SALT + code;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+const BLOCKED_CODE_HASHES = new Set([
+  '018e58cf', '01bc6a07', '02bc6b9a', '03413659', '03bc6d2d', '03f87ba6', '04879fb1', '0513806a',
+  '0b731c16', '0e0a8796', '0e21a452', '0f6a4e51', '12a260f3', '133ab92f', '135f359b', '139c32b2',
+  '14bc87f0', '153cfaec', '15bc8983', '163cfc7f', '166a4102', '16bc8b16', '17bc8ca9', '183cffa5',
+  '18bc8e3c', '19ab46ae', '19bc8fcf', '1abc9162', '1b10c382', '1b82b9a1', '1bbc92f5', '1dddf64b',
+  '1f4187d8', '1f628d35', '21418afe', '2281e45e', '22bc9dfa', '22d90dee', '23bc9f8d', '24dca54e',
+  '2520c2e0', '284b7418', '29e825aa', '29fbb882', '2a674dbb', '2ae729c4', '2d43a01e', '2dfe25f0',
+  '3135194e', '360d3d12', '38d36e33', '3a5d2b3c', '3a7f69a4', '3b676a22', '3c58ff59', '3c77305d',
+  '3e3357eb', '3fd37938', '3fd546b8', '412511c7', '41e3c806', '4216aa92', '43575c69', '454c4191',
+  '49285aa0', '494c1582', '4ad70a3e', '4b894226', '4c6a61aa', '4df29802', '4e8ca795', '4f124f12',
+  '52004cb2', '52b88703', '582ab0d4', '5879a6b3', '58cfeeed', '58dfdf6f', '5a1916ff', '5b98dfb1',
+  '5cd0ff36', '5d75b6b0', '5ea4d8f6', '5f65e2e0', '5fa4da89', '603019f6', '6065e473', '6165e606',
+  '6265e799', '6365e92c', '63bbd265', '6465eabf', '6466b202', '6565ec52', '6665ede5', '66741d70',
+  '66eb27eb', '67076cbf', '6765ef78', '67a725b8', '6865f10b', '68fc5916', '698b0a97', '69e8ee0d',
+  '6c56a972', '6d3e8d46', '6fb48374', '6fe0f53e', '7124f9ed', '71eb4d38', '7305b08e', '733084b7',
+  '73c254d0', '74591b52', '76757072', '78a29bdc', '7989b92d', '7bd62c7b', '7d5b6814', '7e5b69a7',
+  '7e5c30ea', '7f585e1e', '7f5b6b3a', '82a9675f', '855987c2', '86ddc0d4', '87821b1b', '87b11252',
+  '881bf2cd', '897313b7', '89a18123', '8dba7027', '8e849d4e', '8fb2d3b6', '90080660', '910807f3',
+  '9180a8be', '92080986', '93080b19', '94080cac', '9437b2ab', '95080e3f', '96080fd2', '965cb310',
+  '97081165', '975cb4a3', '98171d82', '985cb636', '98a77d03', '98f6057f', '995cb7c9', '9991fe77',
+  '9a5cb95c', '9aa78029', '9b5cbaef', '9c081944', '9c5cbc82', '9d081ad7', '9d5cbe15', '9e1eccf3',
+  '9fa78808', 'a05cc2ce', 'a0e0923a', 'a15cc461', 'a1aa2340', 'a289f002', 'a2ca8f6c', 'a2d75b7a',
+  'a444ed4c', 'a4c25625', 'a82e94ab', 'abe42dbe', 'ad0b87c9', 'af9d93e4', 'b00838c0', 'b04c06d5',
+  'b1083a53', 'b1dae873', 'b2083be6', 'b2daea06', 'b3083d79', 'b33fa541', 'b3daeb99', 'b4083f0c',
+  'b508409f', 'b6084232', 'b669d552', 'b6e360ea', 'b70843c5', 'b86a64da', 'ba33c6cd', 'ba612e1a',
+  'bc084ba4', 'bc6cb263', 'bd084d37', 'bf08505d', 'bfc0b927', 'c00851f0', 'c05c312e', 'c1085383',
+  'c2085516', 'c30856a9', 'c408583c', 'c49ef9b6', 'c5851425', 'c6085b62', 'c7085cf5', 'c72f508c',
+  'c73e5b16', 'c7beecce', 'c8085e88', 'c908144d', 'c908601b', 'cb086341', 'cb6f0897', 'cb7f6f3e',
+  'cc0ebcf6', 'cd086667', 'cdf86cf6', 'ce0867fa', 'ceeb1450', 'cf08698d', 'd0ac32b9', 'd20bdb0b',
+  'd4027dbe', 'd60ad4d2', 'd7fe06dc', 'd93c38d5', 'da158ec5', 'db4609aa', 'dee244f6', 'df0151a7',
+  'dffc7834', 'e0c40ede', 'e0d7c792', 'e1fe169a', 'e2e0b57c', 'e4bc3c60', 'e5bc3df3', 'e615b0b5',
+  'e6bc3f86', 'e7bc4119', 'e8bc42ac', 'e9bc443f', 'eaaf0163', 'eabc45d2', 'ec0c873c', 'ed120470',
+  'ed615cd5', 'ed771442', 'edbc4a8b', 'eebc4c1e', 'efbc4db1', 'f063a025', 'f0bc4f44', 'f1bc50d7',
+  'f3bc53fd', 'f4bc5590', 'f534d602', 'f5bc5723', 'f6854b10', 'f6bc58b6', 'f7bc5a49', 'f7d8d442',
+  'f853754a', 'f8bc5bdc', 'f9bc5d6f', 'fa4a3e8a', 'fabc5f02', 'fb8552ef', 'fbbc6095', 'fd855615',
+  'fe81ec28', 'fe89d4d6', 'ff8c1500',
 ]);
 
 function isBlockedCode(code) {
   if (typeof code !== 'string' || code.length !== 4) return true;
   if (code[0] === code[1] && code[1] === code[2] && code[2] === code[3]) return true;
-  if (BLOCKED_CODES.has(code)) return true;
-  if (code.includes('64') && code.includes('89')) return true;
-  if (code.includes('731') || code.includes('250') || code.includes('438') || code.includes('748')) return true;
-  return false;
+  return BLOCKED_CODE_HASHES.has(hashCode(code));
 }
 
 function codeOk(code) {
@@ -231,7 +264,7 @@ const SEEN_THROTTLE = 10000;
 
 /* Fields are stored under data, so a top-level status/build query matches nothing.
    Sweep expired waiters globally across all builds so fake builds cannot bloat the queue. */
-async function pair(ticket, build, now) {
+async function pair(ticket, build, now, sid) {
   const liveRow = d => d && ms(d.expireAt) > now && now - ms(d.seen || d.at) < LIVE;
   const found = await db.collection('queue').where({
     'data.status': 'wait',
@@ -242,7 +275,8 @@ async function pair(ticket, build, now) {
     try { await db.collection('queue').doc(idOf(d)).remove(); } catch { /* the next poll tries again */ }
   }
   const liveWaiters = allRows.filter(liveRow);
-  const other = liveWaiters.find(d => idOf(d) !== ticket && sameBuild(d.build, build));
+  // A stale row from the same page can outlive its drop request. Never pair a retry with it.
+  const other = liveWaiters.find(d => idOf(d) !== ticket && sameBuild(d.build, build) && (!sid || d.sid !== sid));
   if (!other) {
     const alreadyIn = liveWaiters.some(d => idOf(d) === ticket);
     if (!alreadyIn && liveWaiters.length >= QUEUE_MAX) return { busy: true };
@@ -273,6 +307,16 @@ async function pair(ticket, build, now) {
 
 async function queue(body, now, reply) {
   const ticket = typeof body.ticket === 'string' ? body.ticket : '';
+  const sid = typeof body.sid === 'string' && /^[a-zA-Z0-9_-]{8,40}$/.test(body.sid) ? body.sid : '';
+  // The page stopped waiting. A live row here would pair with the next ticket from the same browser.
+  if (body.drop === true) {
+    if (!/^[a-zA-Z0-9_-]{8,40}$/.test(ticket)) return reply(400, { error: 'ticket' });
+    // ponytail: a queue call that already read this doc as missing can set() a waiter after this remove.
+    // A finished search has no such call in flight, and the page waits for this drop before the next ticket.
+    // Ceiling is one request that started before the drop; the upgrade is a conditional set.
+    try { await db.collection('queue').doc(ticket).remove(); } catch { /* already gone */ }
+    return reply(200, { ok: true });
+  }
   // build + source hash: two pages only pair when they run the same game.
   const hash = typeof body.hash === 'string' && /^[a-zA-Z0-9_-]{1,40}$/.test(body.hash) ? body.hash : '';
   if (!/^[a-zA-Z0-9_-]{8,40}$/.test(ticket) || !Number.isInteger(body.build)) return reply(400, { error: 'ticket' });
@@ -282,20 +326,16 @@ async function queue(body, now, reply) {
     try { await db.collection('queue').doc(ticket).remove(); } catch { /* best effort cleanup */ }
     return reply(200, { role: me.role, code: me.code, ...(me.key ? { key: me.key } : {}) });
   }
-  const paired = await pair(ticket, build, now);
+  const paired = await pair(ticket, build, now, sid);
   if (paired && paired.busy) return reply(429, { error: 'busy' });
   if (paired) return reply(200, paired);
-  // Only re-read if `me` existed before `pair()`, in case a concurrent caller paired with us.
-  const again = me ? peel(one(await db.collection('queue').doc(ticket).get())) : null;
-  if (again && again.role && ms(again.expireAt) > now) {
-    try { await db.collection('queue').doc(ticket).remove(); } catch { /* best effort cleanup */ }
-    return reply(200, { role: again.role, code: again.code, ...(again.key ? { key: again.key } : {}) });
-  }
-  if (!again || again.status !== 'wait' || ms(again.expireAt) <= now) {
+  // ponytail: if a match lands on this ticket during pair(), this request still says wait.
+  // The next poll (5s) reads the role at the top. Ceiling is one client interval; the upgrade is a conditional update.
+  if (!me || me.status !== 'wait' || ms(me.expireAt) <= now) {
     await db.collection('queue').doc(ticket).set({
-      data: { build, at: now, seen: now, expireAt: now + TTL, status: 'wait' },
+      data: { build, sid, at: now, seen: now, expireAt: now + TTL, status: 'wait' },
     });
-  } else if (now - ms(again.seen) >= SEEN_THROTTLE) {
+  } else if (now - ms(me.seen) >= SEEN_THROTTLE) {
     await db.collection('queue').doc(ticket).update({ data: { seen: now } });
   }
   return reply(200, { wait: true });
@@ -426,6 +466,9 @@ async function readQuota() {
 // Same instance serializes quota writes. Two CloudBase instances can still interleave;
 // ponytail: upgrade path is a conditional update if that lost-update ever shows up in logs.
 let quotaWrite = Promise.resolve();
+// Quiet sample on this instance. Skips quota reads until the check window ends.
+// A trip written by another instance is noticed on the next window, same as the GraphQL lag.
+let patrolMemo = null;
 function withQuota(fn) {
   const job = quotaWrite.then(fn, fn);
   quotaWrite = job.then(() => {}, () => {});
@@ -473,9 +516,15 @@ async function drainRevokes(id, secret, now) {
   });
 }
 
+function notePatrol(now, day, blocked, needDrain) {
+  patrolMemo = { at: now, day, blocked: Boolean(blocked), needDrain: Boolean(needDrain) };
+}
+
 /* Query Cloudflare egress when the last sample is stale. On a trip, move every live
    username into revokePending BEFORE calling /revoke, so a 5s kill mid-revoke retries
-   on the next patrol. Probe errors fail closed only for a brand-new mint. */
+   on the next patrol. Probe errors fail closed only for a brand-new mint.
+   An unchanged byte sample is not written back: the warm timer used to rewrite the
+   whole quota doc every minute. */
 async function patrolTurn(now) {
   const id = (process.env.TURN_KEY_ID || '').trim();
   const secret = (process.env.TURN_KEY_SECRET || '').trim();
@@ -484,12 +533,27 @@ async function patrolTurn(now) {
   if (!id || !secret || !cfAccount || !cfToken) return { blocked: false, probeError: false, usage: null };
   const day = new Date(now).toISOString().slice(0, 10);
   const month = day.slice(0, 7);
+  if (
+    patrolMemo &&
+    patrolMemo.day === day &&
+    !patrolMemo.needDrain &&
+    now - patrolMemo.at < TURN_USAGE_CHECK_MS
+  ) {
+    return { blocked: patrolMemo.blocked, probeError: false, usage: null };
+  }
   let q = await readQuota();
-  if (pendingNames(q).length) await drainRevokes(id, secret, now);
-  q = await readQuota();
-  if (tripped(q, day, month)) return { blocked: true, probeError: false, usage: null };
+  if (pendingNames(q).length) {
+    await drainRevokes(id, secret, now);
+    q = await readQuota();
+  }
+  const stillPending = pendingNames(q).length > 0;
+  if (tripped(q, day, month)) {
+    notePatrol(now, day, true, stillPending);
+    return { blocked: true, probeError: false, usage: null };
+  }
   const last = ms(q && q.checkedAt);
   if (last && q.usageDay === day && now - last < TURN_USAGE_CHECK_MS) {
+    notePatrol(now, day, false, stillPending);
     return { blocked: false, probeError: false, usage: null };
   }
   let usage;
@@ -503,7 +567,7 @@ async function patrolTurn(now) {
   const tripMonth = usage.monthBytes >= TURN_MONTHLY_BYTES_MAX;
   const tripDay = usage.dayBytes >= TURN_DAILY_BYTES_MAX || spikeBytes >= TURN_SPIKE_BYTES_MAX;
   if (tripMonth || tripDay) {
-    await writeQuota(now, fresh => {
+    const saved = await writeQuota(now, fresh => {
       const base = quotaBase(fresh, now);
       if (!tripMonth && !tripDay) return base;
       const pending = new Set(base.revokePending);
@@ -522,9 +586,20 @@ async function patrolTurn(now) {
       };
     });
     await drainRevokes(id, secret, now);
+    const after = await readQuota();
+    if (saved || tripped(after, day, month)) notePatrol(now, day, true, pendingNames(after).length > 0);
     return { blocked: true, probeError: false, usage: null };
   }
-  await writeQuota(now, fresh => {
+  if (
+    q &&
+    q.usageDay === day &&
+    ms(q.dayBytes) === usage.dayBytes &&
+    ms(q.monthBytes) === usage.monthBytes
+  ) {
+    notePatrol(now, day, false, stillPending);
+    return { blocked: false, probeError: false, usage: null };
+  }
+  const saved = await writeQuota(now, fresh => {
     const base = quotaBase(fresh, now);
     if (tripped(fresh, day, month)) return base;
     return {
@@ -536,6 +611,7 @@ async function patrolTurn(now) {
       expireAt: ms(fresh && fresh.expireAt) || now + 32 * 86400 * 1000,
     };
   });
+  if (saved) notePatrol(now, day, false, stillPending);
   return { blocked: false, probeError: false, usage };
 }
 
@@ -582,7 +658,13 @@ async function turn(body, now, reply, event) {
   const day = new Date(now).toISOString().slice(0, 10);
   const month = day.slice(0, 7);
   const gate = await patrolTurn(now);
-  // A tripped breaker must not hand back a credential already cached on the room.
+  // A tripped breaker must not hand back a credential already cached on the room. The memo
+  // above can belong to another instance's window, so re-read the trip flag before the cache.
+  const freshQ = await readQuota();
+  if (tripped(freshQ, day, month)) {
+    notePatrol(now, day, true, pendingNames(freshQ).length > 0);
+    return reply(200, { iceServers: [] });
+  }
   if (gate.blocked) return reply(200, { iceServers: [] });
   if (Array.isArray(room.iceServers) && room.iceServers.length > 0) {
     return reply(200, { iceServers: room.iceServers });
@@ -603,6 +685,11 @@ async function turn(body, now, reply, event) {
         await tx.rollback();
         return { stop: 'auth' };
       }
+      const q = peel(one(await tx.collection('rooms').doc(QUOTA_DOC).get())) || {};
+      if (tripped(q, day, month)) {
+        await tx.rollback();
+        return { stop: 'tripped' };
+      }
       if (Array.isArray(fresh.iceServers) && fresh.iceServers.length > 0) {
         await tx.rollback();
         return { stop: 'cache', iceServers: fresh.iceServers };
@@ -610,11 +697,6 @@ async function turn(body, now, reply, event) {
       if (fresh.turnMinted) {
         await tx.rollback();
         return { stop: 'minted' };
-      }
-      const q = peel(one(await tx.collection('rooms').doc(QUOTA_DOC).get())) || {};
-      if (tripped(q, day, month)) {
-        await tx.rollback();
-        return { stop: 'tripped' };
       }
       const sameDay = q.day === day;
       const used = sameDay ? ms(q.count) : 0;
@@ -646,6 +728,7 @@ async function turn(body, now, reply, event) {
     }
   });
   if (reserved.stop === 'auth') return reply(403, { error: 'auth', iceServers: [] });
+  if (reserved.stop === 'tripped') notePatrol(now, day, true, true);
   if (reserved.stop === 'cache') return reply(200, { iceServers: reserved.iceServers });
   if (reserved.stop) return reply(200, { iceServers: [] });
   try {

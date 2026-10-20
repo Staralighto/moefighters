@@ -37,4 +37,12 @@ export const ICE_SERVERS = parseIce(env.VITE_ICE_SERVERS);
 export const SILENT_MS = ms(env.VITE_NET_SILENT_MS, 10000);
 export const SHAKY_MS = ms(env.VITE_NET_SHAKY_MS, 500);
 
-export const NET_MODE: 'lock' | 'snap' = env.VITE_NET_MODE === 'snapshot' ? 'snap' : 'lock';
+function snapshotFromUrl(): boolean {
+  if (typeof location === 'undefined') return false;
+  const q = new URLSearchParams(location.search);
+  const snap = q.get('snap');
+  return q.get('net') === 'snap' || q.get('mode') === 'snapshot' ||
+    (snap !== null && snap !== '0' && snap !== 'false');
+}
+
+export const NET_MODE: 'lock' | 'snap' = env.VITE_NET_MODE === 'snapshot' || snapshotFromUrl() ? 'snap' : 'lock';

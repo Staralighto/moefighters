@@ -20,14 +20,15 @@ import { BIT_ATK, BIT_LEFT, BIT_SOFT, NET_BUILD, InputClock, RemotePad, TAP_SLOT
 import { GAME_FIELDS, IdBook, NO_WIRE, PART_BYTES, applyState, captureState, diffState, partText, patchState, readPart, splitParts, type WireState } from '../src/net/state.ts';
 import { iceList, parseIce } from '../src/net/config.ts';
 import { HASH_EVERY, LockSession, Rng, SNAP_RTT_MS, TICK_MS, TICK_STEPS, dumpGame, hashGame, loadGame } from '../src/net/lock.ts';
-import { applyClaimHit, reconcileGuestPred, snapshotGuestPred, stepSoftOffset, syncHostGuestPos, type SoftOffset } from '../src/net/play.ts';
+import { EchoBook, HOST_LEAD_MS, applyClaimHit, coastHost, guestFrame, netAudio, queueGuestState, reconcileGuestPred, resetNetForTest, snapshotGuestPred, stepSoftOffset, syncHostGuestPos, type SoftOffset } from '../src/net/play.ts';
+import { stateFor } from '../src/game/animState.ts';
 import { decodeFrame, sealCandidates } from '../src/net/rtc.ts';
 import { swipeEdgeBlock, swipeEdgeHit, swipeEdgeSlide, swipeGuardPop, swipeGuardWanted, toyScriptWanted } from '../src/ui/swipeBack.ts';
 import { battleFrame, pictureHud } from '../src/ui/battleFrame.ts';
 import { TOUCH_LAYOUT } from '../src/ui/touchLayout.data.ts';
 import { DEFAULT_ULT_ICON, ultIcon } from '../src/ui/touchIcons.ts';
 import { assignSlotWho, guideIndex, skillHTML, stageCover } from '../src/ui/select.ts';
-import { CODENAME_ADJS, CODENAME_CHARS, READY_SECONDS, formatCodename, isBlockedCodeNum, rollCodeNum, validCodenameText } from '../src/ui/online.ts';
+import { BLOCKED_CODE_HASHES, CODE_SALT, CODENAME_ADJS, CODENAME_CHARS, READY_SECONDS, formatCodename, hashCodeNum, isBlockedCodeNum, rollCodeNum, validCodenameText } from '../src/ui/online.ts';
 import { placePick } from '../src/ui/settings.ts';
 import { cycleMusicOrder, nextTrack, resolveMusicPrefs, shouldShuffleOnFight, shouldWarmNext, shuffleStartIndex, stepTrack } from '../src/audio/bgm.ts';
 import { migrateLinearSlider, musicGain, MUSIC_CAP } from '../src/audio/mix.ts';
@@ -5298,17 +5299,36 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.ok(many.fellBack.length > 0, 'repeated desyncs hand the match to snapshots: ' + many.logs.join(' | '));
   const dead = run({ loss: .97, delay: 40, jitter: 30, seconds: 12 });
   assert.ok(dead.fellBack.length > 0, 'a link that cannot keep up falls back');
-  // High-RTT links (> SNAP_RTT_MS = 230ms, e.g. China LAX TURN at 290–435ms or extreme 950ms) hand off on the first ping reply during the round intro
+  // High-RTT links (> SNAP_RTT_MS = 230ms, e.g. China LAX TURN at 290–435ms or extreme 950ms) hand off within 3 RTT samples during the round intro
   assert.equal(SNAP_RTT_MS, 230, 'lockstep RTT ceiling is 230ms');
   for (const [label, oneWay, jitter, maxFrames] of [
-    ['LAX fast 290ms', 145, 10, 26],
-    ['LAX median 350ms', 160, 35, 30],
-    ['LAX slow 435ms', 210, 15, 34],
-    ['extreme 950ms', 465, 20, 66],
+    ['LAX fast 290ms', 145, 10, 70],
+    ['LAX median 350ms', 160, 35, 75],
+    ['LAX slow 435ms', 210, 15, 80],
+    ['extreme 950ms', 465, 20, 100],
   ] as const) {
     const hi = run({ loss: .05, delay: oneWay, jitter, seconds: 3 });
-    assert.equal(hi.fellBack, '高延迟直切快照', label + ' hands off immediately on first RTT sample');
+    assert.equal(hi.fellBack, '高延迟直切快照', label + ' hands off within 3 RTT samples');
     assert.ok(hi.sessions[0].tick <= maxFrames, label + ' finishes handoff while still in ROUND 1 intro (< 135 ticks, got ' + hi.sessions[0].tick + ')');
+  }
+
+  {
+    // A single spike (e.g. 1st sample 300ms, rest 25ms) does not trigger snapshot fallback
+    const g = new FightGame([PLAYABLE[0], PLAYABLE[4]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(1), controllers: [0, 1], netRole: 'lock' });
+    let fellBackWhy = '';
+    const s = new LockSession(g, new Rng(1), 0, {
+      sendFast: () => {}, sendRel: () => {}, sample: () => ({ bits: 0, taps: [0, 0, 0, 0, 0, 0, 0, 0] }),
+      mute: () => {}, fallback: why => { fellBackWhy = why; }, log: () => {},
+    });
+    // Sample 1: 300ms (spike)
+    s.onMessage({ t: 'L', et: 1000, ed: 0 }, 1300);
+    assert.equal(fellBackWhy, '', 'first spike sample of 300ms does not cause immediate fallback');
+    // Sample 2: 25ms
+    s.onMessage({ t: 'L', et: 1300, ed: 0 }, 1325);
+    assert.equal(fellBackWhy, '', 'second normal sample keeps lockstep active');
+    // Sample 3: 25ms
+    s.onMessage({ t: 'L', et: 1350, ed: 0 }, 1375);
+    assert.equal(fellBackWhy, '', 'third normal sample keeps lockstep active (min of last 4 is 25ms <= 230ms)');
   }
 }
 
@@ -5398,6 +5418,16 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.equal(applyClaimHit(hostGame, slot, gx, hx), false, 'lenient hit claim is idempotent per attack swing (no double damage)');
   assert.equal(hostGame.fighters[0].hp, hpAfterOneClaim, 'hp unchanged on duplicate hit claim');
 
+  // Snapshot echo arrives: onClaimHit does not fire again, hp does not drop again
+  let echoClaimCount = 0;
+  guestGame.onClaimHit = () => { echoClaimCount++; };
+  sendSnap();
+  for (let f = 0; f < 5; f++) {
+    for (let i = 0; i < TICK_STEPS; i++) guestGame.stepGuestLocal(STEP);
+  }
+  assert.equal(echoClaimCount, 0, 'snapshot echo does not re-trigger onClaimHit on guest');
+  assert.equal(hostGame.fighters[0].hp, hpAfterOneClaim, 'host hp only dropped once');
+
   // 5) When host hits guest (authoritative stun + knockback), guest accepts host state and blends via 8-tick softOffset
   hostGame.fighters[1].stun = 0.35;
   hostGame.fighters[1].x = 640;
@@ -5417,19 +5447,311 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.ok(Math.abs(softOffset.dx) < 5, 'after 8 ticks (~133ms), softOffset has decayed >94% toward authoritative x');
 }
 
+// Snapshot fix assertions: jump landing ease, dead reckoning, monotonic clocks, audio & effect deduplication, and leak prevention
+{
+  // 1) 落地不再卡跳: 快照 A (下落) -> 8ms 快照 B (落地) -> 8ms 快照 C (相同) -> 20 帧 guestFrame
+  {
+    const hG = new FightGame([PLAYABLE[0], PLAYABLE[4]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(123), controllers: [0, 1], netRole: 'host' });
+    const gG = new FightGame([PLAYABLE[0], PLAYABLE[4]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(123), controllers: [null, 0], netRole: 'guest' });
+    hG.phase = 'fight'; gG.phase = 'fight';
+    resetNetForTest(gG);
+
+    const b = new IdBook();
+    let sentSnap: WireState | null = null;
+    let wire: WireState | null = null;
+    const makeSnap = () => {
+      const s = captureState(hG, b);
+      const { changes, gone } = diffState(sentSnap, s);
+      sentSnap = s;
+      wire = patchState(wire, changes, gone);
+      return wire;
+    };
+
+    hG.fighters[0].y = FLOOR - 40;
+    hG.fighters[0].vy = 400;
+    let snapA = makeSnap();
+    let now = 1000;
+    queueGuestState(1, snapA, now);
+    guestFrame(gG, now);
+
+    now += 8;
+    hG.fighters[0].y = FLOOR;
+    hG.fighters[0].vy = 0;
+    hG.fighters[0].landing = 0;
+    let snapB = makeSnap();
+    queueGuestState(2, snapB, now);
+    guestFrame(gG, now);
+
+    now += 8;
+    let snapC = makeSnap();
+    queueGuestState(3, snapC, now);
+    guestFrame(gG, now);
+
+    for (let i = 0; i < 20; i++) {
+      now += 16;
+      guestFrame(gG, now);
+    }
+    const f0 = gG.fighters[0];
+    assert.ok(Math.abs(f0.y - FLOOR) < 0.5, 'visual y smoothly reaches FLOOR (got ' + f0.y + ')');
+    assert.ok(stateFor(f0) !== 'jump', 'f0 animation state is no longer jump');
+  }
+
+  // 2) 断包也落地: 只给快照 A，跑 0.5s，断言同上
+  {
+    const hG = new FightGame([PLAYABLE[0], PLAYABLE[4]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(124), controllers: [0, 1], netRole: 'host' });
+    const gG = new FightGame([PLAYABLE[0], PLAYABLE[4]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(124), controllers: [null, 0], netRole: 'guest' });
+    hG.phase = 'fight'; gG.phase = 'fight';
+    resetNetForTest(gG);
+
+    const b = new IdBook();
+    let sentSnap: WireState | null = null;
+    let wire: WireState | null = null;
+    const makeSnap = () => {
+      const s = captureState(hG, b);
+      const { changes, gone } = diffState(sentSnap, s);
+      sentSnap = s;
+      wire = patchState(wire, changes, gone);
+      return wire;
+    };
+
+    hG.fighters[0].y = FLOOR - 40;
+    hG.fighters[0].vy = 400;
+    let snapA = makeSnap();
+    let now = 2000;
+    queueGuestState(1, snapA, now);
+    guestFrame(gG, now);
+
+    for (let i = 0; i < 31; i++) {
+      now += 16;
+      guestFrame(gG, now);
+    }
+    const f0 = gG.fighters[0];
+    assert.ok(Math.abs(f0.y - FLOOR) < 0.5, 'even with packet loss f0 lands at FLOOR (got ' + f0.y + ')');
+    assert.ok(stateFor(f0) !== 'jump', 'f0 animation state is no longer jump on packet loss');
+  }
+
+  // 3) 停步不残留: x 先递增两包，再连续两包不变，200ms 后画面 x 与权威值相差小于 0.5
+  {
+    const hG = new FightGame([PLAYABLE[0], PLAYABLE[4]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(125), controllers: [0, 1], netRole: 'host' });
+    const gG = new FightGame([PLAYABLE[0], PLAYABLE[4]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(125), controllers: [null, 0], netRole: 'guest' });
+    hG.phase = 'fight'; gG.phase = 'fight';
+    resetNetForTest(gG);
+
+    const b = new IdBook();
+    let sentSnap: WireState | null = null;
+    let wire: WireState | null = null;
+    const makeSnap = () => {
+      const s = captureState(hG, b);
+      const { changes, gone } = diffState(sentSnap, s);
+      sentSnap = s;
+      wire = patchState(wire, changes, gone);
+      return wire;
+    };
+
+    let now = 3000;
+    hG.fighters[0].x = 100;
+    queueGuestState(1, makeSnap(), now);
+    guestFrame(gG, now);
+
+    now += 33;
+    hG.fighters[0].x = 110;
+    queueGuestState(2, makeSnap(), now);
+    guestFrame(gG, now);
+
+    now += 33;
+    hG.fighters[0].x = 120;
+    queueGuestState(3, makeSnap(), now);
+    guestFrame(gG, now);
+
+    // Two packets with x unchanged at 120
+    now += 33;
+    hG.fighters[0].x = 120;
+    queueGuestState(4, makeSnap(), now);
+    guestFrame(gG, now);
+
+    now += 33;
+    hG.fighters[0].x = 120;
+    queueGuestState(5, makeSnap(), now);
+    guestFrame(gG, now);
+
+    // Run 200ms
+    for (let i = 0; i < 13; i++) {
+      now += 16;
+      guestFrame(gG, now);
+    }
+    const f0 = gG.fighters[0];
+    assert.ok(Math.abs(f0.x - 120) < 0.5, 'stopped opponent leaves no residual offset (got ' + f0.x + ', target 120)');
+  }
+
+  // 4) 攻击时钟推进: f0 的 attack.t = 0.05，两帧没有包 -> t 严格增加；再来一包同 serial、t = 0.06 的旧值 -> t 不回退
+  {
+    const hG = new FightGame([PLAYABLE[0], PLAYABLE[4]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(126), controllers: [0, 1], netRole: 'host' });
+    const gG = new FightGame([PLAYABLE[0], PLAYABLE[4]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(126), controllers: [null, 0], netRole: 'guest' });
+    hG.phase = 'fight'; gG.phase = 'fight';
+    resetNetForTest(gG);
+
+    const b = new IdBook();
+    let sentSnap: WireState | null = null;
+    let wire: WireState | null = null;
+    const makeSnap = () => {
+      const s = captureState(hG, b);
+      const { changes, gone } = diffState(sentSnap, s);
+      sentSnap = s;
+      wire = patchState(wire, changes, gone);
+      return wire;
+    };
+
+    hG.attack(hG.fighters[0], 0);
+    assert.ok(hG.fighters[0].attack !== null, 'host starts an attack');
+    hG.fighters[0].attack!.t = 0.05;
+    const serial = hG.fighters[0].attack!.serial;
+
+    let now = 4000;
+    queueGuestState(1, makeSnap(), now);
+    guestFrame(gG, now);
+
+    now += 16;
+    guestFrame(gG, now);
+    const t1 = gG.fighters[0].attack?.t ?? 0;
+    assert.ok(t1 > 0.05, 'attack clock advances on guestFrame without packet (t1 = ' + t1 + ')');
+
+    now += 16;
+    guestFrame(gG, now);
+    const t2 = gG.fighters[0].attack?.t ?? 0;
+    assert.ok(t2 > t1, 'attack clock advances monotonically (t2 = ' + t2 + ')');
+
+    hG.fighters[0].attack!.t = 0.06;
+    hG.fighters[0].attack!.serial = serial;
+    now += 16;
+    queueGuestState(2, makeSnap(), now);
+    guestFrame(gG, now);
+    const t3 = gG.fighters[0].attack?.t ?? 0;
+    assert.ok(t3 >= t2, 'attack clock does not roll back on stale host packet (t3 = ' + t3 + ', was ' + t2 + ')');
+  }
+
+  // 5) 音效一次: EchoBook 记一次 light 后，第一次 take 为 true，第二次为 false；再通过 queueGuestState 加事件跑集成
+  {
+    const book = new EchoBook();
+    const t = 1000;
+    book.note('light', t);
+    assert.equal(book.take('light', t + 50, 400), true, 'first take of noted sfx returns true');
+    assert.equal(book.take('light', t + 60, 400), false, 'second take of noted sfx returns false');
+    book.note('light@1', t);
+    assert.equal(book.take('light@0', t + 20, 400), false, 'same kind from the other fighter is not swallowed');
+
+    const sfxPlayed: string[] = [];
+    const mockSfx = { play: (k: string) => { sfxPlayed.push(k); } };
+    const hG = new FightGame([PLAYABLE[0], PLAYABLE[4]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: mockSfx as any, random: rng(127), controllers: [0, 1], netRole: 'host' });
+    const gG = new FightGame([PLAYABLE[0], PLAYABLE[4]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: netAudio(mockSfx as any), random: rng(127), controllers: [null, 0], netRole: 'guest' });
+    hG.phase = 'fight'; gG.phase = 'fight';
+    resetNetForTest(gG);
+
+    // Initial sync
+    const b = new IdBook();
+    const snap1 = captureState(hG, b);
+    const { changes: c1, gone: g1 } = diffState(null, snap1);
+    const wire1 = patchState(null, c1, g1);
+    queueGuestState(1, wire1, 1000);
+    guestFrame(gG, 1000);
+
+    // Guest presses KeyJ: plays light sound once and records in sfxBook
+    gG.keyDown('KeyJ');
+    gG.keyUp('KeyJ');
+    guestFrame(gG, 1016);
+    const lightPlaysLocal = sfxPlayed.filter(s => s === 'light').length;
+    assert.equal(lightPlaysLocal, 1, 'guest plays light sound locally once');
+
+    // Host sends snapshot with echo event ['a', 'light']
+    const snap2 = captureState(hG, b);
+    const { changes: c2, gone: g2 } = diffState(snap1, snap2);
+    const wire2 = patchState(wire1, c2, g2);
+    queueGuestState(2, wire2, 1050, [[1, 'a', 'light', 1]]);
+    guestFrame(gG, 1050);
+
+    const lightPlaysTotal = sfxPlayed.filter(s => s === 'light').length;
+    assert.equal(lightPlaysTotal, 1, 'echo is deduplicated by EchoBook (total light plays is 1)');
+  }
+
+  // 6 & 7) 挥砍特效一份与特效无泄漏: 客人本地 J 后，房主做同一招再 sendSnap，同 type、fighter=1 的特效只有 1 个；再跑 1s netVisuals 清零
+  {
+    const hG = new FightGame([PLAYABLE[0], PLAYABLE[4]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(128), controllers: [0, 1], netRole: 'host' });
+    const gG = new FightGame([PLAYABLE[0], PLAYABLE[4]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(128), controllers: [null, 0], netRole: 'guest' });
+    hG.phase = 'fight'; gG.phase = 'fight';
+    resetNetForTest(gG);
+
+    const b = new IdBook();
+    let sentSnap: WireState | null = null;
+    let wire: WireState | null = null;
+    const makeSnap = () => {
+      const s = captureState(hG, b);
+      const { changes, gone } = diffState(sentSnap, s);
+      sentSnap = s;
+      wire = patchState(wire, changes, gone);
+      return wire;
+    };
+
+    queueGuestState(1, makeSnap(), 1000);
+    guestFrame(gG, 1000);
+
+    // Guest triggers attack locally
+    gG.keyDown('KeyJ');
+    gG.keyUp('KeyJ');
+    let now = 1000;
+    for (let f = 0; f < 12; f++) {
+      now += 16;
+      guestFrame(gG, now);
+    }
+    const slashEffectsBefore = gG.effects.filter(e => e.local);
+    assert.ok(slashEffectsBefore.length >= 1, 'guest has local attack effect');
+    const slashType = slashEffectsBefore[0].type;
+
+    // Host executes same attack
+    hG.attack(hG.fighters[1], 0);
+    for (let f = 0; f < 12; f++) {
+      for (let i = 0; i < TICK_STEPS; i++) hG.step(STEP);
+    }
+    const hostSnap = makeSnap();
+    now += 16;
+    queueGuestState(2, hostSnap, now);
+    guestFrame(gG, now);
+
+    const slashEffectsAfter = gG.effects.filter(e => e.type === slashType);
+    assert.equal(slashEffectsAfter.length, 1, 'duplicate host slash effect is matched and pruned, leaving only 1 effect');
+
+    // 7) Advance netVisuals by 1s: all local effects must expire and not leak
+    for (let i = 0; i < 60; i++) {
+      gG.netVisuals(1 / 60);
+    }
+    const remainingLocal = gG.effects.filter(e => e.local);
+    assert.equal(remainingLocal.length, 0, 'local effects expire and do not leak in g.effects (remaining: ' + remainingLocal.length + ')');
+  }
+}
+
 // Online codename & 10s ready phase invariants
 {
   assert.equal(READY_SECONDS, 10, 'online ready phase lasts 10 seconds');
   assert.ok(CODENAME_ADJS.length >= 16, 'codename adjective pool has moe personality/mood words');
   assert.equal(CODENAME_CHARS.length, PLAYABLE.length, 'codename character pool matches playable roster');
-  for (const bad of [
-    '0604', '8964', '1989', '0425', '0720', '0314', '0705', '0512', '1013', '1124',
-    '0707', '0918', '1213', '0731', '0911', '1488', '0420',
-    '0000', '1111', '4444', '8888', '9999', '1234', '4321',
-    '0250', '0438', '7480', '5418', '0110', '0119',
-  ]) {
-    assert.equal(isBlockedCodeNum(bad), true, `blocked number ${bad} is rejected`);
+  // Malformed numbers (non-4-digit strings)
+  for (const malformed of ['', '123', '12345', 'abcd', '12a4', '-123']) {
+    assert.equal(isBlockedCodeNum(malformed), true, `malformed number ${malformed} is rejected`);
   }
+  // Repeated digits (0000..9999)
+  for (let d = 0; d <= 9; d++) {
+    const rep = String(d).repeat(4);
+    assert.equal(isBlockedCodeNum(rep), true, `repeated digit ${rep} is rejected`);
+  }
+  // Salted hash filter verification across all 10,000 candidate numbers
+  assert.ok(BLOCKED_CODE_HASHES.size >= 155, 'blocked hash table covers sensitive numbers');
+  let hashHits = 0;
+  for (let i = 0; i < 10000; i++) {
+    const num = String(i).padStart(4, '0');
+    if (BLOCKED_CODE_HASHES.has(hashCodeNum(num))) {
+      assert.equal(isBlockedCodeNum(num), true, `hash-matched number ${num} is rejected`);
+      hashHits++;
+    }
+  }
+  assert.equal(hashHits, 155, 'all 155 hashed 4-digit numbers trigger rejection');
   assert.equal(isBlockedCodeNum('0923'), false, 'normal number 0923 is allowed');
   assert.equal(isBlockedCodeNum('2024'), false, 'normal year 2024 is allowed');
   const r = rng(42);
@@ -5440,7 +5762,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   const sample = formatCodename({ adj: '胆小的', charName: '高松灯', num: '0923' });
   assert.equal(sample, '胆小的' + '高松灯#0923', 'formatCodename concatenates adj + charName + #num');
   assert.equal(validCodenameText(sample), sample, 'validCodenameText accepts registered adj + playable char + safe 4-digit num');
-  assert.equal(validCodenameText('胆小的高松灯#8964'), '', 'validCodenameText rejects blocked 4-digit numbers');
+  assert.equal(validCodenameText('胆小的高松灯#0000'), '', 'validCodenameText rejects blocked 4-digit numbers');
   assert.equal(validCodenameText('自定义的随便写#0923'), '', 'validCodenameText rejects arbitrary free-text names');
 }
 

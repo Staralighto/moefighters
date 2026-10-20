@@ -310,7 +310,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     source.hit.add(defender.id);
     const dir = defender.x >= originX ? 1 : -1;
     const effLen = g.effects.length;
-    g.audio.play(skill.super ? 'super' : 'hit');
+    g.audio.play(skill.super ? 'super' : 'hit', attacker.id);
     if (!skill.noSparks) {
       g.sparks(defender.x - dir * 20, defender.y - 85, attacker.data.color, 8, .65);
       g.effect('hit', defender.x - dir * 20, defender.y - 85, attacker.data.color, .18, { radius: 36 });
@@ -382,7 +382,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       const rushBonus = attacker.data.trait === 'rush' && attacker.hitCount % 3 === 0 ? 14 : 0;
       gainEnergy(attacker, (skill.gain ?? (skill.super ? 2 : 9)) + rushBonus);
     }
-    g.audio.play(quiet ? 'key' : 'hit');
+    g.audio.play(quiet ? 'key' : 'hit', attacker.id);
     g.text('-' + rounded, defender.x, defender.y - 160, '#f4b4c8', .45, 18);
     return true;
   }
@@ -403,7 +403,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     g.effect('shield', defender.x - dir * 30, defender.y - 78, '#8df0ff', .22, { radius: 65 });
     // 蝶变: the slow sticks through a block. 花道·缠 leaves the flag unset.
     if (skill.slowOnBlock) applySlow(defender, skill);
-    g.audio.play('block');
+    g.audio.play('block', attacker.id);
     g.text('格挡', defender.x, defender.y - 170, '#91eaff', .35, 16);
     if (defender.guard <= 0) {
       defender.guard = 0;
@@ -547,7 +547,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       defender.energy = clamp(defender.energy - skill.drain, 0, defender.energyMax);
       g.text(`-${skill.drain} 气`, defender.x, defender.y - 135, '#ffd27a', .6, 16);
     }
-    g.audio.play('hit');
+    g.audio.play('hit', attacker.id);
     g.text('-' + Math.round(damage), defender.x + dir * 15, defender.y - 160, skill.super ? SIDE[attacker.team] : '#fff', .65, (skill.super ? 30 : 23) + (crit ? 6 : 0));
     if (!skill.noSparks) {
       g.sparks(defender.x - dir * 23, defender.y - 85, attacker.data.color, skill.super ? 36 : 18, skill.super ? 1.6 : 1);
@@ -564,7 +564,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     crit = attacker.critChance > 0 && g.random() < attacker.critChance;
     if (crit) damage *= 1.5;
     if (wasSlow && skill.slowBonus) damage += skill.slowBonus;
-    g.audio.play('key');
+    g.audio.play('key', attacker.id);
     g.text('-' + Math.round(damage), defender.x + dir * 8, defender.y - 148, '#fff', .35, 16);
   }
 
@@ -691,7 +691,7 @@ export function spawnShot(g: FightGame, f: Fighter, a: Attack, offsetY = 0, arc 
   if (hue != null) p.hue = hue;
   g.projectiles.push(p);
   // 微笑号出航: a horn blast the moment the hull is called, so the sweep has a warning.
-  if (SCRIPTS[s.fx]?.whistle) g.audio.play('whistle');
+  if (SCRIPTS[s.fx]?.whistle) g.audio.play('whistle', f.id);
   return p;
 }
 
@@ -2119,7 +2119,7 @@ function step_change(g: FightGame, f: Fighter, a: Attack, dt: number): void {
       continue;
     }
     if (guarded && Math.abs(along - head) < 8 && !a.hit.has(o.id) && a.t >= mark.snd) {
-      g.audio.play('hit');
+      g.audio.play('hit', f.id);
       mark.snd = a.t + gap;
     }
     if (guarded || o.invuln > 0 || mark.n >= cap || a.t < mark.next) continue;
@@ -2787,7 +2787,7 @@ SCRIPTS['burnout'] = Object.assign(SCRIPTS['burnout'] ?? {}, { flash(g: FightGam
   g.effect('slash', f.x + f.facing * 65, f.y - 83, f.data.color, .22, { dir: f.facing, radius: a.skill.range * .5 });
   // The bass body's low point on the hit pose. Blocks burst out of that spot.
   g.effect('bass-burst', f.x + f.facing * 199, f.y - 22, f.data.color, .32, { radius: 96 });
-  g.audio.play('slam');
+  g.audio.play('slam', f.id);
 } });
 
 

@@ -318,7 +318,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
   // A fallback mid-match turns this host into a snapshot host, so its sounds also feed the guest.
   let muted = false;
   const hostAudio = netAudio(sfx);
-  const lockSound = setup.lock ? { play: (k: Parameters<typeof sfx.play>[0]) => { if (muted) return; if (game?.netRole === 'host') hostAudio.play(k); else sfx.play(k); } } : null;
+  const lockSound = setup.lock ? { play: (k: Parameters<typeof sfx.play>[0], source?: number) => { if (muted) return; if (game?.netRole === 'host' || game?.netRole === 'guest') hostAudio.play(k, source); else sfx.play(k); } } : null;
   game = new FightGame(setup.characters, {
     mode: setup.mode,
     difficulty: setup.difficulty,
@@ -328,7 +328,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
     stage: setup.stage,
     training: trainPrefs(),
     random: lockRng?.next,
-    audio: lockSound ?? (setup.online === 'host' ? netAudio(sfx) : sfx),
+    audio: lockSound ?? (setup.online ? netAudio(sfx) : sfx),
     netRole: setup.lock ? 'lock' : setup.online,
     onHUD: updateHUD,
     onBanner: showBanner,

@@ -26,43 +26,61 @@ export const CODENAME_CHARS: readonly string[] = PLAYABLE.map(c => c.name);
 const ADJ_SET = new Set<string>(CODENAME_ADJS);
 const CHAR_SET = new Set<string>(CODENAME_CHARS);
 
-/** Specific sensitive / prohibited 4-digit combinations that must never be allocated. */
-export const BLOCKED_CODE_NUMS: ReadonlySet<string> = new Set([
-  // Domestic historical / political sensitive dates
-  '8964', '6489', '0604', '6400', '0064', '1989', '8906', '0427', '0535',
-  '0425', '0720', '0314', '0705', '0301', '0522', '1028', '0913', '0723',
-  '1013', '1124', '1126', '1127',
+export const CODE_SALT = 'mf_codename_salt_v1';
 
-  // Memorial & anti-aggression war historical dates
-  '0707', '0731', '7310', '0918', '9180', '1213',
+export function hashCodeNum(num: string): string {
+  let h = 0x811c9dc5;
+  const s = CODE_SALT + num;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
 
-  // Major disaster / national mourning dates
-  '0512', '0404', '0807',
-
-  // International terror & extremism hate codes
-  '0911', '1488', '8814', '0419', '4190', '0420', '0315', '0722',
-
-  // Vulgar / death homophones & harassment
-  '0250', '2500', '0438', '4380', '0038', '3800', '9438', '5438',
-  '7456', '7480', '0748', '7484', '5174', '5418', '5488', '5942',
-  '0213', '2130',
-
-  // Emergency service numbers
-  '0110', '0119', '0120', '0122', '9110',
-
-  // Sequential runs
-  '0123', '1234', '2345', '3456', '4567', '5678', '6789',
-  '9876', '8765', '7654', '6543', '5432', '4321', '3210',
+export const BLOCKED_CODE_HASHES: ReadonlySet<string> = new Set([
+  '018e58cf', '01bc6a07', '02bc6b9a', '03413659', '03bc6d2d', '03f87ba6', '04879fb1', '0513806a',
+  '0b731c16', '0e0a8796', '0e21a452', '0f6a4e51', '12a260f3', '133ab92f', '135f359b', '139c32b2',
+  '14bc87f0', '153cfaec', '15bc8983', '163cfc7f', '166a4102', '16bc8b16', '17bc8ca9', '183cffa5',
+  '18bc8e3c', '19ab46ae', '19bc8fcf', '1abc9162', '1b10c382', '1b82b9a1', '1bbc92f5', '1dddf64b',
+  '1f4187d8', '1f628d35', '21418afe', '2281e45e', '22bc9dfa', '22d90dee', '23bc9f8d', '24dca54e',
+  '2520c2e0', '284b7418', '29e825aa', '29fbb882', '2a674dbb', '2ae729c4', '2d43a01e', '2dfe25f0',
+  '3135194e', '360d3d12', '38d36e33', '3a5d2b3c', '3a7f69a4', '3b676a22', '3c58ff59', '3c77305d',
+  '3e3357eb', '3fd37938', '3fd546b8', '412511c7', '41e3c806', '4216aa92', '43575c69', '454c4191',
+  '49285aa0', '494c1582', '4ad70a3e', '4b894226', '4c6a61aa', '4df29802', '4e8ca795', '4f124f12',
+  '52004cb2', '52b88703', '582ab0d4', '5879a6b3', '58cfeeed', '58dfdf6f', '5a1916ff', '5b98dfb1',
+  '5cd0ff36', '5d75b6b0', '5ea4d8f6', '5f65e2e0', '5fa4da89', '603019f6', '6065e473', '6165e606',
+  '6265e799', '6365e92c', '63bbd265', '6465eabf', '6466b202', '6565ec52', '6665ede5', '66741d70',
+  '66eb27eb', '67076cbf', '6765ef78', '67a725b8', '6865f10b', '68fc5916', '698b0a97', '69e8ee0d',
+  '6c56a972', '6d3e8d46', '6fb48374', '6fe0f53e', '7124f9ed', '71eb4d38', '7305b08e', '733084b7',
+  '73c254d0', '74591b52', '76757072', '78a29bdc', '7989b92d', '7bd62c7b', '7d5b6814', '7e5b69a7',
+  '7e5c30ea', '7f585e1e', '7f5b6b3a', '82a9675f', '855987c2', '86ddc0d4', '87821b1b', '87b11252',
+  '881bf2cd', '897313b7', '89a18123', '8dba7027', '8e849d4e', '8fb2d3b6', '90080660', '910807f3',
+  '9180a8be', '92080986', '93080b19', '94080cac', '9437b2ab', '95080e3f', '96080fd2', '965cb310',
+  '97081165', '975cb4a3', '98171d82', '985cb636', '98a77d03', '98f6057f', '995cb7c9', '9991fe77',
+  '9a5cb95c', '9aa78029', '9b5cbaef', '9c081944', '9c5cbc82', '9d081ad7', '9d5cbe15', '9e1eccf3',
+  '9fa78808', 'a05cc2ce', 'a0e0923a', 'a15cc461', 'a1aa2340', 'a289f002', 'a2ca8f6c', 'a2d75b7a',
+  'a444ed4c', 'a4c25625', 'a82e94ab', 'abe42dbe', 'ad0b87c9', 'af9d93e4', 'b00838c0', 'b04c06d5',
+  'b1083a53', 'b1dae873', 'b2083be6', 'b2daea06', 'b3083d79', 'b33fa541', 'b3daeb99', 'b4083f0c',
+  'b508409f', 'b6084232', 'b669d552', 'b6e360ea', 'b70843c5', 'b86a64da', 'ba33c6cd', 'ba612e1a',
+  'bc084ba4', 'bc6cb263', 'bd084d37', 'bf08505d', 'bfc0b927', 'c00851f0', 'c05c312e', 'c1085383',
+  'c2085516', 'c30856a9', 'c408583c', 'c49ef9b6', 'c5851425', 'c6085b62', 'c7085cf5', 'c72f508c',
+  'c73e5b16', 'c7beecce', 'c8085e88', 'c908144d', 'c908601b', 'cb086341', 'cb6f0897', 'cb7f6f3e',
+  'cc0ebcf6', 'cd086667', 'cdf86cf6', 'ce0867fa', 'ceeb1450', 'cf08698d', 'd0ac32b9', 'd20bdb0b',
+  'd4027dbe', 'd60ad4d2', 'd7fe06dc', 'd93c38d5', 'da158ec5', 'db4609aa', 'dee244f6', 'df0151a7',
+  'dffc7834', 'e0c40ede', 'e0d7c792', 'e1fe169a', 'e2e0b57c', 'e4bc3c60', 'e5bc3df3', 'e615b0b5',
+  'e6bc3f86', 'e7bc4119', 'e8bc42ac', 'e9bc443f', 'eaaf0163', 'eabc45d2', 'ec0c873c', 'ed120470',
+  'ed615cd5', 'ed771442', 'edbc4a8b', 'eebc4c1e', 'efbc4db1', 'f063a025', 'f0bc4f44', 'f1bc50d7',
+  'f3bc53fd', 'f4bc5590', 'f534d602', 'f5bc5723', 'f6854b10', 'f6bc58b6', 'f7bc5a49', 'f7d8d442',
+  'f853754a', 'f8bc5bdc', 'f9bc5d6f', 'fa4a3e8a', 'fabc5f02', 'fb8552ef', 'fbbc6095', 'fd855615',
+  'fe81ec28', 'fe89d4d6', 'ff8c1500',
 ]);
 
 export function isBlockedCodeNum(num: string): boolean {
   if (!/^\d{4}$/.test(num)) return true;
   // All four digits identical (0000, 1111, ..., 9999)
   if (num[0] === num[1] && num[1] === num[2] && num[2] === num[3]) return true;
-  if (BLOCKED_CODE_NUMS.has(num)) return true;
-  if (num.includes('64') && num.includes('89')) return true;
-  if (num.includes('731') || num.includes('250') || num.includes('438') || num.includes('748')) return true;
-  return false;
+  return BLOCKED_CODE_HASHES.has(hashCodeNum(num));
 }
 
 export function rollCodeNum(rand: () => number = Math.random): string {
@@ -451,7 +469,25 @@ function own(link: Link): void {
   live = link;
 }
 
-export function cancelOnline(): void {
+/** Ticket still sitting in the match queue. Cleared once the server has been asked to remove it. */
+let queueTicket = '';
+/** Stable per-page id: a stale queue row from this page must never pair with its retry. */
+let queueSid = '';
+/** In-flight removal. The next match waits for this, or a retry pairs with the ticket it just abandoned. */
+let dropping: Promise<void> = Promise.resolve();
+
+function releaseTicket(): Promise<void> {
+  const id = queueTicket;
+  queueTicket = '';
+  if (!id) return dropping;
+  // A hung mailbox request must not wedge every later search; the server TTL cleans up a
+  // drop that really did not make it.
+  dropping = postMail({ op: 'queue', ticket: id, drop: true }, AbortSignal.timeout(3000)).then(() => {}, () => {});
+  return dropping;
+}
+
+export function cancelOnline(): Promise<void> {
+  const gate = releaseTicket();
   const code = heldCode;
   const key = heldKey;
   heldCode = '';
@@ -465,6 +501,7 @@ export function cancelOnline(): void {
   showIdle();
   setLocked(false);
   if (code) void postMail({ op: 'drop', code, ...(key ? { key } : {}) }).catch(() => {});
+  return gate;
 }
 
 function ticket(): string {
@@ -476,17 +513,18 @@ async function poll(
   signal: AbortSignal,
   ask: () => Promise<Record<string, unknown>>,
   ready: (res: Record<string, unknown>) => boolean,
+  pace = 0,
 ): Promise<Record<string, unknown>> {
   const deadline = Date.now() + 60000;
-  let wait = 1500;
+  // SDP waits ramp 1.5s → 3s. The room-code wait passes a flat pace; a person types slower than that.
+  let wait = pace || 1500;
   while (Date.now() < deadline) {
     if (signal.aborted) throw signal.reason ?? new DOMException('aborted', 'AbortError');
     const res = await ask();
     if (res.error === 'expired') throw new MailError('房间号无效');
     if (ready(res)) return res;
-    // Gentle pacing to spare mailbox database reads.
     await sleep(wait, signal);
-    wait = Math.min(3000, wait + 500);
+    if (!pace) wait = Math.min(3000, wait + 500);
   }
   throw new MailError('房间号无效');
 }
@@ -724,7 +762,7 @@ async function asHost(signal: AbortSignal, picked: OnlinePick): Promise<void> {
   heldKey = key;
   codeShown = code;
   show(HOST_BOARD, 2);
-  await poll(signal, () => postMail({ op: 'poll', code }, signal), res => res.joined === true || typeof res.sdp === 'string');
+  await poll(signal, () => postMail({ op: 'poll', code }, signal), res => res.joined === true || typeof res.sdp === 'string', 5000);
   show(HOST_BOARD, HOST_BOARD.link);
   const host = await createHost(signal, await turnIce(signal, code, key));
   own(host.link);
@@ -734,49 +772,63 @@ async function asHost(signal: AbortSignal, picked: OnlinePick): Promise<void> {
 async function matched(signal: AbortSignal, picked: OnlinePick): Promise<void> {
   show(MATCH_BOARD, 0);
   const id = ticket();
+  queueSid ||= ticket();
+  queueTicket = id;
   const deadline = Date.now() + 45000;
   let role: 'host' | 'guest' | '' = '';
   let code = '';
   let key = '';
-  while (Date.now() < deadline) {
-    if (signal.aborted) throw signal.reason ?? new DOMException('aborted', 'AbortError');
-    const res = await postMail({ op: 'queue', ticket: id, build: NET_BUILD, hash: NET_HASH }, signal);
-    if ((res.role === 'host' || res.role === 'guest') && typeof res.code === 'string') {
-      role = res.role;
-      code = res.code;
-      key = typeof res.key === 'string' ? res.key : '';
-      break;
+  let waiting = true;
+  try {
+    while (Date.now() < deadline) {
+      if (signal.aborted) throw signal.reason ?? new DOMException('aborted', 'AbortError');
+      const res = await postMail({ op: 'queue', ticket: id, sid: queueSid, build: NET_BUILD, hash: NET_HASH }, signal);
+      if ((res.role === 'host' || res.role === 'guest') && typeof res.code === 'string') {
+        role = res.role;
+        code = res.code;
+        key = typeof res.key === 'string' ? res.key : '';
+        break;
+      }
+      await sleep(5000, signal);
     }
-    await sleep(3500, signal);
+    if (!role || !code) throw new MailError('没有对手');
+    waiting = false;
+    show(MATCH_BOARD, MATCH_BOARD.link);
+    if (role === 'host') {
+      heldCode = code;
+      heldKey = key;
+      const host = await createHost(signal, await turnIce(signal, code, key));
+      own(host.link);
+      await offerSide(signal, picked, code, key, host.link, host.sdp, MATCH_BOARD);
+    } else await joinSide(signal, picked, code, MATCH_BOARD, 2);
+  } finally {
+    // Cancel already took the id and is removing it. A matched ticket is already gone on the server.
+    if (waiting && queueTicket === id) void releaseTicket();
+    else if (queueTicket === id) queueTicket = '';
   }
-  if (!role || !code) throw new MailError('没有对手');
-  show(MATCH_BOARD, MATCH_BOARD.link);
-  if (role === 'host') {
-    heldCode = code;
-    heldKey = key;
-    const host = await createHost(signal, await turnIce(signal, code, key));
-    own(host.link);
-    await offerSide(signal, picked, code, key, host.link, host.sdp, MATCH_BOARD);
-  } else await joinSide(signal, picked, code, MATCH_BOARD, 2);
 }
 
 function run(work: (signal: AbortSignal, picked: OnlinePick) => Promise<void>): void {
-  cancelOnline();
+  const gate = cancelOnline();
   lastWork = work;
   const picked = currentPick();
   if (!picked.charId) return;
   const ac = new AbortController();
   job = ac;
   setLocked(true);
-  work(ac.signal, picked).catch(async err => {
-    if (ac.signal.aborted) return;
-    console.error(err);
-    setLocked(true);
-    const diag = await diagnose(err);
-    if (diag) console.info('[联机诊断] ' + diag);
-    draw(failText(err), diag);
-  }).finally(() => {
-    if (job === ac) job = null;
+  // The previous queue row has to be gone before this ticket is created, or a fast retry pairs with it.
+  gate.then(() => {
+    if (job !== ac) return;
+    work(ac.signal, picked).catch(async err => {
+      if (ac.signal.aborted) return;
+      console.error(err);
+      setLocked(true);
+      const diag = await diagnose(err);
+      if (diag) console.info('[联机诊断] ' + diag);
+      draw(failText(err), diag);
+    }).finally(() => {
+      if (job === ac) job = null;
+    });
   });
 }
 

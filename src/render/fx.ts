@@ -1922,7 +1922,7 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       // 薯条: a handful is tossed out of the hand one after another, tumbles, sags a little and fades in mid-air.
       // Each fry is one slight bow; the midpoint sits about half of `bend` off the straight line.
       // The melee check already fired. Fall angle ≤ .25 and sag 50 keep every fry ~25 px above the floor.
-      const rnd = (n: number) => { const s = Math.sin(n * 12.9898 + e.x * .731) * 43758.5453; return s - Math.floor(s); };
+      const rnd = (n: number) => { const s = Math.sin(n * 12.9898 + e.x * .732) * 43758.5453; return s - Math.floor(s); };
       const bodies = ['#ffd84a', '#ffcc33', '#ffe27a'];
       ctx.translate(e.x, e.y);
       ctx.scale(e.dir ?? 1, 1);
