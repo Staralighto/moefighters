@@ -194,7 +194,8 @@ function waitIce(pc: RTCPeerConnection, signal?: AbortSignal, hosts: readonly st
       const line = e.candidate.candidate;
       if (line) seen.push(line);
       if (e.candidate.type === 'relay' || (line != null && /\btyp\s+relay\b/.test(line))) {
-        const host = turnUrlHost(e.candidate.url);
+        // ponytail: TypeScript 7's DOM lib omits RTCIceCandidate.url. Browsers still set it.
+        const host = turnUrlHost((e.candidate as { url?: unknown }).url);
         if (host) got.add(host);
       }
       arm();
