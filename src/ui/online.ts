@@ -837,6 +837,7 @@ export function bindOnline(
   start: OnlineStart,
   lock: (on: boolean) => void,
   onPeer: (charId: string, codename: string) => void = () => {},
+  openModal: (dialog: HTMLDialogElement) => void = d => d.showModal(),
 ): void {
   currentPick = pick;
   startFight = start;
@@ -851,7 +852,7 @@ export function bindOnline(
       if (!dlg) return;
       for (const el of cells()) el.value = '';
       syncIdle();
-      dlg.showModal();
+      openModal(dlg);
       const first = cells()[0];
       if (first) setTimeout(() => first.focus(), 50);
     };

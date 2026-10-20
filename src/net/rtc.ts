@@ -2,6 +2,14 @@
 
 import { ICE_SERVERS } from './config.ts';
 
+function hasTurn(ice: readonly RTCIceServer[]): boolean {
+  for (const s of ice) {
+    const list = Array.isArray(s.urls) ? s.urls : [s.urls];
+    if (list.some(u => typeof u === 'string' && (u.startsWith('turn:') || u.startsWith('turns:')))) return true;
+  }
+  return false;
+}
+
 // ICE servers come from config.ts, or per-match credentials the mailbox mints (op 'turn').
 // A TURN here is the fix for two devices the router keeps apart (AP isolation, blocked mDNS,
 // no hairpin NAT). One pooled candidate so the guest can gather before installing the offer.
@@ -98,7 +106,7 @@ export async function decodeFrame(data: unknown): Promise<Record<string, unknown
   }
 }
 
-function waitIce(pc: RTCPeerConnection, signal?: AbortSignal): Promise<string[]> {
+function waitIce(pc: RTCPeerConnection, signal?: AbortSignal, expectRelay = false): Promise<string[]> {
   const seen: string[] = [];
   if (pc.iceGatheringState === 'complete') return Promise.resolve(seen);
   return new Promise((resolve, reject) => {
@@ -119,8 +127,10 @@ function waitIce(pc: RTCPeerConnection, signal?: AbortSignal): Promise<string[]>
       else resolve(seen);
     };
     const has = () => seen.length > 0 || (pc.localDescription?.sdp ?? '').includes('a=candidate:');
+    const hasRelay = () => seen.some(c => /\btyp\s+relay\b/.test(c)) || /\btyp\s+relay\b/.test(pc.localDescription?.sdp ?? '');
     const arm = () => {
       if (!has()) return;
+      if (expectRelay && !hasRelay()) return;
       clearTimeout(quiet);
       quiet = window.setTimeout(() => finish(), 1000);
     };
@@ -332,7 +342,7 @@ export class Link {
 export async function createHost(signal?: AbortSignal, ice: RTCIceServer[] = ICE_SERVERS): Promise<{ sdp: string; link: Link }> {
   const pc = new RTCPeerConnection(rtcConfig(ice));
   try {
-    const gathering = waitIce(pc, signal);
+    const gathering = waitIce(pc, signal, hasTurn(ice));
     const rel = pc.createDataChannel('rel');
     const fast = pc.createDataChannel('fast', { ordered: false, maxRetransmits: 0 });
     rel.binaryType = 'arraybuffer';
@@ -357,7 +367,7 @@ export async function createGuest(offer: string, signal?: AbortSignal, ice: RTCI
   let fast: RTCDataChannel | null = null;
   let have: (pair: [RTCDataChannel, RTCDataChannel]) => void = () => {};
   const channels = new Promise<[RTCDataChannel, RTCDataChannel]>(resolve => { have = resolve; });
-  const gathering = waitIce(pc, signal);
+  const gathering = waitIce(pc, signal, hasTurn(ice));
   pc.ondatachannel = e => {
     e.channel.binaryType = 'arraybuffer';
     if (e.channel.label === 'rel') rel = e.channel;
@@ -367,13 +377,13 @@ export async function createGuest(offer: string, signal?: AbortSignal, ice: RTCI
   try {
     // Checks start at setRemoteDescription. Finish the pool first when it is fast,
     // so those checks are not left unanswered for the whole gather.
-    let seen = await firstOf(gathering, 1500);
     try {
       await pc.setRemoteDescription({ type: 'offer', sdp: offer });
     } catch {
       throw new Error('房间号无效');
     }
     await pc.setLocalDescription(await pc.createAnswer());
+    let seen = await firstOf(gathering, 1000);
     if (!seen) seen = await gathering;
     const sdp = liveSdp(pc, seen);
     return { sdp, link: new Link(pc, channels) };

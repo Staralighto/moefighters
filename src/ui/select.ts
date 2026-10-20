@@ -127,6 +127,24 @@ export function skillHTML(c: CharacterData, pad = 0, touch = isTouch()): string 
   }).join('');
 }
 
+function navigateGrid(items: HTMLButtonElement[], current: HTMLButtonElement, key: string): HTMLButtonElement | null {
+  if (!items.length) return null;
+  const idx = items.indexOf(current);
+  if (idx < 0) return items[0];
+  if (key === 'ArrowRight') return items[(idx + 1) % items.length];
+  if (key === 'ArrowLeft') return items[(idx - 1 + items.length) % items.length];
+  if (key === 'ArrowDown' || key === 'ArrowUp') {
+    const left = current.offsetLeft;
+    const sameCol = items.filter(el => Math.abs(el.offsetLeft - left) < 12);
+    const colIdx = sameCol.indexOf(current);
+    if (colIdx < 0) return null;
+    return key === 'ArrowDown'
+      ? (sameCol[colIdx + 1] ?? sameCol[0])
+      : (sameCol[colIdx - 1] ?? sameCol[sameCol.length - 1]);
+  }
+  return null;
+}
+
 export class SelectScreen {
   mode: Mode = 'cpu';
   difficulty = 1;
@@ -199,7 +217,6 @@ export class SelectScreen {
       this.onPick();
       this.refresh();
     });
-    this.renderRoster();
     // The backdrop geometry only changes with the viewport; per-frame restyling did a
     // read-then-write layout pass 60 times a second for the same output.
     window.addEventListener('resize', () => this.placeStage(), { passive: true });
@@ -234,10 +251,47 @@ export class SelectScreen {
     };
     document.querySelectorAll<HTMLButtonElement>('[data-place]').forEach(b => b.onclick = () => this.setPlace(b.dataset.place === 'net' ? 'net' : 'local'));
     document.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach(b => b.onclick = () => this.setMode(b.dataset.mode as Mode));
-    document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach(b => b.onclick = () => { this.difficulty = Number(b.dataset.difficulty); this.refresh(); });
+    document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach(b => b.onclick = () => {
+      const d = Number(b.dataset.difficulty);
+      if (this.difficulty !== d) {
+        this.difficulty = d;
+        this.onPick();
+        this.refresh();
+      }
+    });
     document.querySelectorAll<HTMLButtonElement>('[data-challenge-kind]').forEach(b => b.onclick = () => this.setChallengeKind(b.dataset.challengeKind as ChallengeKind));
-    $('start').onclick = () => this.onStart(this.setup());
+    $('start').onclick = () => {
+      this.onPick();
+      this.onStart(this.setup());
+    };
+    window.addEventListener('keydown', e => {
+      if (e.defaultPrevented || $('selection').hidden) return;
+      if (document.querySelector('dialog[open]')) return;
+      const active = document.activeElement;
+      if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.closest?.('dialog, .music-pop, #stage-grid'))) return;
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+        e.preventDefault();
+        this.navigateRoster(e.key);
+      }
+    });
+    $('stage-grid').addEventListener('keydown', e => {
+      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+      const target = (e.target as HTMLElement).closest<HTMLButtonElement>('.stage-card');
+      if (!target) return;
+      const cards = [...$('stage-grid').querySelectorAll<HTMLButtonElement>('.stage-card')];
+      const next = navigateGrid(cards, target, e.key);
+      if (next && next !== target) {
+        e.preventDefault();
+        next.focus();
+        if (!this.netLocked && !document.body.classList.contains('net-ready-phase')) {
+          this.stageId = next.dataset.stage ?? 'random';
+          this.onPick();
+          this.refresh();
+        }
+      }
+    });
     this.refresh();
+    this.focusCurrentRoster();
   }
 
   /** Full backdrops are ~300KB. Cards load the small preview once they near the viewport. */
@@ -363,6 +417,7 @@ export class SelectScreen {
   private setPlace(place: 'local' | 'net'): void {
     if (place === 'net' && !mailboxUsable(MAILBOX_URL)) return;
     if (place === this.place) return;
+    this.onPick();
     const leaving = this.place === 'net';
     this.place = place;
     if (place === 'net') this.side = 0;
@@ -377,10 +432,31 @@ export class SelectScreen {
   private focus(side: number): void {
     if (this.place === 'net') return;
     if (this.mode === 'challenge') return; // the enemy pair is never focusable
-    if (side === this.side) return;
-    this.side = side;
-    this.onPick();
-    this.refresh();
+    if (side !== this.side) {
+      this.side = side;
+      this.onPick();
+      this.refresh();
+    }
+    this.focusCurrentRoster();
+  }
+
+  private focusCurrentRoster(): void {
+    const index = this.selected[this.side] ?? 0;
+    const btn = $('roster').querySelector<HTMLButtonElement>(`.character[data-index="${index}"]`);
+    btn?.focus({ preventScroll: true });
+  }
+
+  private navigateRoster(key: string): void {
+    const buttons = [...$('roster').querySelectorAll<HTMLButtonElement>('.character')];
+    if (!buttons.length) return;
+    const currentIndex = this.selected[this.side] ?? 0;
+    const current = buttons.find(b => Number(b.dataset.index) === currentIndex) ?? buttons[0];
+    const next = navigateGrid(buttons, current, key);
+    if (next) {
+      next.focus({ preventScroll: true });
+      next.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      this.pick(Number(next.dataset.index));
+    }
   }
 
   /** The last session's mode, picks, controllers and difficulty, so a revisit opens where it left off. */
@@ -435,6 +511,7 @@ export class SelectScreen {
       this.refresh();
       return;
     }
+    this.onPick();
     if (mode === 'challenge') {
       // A fresh look at the stage-1 foe(s) every time the mode is entered — unless a run is
       // waiting, then the locked pair comes back exactly as it was.
@@ -464,6 +541,7 @@ export class SelectScreen {
   /** Switch challenge sub-mode. Each kind keeps its own run, so picking one never blocks the other. */
   private setChallengeKind(kind: ChallengeKind): void {
     if (kind === this.challengeKind || this.mode !== 'challenge') return;
+    this.onPick();
     this.challengeKind = kind;
     if (!readRun(kind)) this.challengeEnemies = rollEnemies(foeCount(kind));
     this.who = ['player', ...Array.from({ length: foeCount(kind) }, () => 'cpu' as const)];

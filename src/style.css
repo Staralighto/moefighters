@@ -36,8 +36,9 @@ body.touch {
   overscroll-behavior: none;
 }
 body.touch img { -webkit-user-drag: none; }
-button { font: inherit; color: inherit; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: .45em .9em; cursor: pointer; }
+button { font: inherit; color: inherit; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: .45em .9em; cursor: pointer; transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .08s ease, box-shadow .15s ease, filter .15s ease; }
 button:hover { border-color: var(--muted); }
+button:active:not(.touchpad button) { transform: translateY(1px) scale(0.98); }
 button.active { background: var(--p1); color: #14140c; border-color: var(--p1); font-weight: 700; }
 .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 .btn-icon { display: none; width: 22px; height: 22px; }
@@ -54,7 +55,9 @@ kbd { font: 700 13px/1 var(--font); background: #0d0c14; border: 1px solid var(-
 /* Segmented pickers (mode, difficulty, challenge kind): yellow stays reserved for 1P and the start button. */
 .seg { display: flex; align-items: center; gap: 2px; padding: 3px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
 .seg > span { color: var(--muted); font-size: 13px; padding: 0 8px 0 6px; white-space: nowrap; }
-.seg button { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: transparent; border-color: transparent; padding: .4em .8em; font-weight: 700; }
+.seg button { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: transparent; border-color: transparent; padding: .4em .8em; font-weight: 700; transition: background-color .15s ease, color .15s ease, transform .08s ease; }
+.seg button:hover:not(.active) { background: rgba(255, 255, 255, 0.06); }
+.seg button:active { transform: scale(0.96); }
 .seg input { flex: 1 1 4.2em; min-width: 4.2em; max-width: 6.5em; background: #0d0c14; border: 1px solid var(--line); border-radius: 8px; padding: .4em .4em; font: inherit; font-weight: 700; color: inherit; text-align: center; text-transform: uppercase; }
 .seg input::placeholder { color: var(--muted); text-transform: none; font-weight: 400; }
 .lobby-actions { display: grid; gap: 10px; margin: 12px 0 16px; }
@@ -342,7 +345,7 @@ nav { display: flex; gap: 8px; align-items: center; }
 /* output 默认是 inline，min-width 不生效，百分比进位会把面板撑宽；inline-block + 4ch 预留
    加等宽数字，宽度在任何数值下都不变。 */
 .music-pop-row output { display: inline-block; min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
-#music-volume { width: auto; flex: 1; min-width: 0; accent-color: var(--p1); touch-action: none; }
+#music-volume { width: auto; flex: 1; min-width: 0; accent-color: var(--p1); touch-action: none; cursor: pointer; }
 /* 设置弹窗宽度写死，不跟文案变。窄屏用百分比收缩，视口宽度单位含滚动条，会把页面撑出横向滚动再跳回来。
    每行是同一套两列：左边名称吃剩余空间，右边下拉是同一条 min(16em, 46%)。
    以后名称或选项变长，多出来的字进这截留白，列宽和弹窗宽都不变。 */
@@ -368,13 +371,17 @@ nav { display: flex; gap: 8px; align-items: center; }
 /* 下拉跟右列一样宽，短选项留在格子里，不按文字收缩。箭头钉在右缘，所以三行长度对齐。 */
 .pick-btn { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-width: 0; text-align: left; }
 .pick-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pick-btn::after { content: ""; flex: none; width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid currentColor; }
+.pick-btn::after { content: ""; flex: none; width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid currentColor; transition: transform .2s ease; }
+.pick-btn[aria-expanded="true"]::after { transform: rotate(180deg); }
+.pick-btn[aria-expanded="true"] { border-color: var(--muted); }
 /* 菜单走 popover 顶层，不进文档流。清掉浏览器默认的 inset:0 + margin:auto，否则打开时先跳到屏幕正中。
    宽度由脚本写成和触发器一样，长选项在浮层里省略，不把浮层撑得比按钮宽。底色、描边、圆角、阴影抄音乐面板。 */
 .pick-menu { inset: unset; position: fixed; width: min(16em, 46%); height: max-content; max-height: min(260px, calc(100vh - 24px)); margin: 0; padding: 4px; overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); box-shadow: 0 6px 18px rgb(0 0 0 / 45%); }
-.pick-menu button { display: block; width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; white-space: nowrap; background: transparent; border-color: transparent; padding: .4em .8em; font-weight: 700; }
+.pick-menu button { display: block; width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; white-space: nowrap; background: transparent; border-color: transparent; padding: .4em .8em; font-weight: 700; transition: background-color .12s ease; }
 .pick-menu button:hover, .pick-menu button:focus-visible { background: var(--panel-2); border-color: transparent; }
-.pick-menu button[aria-selected="true"] { background: var(--line); border-color: transparent; }
+.pick-menu button[aria-selected="true"] { background: var(--line); border-color: transparent; color: #fff; }
+.pick-menu:popover-open, .tip-pop:popover-open, details[open] .music-pop { animation: menu-slide-down .16s cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes menu-slide-down { from { opacity: 0; transform: translateY(-6px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
 /* 模态打开时收走页面滚动条，用等宽留白补上，页面内容不横跳。
    弹窗在顶层，按视口居中，吃不到 body 的留白；滚动条一消失视口变宽，中线往右偏半个滚动条。
    往回平移同样的量。做法同 react-remove-scroll 给脱离文档流的层补 gap。 */
@@ -414,7 +421,7 @@ footer { display: flex; justify-content: space-between; gap: 16px; color: var(--
 .select-stage.challenge.solo #preview-left,
 .select-stage.challenge.solo #preview-right { grid-column: auto; }
 .select-stage.challenge #preview-right, .select-stage.challenge #preview-enemy2 { cursor: default; }
-.fighter-preview { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "chip" "art" "name"; justify-items: center; gap: 2px; cursor: pointer; }
+.fighter-preview { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "chip" "art" "name"; justify-items: center; gap: 2px; cursor: pointer; outline: none; user-select: none; }
 .fighter-preview h1 { grid-area: name; margin: 0; font-size: 18px; font-weight: 800; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .slot-head { grid-area: chip; display: grid; justify-items: center; align-content: start; gap: 16px; min-height: 72px; }
 .select-stage.net .slot-head { gap: 4px; min-height: 52px; }
@@ -427,7 +434,9 @@ footer { display: flex; justify-content: space-between; gap: 16px; color: var(--
 .side-label.p2 { color: var(--p2); }
 .fighter-preview.active .side-label { text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 4px; }
 .slot-control { display: flex; gap: 2px; padding: 2px; background: #0d0c14; border: 1px solid var(--line); border-radius: 999px; }
-.slot-control button { border: 0; background: transparent; padding: .12em .7em; border-radius: 999px; font-size: 12px; font-weight: 700; color: var(--text); }
+.slot-control button { border: 0; background: transparent; padding: .12em .7em; border-radius: 999px; font-size: 12px; font-weight: 700; color: var(--text); transition: background-color .15s ease, color .15s ease, transform .08s ease; }
+.slot-control button:hover:not(.active) { background: rgba(255, 255, 255, 0.08); }
+.slot-control button:active { transform: scale(0.92); }
 #preview-left .slot-control button.active,
 #preview-ally .slot-control button.active { background: var(--p1); color: #14140c; border-color: var(--p1); }
 #preview-right .slot-control button.active,
@@ -457,16 +466,21 @@ canvas.pending { background: linear-gradient(90deg, var(--panel) 25%, var(--pane
 .band-head:first-child { margin-top: 0; }
 .band-head i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--band, var(--line)); }
 .band-head span { font-weight: 400; color: var(--muted); font-size: 13px; }
-.character { position: relative; display: grid; justify-items: center; padding: 8px 6px; background: var(--panel); border-color: transparent; }
-.character:hover { border-color: var(--line); }
+.character { position: relative; display: grid; justify-items: center; padding: 8px 6px; background: var(--panel); border-color: transparent; border-radius: 8px; outline: none; transition: transform .12s ease, border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
+.character:focus, .character:focus-visible { outline: none; }
+.character:focus, .character:hover { border-color: var(--line); background: var(--panel-2); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35); }
+.character:active { transform: translateY(0) scale(0.96); }
 .character canvas { width: 96px; height: 96px; }
-.character.p1 { box-shadow: inset 0 0 0 2px var(--p1); }
-.character.p2 { box-shadow: inset 0 0 0 2px var(--p2); }
-.character.ally { box-shadow: inset 0 0 0 2px var(--cyan); }
-.character.p1.p2 { box-shadow: inset 0 0 0 2px var(--p1), inset 0 0 0 4px var(--p2); }
-.character.p1.ally { box-shadow: inset 0 0 0 2px var(--p1), inset 0 0 0 4px var(--cyan); }
-.character.p2.ally { box-shadow: inset 0 0 0 2px var(--p2), inset 0 0 0 4px var(--cyan); }
-.character.p1.p2.ally { box-shadow: inset 0 0 0 2px var(--p1), inset 0 0 0 4px var(--cyan), inset 0 0 0 6px var(--p2); }
+.character.p1 { box-shadow: inset 0 0 0 2px var(--p1), 0 0 10px rgba(253, 233, 121, 0.3); }
+.character.p2 { box-shadow: inset 0 0 0 2px var(--p2), 0 0 10px rgba(200, 241, 129, 0.3); }
+.character.ally { box-shadow: inset 0 0 0 2px var(--cyan), 0 0 10px rgba(118, 231, 255, 0.3); }
+.character.p1.p2 { box-shadow: inset 0 0 0 2px var(--p1), inset 0 0 0 4px var(--p2), 0 0 10px rgba(253, 233, 121, 0.3); }
+.character.p1.ally { box-shadow: inset 0 0 0 2px var(--p1), inset 0 0 0 4px var(--cyan), 0 0 10px rgba(253, 233, 121, 0.3); }
+.character.p2.ally { box-shadow: inset 0 0 0 2px var(--p2), inset 0 0 0 4px var(--cyan), 0 0 10px rgba(200, 241, 129, 0.3); }
+.character.p1.p2.ally { box-shadow: inset 0 0 0 2px var(--p1), inset 0 0 0 4px var(--cyan), inset 0 0 0 6px var(--p2), 0 0 10px rgba(253, 233, 121, 0.3); }
+.character.p1 .slot-tag { color: var(--p1); }
+.character.p2 .slot-tag { color: var(--p2); }
+.character.ally .slot-tag { color: var(--cyan); }
 .slot-tag { position: absolute; top: 6px; left: 6px; font-size: 11px; font-weight: 800; background: #0d0c14; border-radius: 5px; padding: 1px 6px; }
 .char-name { font-weight: 700; }
 
@@ -475,7 +489,10 @@ canvas.pending { background: linear-gradient(90deg, var(--panel) 25%, var(--pane
 .stage-select { margin-top: 22px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
 .stage-select .sectionline { margin-bottom: 10px; }
 .stage-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
-.stage-card { padding: 0; overflow: hidden; display: flex; flex-direction: column; text-align: left; min-width: 0; }
+.stage-card { padding: 0; overflow: hidden; display: flex; flex-direction: column; text-align: left; min-width: 0; outline: none; transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease; }
+.stage-card:focus, .stage-card:hover { transform: translateY(-2px); border-color: var(--muted); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45); }
+.stage-card:active { transform: translateY(0) scale(0.98); }
+.stage-card.active, .stage-card[aria-pressed="true"] { border-color: var(--p1); box-shadow: 0 0 10px rgba(253, 233, 121, 0.25); }
 .stage-card img, .stage-random-art { width: 100%; height: 78px; object-fit: cover; image-rendering: pixelated; pointer-events: none; }
 .stage-card b { font-size: 14px; padding: 7px 9px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stage-random-art { display: grid; place-items: center; background: repeating-linear-gradient(135deg, var(--panel-2) 0 12px, var(--panel) 12px 24px); font-weight: 800; font-size: 40px; color: var(--p1); }
@@ -486,7 +503,8 @@ canvas.pending { background: linear-gradient(90deg, var(--panel) 25%, var(--pane
 .passive { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
 /* Select-screen movelist: three cards a row under the roster, the way the reference lays moves out. */
 #skills { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-.skill { display: flex; align-items: flex-start; gap: 8px; padding: 9px 8px; background: var(--panel-2); border-left: 2px solid var(--line); position: relative; }
+.skill { display: flex; align-items: flex-start; gap: 8px; padding: 9px 8px; background: var(--panel-2); border-left: 2px solid var(--line); position: relative; border-radius: 6px; transition: background-color .15s ease, border-color .15s ease, transform .12s ease; }
+#skills .skill:hover { background: var(--panel); border-left-color: var(--p1); transform: translateX(2px); }
 .skill kbd { min-width: 23px; height: 23px; display: grid; place-items: center; padding: 0; color: var(--p1); font-size: 12px; }
 .skill b { display: block; font-size: 14px; }
 .skill p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
@@ -495,7 +513,13 @@ canvas.pending { background: linear-gradient(90deg, var(--panel) 25%, var(--pane
 .skill.super { border-left-color: var(--p1); }
 .skill.super kbd { background: var(--p1); color: #14140c; border-color: var(--p1); }
 .skill .cooldown { position: absolute; right: 0; top: 8px; font: 700 13px monospace; color: var(--cyan); }
-.start { background: var(--p1); color: #14140c; border-color: var(--p1); font-weight: 800; font-size: 18px; padding: .8em 1em; }
+.start { background: var(--p1); color: #14140c; border-color: var(--p1); font-weight: 800; font-size: 18px; padding: .8em 1em; transition: transform .12s ease, filter .15s ease, box-shadow .15s ease; }
+.start span { display: inline-block; transition: transform .15s ease; }
+.start:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 0 16px rgba(253, 233, 121, 0.38); transform: translateY(-1px); }
+.start:hover:not(:disabled) span { transform: translate(2px, -2px); }
+.start:active:not(:disabled) { transform: translateY(1px) scale(0.98); filter: brightness(0.96); box-shadow: none; }
+#random .btn-icon { transition: transform .35s cubic-bezier(0.34, 1.56, 0.64, 1); }
+#random:active .btn-icon { transform: rotate(180deg) scale(1.15); }
 .start:disabled { opacity: .6; cursor: wait; }
 #round-rules { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 13px; }
 
@@ -578,6 +602,10 @@ body.in-battle { overflow-x: hidden; }
 /* The deck line under the PAUSED title: quiet body text, not the stroked banner font. */
 .game-banner .deck-label { font: 13px/1.5 var(--font); letter-spacing: 0; -webkit-text-stroke: 0; text-shadow: 0 1px 0 #000; color: var(--muted); margin-top: 10px; }
 .end-overlay { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; background: #0b0a12eb; gap: 6px; }
+.end-overlay:not([hidden]) { animation: end-overlay-in .25s ease-out; }
+@keyframes end-overlay-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+#rematch .btn-icon { transition: transform .35s ease; }
+#rematch:active .btn-icon { transform: rotate(180deg); }
 .end-overlay h2 { margin: 0; font-size: 40px; }
 .end-overlay p { margin: 0; color: var(--muted); }
 .end-overlay > div { display: flex; gap: 10px; justify-content: center; margin-top: 12px; }
@@ -594,14 +622,17 @@ body.in-battle { overflow-x: hidden; }
 .buff-foe b { font-size: 14px; }
 .buff-cards { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
 /* Two-line card: the pool's stroke icon beside the name, the numeric effect line under it. */
-.buff-card { position: relative; display: grid; justify-items: center; gap: 5px; width: 190px; padding: 14px 12px 12px; background: var(--panel); }
+.buff-card { position: relative; display: grid; justify-items: center; gap: 5px; width: 190px; padding: 14px 12px 12px; background: var(--panel); border-radius: 10px; transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease; }
 .buff-head { display: flex; align-items: center; gap: 8px; }
 .buff-icon { display: grid; place-items: center; width: 24px; height: 24px; color: var(--p1); }
 .buff-icon svg { width: 24px; height: 24px; display: block; }
 .buff-card b { font-size: 16px; }
 .buff-stat { color: var(--muted); font-size: 12px; }
 .buff-owned { position: absolute; top: 6px; right: 6px; font: 800 11px/1.4 var(--font); font-style: normal; background: #0d0c14; border-radius: 5px; padding: 1px 6px; color: var(--p1); }
-.buff-card:hover { border-color: var(--p1); }
+.buff-card:hover { border-color: var(--p1); transform: translateY(-3px); box-shadow: 0 8px 24px rgba(253, 233, 121, 0.22); }
+.buff-card:active { transform: translateY(0) scale(0.97); }
+.buff-picker:not([hidden]) { animation: buff-picker-in .22s ease-out; }
+@keyframes buff-picker-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
 
 #battle-skills { margin-top: 12px; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
 /* Mid-fight text density runs on data-tier (docs/skill-desc-guide.md §1): 1 names only,
@@ -632,11 +663,18 @@ body.in-battle { overflow-x: hidden; }
 #battle-skills .skill.super { padding-right: 18px; }
 #battle-skills .skill.super .charge { position: absolute; right: 6px; top: 8px; bottom: 8px; width: 6px; background: #0d0c14; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
 #battle-skills .skill.super .charge i { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: var(--p1); display: block; }
+#battle-skills .skill.super.ready { border-color: var(--p1); box-shadow: 0 0 12px rgba(253, 233, 121, 0.4); animation: ult-pulse 2s ease-in-out infinite; }
+@keyframes ult-pulse { 0%, 100% { box-shadow: 0 0 8px rgba(253, 233, 121, 0.25); } 50% { box-shadow: 0 0 16px rgba(253, 233, 121, 0.55); } }
+.energy.full { box-shadow: 0 0 8px var(--cyan); }
 #battle-skills-bar { display: flex; justify-content: flex-end; margin-top: 8px; }
 #skill-tier { font-size: 13px; padding: .3em .7em; }
 
 dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 14px; max-width: 560px; padding: 18px 22px; }
+dialog[open] { animation: dialog-appear .18s cubic-bezier(0.16, 1, 0.3, 1); }
 dialog::backdrop { background: #000000aa; }
+dialog[open]::backdrop { animation: backdrop-fade .18s ease-out; }
+@keyframes dialog-appear { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+@keyframes backdrop-fade { from { opacity: 0; } to { opacity: 1; } }
 .dialog-head { display: flex; justify-content: space-between; align-items: center; }
 .dialog-head h2 { margin: 0; }
 #quit-text { margin: 12px 0 0; color: var(--muted); }
@@ -647,7 +685,10 @@ dialog::backdrop { background: #000000aa; }
 .help-body li b { color: var(--text); }
 .help-body details { border-top: 1px solid var(--line); padding: 10px 0; }
 .help-body details:first-of-type { margin-top: 16px; }
-.help-body summary { cursor: pointer; font-weight: 700; }
+.help-body summary { cursor: pointer; font-weight: 700; padding: 6px 4px; border-radius: 6px; transition: color .15s ease, background-color .15s ease; user-select: none; }
+.help-body summary:hover { color: var(--p1); background: rgba(253, 233, 121, 0.06); }
+.help-body details[open] ul { animation: help-expand .18s ease-out; }
+@keyframes help-expand { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
 .help-body details ul { margin-top: 8px; }
 
 /* touch */
@@ -655,7 +696,9 @@ dialog::backdrop { background: #000000aa; }
 body.touch .touch-only { display: block; }
 /* 摇杆环的大小跟场地宽度走（cqw）；第一行是给不支持容器单位的浏览器的 vmin 回退。 */
 .touchpad { --ring: clamp(96px, 26vmin, 136px); --ring: 11.6cqw; display: none; position: absolute; inset: 0; pointer-events: none; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-.touchpad button { display: grid; place-items: center; padding: 0; pointer-events: auto; touch-action: none; border-radius: 50%; color: #fff; font-weight: 800; text-shadow: 0 1px 0 #000; background: #ffffff2e; border: 2px solid #ffffff73; }
+.touchpad button { display: grid; place-items: center; padding: 0; pointer-events: auto; touch-action: none; border-radius: 50%; color: #fff; font-weight: 800; text-shadow: 0 1px 0 #000; background: #ffffff2e; border: 2px solid #ffffff73; transition: background-color .08s ease, transform .08s ease; }
+.touchpad.in-tower .tp-actions button.held { transform: scale(0.92); }
+body.pad-split .tp-actions button.held { transform: translate(-50%, -50%) scale(0.92); }
 .touchpad button img { width: 58%; height: 58%; object-fit: contain; pointer-events: none; filter: drop-shadow(0 1px 0 #000); }
 .touchpad button.held { background: #ffffff80; }
 /* 冷却：图标压暗，亮色从下沿往上长满。--cd 为 0 刚开始，1 即将结束。 */

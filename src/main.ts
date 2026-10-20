@@ -204,7 +204,7 @@ bindOnline(() => select.onlinePick(), (role, hostChar, guestChar, stageId, link,
     online: role,
     lock: plan.mode === 'lock' ? { seed: plan.seed } : undefined,
   });
-}, on => select.setNetLocked(on), (charId, codename) => select.setOnlinePeer(charId, codename));
+}, on => select.setNetLocked(on), (charId, codename) => select.setOnlinePeer(charId, codename), openDialog);
 {
   const idles = portraitOf(select.cast());
   const stageSrc = select.stage.image && select.liteStage ? stageThumbSrc(select.stage.image) : select.stage.image;
@@ -599,7 +599,7 @@ $('rematch').onclick = () => {
   if (lastSetup) void startGame(lastSetup);
 };
 $('pause').onclick = () => game?.togglePause();
-$('skill-tier').onclick = () => cycleSkillTier();
+$('skill-tier').onclick = () => { sfx.play('key'); cycleSkillTier(); };
 /* 桌面宽屏、手机横屏：顶栏开关只管进。进去后顶栏藏掉，退出走暂停浮层（ESC 或点计时区域打开）。 */
 function syncFullscreenLabel(): void {
   setIconBtn($('fullscreen'), document.body.classList.contains('touch') ? '横屏' : '宽屏');
@@ -654,14 +654,21 @@ function unlockScroll(): void {
   document.documentElement.classList.remove('modal-open');
   document.documentElement.style.removeProperty('--scrollbar-gap');
 }
+let lastTrigger: HTMLElement | null = null;
 function openDialog(dialog: HTMLDialogElement): void {
   if (dialog.open) return;
+  lastTrigger = document.activeElement as HTMLElement | null;
   lockScroll();
   dialog.showModal();
 }
-for (const dialog of [$('quit-dialog'), $('help-dialog'), $('settings-dialog'), $('codename-dialog')] as HTMLDialogElement[]) {
-  dialog.addEventListener('close', unlockScroll);
-}
+document.querySelectorAll<HTMLDialogElement>('dialog').forEach(dialog => {
+  dialog.addEventListener('click', e => { if (e.target === dialog) dialog.close(); });
+  dialog.addEventListener('close', () => {
+    unlockScroll();
+    if (lastTrigger?.isConnected) lastTrigger.focus();
+    lastTrigger = null;
+  });
+});
 
 /** One confirm dialog for both destructive exits; pauses the fight the way the help dialog does. */
 function openQuit(title: string, text: string, yes: string, cancel: string, action: () => void): void {
@@ -677,7 +684,6 @@ function openQuit(title: string, text: string, yes: string, cancel: string, acti
 $('quit-close').onclick = () => quitDialog.close();
 $('quit-cancel').onclick = () => quitDialog.close();
 $('quit-yes').onclick = () => { const act = quitAction; quitDialog.close(); act?.(); };
-quitDialog.addEventListener('click', e => { if (e.target === quitDialog) quitDialog.close(); });
 
 $('abandon').onclick = () => {
   // Abandoning only touches the sub-mode the select screen is pointing at.
@@ -695,12 +701,11 @@ $('abandon').onclick = () => {
 const helpDialog = $('help-dialog') as HTMLDialogElement;
 $('help').onclick = () => { if (game && !game.paused) game.togglePause(true); openDialog(helpDialog); };
 $('close-help').onclick = () => helpDialog.close();
-helpDialog.addEventListener('click', e => { if (e.target === helpDialog) helpDialog.close(); });
 
 $('sound').onclick = () => {
   sfx.muted = !sfx.muted;
   setIconBtn($('sound'), sfx.muted ? '♪ 音效关' : '♪ 音效开');
-  if (!sfx.muted) sfx.unlock();
+  if (!sfx.muted) { sfx.unlock(); sfx.play('select'); }
 };
 
 /* 音乐与音效各自独立，这条只管 BGM。做法对齐参考站的 music-settings：开关是同步布尔，
@@ -732,8 +737,8 @@ function syncMusicUi(): void {
 }
 $('music-toggle').onclick = () => { setMusicEnabled(!musicEnabled()); syncMusicUi(); };
 $('music-order').onclick = () => { setMusicOrder(cycleMusicOrder(musicOrder())); syncMusicUi(); syncFightShuffleLock(); };
-$('music-prev').onclick = () => { stepMusic(-1); syncMusicUi(); };
-$('music-next').onclick = () => { stepMusic(1); syncMusicUi(); };
+$('music-prev').onclick = () => { sfx.play('key'); stepMusic(-1); syncMusicUi(); };
+$('music-next').onclick = () => { sfx.play('key'); stepMusic(1); syncMusicUi(); };
 $('music-volume').oninput = () => {
   setMusicVolume(Number(($('music-volume') as HTMLInputElement).value) / 100);
   syncMusicUi();
@@ -792,7 +797,6 @@ $('open-codename').onclick = () => {
   openDialog(codenameDialog);
 };
 $('close-codename').onclick = () => codenameDialog.close();
-codenameDialog.addEventListener('click', e => { if (e.target === codenameDialog) codenameDialog.close(); });
 $('settings').onclick = () => {
   syncFightShuffleLock();
   syncCodenameUi();
@@ -800,7 +804,6 @@ $('settings').onclick = () => {
   openDialog(settingsDialog);
 };
 $('close-settings').onclick = () => settingsDialog.close();
-settingsDialog.addEventListener('click', e => { if (e.target === settingsDialog) settingsDialog.close(); });
 
 /* 设置里每一行都是左名、右下拉。名册显示改分组后名册重渲染，滚动预加载观察器跟着重挂。
    训练场两项写进同一份 prefs，进行中的对局下一帧就生效。 */

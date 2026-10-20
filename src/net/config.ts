@@ -7,7 +7,7 @@
 const env = (import.meta as { env?: Record<string, string | undefined> }).env ?? {};
 
 const STUN_ONLY: RTCIceServer[] = [
-  { urls: 'stun:stun.qq.com:3478' },
+  { urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.qq.com:3478'] },
   { urls: 'stun:stun.miwifi.com:3478' },
 ];
 

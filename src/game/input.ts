@@ -7,7 +7,8 @@ export class KeyboardInput {
   private readonly getGame: () => FightGame | null;
   private readonly down = (e: KeyboardEvent) => {
     const g = this.getGame();
-    if (!g || (e.target as HTMLElement | null)?.closest?.('dialog, [data-prop-tune]')) return;
+    if (!g || (typeof document !== 'undefined' && document.querySelector('dialog[open]'))) return;
+    if ((e.target as HTMLElement | null)?.closest?.('input, textarea, select, [data-prop-tune]')) return;
     if (!g.isLocalControl(e.code)) return;
     e.preventDefault();
     if (!e.repeat) g.keyDown(e.code);

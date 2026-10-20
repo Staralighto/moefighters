@@ -268,15 +268,18 @@ async function check() {
     const pollAfterJoin = await post({ op: 'poll', code: opened.code });
     if (pollAfterJoin.joined !== true) throw new Error('host poll must observe joined: true after guest take');
 
-    // Now host turn with key passes, strips TCP/TLS/:53 URLs, and caches credentials on room
+    // Now host turn with key passes, strips port 53, preserves UDP/TCP/TURNS, and caches credentials on room
     const hostTurn = await rawPost({ op: 'turn', code: opened.code, key: opened.key }, {}, '198.51.100.1');
     if (hostTurn.status !== 200 || cfMintCalls !== 1) throw new Error('joined host turn with key must mint once');
     const flatUrls = hostTurn.body.iceServers.flatMap(s => s.urls);
-    if (flatUrls.some(u => u.includes(':53') || u.startsWith('turns:') || u.includes('transport=tcp'))) {
-      throw new Error('TCP/TLS/:53 TURN URLs must be stripped');
+    if (flatUrls.some(u => u.includes(':53?') || u.endsWith(':53'))) {
+      throw new Error('Port 53 TURN URLs must be stripped');
     }
     if (!flatUrls.includes('turn:turn.cloudflare.com:3478?transport=udp')) {
       throw new Error('UDP 3478 TURN URL must be preserved');
+    }
+    if (!flatUrls.includes('turn:turn.cloudflare.com:3478?transport=tcp') || !flatUrls.includes('turns:turn.cloudflare.com:5349?transport=tcp')) {
+      throw new Error('TCP and TLS (turns:) TURN URLs must be preserved for VPN/proxy players');
     }
 
     const offered = await post({ op: 'offer', code: opened.code, key: opened.key, sdp: validSdp });

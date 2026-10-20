@@ -96,6 +96,9 @@ export function updateHUD(g: FightGame): void {
     if (mp.style.width !== mpPct) mp.style.width = mpPct;
     const mpBg = f.energy >= f.energyMax ? SIDE[f.team] : '#76e7ff';
     if (mp.style.background !== mpBg) mp.style.background = mpBg;
+    const full = f.energy >= f.energyMax;
+    const barBox = mp.parentElement;
+    if (barBox && barBox.classList.contains('full') !== full) barBox.classList.toggle('full', full);
     if (score) setText($m('score' + n), g.mode === 'training' ? '' : '●'.repeat(g.wins[f.team]) + '○'.repeat(2 - g.wins[f.team]));
   }
   // A challenge run has no round score; stale dots from a previous match must not linger.
@@ -152,6 +155,8 @@ export function updateHUD(g: FightGame): void {
     if (charge) {
       const h = me.energy / me.energyMax * 100 + '%';
       if (charge.style.height !== h) charge.style.height = h;
+      const ready = me.energy >= ultCost;
+      if (el.classList.contains('ready') !== ready) el.classList.toggle('ready', ready);
       continue;
     }
     const msg = cdMsg(i);

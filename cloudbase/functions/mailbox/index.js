@@ -66,13 +66,15 @@ function ipHash(ip, day) {
   return crypto.createHash('sha256').update(String(ip) + ':' + String(day)).digest('hex').slice(0, 12);
 }
 
-function headersFor(cors) {
+function headersFor(cors, event) {
   const headers = { 'Content-Type': 'application/json' };
   if (!cors) return headers;
+  const reqHeaders = event && event.headers && (event.headers['access-control-request-headers'] || event.headers['Access-Control-Request-Headers']);
   headers['Access-Control-Allow-Origin'] = cors;
   headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS';
-  headers['Access-Control-Allow-Headers'] = 'Content-Type';
-  headers.Vary = 'Origin';
+  headers['Access-Control-Allow-Headers'] = typeof reqHeaders === 'string' && reqHeaders.trim() ? reqHeaders.trim() : 'Content-Type';
+  headers['Access-Control-Max-Age'] = '86400';
+  headers.Vary = 'Origin, Access-Control-Request-Headers';
   return headers;
 }
 
@@ -739,13 +741,12 @@ async function turn(body, now, reply, event) {
     );
     const data = res.data;
     const rows = Array.isArray(data && data.iceServers) ? data.iceServers : [];
-    // Browsers block port 53; also strip TCP/TLS TURN so credentials only relay UDP game traffic.
+    // Browsers block port 53 (ERR_UNSAFE_PORT). Keep UDP, TCP, and TLS (turns:) so players
+    // behind TCP-only VPNs or Chromium disable_non_proxied_udp can still relay.
     const badUrl = u =>
       typeof u !== 'string' ||
       u.includes(':53?') ||
-      u.endsWith(':53') ||
-      u.startsWith('turns:') ||
-      u.includes('transport=tcp');
+      u.endsWith(':53');
     const iceServers = rows.map(s => {
       const urls = (Array.isArray(s.urls) ? s.urls : [s.urls]).filter(u => !badUrl(u));
       if (!urls.length) return null;
@@ -766,7 +767,7 @@ async function turn(body, now, reply, event) {
 
 exports.main = async (event) => {
   const origin = originState(event);
-  const headers = headersFor(origin.cors);
+  const headers = headersFor(origin.cors, event);
   const reply = (status, obj) => ({ isBase64Encoded: false, statusCode: status, headers, body: JSON.stringify(obj) });
   if (!origin.ok) return reply(403, { error: 'origin' });
   const method = String((event && (event.httpMethod || event.method)) || 'POST').toUpperCase();
