@@ -71,6 +71,8 @@ export interface Effect {
   local?: boolean;
   /** Online guest: host-echo duplicate of an effect already rendered locally. */
   dup?: boolean;
+  /** Integrated motion for script-driven effects (寿来's return orb). */
+  vx?: number; vy?: number;
 }
 export interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string; size: number }
 export interface FloatingText { text: string; x: number; y: number; color: string; life: number; max: number; size: number }
@@ -404,8 +406,10 @@ export class FightGame {
     this.options.onBanner?.(title, sub);
     this.bannerLeft = duration;
   }
-  effect(type: string, x: number, y: number, color: string, life = .4, extra: Partial<Effect> = {}): void {
-    this.effects.push({ type, x, y, color, life, max: life, ...extra });
+  effect(type: string, x: number, y: number, color: string, life = .4, extra: Partial<Effect> = {}): Effect {
+    const e: Effect = { type, x, y, color, life, max: life, ...extra };
+    this.effects.push(e);
+    return e;
   }
   text(text: string, x: number, y: number, color = '#fff', life = .65, size = 22): void {
     this.texts.push({ text, x, y, color, life, max: life, size });
@@ -479,7 +483,9 @@ export class FightGame {
     f.attack = {
       skill, index: slot, serial: ++f.attackSerial, t: escaping ? skill.start : 0, emitted: false, shots: 0, hit: new Set(),
       burst: SCRIPTS[skill.fx]?.burst?.(f) ?? 0,
-      endure: skill.type === 'endure' ? 1 : 0,
+      // holdEndure is a promise of armour through the cast, so a projectile super that asks for it
+      // gets the same one-strike shield the endure template arms.
+      endure: skill.type === 'endure' || (skill.type === 'projectile' && skill.holdEndure) ? 1 : 0,
       liftAt: 0,
       tossAt: 0,
       hold: -1,

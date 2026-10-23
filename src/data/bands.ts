@@ -5,7 +5,8 @@
 
 export type BandId =
   | 'mygo' | 'ave-mujica' | 'sumimi' | 'yumemita' | 'pastel-palettes'
-  | 'poppin-party' | 'afterglow' | 'roselia' | 'hello-happy' | 'raise-a-suilen' | 'morfonica';
+  | 'poppin-party' | 'afterglow' | 'roselia' | 'hello-happy' | 'raise-a-suilen' | 'morfonica'
+  | 'millsage';
 
 export interface BandData {
   id: BandId;
@@ -32,6 +33,8 @@ export const BANDS: readonly BandData[] = [
   // 成员显示代号，不用本名。
   { id: 'raise-a-suilen', name: 'RAISE A SUILEN', color: '#CC0000' },
   { id: 'morfonica', name: 'Morfonica', color: '#6677CC' },
+  // 新团排在末尾；成员进名册前不能留在注册表里（selfcheck 会报空乐队）。
+  { id: 'millsage', name: 'millsage', color: '#AA22EE' },
 ];
 
 export const BAND_BY_ID: ReadonlyMap<BandId, BandData> = new Map(BANDS.map(b => [b.id, b]));

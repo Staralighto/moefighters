@@ -1107,6 +1107,53 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'kanata', name: '泽海奏多', title: '键盘 / 余命', quote: '我这人可是很脆弱的哦？', color: '#9DB9B9',
+    bands: ['millsage'],
+    ...stats('focus'),
+    view: {
+      kind: 'sprite', common: '/sprites/kanata/common.png', special: '/sprites/kanata/special.png', height: 172,
+      extras: ['/sprites/kanata/piano.png'],
+    },
+    skills: [
+      skill(0, 'light', '轻弹'),
+      skill(1, 'heavy', '琴凳踢'),
+      skill(2, 'projectile', '寿来', {
+        damage: 46, range: 520, start: .5, duration: .95, cd: 6, fx: 'lifedraw',
+        drain: 28, knock: 180, size: 110, life: .5, solid: false, noSiphon: true, noSparks: true,
+        brief: '锁定引爆；削气并回血，离开可躲，被挡不削气',
+        detail: '锁定最近敌人脚下，半秒后引爆；命中削去对方 28 气，气团飞回奏多时回复 42 生命；离开标记可躲，可格挡，被挡不削气',
+      }),
+      skill(3, 'endure', '我可是很脆弱的哦', {
+        damage: 0, range: 0, start: .28, duration: .7, cd: 9, fx: 'lily',
+        onActive: [
+          { op: 'mod', kind: 'vulnerable', time: 5, v: 2 },
+          { op: 'mod', kind: 'reflect', time: 5, v: .5 },
+          { op: 'fx', life: .6, radius: 92 },
+        ],
+        brief: '起手霸体挡一次；自身脆弱，反伤所有伤害',
+        detail: '起手霸体挡一次；5 秒内自身脆弱（受到伤害 +100%），同时反伤所有伤害的 50%',
+      }),
+      skill(4, 'endure', '完全复活', {
+        damage: 0, range: 0, start: .5, duration: .95, cd: 14, breakout: true, holdEndure: true, fx: 'revive',
+        onActive: [
+          { op: 'heal', hp: 200 },
+          { op: 'fx', life: 1 },
+          { op: 'mod', kind: 'guard', time: 6, v: .5 },
+          { op: 'mod', kind: 'relapse', time: 6, v: 250 },
+        ],
+        brief: '解控并回血；期间霸体，随后减伤，结束时反噬自身',
+        detail: '解控并回复 20% 最大生命；期间霸体，6 秒内受伤降低 50%，结束后反噬 25% 最大生命，可致死',
+      }),
+      skill(5, 'projectile', '让大家幸福的音乐', {
+        cost: 120, damage: 34, count: 10, interval: .28, size: 34, life: .9,
+        start: .4, duration: 3, fx: 'happymusic',
+        holdEndure: true, jumpCancel: 1, knock: 150, gain: 2,
+        brief: '原地弹奏并霸体；周期震开近身，追踪音符飞一段即散',
+        detail: '原地弹奏 3 秒，期间霸体，每 0.3 秒震开近身；其间发射十枚追踪音符，飞约 0.9 秒后消散。1 秒后可后跳取消',
+      }),
+    ],
+  },
+  {
     id: 'viola', name: '薇欧拉', title: '队长 / 恶德', quote: '火种燃尽之后会怎么样呢？', color: '#8E5AC8',
     ...stats('armor'),
     view: {

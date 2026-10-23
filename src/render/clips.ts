@@ -74,6 +74,12 @@ export function drumRow(t: number, duration: number): number {
   return Math.floor(u * 12) % 3;
 }
 
+/** 让大家幸福的音乐: the seated piano changes cells on every repel beat — ten beats over the cast. */
+export function musicRow(t: number, duration: number): number {
+  const u = duration > 0 ? Math.min(0.999, Math.max(0, t / duration)) : 0;
+  return Math.floor(u * 10) % 3;
+}
+
 /** Strum loop. The last 0.22s is the recover cell, matching the early release in combat. */
 export function chordRow(t: number, duration: number): number {
   if (t >= duration - .22) return 2;
@@ -297,6 +303,7 @@ export function clipFor(f: Fighter): Clip {
     if (f.attack.skill.fx === 'flurry' || f.attack.skill.fx === 'mega')
       return at('special', f.attack.index - 2, volleyRow(f.attack.t, f.attack.skill));
     if (f.attack.skill.fx === 'drums') return at('special', f.attack.index - 2, drumRow(f.attack.t, f.attack.skill.duration));
+    if (f.attack.skill.fx === 'happymusic') return at('special', f.attack.index - 2, musicRow(f.attack.t, f.attack.skill.duration));
     if (f.attack.skill.fx === 'chord') return at('special', f.attack.index - 2, chordRow(f.attack.t, f.attack.skill.duration));
     if (f.attack.skill.fx === 'riff') return at('special', f.attack.index - 2, riffRow(f.attack.t, f.attack.skill.duration));
     if (f.attack.skill.fx === 'sing') return at('special', f.attack.index - 2, singRow(f.attack.t, f.attack.skill.start, f.attack.skill.duration));

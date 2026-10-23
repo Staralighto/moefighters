@@ -5,4 +5,6 @@ import type { PropPlace } from './propLayout.ts';
 export const PROP_LAYOUT: Record<string, PropPlace> = {
   'anon-spin': { x: 0, y: -96, rot: 0, size: 300 },
   'anon-strum': { x: 75, y: -140, rot: 2.5, size: 156 },
+  // 泽海奏多 大招的立式钢琴。x 向前，让琴身从手边伸向场外，人和凳子留在琴后。
+  'kanata-piano': { x: 40, y: -177, rot: 0, size: 200 },
 };

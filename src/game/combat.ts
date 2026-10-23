@@ -1,6 +1,6 @@
 import type { HitReact, Op, Skill } from '../data/types.ts';
 import { gainEnergy, gainGauge, type Attack, type Fighter } from './fighter.ts';
-import { addDebt, addMod, dmgDealtMul, dmgTakenMul, has } from './mods.ts';
+import { addDebt, addMod, dmgDealtMul, dmgTakenMul, has, incomingMul, reflectAmount } from './mods.ts';
 import type { FightGame, Projectile, SealVolley } from './game.ts';
 import { CONTROLS, FLOOR, GRAVITY, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
 import { attackPhase } from './animState.ts';
@@ -126,6 +126,14 @@ const PARFAIT_DIST = 120;
 /** 剪: the locked field catches this wide and this tall around the marked spot. */
 const SNIP_BAND_X = 96;
 const SNIP_BAND_Y = 72;
+/** 寿来: the circle's default x radius, how far above the floor it still catches, and the orb clock. */
+const LIFEDRAW_R = 110;
+const LIFEDRAW_BAND_Y = 88;
+const SOUL_ORB_TIME = 1.1;
+const SOUL_ORB_POP = .18;
+const SOUL_ORB_HEAL = 42;
+/** Every HP recovery popup uses this light green, so the colour means healing everywhere. */
+const HEAL_TEXT = '#9dffc0';
 /** 哭泣的紫罗兰: the vanish holds this long between the two bursts; she is gone the whole way. */
 export const VIOLET_WARP = .5;
 /** 火的故事: the arrow is only the fuse — the blast is the one damage event. A quarter of the stage. */
@@ -355,6 +363,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     && ((has(defender, 'brace') && defender.frenzy > 0) || howling);
   let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .95 : 1)
     * dmgTakenMul(defender, { grab: isGrab, superHit: !!skill.super, superBrace, fallback: BRACED_DAMAGE })
+    * incomingMul(defender)
     * (defender.ban > 0 ? BAN_DAMAGE : 1) * attacker.baseDmgMul * attacker.dmgMul * dmgDealtMul(attacker)
     * (defender.frail > 0 ? 1 + defender.frailBonus : 1);
   // 堕天: below half health the attacker swings harder; 这是最后通牒: a defender under a quarter takes more.
@@ -589,6 +598,9 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   if (attacker.lifesteal > 0 && damage > 0) attacker.hp = Math.min(attacker.data.hp, attacker.hp + damage * attacker.lifesteal);
   // 竟敢无视灯: melee hits pain the attacker back — pure hp loss, no stagger, no fx, it can kill.
   if (defender.thorns > 0 && skill.type !== 'projectile' && damage > 0) attacker.hp = Math.max(0, attacker.hp - damage * defender.thorns);
+  // 我可是很脆弱的哦: every source pays back a share, projectiles and grabs included.
+  const reflect = reflectAmount(defender);
+  if (reflect > 0 && damage > 0) attacker.hp = Math.max(0, attacker.hp - damage * reflect);
   const rawKnock = skill.knock ?? (skill.type === 'light' ? 95 : skill.super ? 340 : 235);
   const knock = blocked && !skill.knockOnBlock ? 75 : rawKnock;
   if (!quiet && !SCRIPTS[skill.fx]?.noKnock && defender.invuln <= 0 && !endured) defender.vx = dir * knock * (braced || superBrace ? .5 : 1);
@@ -951,11 +963,36 @@ function runOps(g: FightGame, f: Fighter, s: Skill, ops: Op[]): void {
           game.shake = 10;
         },
       });
+      // 我可是很脆弱的哦: the lily window. Vulnerable ignores the grab/super gate.
+      else if (op.kind === 'vulnerable') {
+        addMod(f, 'incoming', time, { v: op.v ?? 2, tag: 'vulnerable' });
+        g.text('脆弱', f.x, f.y - 195, '#ffb4c8', .6, 18);
+      }
+      // 完全复活: the cut also covers grabs and supers.
+      else if (op.kind === 'guard') addMod(f, 'incoming', time, { v: op.v ?? .5, tag: 'guard' });
+      // 我可是很脆弱的哦: every damage source is paid back while the petals hold.
+      else if (op.kind === 'reflect') addMod(f, 'reflect', time, { v: op.v ?? .5, tag: 'lily', mark: 'lily' });
+      // 完全复活: a fixed bill comes due when the window closes. Unlike 负债 it is not incoming
+      // damage — it is a flat self-hit that can reach 0 and kill.
+      else if (op.kind === 'relapse') {
+        const amount = Math.round(op.v ?? 0);
+        addMod(f, 'relapse', time, {
+          v: amount,
+          onExpire: (game, who) => {
+            if (amount <= 0) return;
+            who.hp = Math.max(0, who.hp - amount);
+            who.stun = Math.max(who.stun, .3);
+            game.text('-' + amount, who.x, who.y - 175, '#8a8496', .9, 28);
+            game.shake = Math.max(game.shake, 9);
+            game.effect('burst', who.x, who.y - 90, '#9a94a8', .5, { radius: 120 });
+          },
+        });
+      }
     } else if (op.op === 'repel') {
       repel(g, f, op.range ?? s.range, op.push, op.stun);
     } else if (op.op === 'heal') {
       f.hp = Math.min(f.data.hp, f.hp + op.hp);
-      g.text(`+${op.hp}`, f.x, f.y - 160, '#ffd0d8', .6, 18);
+      g.text(`+${op.hp}`, f.x, f.y - 160, HEAL_TEXT, .6, 18);
     } else if (op.op === 'fx') {
       if (op.flash) g.flash = Math.max(g.flash, op.flash);
       const y = op.floor ? FLOOR : f.y + (op.y ?? -80);
@@ -1450,13 +1487,13 @@ SCRIPTS['world'] = {
     if (s) addMod(f, 'noGain', s.duration + (s.root ?? 0), { max: true });
   },
 };
-/** Repel pulse while the drums super is up: anyone closing in gets bounced. Returns whether anyone was pushed. */
-function repelPulse(g: FightGame, f: Fighter, power: number): boolean {
+/** Repel pulse while a seated super is up: anyone closing in gets bounced. Returns whether anyone was pushed. */
+function repelPulse(g: FightGame, f: Fighter, power: number, range = DRUM_REPEL_RANGE): boolean {
   let pushed = false;
   for (const o of g.opponents(f)) {
     if (o.hp <= 0 || o.invuln > 0) continue;
     const dx = o.x - f.x;
-    if (Math.abs(dx) < DRUM_REPEL_RANGE) {
+    if (Math.abs(dx) < range) {
       const dir = Math.sign(dx) || f.facing;
       o.vx = dir * power;
       o.stun = Math.max(o.stun, .22);
@@ -1524,6 +1561,27 @@ function step_drums(g: FightGame, f: Fighter, a: Attack, dt: number): void {
     const y = f.y - 78;
     g.effect('drum-wave', f.x - 110, y, '#f4ecff', .32, { radius: 24 });
     g.effect('drum-wave', f.x + 110, y, '#f4ecff', .32, { radius: 24 });
+  }
+}
+
+/** 让大家幸福的音乐: seated at the piano, bouncing anyone who closes in on a fixed beat. */
+const MUSIC_REPEL_EVERY = .3;
+const MUSIC_REPEL_RANGE = 180;
+const MUSIC_REPEL_PUSH = 520;
+
+function step_music(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (!a.emitted) {
+    a.emitted = true;
+    repelPulse(g, f, MUSIC_REPEL_PUSH, MUSIC_REPEL_RANGE);
+    g.effect('happymusic', f.x, f.y, f.data.color, s.duration, { dir: f.facing });
+  }
+  if (a.t < s.duration) {
+    const prev = Math.floor(Math.max(0, a.t - dt) / MUSIC_REPEL_EVERY);
+    const cur = Math.floor(a.t / MUSIC_REPEL_EVERY);
+    if (cur > prev && repelPulse(g, f, MUSIC_REPEL_PUSH, MUSIC_REPEL_RANGE)) {
+      g.effect('burst', f.x, f.y - 80, f.data.color, .25, { radius: MUSIC_REPEL_RANGE });
+    }
   }
 }
 
@@ -1602,6 +1660,94 @@ function step_snip(g: FightGame, f: Fighter, a: Attack, dt: number): void {
     live.max = s.start;
     live.life = Math.max(.04, s.start - a.t);
   }
+}
+
+/** 寿来: the mark locks the nearest body in range, then the burst pays out from that spot. */
+function step_lifedraw(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  if (a.t >= s.start) return;
+  if (a.shots === 0) {
+    a.shots = 1;
+    const mark = g.opponents(f)
+      .filter(o => Math.abs(o.x - f.x) <= s.range)
+      .sort((p, q) => Math.abs(p.x - f.x) - Math.abs(q.x - f.x))[0];
+    a.anchor = mark ? mark.x : f.x;
+  }
+  const live = g.effects.find(e => e.type === 'lifedraw-mark' && e.fighter === f.id)
+    ?? g.effect('lifedraw-mark', a.anchor, FLOOR - 6, '#d9ffe8', s.start, { fighter: f.id, radius: s.size ?? LIFEDRAW_R });
+  live.x = a.anchor;
+  live.y = FLOOR - 6;
+  live.max = s.start;
+  live.life = Math.max(.04, s.start - a.t);
+}
+
+/** 寿来: the burst lands once on the locked spot; each clean hit leaves an orb that flies home. */
+function emit_lifedraw(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  const r = s.size ?? LIFEDRAW_R;
+  const mark = g.effects.find(e => e.type === 'lifedraw-mark' && e.fighter === f.id);
+  if (mark) mark.life = 0;
+  const x = a.anchor;
+  g.effect('lifedraw-burst', x, FLOOR - 82, '#eafff2', .5, { radius: r });
+  g.shake = Math.max(g.shake, 7);
+  for (const o of g.opponents(f)) {
+    if (o.invuln > 0) continue;
+    // The drawn circle is the hitbox: r across, and 88px of air above the floor.
+    if (Math.abs(o.x - x) >= r) continue;
+    if (Math.abs(o.y - FLOOR) >= LIFEDRAW_BAND_Y) continue;
+    hit(g, f, o, s, { hit: new Set() }, x);
+  }
+}
+
+/** 寿来: one white orb per clean hit. It pops up at a random angle, then the pull bends and speeds it home. */
+function hit_lifedraw(g: FightGame, attacker: Fighter, defender: Fighter): void {
+  const tag = 'orb' + defender.id + '-' + g.age.toFixed(3);
+  // Upward pop: mostly vertical, with a sideways lean that varies per hit.
+  const ang = -Math.PI / 2 + Math.sin(defender.id * 12.9898 + g.age * 7.13) * Math.PI * .45;
+  const orb = g.effect('soul-orb', defender.x, defender.y - 92, '#ffffff', SOUL_ORB_TIME, {
+    vx: Math.cos(ang) * 210, vy: Math.sin(ang) * 210,
+  });
+  addMod(attacker, 'soulorb', SOUL_ORB_TIME, {
+    tag, pulseEvery: 60,
+    pulse: (_game, who) => {
+      // The mod is the clock; the effect is the body. Only their tag ties the pair together.
+      const m = who.mods.find(x => x.kind === 'soulorb' && x.tag === tag);
+      if (!m) return;
+      const elapsed = SOUL_ORB_TIME - m.left;
+      const tx = who.x, ty = who.y - 150;
+      if (elapsed < SOUL_ORB_POP) {
+        // The pop keeps its launch velocity and bleeds a little speed.
+        orb.vx = (orb.vx ?? 0) * .99;
+        orb.vy = (orb.vy ?? 0) * .995;
+      } else {
+        // Attraction: turn toward her, with the pull tightening and the target speed climbing.
+        const t = Math.min(1, (elapsed - SOUL_ORB_POP) / (SOUL_ORB_TIME - SOUL_ORB_POP));
+        const dx = tx - orb.x, dy = ty - orb.y;
+        const d = Math.hypot(dx, dy) || 1;
+        const spd = 120 + t * 1100;
+        const turn = .12 + t * .3;
+        orb.vx = (orb.vx ?? 0) + (dx / d * spd - (orb.vx ?? 0)) * turn;
+        orb.vy = (orb.vy ?? 0) + (dy / d * spd - (orb.vy ?? 0)) * turn;
+      }
+      const sx = (orb.vx ?? 0) / 60, sy = (orb.vy ?? 0) / 60;
+      const d = Math.hypot(tx - orb.x, ty - orb.y);
+      if (elapsed >= SOUL_ORB_POP && Math.hypot(sx, sy) >= d - 6) {
+        orb.x = tx;
+        orb.y = ty;
+        orb.life = 0;
+        m.left = 0;
+      } else {
+        orb.x += sx;
+        orb.y += sy;
+      }
+    },
+    onExpire: (_game, who) => {
+      orb.life = 0;
+      if (who.hp <= 0) return;
+      who.hp = Math.min(who.data.hp, who.hp + SOUL_ORB_HEAL);
+      _game.text('+' + SOUL_ORB_HEAL, who.x, who.y - 160, HEAL_TEXT, .6, 18);
+    },
+  });
 }
 
 function step_fuga(g: FightGame, f: Fighter, a: Attack, dt: number): void {
@@ -1935,6 +2081,29 @@ function volley_drums(g: FightGame, f: Fighter, a: Attack): void {
         a.shots++;
       }
     }
+}
+
+/** 让大家幸福的音乐: one note per bar, born at the keyboard. Homes, but a short `life` lets it
+ *  fade before it can circle back, so running and jumping stay a real answer. */
+function spawnHappyNote(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  const speed = 360 * (f.data.trait === 'focus' ? 1.15 : 1);
+  const life = s.life ?? .9;
+  const skill: Skill = { ...s, type: 'projectile', fx: 'music-note', speed, size: 34, life, count: 1, duration: life, start: 0, knock: 150, gain: 2 };
+  g.projectiles.push({
+    owner: f.id, x: f.x + f.facing * 40, y: f.y - 120,
+    vx: f.facing * speed, vy: 0, life, skill, color: f.data.color,
+    radius: 10, size: 34, fx: 'music-note', attack: a, hit: new Set(), trail: [], age: 0,
+  });
+}
+
+function volley_music(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  const volley = a.burst || s.count || 1;
+  while (a.shots < volley && a.t >= s.start + a.shots * (s.interval ?? .42)) {
+    spawnHappyNote(g, f, a);
+    a.shots++;
+  }
 }
 
 function volley_parfait(g: FightGame, f: Fighter, a: Attack): void {
@@ -2354,6 +2523,7 @@ function pulse_smile_wave(g: FightGame, p: Projectile, target: Fighter): void {
 SCRIPTS['wail'] = { burst: f => wailShots(f.hp, f.data.hp) };
 SCRIPTS['shove'] = Object.assign(SCRIPTS['shove'] ?? {}, { update: step_shove, commit: true });
 SCRIPTS['drums'] = Object.assign(SCRIPTS['drums'] ?? {}, { update: step_drums });
+SCRIPTS['happymusic'] = Object.assign(SCRIPTS['happymusic'] ?? {}, { update: step_music });
 SCRIPTS['mortis'] = Object.assign(SCRIPTS['mortis'] ?? {}, { update: step_mortis, noStamp: true });
 SCRIPTS['poem'] = Object.assign(SCRIPTS['poem'] ?? {}, { update: step_poem });
 SCRIPTS['wind'] = Object.assign(SCRIPTS['wind'] ?? {}, { update: step_wind, customDash: true });
@@ -2502,6 +2672,9 @@ SCRIPTS['arc-kick'] = Object.assign(SCRIPTS['arc-kick'] ?? {}, { update: step_ar
 SCRIPTS['compose'] = Object.assign(SCRIPTS['compose'] ?? {}, { update: step_compose, skipCount: true, noMelee: true });
 SCRIPTS['wish'] = Object.assign(SCRIPTS['wish'] ?? {}, { update: step_wish, skipVolley: true, skipCount: true });
 SCRIPTS['drums'] = Object.assign(SCRIPTS['drums'] ?? {}, { volley: volley_drums });
+SCRIPTS['happymusic'] = Object.assign(SCRIPTS['happymusic'] ?? {}, { volley: volley_music });
+// 108 samples at the 120 Hz step cover the 0.9s life; 112 leaves a little headroom.
+SCRIPTS['music-note'] = Object.assign(SCRIPTS['music-note'] ?? {}, { home: 'seek', trail: 112 });
 SCRIPTS['parfait'] = Object.assign(SCRIPTS['parfait'] ?? {}, { volley: volley_parfait, spawn: 'zone' });
 SCRIPTS['star'] = Object.assign(SCRIPTS['star'] ?? {}, { volley: volley_star });
 SCRIPTS['riff'] = Object.assign(SCRIPTS['riff'] ?? {}, { swing: swing_riff, holdFrom: 1, release: .3, settle: .3, cd: { tap: RIFF_CD_TAP, max: RIFF_CD_MAX, waves: RIFF_WAVES } });
@@ -2543,6 +2716,9 @@ SCRIPTS['trash'] = Object.assign(SCRIPTS['trash'] ?? {}, { volley: volley_trash,
 SCRIPTS['wish'] = Object.assign(SCRIPTS['wish'] ?? {}, { emit: emit_wish, skipVolley: true, skipCount: true });
 SCRIPTS['world'] = Object.assign(SCRIPTS['world'] ?? {}, { emit: emit_world });
 SCRIPTS['snip'] = Object.assign(SCRIPTS['snip'] ?? {}, { emit: emit_snip, freeWhenEmitted: true, skipVolley: true, skipCount: true, ownCount: true, mark: 'snip' });
+SCRIPTS['lifedraw'] = Object.assign(SCRIPTS['lifedraw'] ?? {}, {
+  update: step_lifedraw, emit: emit_lifedraw, hit: hit_lifedraw, freeWhenEmitted: true,
+});
 SCRIPTS['fuga'] = Object.assign(SCRIPTS['fuga'] ?? {}, { emit: emit_fuga, freeWhenEmitted: true });
 SCRIPTS['firebird'] = Object.assign(SCRIPTS['firebird'] ?? {}, { emit: emit_firebird });
 SCRIPTS['arrow'] = Object.assign(SCRIPTS['arrow'] ?? {}, { trail: 8 });

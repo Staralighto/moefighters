@@ -154,7 +154,8 @@ export interface Skill {
 }
 
 /** Scalar buffs a move can arm. The kernel still stores these on Fighter until mods.ts folds them. */
-export type BuffKind = 'brace' | 'poise' | 'muscle' | 'shout' | 'feast' | 'box' | 'sprint' | 'noGain' | 'rose' | 'debt' | 'encore';
+export type BuffKind = 'brace' | 'poise' | 'muscle' | 'shout' | 'feast' | 'box' | 'sprint' | 'noGain' | 'rose' | 'debt' | 'encore' | 'relapse'
+  | 'vulnerable' | 'reflect' | 'guard';
 
 /** No clock of its own. Runs at one of the three gates the attack clock already has. */
 export type Op =

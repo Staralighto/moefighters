@@ -11,6 +11,7 @@ const CUCUMBER_SRC = '/sprites/mutsumi/cucumber.png';
 const NOTE_SRC = '/sprites/mutsumi/note.png';
 const MORTIS_SRC = '/sprites/mutsumi/mortis.png';
 const KIT_SRC = '/sprites/nyamu/kit.png';
+const PIANO_SRC = '/sprites/kanata/piano.png';
 const MILK_SRC = '/sprites/umiri/milk.png';
 const BAG_SRC = '/sprites/umiri/bag.png';
 const GUITAR_SRC = '/sprites/anon/guitar.png';
@@ -121,6 +122,27 @@ function declarationPaint(ctx: CanvasRenderingContext2D): { beam: CanvasGradient
     declPoolG.addColorStop(1, 'rgba(238, 0, 34, 0)');
   }
   return { beam: declBeamG, glow: declGlowG, pool: declPoolG };
+}
+
+/** 完全复活: the same pillar as 宣战布告, in gold. Cached for the same reason. */
+let reviveOwner: CanvasRenderingContext2D | null = null;
+let reviveBeamG: CanvasGradient | null = null;
+let reviveGlowG: CanvasGradient | null = null;
+let revivePoolG: CanvasGradient | null = null;
+function revivePaint(ctx: CanvasRenderingContext2D): { beam: CanvasGradient; glow: CanvasGradient; pool: CanvasGradient } {
+  if (reviveOwner !== ctx || !reviveBeamG || !reviveGlowG || !revivePoolG) {
+    reviveOwner = ctx;
+    reviveBeamG = ctx.createLinearGradient(0, 0, 0, FLOOR);
+    reviveBeamG.addColorStop(0, 'rgba(255, 210, 74, .32)');
+    reviveBeamG.addColorStop(1, 'rgba(255, 210, 74, .07)');
+    reviveGlowG = ctx.createRadialGradient(0, 0, 6, 0, 0, 90);
+    reviveGlowG.addColorStop(0, 'rgba(255, 246, 200, .28)');
+    reviveGlowG.addColorStop(1, 'rgba(255, 210, 74, 0)');
+    revivePoolG = ctx.createRadialGradient(0, 0, 8, 0, 0, 105);
+    revivePoolG.addColorStop(0, 'rgba(255, 210, 74, .4)');
+    revivePoolG.addColorStop(1, 'rgba(255, 210, 74, 0)');
+  }
+  return { beam: reviveBeamG, glow: reviveGlowG, pool: revivePoolG };
 }
 
 /** ponytail: dusk shots reuse a gradient per colour and rounded width. Cap 8; a ninth colour rebuilds. */
@@ -666,6 +688,166 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       else {
         ctx.beginPath(); ctx.arc(48, -40, 28, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(8, -78, 16, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+    // 寿来: the ground circle locks the spot through the wind-up.
+    case 'lifedraw-mark': {
+      const k = 1 - e.life / e.max;
+      const r = (e.radius ?? 110) * (1 - k * .12);
+      ctx.translate(e.x, e.y);
+      ctx.scale(1, .34);
+      ctx.rotate((e.max - e.life) * 2.2);
+      ctx.globalAlpha *= .9;
+      ctx.strokeStyle = '#8dffc0';
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha *= .55;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(0, 0, r * .72, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#b8ffd8';
+      ctx.globalAlpha *= .5 + k * .7;
+      ctx.beginPath(); ctx.arc(0, 0, r * k, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    // 寿来: the burst is one white-green blast from the circled spot.
+    case 'lifedraw-burst': {
+      const r = e.radius ?? 110;
+      ctx.translate(e.x, e.y);
+      const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+      glow.addColorStop(0, `rgba(255,255,255,${.9 * Math.max(0, 1 - p * 1.6)})`);
+      glow.addColorStop(.45, `rgba(170,255,210,${.55 * Math.max(0, 1 - p * 1.3)})`);
+      glow.addColorStop(1, 'rgba(80,255,160,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(0, 0, r * (.45 + p * .6), 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha *= (1 - p) * .95;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 5 * (1 - p) + 1;
+      ctx.save();
+      ctx.scale(1, .42);
+      ctx.beginPath(); ctx.arc(0, 0, r * (.2 + p * .9), 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+      break;
+    }
+    // 寿来: the white orb with a green rim that carries the siphon home.
+    case 'soul-orb': {
+      const bob = Math.sin((e.max - e.life) * 10) * 2;
+      ctx.translate(e.x, e.y + bob);
+      ctx.globalAlpha *= .55;
+      ctx.fillStyle = '#3dff96';
+      ctx.beginPath(); ctx.arc(0, 0, 15, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = Math.min(1, e.life * 6);
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(0, 0, 7.5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#52ffa8';
+      ctx.lineWidth = 2.4;
+      ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
+    // 我可是很脆弱的哦: white lily petals burst outward, then orbit for the whole window.
+    case 'lily': {
+      const r = e.radius ?? 92;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= (1 - p) * .7;
+      ctx.strokeStyle = '#d9ffe8';
+      ctx.lineWidth = 2.5 * (1 - p) + 1;
+      ctx.beginPath(); ctx.arc(0, 0, 18 + p * r * .7, 0, Math.PI * 2); ctx.stroke();
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2 + .2;
+        const t = Math.min(1, p * 1.5 - (i % 3) * .04);
+        if (t <= 0) continue;
+        const d = 18 + t * r;
+        ctx.save();
+        ctx.translate(Math.cos(a) * d, Math.sin(a) * d * .5 + t * t * 26);
+        ctx.rotate(a + t * 4);
+        ctx.globalAlpha = (1 - p) * .95;
+        drawPetal(ctx, '#ffffff', '#e8f2ec');
+        ctx.restore();
+      }
+      break;
+    }
+    // 完全复活: 宣战布告's pillar, gold. Top of the screen to the floor, plus chest glow and pool.
+    case 'revive': {
+      const x = e.x;
+      const paint = revivePaint(ctx);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha *= 1 - p;
+      ctx.fillStyle = paint.beam;
+      ctx.beginPath();
+      ctx.moveTo(x - 22, 0);
+      ctx.lineTo(x + 22, 0);
+      ctx.lineTo(x + 100, FLOOR);
+      ctx.lineTo(x - 100, FLOOR);
+      ctx.closePath();
+      ctx.fill();
+      ctx.save();
+      ctx.translate(x, FLOOR - 88);
+      ctx.fillStyle = paint.glow;
+      ctx.beginPath();
+      ctx.arc(0, 0, 90, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      ctx.save();
+      ctx.translate(x, FLOOR);
+      ctx.scale(1, .3);
+      ctx.fillStyle = paint.pool;
+      ctx.beginPath();
+      ctx.arc(0, 0, 105, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      break;
+    }
+    // 完全复活's window: a small yellow ellipse with a faint bloom around it.
+    case 'halo': {
+      ctx.translate(e.x, e.y);
+      ctx.save();
+      ctx.strokeStyle = '#ffe98a';
+      ctx.globalAlpha *= .2;
+      ctx.lineWidth = 7.5;
+      ctx.beginPath(); ctx.ellipse(0, 0, 16, 5.4, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+      ctx.strokeStyle = '#ffd54a';
+      ctx.lineWidth = 2.4;
+      ctx.beginPath(); ctx.ellipse(0, 0, 16, 5.4, 0, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
+    // 让大家幸福的音乐: the finished piano in front of the seated pose, with warm rings on the
+    // beat. The image is top-anchored at place.y; propLayout 'kanata-piano' carries x / y / size.
+    case 'happymusic': {
+      const place = watchProp('kanata-piano');
+      ctx.translate(e.x, e.y + place.y);
+      ctx.scale(e.dir ?? 1, 1);
+      ctx.translate(place.x, 0);
+      const im = images?.get(PIANO_SRC);
+      const dw = place.size;
+      const dh = im?.naturalWidth ? dw * (im.naturalHeight / im.naturalWidth) : dw * (200 / 440);
+      if (im?.naturalWidth) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(keyed(im), -dw / 2, 0, dw, dh);
+      } else {
+        ctx.fillStyle = '#2a2438';
+        ctx.fillRect(-dw / 2, 0, dw, dh * .28);
+        ctx.fillStyle = '#f3eefc';
+        for (let i = 0; i < 12; i++) ctx.fillRect(-dw / 2 + 8 + i * (dw - 16) / 12, dh * .3, (dw - 16) / 12 - 3, dh * .13);
+        ctx.fillStyle = '#241e30';
+        ctx.fillRect(-dw / 2 + 10, dh * .45, dw - 20, dh * .55);
+      }
+      const beat = (p * 10) % 1;
+      ctx.strokeStyle = '#fff2a0';
+      ctx.lineWidth = 3;
+      ctx.globalAlpha = (1 - beat) * .5;
+      // This runs in the piano's local space (origin lifted to place.y = feet - 177), so +90
+      // puts the ring at feet - 87, the seated body's center.
+      ctx.beginPath(); ctx.arc(0, 90, 60 + beat * 130, 0, Math.PI * 2); ctx.stroke();
+      for (let i = 0; i < 4; i++) {
+        const q = (p * 6 + i / 4) % 1;
+        ctx.fillStyle = i % 2 ? '#fff6b0' : '#ffe066';
+        ctx.globalAlpha = (1 - q) * .6;
+        ctx.beginPath();
+        ctx.arc(-50 + i * 34, -90 - q * 90, 5, 0, Math.PI * 2);
+        ctx.fill();
       }
       break;
     }
@@ -1823,7 +2005,8 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       break;
     }
     case 'petal-aura': {
-      // 花道·缠: 友希那的落瓣原样改红。减速期间按 1.1 秒一轮循环，运动读 e.age，不读淡出时钟。
+      // 花道·缠 / 我可是很脆弱的哦: 友希那的落瓣原样改色。减速为红，白百合为白。
+      // 持续期间按 1.1 秒一轮循环，运动读 e.age，不读淡出时钟。
       const t = e.age ?? 0;
       const cycle = 1.1;
       for (let i = 0; i < 6; i++) {
@@ -1836,7 +2019,7 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
         ctx.translate(e.x + x + sway, e.y + y0 + fall);
         ctx.rotate(Math.sin(u * 9) * .9 + u * 3);
         ctx.globalAlpha = (1 - u) * .9;
-        drawPetal(ctx, e.color, '#ffb8cf');
+        drawPetal(ctx, e.color, e.color === '#ffffff' ? '#e8f2ec' : '#ffb8cf');
         ctx.restore();
       }
       break;
@@ -2004,6 +2187,142 @@ function noteRibbon(ctx: CanvasRenderingContext2D, p: Projectile, outer = '#e7a0
   stroke(3, inner, .7);
 }
 
+/* ---- 音符彗星: the default look for a music-note shot ----
+   A note sealed in a lit sphere, dragging a tapered band along the real flight path.
+   Everything derives from one colour: the projectile's colour (the character's rep colour). */
+
+type Rgb = [number, number, number];
+function rgbOf(hex: string): Rgb {
+  const n = parseInt(hex.slice(1), 16);
+  if (!Number.isFinite(n)) return [255, 255, 255];
+  return [n >> 16 & 255, n >> 8 & 255, n & 255];
+}
+function mixRgb(a: Rgb, b: Rgb, k: number): Rgb {
+  return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+}
+function cssRgba(c: Rgb, a: number): string {
+  return `rgba(${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])},${a})`;
+}
+
+/** Scratch for the trail. 112 is the largest cap in SCRIPTS (music-note), and one comet draws at a time. */
+const COMET_MAX = 128;
+const cometLens = new Float64Array(COMET_MAX);
+const cometNx = new Float64Array(COMET_MAX);
+const cometNy = new Float64Array(COMET_MAX);
+
+/** Point `need` px along the trail from its oldest end, with the local tangent and normal. */
+function sampleTrail(n: number, xAt: (i: number) => number, yAt: (i: number) => number, need: number): { x: number; y: number; nx: number; ny: number; tx: number; ty: number } {
+  let i = 1;
+  while (i < n - 1 && cometLens[i] < need) i++;
+  const ax = xAt(i - 1), ay = yAt(i - 1), bx = xAt(i), by = yAt(i);
+  const span = cometLens[i] - cometLens[i - 1] || 1;
+  const k = Math.max(0, Math.min(1, (need - cometLens[i - 1]) / span));
+  const dx = bx - ax, dy = by - ay;
+  const m = Math.hypot(dx, dy) || 1;
+  return { x: ax + dx * k, y: ay + dy * k, tx: dx / m, ty: dy / m, nx: -dy / m, ny: dx / m };
+}
+
+/** The trail half: a wide glow and a narrow core, both tapering and fading toward the tail.
+ *  ponytail: the per-frame path copy and its point arrays are gone; the geometry lives in the
+ *  shared scratch above, so the super's ten notes do not hand GC a thousand objects a frame. */
+function noteComet(ctx: CanvasRenderingContext2D, p: Projectile): void {
+  const trail = p.trail;
+  const m = trail.length;
+  if (m < 2) return;
+  const n = Math.min(m + 1, COMET_MAX);
+  const base = m + 1 - n;
+  const xAt = (i: number) => base + i < m ? trail[base + i].x : p.x;
+  const yAt = (i: number) => base + i < m ? trail[base + i].y : p.y;
+  const color = rgbOf(p.color);
+  const mid = mixRgb(color, [255, 255, 255], .4);
+  const R = Math.max(9, Math.min(22, p.size * .42));
+  cometLens[0] = 0;
+  for (let i = 1; i < n; i++) cometLens[i] = cometLens[i - 1] + Math.hypot(xAt(i) - xAt(i - 1), yAt(i) - yAt(i - 1));
+  const total = cometLens[n - 1];
+  if (total < 1) return;
+  // A short ease-in at birth and a fade over the last 0.16s of the shot's life.
+  const fade = Math.min(1, p.age / .05, p.life / .16);
+
+  for (let i = 0; i < n; i++) {
+    const a = i > 0 ? i - 1 : 0, b = i < n - 1 ? i + 1 : n - 1;
+    const dx = xAt(b) - xAt(a), dy = yAt(b) - yAt(a), h = Math.hypot(dx, dy) || 1;
+    cometNx[i] = -dy / h;
+    cometNy[i] = dx / h;
+  }
+  const stride = liteFx ? 3 : 1;
+  const strip = (halfAt: (u: number) => number) => {
+    ctx.beginPath();
+    for (let i = 0; i < n; i += stride) {
+      const h = halfAt(i / (n - 1));
+      const x = xAt(i) + cometNx[i] * h, y = yAt(i) + cometNy[i] * h;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    if ((n - 1) % stride) {
+      const h = halfAt(1);
+      ctx.lineTo(xAt(n - 1) + cometNx[n - 1] * h, yAt(n - 1) + cometNy[n - 1] * h);
+    }
+    for (let i = n - 1; i >= 0; i -= stride) {
+      const h = -halfAt(i / (n - 1));
+      ctx.lineTo(xAt(i) + cometNx[i] * h, yAt(i) + cometNy[i] * h);
+    }
+    if ((n - 1) % stride) {
+      const h = -halfAt(0);
+      ctx.lineTo(xAt(0) + cometNx[0] * h, yAt(0) + cometNy[0] * h);
+    }
+    ctx.closePath();
+  };
+
+  const hx = xAt(n - 1), hy = yAt(n - 1), tx = xAt(0), ty = yAt(0);
+  ctx.globalAlpha = fade;
+  // Wide glow: bright at the orb, gone by the tail.
+  const glow = ctx.createLinearGradient(hx, hy, tx, ty);
+  glow.addColorStop(0, cssRgba(color, .5));
+  glow.addColorStop(.28, cssRgba(color, .28));
+  glow.addColorStop(.72, cssRgba(color, .07));
+  glow.addColorStop(1, cssRgba(color, 0));
+  ctx.fillStyle = glow;
+  strip(u => 1 + R * 1.15 * Math.pow(u, .85));
+  ctx.fill();
+  // Narrow core.
+  const core = ctx.createLinearGradient(hx, hy, tx, ty);
+  core.addColorStop(0, cssRgba(mid, .9));
+  core.addColorStop(.3, cssRgba(mid, .5));
+  core.addColorStop(1, cssRgba(mid, 0));
+  ctx.fillStyle = core;
+  strip(u => .6 + R * .42 * Math.pow(u, .9));
+  ctx.fill();
+
+  // Energy streaming backward: bright beads slide from the orb toward the tail.
+  const flow = p.age * 2.4;
+  const beads = liteFx ? 2 : 3;
+  for (let k = 0; k < beads; k++) {
+    const f = (flow + k / beads) % 1;
+    const q = sampleTrail(n, xAt, yAt, Math.max(0, total * (1 - f)));
+    const r = (2 + R * .2) * (1 - f * .35);
+    ctx.globalAlpha = fade * (1 - f) * .9;
+    ctx.fillStyle = cssRgba(mixRgb(color, [255, 255, 255], .9), 1);
+    ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, Math.PI * 2); ctx.fill();
+    // A short streak pulled toward the tail.
+    ctx.strokeStyle = cssRgba(color, .7);
+    ctx.lineWidth = r * .85;
+    ctx.beginPath();
+    ctx.moveTo(q.x - q.tx * r * .5, q.y - q.ty * r * .5);
+    ctx.lineTo(q.x - q.tx * r * 2.4, q.y - q.ty * r * 2.4);
+    ctx.stroke();
+  }
+
+  // Sparse sparks shed along the way.
+  const sparks = liteFx ? 2 : 4;
+  for (let k = 0; k < sparks; k++) {
+    const f = (flow * .7 + k * .23 + .11) % 1;
+    const q = sampleTrail(n, xAt, yAt, Math.max(0, total * (1 - f)));
+    const side = Math.sin(k * 7.13 + p.age * 4.1) * R * .8;
+    ctx.globalAlpha = fade * (1 - f) * .7;
+    ctx.fillStyle = cssRgba(color, 1);
+    ctx.beginPath(); ctx.arc(q.x + q.nx * side, q.y + q.ny * side, 1.2 + (k % 2) * .7, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
 export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, images?: ImageCache): void {
   // 抹茶芭菲: the standing parfait is drawn by its effect, never as a shot.
   if (p.fx === 'parfait') return;
@@ -2013,6 +2332,7 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   if (p.fx === 'mutsumi-note' || p.fx === 'chord') noteRibbon(ctx, p);
   else if (p.fx === 'sob') noteRibbon(ctx, p, '#f4e7b4', '#e8c96a');
   else if (p.fx === 'arrow') noteRibbon(ctx, p, '#1a3a8a', '#7ec8ff');
+  else if (p.fx === 'music-note') noteComet(ctx, p);
   else if (p.fx !== 'fuga' && p.fx !== 'smile-ship' && p.fx !== 'whale' && p.fx !== 'butterfly' && p.fx !== 'jewel' && p.fx !== 'shigure' && p.fx !== 'moca-dusk' && p.fx !== 'sprout' && p.fx !== 'clock' && p.fx !== 'iaido') {
     // 火的故事 skips the stock dots — they read as purple balls; its case draws gold afterimages.
     // 微笑号 is a screen-sized sweep, so the travelling point must not leave a dot trail.
@@ -2476,6 +2796,50 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
       ctx.quadraticCurveTo(s * 1.35, -s * .72, s * .62, -s * .32);
       ctx.quadraticCurveTo(s * 1.05, -s * .78, s * .56, -s * .96);
       ctx.fill();
+      break;
+    }
+    // 让大家幸福的音乐: 音符彗星. A lit sphere holds a near-white note; the band behind is
+    // drawn by noteComet in the character's colour.
+    case 'music-note': {
+      const base = rgbOf(p.color);
+      const hot = mixRgb(base, [255, 255, 255], .85);
+      const R = Math.max(9, Math.min(22, p.size * .42));
+      const pulse = .92 + Math.sin(p.age * 9) * .08;
+      // Bloom around the ball.
+      const bloom = ctx.createRadialGradient(0, 0, R * .1, 0, 0, R * 2.4 * pulse);
+      bloom.addColorStop(0, cssRgba(base, .5));
+      bloom.addColorStop(.45, cssRgba(base, .2));
+      bloom.addColorStop(1, cssRgba(base, 0));
+      ctx.fillStyle = bloom;
+      ctx.beginPath(); ctx.arc(0, 0, R * 2.4 * pulse, 0, Math.PI * 2); ctx.fill();
+      // The ball itself: a lit sphere, not a flat disc.
+      const body = ctx.createRadialGradient(-R * .32, -R * .38, R * .08, 0, 0, R);
+      body.addColorStop(0, cssRgba(hot, .95));
+      body.addColorStop(.4, cssRgba(mixRgb(base, hot, .5), .55));
+      body.addColorStop(1, cssRgba(base, .16));
+      ctx.fillStyle = body;
+      ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill();
+      // Rim plus one highlight arc that travels around the sphere.
+      ctx.strokeStyle = cssRgba(hot, .9);
+      ctx.lineWidth = Math.max(1, R * .09);
+      ctx.beginPath(); ctx.arc(0, 0, R * .98, 0, Math.PI * 2); ctx.stroke();
+      const a0 = p.age * 6.5;
+      ctx.strokeStyle = cssRgba(hot, .55);
+      ctx.lineWidth = Math.max(1, R * .08);
+      ctx.beginPath(); ctx.arc(0, 0, R * .8, a0, a0 + 1.15); ctx.stroke();
+      // The note: near-white outline so it reads on the lit ball.
+      const s = R * .74;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      const note = (color: string, w: number) => {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = w;
+        ctx.beginPath(); ctx.ellipse(-s * .2, s * .48, s * .4, s * .28, -.42, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(s * .16, s * .4); ctx.lineTo(s * .16, -s * .78); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(s * .16, -s * .78); ctx.quadraticCurveTo(s * .82, -s * .6, s * .64, -s * .08); ctx.stroke();
+      };
+      note(cssRgba(base, .55), Math.max(3, s * .38));
+      note('rgba(255,255,255,.96)', Math.max(1.3, s * .14));
       break;
     }
     case 'stone': {

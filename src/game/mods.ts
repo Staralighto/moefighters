@@ -4,7 +4,8 @@ import type { FightGame } from './game.ts';
 /** Scalar buffs. root, ban, frenzy and king stay on the fighter: they stop clocks and swap moves. */
 export type ModKind =
   | 'brace' | 'poise' | 'dmgDealt' | 'dmgTaken' | 'speed' | 'slow' | 'regen'
-  | 'noGain' | 'lockNormals' | 'lockGuard' | 'thorns' | 'debt' | 'nocd' | 'veil';
+  | 'noGain' | 'lockNormals' | 'lockGuard' | 'thorns' | 'debt' | 'nocd' | 'veil'
+  | 'relapse' | 'incoming' | 'reflect' | 'soulorb';
 
 /**
  * One running buff.
@@ -77,6 +78,20 @@ export function dmgTakenMul(f: Fighter, opt: { grab: boolean; superHit: boolean;
     for (const mod of f.mods) if (mod.kind === 'dmgTaken' && mod.left > 0) m *= mod.v ?? 1;
   }
   return m;
+}
+
+/** Incoming-damage multiplier that ignores the grab/super gate. Each live mod multiplies. */
+export function incomingMul(f: Fighter): number {
+  let m = 1;
+  for (const mod of f.mods) if (mod.kind === 'incoming' && mod.left > 0) m *= mod.v ?? 1;
+  return m;
+}
+
+/** Fraction of the damage just taken that is paid back to the attacker. Sums, so 50% is .5. */
+export function reflectAmount(f: Fighter): number {
+  let n = 0;
+  for (const mod of f.mods) if (mod.kind === 'reflect' && mod.left > 0) n += mod.v ?? 0;
+  return n;
 }
 
 /** Walk multiplier. 1 when nothing changes the pace. Sprint speeds up, 减速 slows down. */

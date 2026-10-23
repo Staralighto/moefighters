@@ -87,7 +87,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const g = c.bands?.[0] ?? 'none';
     if (runs[runs.length - 1] !== g) runs.push(g);
   }
-  assert.deepEqual(runs, ['ave-mujica', 'mygo', 'yumemita', 'poppin-party', 'roselia', 'hello-happy', 'sumimi', 'pastel-palettes', 'afterglow', 'raise-a-suilen', 'morfonica', 'none'], 'roster order is the select-screen band order');
+  assert.deepEqual(runs, ['ave-mujica', 'mygo', 'yumemita', 'poppin-party', 'roselia', 'hello-happy', 'sumimi', 'pastel-palettes', 'afterglow', 'raise-a-suilen', 'morfonica', 'millsage', 'none'], 'roster order is the select-screen band order');
   assert.deepEqual(ROSTER[at('uika')].bands, ['ave-mujica', 'sumimi'], '初华 sings for two units');
   assert.deepEqual(bandMembers('mygo', 'tomori').map(c => c.id), ['anon', 'rana', 'soyo', 'taki'], 'the sing calls her bandmates, never herself');
   assert.deepEqual(guestsFor([ROSTER[at('tomori')]], 'mygo').map(c => c.id), ['anon', 'rana', 'soyo', 'taki'], 'a sing loads the bandmates who are not already in');
@@ -4615,6 +4615,87 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     run(g, 4.2);
     assert.equal(g.projectiles.filter(p => p.fx === 'sister').length, 0, 'they leave past the far edge');
   }
+}
+
+// kanata: a marked burst whose siphon rides a return orb, a lily window, and a revival bill that can kill
+{
+  const kan = at('kanata');
+  const data = ROSTER[kan];
+  assert.equal(data.skills[2].fx, 'lifedraw', '寿来 marks and bursts');
+  assert.equal(data.skills[2].drain, 28, '寿来 cuts the target bar');
+  assert.equal(data.skills[3].fx, 'lily', '脆弱 wears the lily');
+  assert.equal(data.skills[4].fx, 'revive', '复活 casts');
+  assert.equal(data.skills[5].fx, 'happymusic', 'the super plays');
+  assert.equal(data.skills[5].count, 10, 'ten notes');
+  assert.equal(data.skills[5].jumpCancel, 1, 'the super hops out after one second');
+
+  const lily = newGame(kan, at('boulder')); const [l1, l2] = lily.fighters; dummy(lily);
+  l1.hp = 800;
+  lily.keyDown('KeyI');
+  run(lily, .4);
+  assert.equal(l1.hp, 800, '脆弱 costs no health');
+  assert.ok(l1.mods.some(m => m.kind === 'incoming' && m.left > 4), 'I marks her vulnerable');
+  assert.ok(l1.mods.some(m => m.kind === 'reflect' && m.left > 4), 'I arms the reflect');
+
+  const plain = newGame(kan, at('boulder')); const [p1, p2] = plain.fighters; dummy(plain);
+  const plainHp = p1.hp;
+  hit(plain, p2, p1, ROSTER[at('boulder')].skills[0], { hit: new Set() });
+  const plainLoss = plainHp - p1.hp;
+  const boulderHp = l2.hp;
+  hit(lily, l2, l1, ROSTER[at('boulder')].skills[0], { hit: new Set() });
+  assert.ok(Math.abs((800 - l1.hp) - plainLoss * 2) <= 2, `脆弱 doubles damage taken, ${800 - l1.hp} vs ${plainLoss}`);
+  assert.ok(l2.hp < boulderHp, 'the reflect pays the attacker back');
+
+  const draw = newGame(kan, at('boulder')); const [d1, d2] = draw.fighters; dummy(draw);
+  d1.x = 500; d1.facing = 1; d2.x = 580; d2.facing = -1; d1.hp = 900; d2.energy = 60;
+  draw.keyDown('KeyU');
+  run(draw, .3);
+  assert.ok(draw.effects.some(e => e.type === 'lifedraw-mark'), 'the circle marks the spot');
+  run(draw, .3);
+  assert.ok(draw.effects.some(e => e.type === 'soul-orb'), 'the orb leaves the target');
+  assert.ok(d2.energy < 45, '寿来 cuts energy');
+  run(draw, 1.2);
+  assert.equal(d1.hp, 942, 'the orb heals 42 on arrival');
+
+  const heal = newGame(kan, at('boulder')); const [h1, h2] = heal.fighters; dummy(heal);
+  h1.hp = 700;
+  heal.keyDown('KeyO');
+  run(heal, .7);
+  assert.equal(h1.hp, 900, '复活 heals 20% of max health');
+  run(heal, 1.1);
+  h1.hp = 900;
+  const cutHp = h1.hp;
+  hit(heal, h2, h1, ROSTER[at('boulder')].skills[0], { hit: new Set() });
+  assert.ok(Math.abs((cutHp - h1.hp) - plainLoss * .5) <= 2, `the window halves damage taken, ${cutHp - h1.hp} vs ${plainLoss}`);
+  h1.hp = 900;
+  run(heal, 5);
+  assert.equal(h1.hp, 650, 'the bill takes 25% of max health');
+
+  const bill = newGame(kan, at('boulder')); const [b1] = bill.fighters; dummy(bill);
+  bill.keyDown('KeyO');
+  run(bill, .7);
+  b1.hp = 100;
+  run(bill, 6);
+  assert.equal(b1.hp, 0, 'the revival bill can kill');
+
+  const music = newGame(kan, at('boulder')); const [m1] = music.fighters; dummy(music);
+  music.fighters[1].controller = null;
+  m1.energy = m1.energyMax;
+  music.keyDown('KeyL');
+  run(music, 1.2);
+  const notes = music.projectiles.filter(p => p.fx === 'music-note');
+  assert.ok(notes.length > 0, '让大家幸福的音乐 sends notes');
+  assert.ok(notes.every(p => p.life <= .9), 'a note fades before it can circle back');
+
+  // A projectile super still promises 霸体: a normal hit lands but cannot drop the pose.
+  const stand = newGame(kan, at('boulder')); const [s1, s2] = stand.fighters; dummy(stand);
+  s1.energy = s1.energyMax;
+  stand.keyDown('KeyL');
+  run(stand, .1);
+  const pose = s1.attack;
+  hit(stand, s2, s1, ROSTER[at('boulder')].skills[0], { hit: new Set() });
+  assert.equal(s1.attack, pose, 'the piano super holds its pose through a normal hit');
+  assert.equal(s1.stun, 0, 'the piano super does not stagger');
 }
 
 // chuchu: three jerky, and the hold note clears only if you block the whole emission

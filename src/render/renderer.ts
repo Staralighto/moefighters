@@ -165,6 +165,9 @@ export class Renderer {
       c.fill();
     }
 
+    // 寿来: the mark is painted on the floor, so it sits under every body.
+    for (const e of g.effects) if (e.type === 'lifedraw-mark') zoomAbout(c, bodyScale, e.x, e.y, () => drawEffect(c, e, this.images));
+
     const lite = isLiteFx();
     // 人和挂在身上的特效绕脚放大。命中、弹道、粒子绕各自的落点放大，战场贴图不动。
     for (const e of g.effects) {
@@ -205,6 +208,14 @@ export class Renderer {
             ? { type: 'slow-bubble', x: f.x, y: f.y - 150, color: f.data.color, life: 1, max: 1, radius: 18, age: g.age }
             : { type: 'petal-aura', x: f.x, y: f.y - 105, color: '#EE0022', life: 1, max: 1, radius: 44, age: g.age });
         }
+        // 我可是很脆弱的哦: white petals drift down around her while the reflect window holds.
+        if (f.hp > 0 && f.mods.some(m => m.kind === 'reflect' && m.left > 0 && m.mark === 'lily')) {
+          drawEffect(c, { type: 'petal-aura', x: f.x, y: f.y - 105, color: '#ffffff', life: 1, max: 1, radius: 44, age: g.age });
+        }
+        // 完全复活: the gold halo follows the head from the first frame of the window.
+        if (f.hp > 0 && f.mods.some(m => m.kind === 'relapse' && m.left > 0)) {
+          drawEffect(c, { type: 'halo', x: f.x, y: f.y - 176, color: '#ffd54a', life: 1, max: 1, radius: 16 });
+        }
         drawGauge(c, f);
         if (f.feast > 0 && f.hp > 0) drawEffect(c, { type: 'feast', x: f.x, y: f.y - 92, color: '#9ad4ff', life: 1, max: 1, radius: 40 });
         if (f.debt > 0 && f.hp > 0) {
@@ -236,7 +247,7 @@ export class Renderer {
       });
     }
     for (const f of g.fighters) if (f.ban > 0 && f.hp > 0) zoomAbout(c, bodyScale, f.x, f.y, () => drawBanSign(c, f));
-    for (const e of g.effects) if (e.type !== 'ghost') zoomAbout(c, bodyScale, e.x, e.y, () => drawEffect(c, e, this.images));
+    for (const e of g.effects) if (e.type !== 'ghost' && e.type !== 'lifedraw-mark') zoomAbout(c, bodyScale, e.x, e.y, () => drawEffect(c, e, this.images));
     drawParticles(c, g.particles, bodyScale);
     drawTexts(c, g.texts, bodyScale);
     drawKuji(c, g, bodyScale);
