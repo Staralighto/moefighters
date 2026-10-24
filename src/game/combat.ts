@@ -185,6 +185,15 @@ export function withFinale(s: Skill, last: boolean): Skill {
   return last && s.finale ? { ...s, ...s.finale } : s;
 }
 
+/** 削防: stamp the i-th segment's guard damage from `guardPlan`. The last entry repeats, so a
+ *  longer-than-planned barrage or a late re-block never runs past the table. Delivery points call
+ *  this; hit() only ever reads the resolved `guardDmg`. */
+export function withGuard(s: Skill, i: number): Skill {
+  if (!s.guardPlan?.length) return s;
+  const v = s.guardPlan[Math.min(Math.max(0, i), s.guardPlan.length - 1)];
+  return s.guardDmg === v ? s : { ...s, guardDmg: v };
+}
+
 /** Type default when the skill does not name a pose. A stun-only react is not a pose. */
 function poseOf(skill: Skill): HitReact | null {
   if (skill.react?.kind) return skill.react;
@@ -399,7 +408,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   if (blocked) {
     const fullHit = damage;
     damage *= skill.blockMul ?? (skill.super ? .24 : .13);
-    defender.guard -= skill.super ? 42 : skill.type === 'heavy' ? 26 : 15;
+    defender.guard -= skill.guardDmg ?? (skill.super ? 42 : skill.type === 'heavy' ? 26 : 15);
     if (!quiet) defender.stun = hitStun(.075);
     defender.blockTap = 1;
     gainEnergy(defender, 5);
@@ -687,7 +696,7 @@ export function spawnShot(g: FightGame, f: Fighter, a: Attack, offsetY = 0, arc 
     vx: hole || parfait ? 0 : f.facing * speed * (juggle ? Math.cos(juggleAng) : 1),
     vy: juggle ? Math.sin(juggleAng) * speed : lob ? lob.vy : 0,
     life: s.life ?? 2.7,
-    skill: s,
+    skill: withGuard(s, arc),
     color: f.data.color,
     radius: s.size ? Math.min(54, s.size * .23) : 17,
     size: s.size ?? 62,
@@ -770,7 +779,7 @@ function spawnRain(g: FightGame, f: Fighter, a: Attack, index: number): void {
     vx: 0,
     vy: 280,
     life: s.life ?? 2.4,
-    skill: s,
+    skill: withGuard(s, pos),
     color: f.data.color,
     radius: s.size ? Math.min(54, s.size * .23) : 14,
     size: s.size ?? 36,
@@ -802,7 +811,7 @@ function spawnMatchaBlob(g: FightGame, owner: Fighter, zone: Projectile, index: 
     vx: (index % 2 ? 1 : -1) * arc.vx,
     vy: arc.vy,
     life: 2.4,
-    skill: s,
+    skill: withGuard(s, index),
     color: owner.data.color,
     radius: 13,
     size: s.size ?? 56,
@@ -1127,7 +1136,7 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
       if (sc?.swing) sc.swing(g, f, a, s);
       else {
         const prev = a.skill;
-        a.skill = withFinale(s, a.shots >= (s.count ?? 1) - 1);
+        a.skill = withGuard(withFinale(s, a.shots >= (s.count ?? 1) - 1), a.shots);
         applyMelee(g, f, a);
         a.skill = prev;
         if (sc?.ghostSwing) g.effect('ghost', f.x - f.facing * 14, f.y, f.data.color, .22, { fighter: f.id, alpha: .4 });
@@ -1209,7 +1218,7 @@ function stepSealVolleys(g: FightGame, dt: number): void {
     v.n += 1;
     v.wait = v.skill.interval ?? .07;
     if (!owner || !target || target.hp <= 0) { v.n = cap(v); continue; }
-    const sk = { ...v.skill, knock: v.n >= cap(v) ? (v.skill.knock ?? SEAL_FINALE_KNOCK) : 0 };
+    const sk = withGuard({ ...v.skill, knock: v.n >= cap(v) ? (v.skill.knock ?? SEAL_FINALE_KNOCK) : 0 }, v.n - 1);
     if (hit(g, owner, target, sk, { hit: new Set() }, target.x - v.dir * 40)) {
       const mark = SCRIPTS[v.skill.fx]?.mark;
       if (mark) g.effect(mark, target.x, target.y - 85, v.color, .22, { dir: v.dir, radius: 56 });
@@ -2085,11 +2094,11 @@ function volley_drums(g: FightGame, f: Fighter, a: Attack): void {
 
 /** 让大家幸福的音乐: one note per bar, born at the keyboard. Homes, but a short `life` lets it
  *  fade before it can circle back, so running and jumping stay a real answer. */
-function spawnHappyNote(g: FightGame, f: Fighter, a: Attack): void {
+function spawnHappyNote(g: FightGame, f: Fighter, a: Attack, index: number): void {
   const s = a.skill;
   const speed = 360 * (f.data.trait === 'focus' ? 1.15 : 1);
   const life = s.life ?? .9;
-  const skill: Skill = { ...s, type: 'projectile', fx: 'music-note', speed, size: 34, life, count: 1, duration: life, start: 0, knock: 150, gain: 2 };
+  const skill: Skill = withGuard({ ...s, type: 'projectile', fx: 'music-note', speed, size: 34, life, count: 1, duration: life, start: 0, knock: 150, gain: 2 }, index);
   g.projectiles.push({
     owner: f.id, x: f.x + f.facing * 40, y: f.y - 120,
     vx: f.facing * speed, vy: 0, life, skill, color: f.data.color,
@@ -2101,7 +2110,7 @@ function volley_music(g: FightGame, f: Fighter, a: Attack): void {
   const s = a.skill;
   const volley = a.burst || s.count || 1;
   while (a.shots < volley && a.t >= s.start + a.shots * (s.interval ?? .42)) {
-    spawnHappyNote(g, f, a);
+    spawnHappyNote(g, f, a, a.shots);
     a.shots++;
   }
 }
@@ -2909,7 +2918,7 @@ function step_sister(g: FightGame, p: Projectile, dt: number): boolean {
     if (o.hp <= 0 || Math.abs(o.x - p.x) > SISTER_REACH || Math.abs(o.y - p.y) >= SISTER_HIGH) continue;
     if (g.age < (marks.get(o.id)?.next ?? 0)) continue;
     p.hit.clear();
-    const skill = withFinale(p.skill, a.shots >= count - 1);
+    const skill = withGuard(withFinale(p.skill, a.shots >= count - 1), a.shots);
     if (!hit(g, owner, o, skill, p, p.x)) continue;
     a.shots++;
     marks.set(o.id, { n: a.shots, next: g.age + (p.skill.interval ?? .11) });
@@ -3042,6 +3051,8 @@ export function stepProjectiles(g: FightGame, dt: number): void {
       p.vx = -p.vx;
       p.hit.clear();
       p.returned = true;
+      // 削防: a boomerang's second pass wears the plan's second entry (蝶变: light out, hard back).
+      p.skill = withGuard(p.skill, 1);
     }
     if ((p.skill.motion === 'fall' || p.floor === 'splash') && !p.settled) p.vy += GRAVITY * dt;
     const owner = g.fighterById(p.owner);

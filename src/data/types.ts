@@ -99,6 +99,16 @@ export interface Skill {
   slowOnBlock?: boolean;
   /** Fraction of damage that pierces a guard (e.g. 火的故事 .5). Defaults to .24 for supers, .13 otherwise. */
   blockMul?: number;
+  /** 削防: guard damage this hit deals to a blocking target. Set directly for a single-hit move;
+   *  multi-hit supers leave it unset and declare `guardPlan` instead. Unset falls back to the
+   *  kernel default (supers 42, heavy 26, everything else 15). */
+  guardDmg?: number;
+  /** 削防 plan for a multi-hit move: the i-th segment uses index i, and the last entry repeats.
+   *  The delivery point stamps the value into `guardDmg` (see withGuard); hit() never reads the
+   *  plan directly. Front entries are deliberately cheap so the opening segments stay blockable,
+   *  and the later entries break the bar. Grabs and noBlock moves are unblockable by design and
+   *  carry no plan. */
+  guardPlan?: number[];
   /** Status mark while 减速 holds. Unset keeps the shared petal aura. */
   slowMark?: string;
   /** Flat extra damage on a clean hit when the target is already 减速. This hit's own slow does not qualify. */

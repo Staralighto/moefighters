@@ -6,6 +6,7 @@ import { previewFighter } from '../game/fighter.ts';
 import type { FighterView } from '../render/view.ts';
 import type { MatchSetup } from './select.ts';
 import { ICONS } from './icons.ts';
+import { fitCanvas } from './canvasFit.ts';
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
 
@@ -229,13 +230,15 @@ function iconSvg(name: string): string {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] ?? ''}</svg>`;
 }
 
+const FOE_W = 110;
+const FOE_H = 140;
 let pickerRaf = 0;
 
 /** Three cards dealt for this stage, alongside the opponents rolled for it. A pick joins the deck for good. */
 export function showBuffPicker(stage: number, enemies: CharacterData[], views: Map<string, FighterView>, picks: string[], onPick: (cardId: string) => void): void {
   $('buff-title').textContent = `第 ${stage} 关 · 选择一个强化`;
   $('buff-foes').innerHTML = enemies.map(e =>
-    `<div class="buff-foe"><canvas width="110" height="140"></canvas><b>${e.name}</b></div>`).join('');
+    `<div class="buff-foe"><canvas width="${FOE_W}" height="${FOE_H}"></canvas><b>${e.name}</b></div>`).join('');
   $('buff-cards').innerHTML = drawThree(picks).map(id => {
     const card = POOL.find(c => c.id === id)!;
     const held = countPicks(picks, id);
@@ -255,13 +258,15 @@ export function showBuffPicker(stage: number, enemies: CharacterData[], views: M
       const ctx = canvas.getContext('2d');
       const view = views.get(c.id);
       if (!ctx || !view) return;
+      const k = fitCanvas(canvas, FOE_W, FOE_H);
+      if (k === null) return;
       const waiting = !!view.idleReady && !view.idleReady();
       canvas.classList.toggle('pending', waiting);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (waiting) return;
       ctx.save();
-      ctx.translate(canvas.width / 2, canvas.height - 6);
-      ctx.scale(.55, .55);
+      ctx.translate(FOE_W / 2 * k, (FOE_H - 6) * k);
+      ctx.scale(.55 * k, .55 * k);
       view.draw(ctx, previewFighter(c, (now - t0) / 1000, -1), 0, 0, 1);
       ctx.restore();
     });

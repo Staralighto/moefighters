@@ -441,7 +441,10 @@ footer { display: flex; justify-content: space-between; gap: 16px; color: var(--
 #preview-ally .slot-control button.active { background: var(--p1); color: #14140c; border-color: var(--p1); }
 #preview-right .slot-control button.active,
 #preview-enemy2 .slot-control button.active { background: var(--p2); color: #14140c; border-color: var(--p2); }
-.fighter-preview canvas { grid-area: art; width: min(240px, 100%); height: 290px; object-fit: contain; object-position: center bottom; image-rendering: pixelated; }
+/* The backing store follows the CSS box × devicePixelRatio (ui/canvasFit), so the canvas is
+   never resampled by the compositor. No image-rendering override: nearest-neighbour at a
+   fractional DPR is exactly the softness this canvas no longer needs. */
+.fighter-preview canvas { grid-area: art; width: min(240px, 100%); height: 290px; object-fit: contain; object-position: center bottom; }
 /* VS 钉在舞台正中，不进网格。格子再怎么分，字都在同一点。副标题挂在字下面，不把字顶偏。 */
 .select-stage > .versus { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; padding: 0; margin: 0; pointer-events: none; }
 .versus span { font: italic 900 48px Impact, sans-serif; color: var(--p2); }
@@ -618,7 +621,7 @@ body.in-battle { overflow-x: hidden; }
 .buff-foe-label { color: var(--muted); font-size: 12px; letter-spacing: .1em; }
 .buff-foes { display: flex; justify-content: center; gap: 18px; }
 .buff-foe { display: grid; justify-items: center; }
-.buff-foe canvas { width: 110px; height: 140px; image-rendering: pixelated; }
+.buff-foe canvas { width: 110px; height: 140px; }
 .buff-foe b { font-size: 14px; }
 .buff-cards { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
 /* Two-line card: the pool's stroke icon beside the name, the numeric effect line under it. */

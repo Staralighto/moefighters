@@ -123,6 +123,8 @@ export const ROSTER: CharacterData[] = [
       skill(4, 'heavy', '月牙踢', { range: 190, cd: 5, fx: 'arc-kick', brief: '大范围下砸', detail: '大范围下砸' }),
       skill(5, 'projectile', '满场', {
         cost: 125, damage: 36, count: 16, interval: .09, size: 36, start: .28, duration: 2.6, life: 2.4, fx: 'drums',
+        // Two waves of eight. The whole first wave is blockable; the break lands on wave two.
+        guardPlan: [4, 5, 7, 9, 12, 15, 19, 24],
         brief: '持续震开近身；音符分两次铺满全场', detail: '持续震开近身；音符分两次铺满全场',
       }),
     ],
@@ -140,6 +142,7 @@ export const ROSTER: CharacterData[] = [
       skill(4, 'launch', '月牙踢', { range: 126, fx: 'crescent', brief: '命中挑空，跳起追打可连段', detail: '命中挑空，跳起追打可连段' }),
       skill(5, 'projectile', '忘却奏鸣', {
         cost: 115, damage: 40, count: 8, interval: .075, speed: 540, size: 40, start: .3, duration: 1.2, life: 2.2, fx: 'note',
+        guardPlan: [8, 12, 18, 26, 38, 52, 68, 86],
         brief: '连发八枚音符', detail: '连发八枚音符',
       }),
     ],
@@ -206,6 +209,7 @@ export const ROSTER: CharacterData[] = [
       }),
       skill(5, 'light', '不会再逃避了', {
         cost: 130, damage: 40, range: 300, start: .28, duration: 1.26, count: 6, interval: .14, fx: 'spin',
+        guardPlan: [8, 12, 18, 32, 50, 75],
         hitbox: 'radial', knock: 0, knockOnBlock: true,
         react: { kind: 'pin', stun: .2 },
         finale: { knock: 340, knockOnBlock: false, react: { kind: 'knockdown', vy: -240, knocked: .72 } },
@@ -236,6 +240,9 @@ export const ROSTER: CharacterData[] = [
       skill(4, 'launch', '高踢腿', { damage: 24, range: 180, cd: 4.5 }),
       skill(5, 'projectile', '抹茶芭菲', {
         cost: 130, damage: 14, count: 22, interval: .28, start: .45, duration: .85, life: 6.5, size: 56, knock: 90, fx: 'parfait',
+        // After the tenth blob the bar is gone; the tail is capped so a late re-block cannot be
+        // erased by an ever-growing number.
+        guardPlan: [3, 4, 5, 7, 9, 11, 14, 18, 23, 29, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30],
         motion: 'fall', solid: false,
         brief: '放下大芭菲喷发熔岩；自身可自由行动', detail: '放下大芭菲，持续喷发抹茶熔岩；放下后自身可自由行动',
       }),
@@ -274,6 +281,7 @@ export const ROSTER: CharacterData[] = [
       }),
       skill(5, 'projectile', '为什么要演奏春日影', {
         cost: 115, damage: 72, speed: 430, size: 150, start: .34, duration: 1.15, life: .56, fx: 'shout', root: 4,
+        guardPlan: [10, 25, 70],
         knock: 110, knockOnBlock: true, control: true,
         brief: '音波推进；出手即可行动，命中定身', detail: '音波推进；出手即可行动；定身 4 秒，受击两次解除',
       }),
@@ -473,7 +481,11 @@ export const ROSTER: CharacterData[] = [
       skill(5, 'projectile', '九字真言', {
         cost: 110,
         // focus multiplies shot speed by 1.15; 366 lands on about 421, and 0.7s of that is ~295px.
-        damage: 36, count: 1, speed: 366, size: 140, life: .7, interval: .07,
+        // .09 keeps each seal tick outside the .075s blockstun, so holding guard really can
+        // carry the early segments and only the later ones break through.
+        damage: 36, count: 1, speed: 366, size: 140, life: .7, interval: .09,
+        // Six seal segments run off stepSealVolleys; count 1 here only shapes the projectile.
+        guardPlan: [8, 12, 18, 32, 50, 75],
         start: .55, duration: .9, knock: 0, fx: 'seal', hitstop: .09,
         solid: false,
         brief: '身前法阵穿透；打实后不能格挡和后撤', detail: '身前法阵穿透多段；打实后 3 秒不能格挡和后撤',
@@ -714,6 +726,7 @@ export const ROSTER: CharacterData[] = [
       }),
       skill(5, 'projectile', '世界微笑', {
         cost: 110, damage: 26, count: 3, interval: .16, speed: 520, size: 100, life: 1.1, start: .3, duration: 1.2, knock: 350, root: 3, rootPin: true, fx: 'smile-wave',
+        guardPlan: [10, 25, 70],
         control: true,
         brief: '连发三枚笑脸波；命中定身，可格挡', detail: '连发三枚笑脸波击退；命中定身 3 秒，受击两次解除，可格挡',
       }),
@@ -851,6 +864,7 @@ export const ROSTER: CharacterData[] = [
       }),
       skill(5, 'heavy', '武士道', {
         cost: 120, damage: 24, count: 7, interval: .12, range: 190, start: .32, duration: 1.55,
+        guardPlan: [8, 12, 18, 26, 38, 52, 70],
         knock: 40, hitbox: 'disc', hitAll: true, fx: 'bushido', gain: 0,
         shake: 3, hitstop: .03,
         react: { kind: 'stand', stun: .16 },
@@ -1059,6 +1073,8 @@ export const ROSTER: CharacterData[] = [
       }),
       skill(5, 'projectile', '蝶变', {
         damage: 72, count: 1, speed: 520, size: 80, life: 2.2, start: .3, duration: .8, fx: 'butterfly',
+        // Boomerang: the outbound pass is cheap, the turn back is what breaks the bar.
+        guardPlan: [30, 75],
         knock: 90, react: { kind: 'stand', stun: .22 },
         slow: 4, slowMul: .6, slowJump: .75, slowOnBlock: true, solid: false,
         brief: '闪蝶折返；挡住也减速，回程转向',
@@ -1098,6 +1114,7 @@ export const ROSTER: CharacterData[] = [
       }),
       skill(5, 'light', '二叶三姐妹', {
         cost: 110, damage: 22, count: 6, interval: .11, range: 160, start: .3, duration: 1.22,
+        guardPlan: [8, 12, 18, 32, 50, 75],
         knock: 0, gain: 2, fx: 'sisters',
         react: { kind: 'pin', stun: .22 },
         finale: { knock: 420, react: { kind: 'knockdown', vy: -260, knocked: .72 } },
@@ -1146,6 +1163,7 @@ export const ROSTER: CharacterData[] = [
       }),
       skill(5, 'projectile', '让大家幸福的音乐', {
         cost: 120, damage: 34, count: 10, interval: .28, size: 34, life: .9,
+        guardPlan: [6, 9, 13, 18, 25, 34, 45, 58, 74, 92],
         start: .4, duration: 3, fx: 'happymusic',
         holdEndure: true, jumpCancel: 1, knock: 150, gain: 2,
         brief: '原地弹奏并霸体；周期震开近身，追踪音符飞一段即散',
@@ -1180,7 +1198,7 @@ export const ROSTER: CharacterData[] = [
       skill(5, 'projectile', '火的故事', {
         damage: 0, count: 1, speed: 300, size: 160, life: 6, start: .55, duration: .9, knock: 0, fx: 'fuga',
         solid: false,
-        friendly: true, noSiphon: true, blockMul: .5,
+        friendly: true, noSiphon: true, blockMul: .5, guardDmg: 50,
         brief: '火焰箭命中或到边缘即引爆；敌我不分，满跳可躲', detail: '虚空巨弓射出缓慢火焰箭，命中或到边缘即引爆：范围 170 伤，敌我不分，贴身会炸到自己；满跳可躲，格挡也承受 50% 伤害并付半管破防值',
       }),
     ],

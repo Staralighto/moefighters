@@ -1,6 +1,6 @@
 /* Headless rule check: runs the fixed-step engine without DOM or canvas. `npm run check`. */
 import { FightGame } from '../src/game/game.ts';
-import { BUSHIDO_CREEP, BUSHIDO_LUNGE, BUSHIDO_SPAN, VEIL_NORMAL, VEIL_SHOT, clockRings, drumShotTime, hit, holdNoteSpan, violetHidden } from '../src/game/combat.ts';
+import { BUSHIDO_CREEP, BUSHIDO_LUNGE, BUSHIDO_SPAN, VEIL_NORMAL, VEIL_SHOT, clockRings, drumShotTime, hit, holdNoteSpan, violetHidden, withGuard } from '../src/game/combat.ts';
 import { vowBeatTime, VOW_BEATS } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
 import { PLAYABLE, ROSTER, bandMembers, guestsFor } from '../src/data/characters.ts';
@@ -95,6 +95,40 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(!PLAYABLE.some(c => c.id === id), id + ' stays off the select screen');
   }
   assert.ok(PLAYABLE.some(c => c.id === 'viola'), 'viola plays without a band');
+}
+
+// 削防 plans: multi-hit supers ramp the guard chip so the opening segments stay blockable and a
+// later segment breaks the bar. Grabs and noBlock moves are exempt by design. Keep this table in
+// step with docs/guard-damage.md when a super's numbers change.
+{
+  const breaksAt: Record<string, number> = {
+    nyamu: 9, sakiko: 5, anon: 5, rana: 10, soyo: 3, kokoro: 3, miyako: 5,
+    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2,
+  };
+  const segments: Record<string, number> = {
+    nyamu: 16, sakiko: 8, anon: 6, rana: 22, soyo: 3, kokoro: 3, miyako: 6,
+    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2,
+  };
+  for (const [id, breakAt] of Object.entries(breaksAt)) {
+    const s = ROSTER[at(id)].skills[5];
+    const plan = s.guardPlan;
+    assert.ok(plan?.length, id + ': the super declares a guard plan');
+    const total = (n: number) => {
+      let sum = 0;
+      for (let i = 0; i < n; i++) sum += plan![Math.min(i, plan!.length - 1)];
+      return sum;
+    };
+    assert.ok(total(breakAt - 1) < 100, `${id}: ${breakAt - 1} segments do not break the bar, ${total(breakAt - 1)}`);
+    assert.ok(total(breakAt) >= 100, `${id}: segment ${breakAt} breaks the bar, ${total(breakAt)}`);
+    assert.ok(total(segments[id]) >= 100, `${id}: the whole move can break the bar, ${total(segments[id])}`);
+    const opening = s.fx === 'butterfly' ? plan![0] : total(2);
+    assert.ok(opening < 40, `${id}: the opening stays under a chipped bar, ${opening}`);
+    assert.equal(withGuard(s, breakAt + 99).guardDmg, plan![plan!.length - 1], id + ': a late segment repeats the last entry');
+  }
+  for (const id of ['uika', 'mutsumi', 'umiri', 'taki', 'layer', 'sayo']) {
+    const s = ROSTER[at(id)].skills[5];
+    assert.ok(!s.guardPlan && !s.guardDmg, id + ': the unblockable super carries no guard value');
+  }
 }
 
 // slow phones: a long frame gap catches up at most 6 steps; only a slow touch device goes lite
@@ -1272,6 +1306,29 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(s2.knocked > 0, 'the last spin launches');
 }
 
+// 削防: the spin's opening segments are still blocked on a beaten-down 40% bar; the later one
+// breaks it and the rest land clean.
+{
+  const g = newGame(at('anon'), at('boulder')); const [a1, a2] = g.fighters; dummy(g);
+  a1.energy = a1.energyMax;
+  a2.x = a1.x + 100; a2.facing = -1; a2.guard = 40;
+  g.keyDown('ArrowDown'); run(g, .1);
+  assert.equal(a2.blocking, true, 'the dummy is guarding before the spin');
+  const hp = a2.hp;
+  g.keyDown('KeyL');
+  let blocked = 0;
+  let broke = false;
+  for (let i = 0; i < Math.round(1.8 / STEP); i++) {
+    const before = a2.guard;
+    g.step(STEP);
+    if (a2.guard < before) blocked++;
+    if (g.texts.some(t => t.text === '破防!')) { broke = true; break; }
+  }
+  assert.ok(broke, 'the spin breaks a 40% bar');
+  assert.ok(blocked >= 4, `three opening segments are blocked before the break, saw ${blocked - 1}`);
+  assert.ok(a2.hp < hp, 'the segments after the break land clean');
+}
+
 // soyo: onegai catch-pause-launch, resolve shove and 8s frenzy, two trailed notes, a short shout
 {
   const soyo = ROSTER.findIndex(c => c.id === 'soyo');
@@ -1695,6 +1752,16 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.deepEqual(assignSlotWho(['player', 'cpu'], 1, 'cpu', true, 1), ['cpu', 'player']);
   assert.deepEqual(assignSlotWho(['player', 'cpu'], 0, 'player', true, 1), ['cpu', 'cpu']);
   assert.equal(assignSlotWho(['player', 'cpu'], 0, 'player', false, 2), null);
+  // Arrow keys belong to the page on the select screen; hijacking them broke laptop scrolling.
+  const selectSrc = readFileSync('src/ui/select.ts', 'utf8');
+  assert.ok(!selectSrc.includes('navigateRoster') && !selectSrc.includes('navigateGrid'), 'arrows never move the roster or stage picker');
+  // Portraits render at the display's real pixel density. A fixed 1× canvas was filter-upscaled
+  // by the compositor on HiDPI laptops and read as blur next to the arena's device-sized canvas.
+  const fitSrc = readFileSync('src/ui/canvasFit.ts', 'utf8');
+  assert.ok(fitSrc.includes('devicePixelRatio'), 'canvas backing stores follow the display scale');
+  assert.ok(selectSrc.includes('fitCanvas') && readFileSync('src/ui/challenge.ts', 'utf8').includes('fitCanvas'), 'select portraits and buff-picker foes use the device-resolution fit');
+  const uiCss = readFileSync('src/style.css', 'utf8');
+  assert.ok(!/\.fighter-preview canvas \{[^}]*image-rendering/.test(uiCss) && !/\.buff-foe canvas \{[^}]*image-rendering/.test(uiCss), 'a device-sized canvas is never handed a nearest-neighbour filter');
   assert.equal(easeLoad(0, 0, 0), 0, 'an empty load stays at the start');
   assert.ok(easeLoad(0, 0, 3000) > 0 && easeLoad(0, 0, 3000) <= 0.96, 'the bar creeps before the first file arrives');
   assert.ok(easeLoad(0.95, 0.5, 0) <= 0.96, 'a partial load cannot draw a full bar');

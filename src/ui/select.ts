@@ -10,6 +10,7 @@ import { bestLabel, challengeName, foeCount, readBest, readRun, rollEnemies, typ
 import { trainPrefs } from './settings.ts';
 import { MAILBOX_URL, mailboxUsable } from '../net/endpoint.ts';
 import { cancelOnline, ensureCodename, formatCodename, noteOnlinePlace, notifyOnlinePick } from './online.ts';
+import { fitCanvas } from './canvasFit.ts';
 
 export interface MatchSetup {
   characters: CharacterData[];
@@ -82,6 +83,9 @@ export function matchName(setup: MatchSetup): string {
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
 const PORTRAIT_SCALE = 1.3;
 const PORTRAIT_FOOT = 276;
+/** The portrait raster authored in index.html; CSS may shrink the box, never the drawing. */
+const PORTRAIT_W = 240;
+const PORTRAIT_H = 290;
 
 /** Apply a slot-control click. A lone chip (`mateHidden`) flips, and on a full roster it takes the player seat from someone else. `null` means leave it. */
 export function assignSlotWho(who: readonly ('player' | 'cpu')[], lead: number, clicked: 'player' | 'cpu', mateHidden: boolean, maxPlayers: number): ('player' | 'cpu')[] | null {
@@ -127,24 +131,6 @@ export function skillHTML(c: CharacterData, pad = 0, touch = isTouch()): string 
   }).join('');
 }
 
-function navigateGrid(items: HTMLButtonElement[], current: HTMLButtonElement, key: string): HTMLButtonElement | null {
-  if (!items.length) return null;
-  const idx = items.indexOf(current);
-  if (idx < 0) return items[0];
-  if (key === 'ArrowRight') return items[(idx + 1) % items.length];
-  if (key === 'ArrowLeft') return items[(idx - 1 + items.length) % items.length];
-  if (key === 'ArrowDown' || key === 'ArrowUp') {
-    const left = current.offsetLeft;
-    const sameCol = items.filter(el => Math.abs(el.offsetLeft - left) < 12);
-    const colIdx = sameCol.indexOf(current);
-    if (colIdx < 0) return null;
-    return key === 'ArrowDown'
-      ? (sameCol[colIdx + 1] ?? sameCol[0])
-      : (sameCol[colIdx - 1] ?? sameCol[sameCol.length - 1]);
-  }
-  return null;
-}
-
 export class SelectScreen {
   mode: Mode = 'cpu';
   difficulty = 1;
@@ -177,6 +163,8 @@ export class SelectScreen {
   private lastRosterDraw = 0;
   /** One idle stand-in per portrait canvas, rebuilt only when the slot switches character. */
   private readonly previewCache = new WeakMap<HTMLCanvasElement, { id: string; facing: number; f: Fighter }>();
+  /** Each canvas's authored raster size, read before the backing store starts following the display. */
+  private readonly designs = new WeakMap<HTMLCanvasElement, { w: number; h: number }>();
   /** Slow link: the panel backdrop is the 480px preview, behind a 40% shade. */
   liteStage = false;
 
@@ -264,32 +252,6 @@ export class SelectScreen {
       this.onPick();
       this.onStart(this.setup());
     };
-    window.addEventListener('keydown', e => {
-      if (e.defaultPrevented || $('selection').hidden) return;
-      if (document.querySelector('dialog[open]')) return;
-      const active = document.activeElement;
-      if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.closest?.('dialog, .music-pop, #stage-grid'))) return;
-      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
-        e.preventDefault();
-        this.navigateRoster(e.key);
-      }
-    });
-    $('stage-grid').addEventListener('keydown', e => {
-      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
-      const target = (e.target as HTMLElement).closest<HTMLButtonElement>('.stage-card');
-      if (!target) return;
-      const cards = [...$('stage-grid').querySelectorAll<HTMLButtonElement>('.stage-card')];
-      const next = navigateGrid(cards, target, e.key);
-      if (next && next !== target) {
-        e.preventDefault();
-        next.focus();
-        if (!this.netLocked && !document.body.classList.contains('net-ready-phase')) {
-          this.stageId = next.dataset.stage ?? 'random';
-          this.onPick();
-          this.refresh();
-        }
-      }
-    });
     this.refresh();
     this.focusCurrentRoster();
   }
@@ -444,19 +406,6 @@ export class SelectScreen {
     const index = this.selected[this.side] ?? 0;
     const btn = $('roster').querySelector<HTMLButtonElement>(`.character[data-index="${index}"]`);
     btn?.focus({ preventScroll: true });
-  }
-
-  private navigateRoster(key: string): void {
-    const buttons = [...$('roster').querySelectorAll<HTMLButtonElement>('.character')];
-    if (!buttons.length) return;
-    const currentIndex = this.selected[this.side] ?? 0;
-    const current = buttons.find(b => Number(b.dataset.index) === currentIndex) ?? buttons[0];
-    const next = navigateGrid(buttons, current, key);
-    if (next) {
-      next.focus({ preventScroll: true });
-      next.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-      this.pick(Number(next.dataset.index));
-    }
   }
 
   /** The last session's mode, picks, controllers and difficulty, so a revisit opens where it left off. */
@@ -824,10 +773,19 @@ export class SelectScreen {
     return this.mode === 'challenge' && v.slot > 0 ? this.challengeEnemies[v.slot - 1] : this.roster[this.selected[v.slot]];
   }
 
+  private design(canvas: HTMLCanvasElement): { w: number; h: number } {
+    let d = this.designs.get(canvas);
+    if (!d) this.designs.set(canvas, d = { w: canvas.width, h: canvas.height });
+    return d;
+  }
+
   private portrait(canvas: HTMLCanvasElement, c: CharacterData, facing: 1 | -1, scale: number, baseY: number): void {
     const ctx = canvas.getContext('2d');
     const view = this.views.get(c.id);
     if (!ctx || !view) return;
+    const design = this.design(canvas);
+    const k = fitCanvas(canvas, design.w, design.h);
+    if (k === null) return;
     const waiting = !!view.idleReady && !view.idleReady();
     canvas.classList.toggle('pending', waiting);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -841,8 +799,8 @@ export class SelectScreen {
     }
     pv.f.animTime = this.time;
     ctx.save();
-    ctx.translate(canvas.width / 2, baseY);
-    ctx.scale(scale, scale);
+    ctx.translate(design.w / 2 * k, baseY * k);
+    ctx.scale(scale * k, scale * k);
     view.draw(ctx, pv.f, 0, 0, 1);
     ctx.restore();
   }
@@ -854,9 +812,10 @@ export class SelectScreen {
     const panelBox = panel.getBoundingClientRect();
     const box = canvas.getBoundingClientRect();
     if (!this.stage.image || !panel.clientWidth || !panel.clientHeight || !box.height) return;
-    const fit = Math.min(box.width / canvas.width, box.height / canvas.height);
-    const drawnH = canvas.height * fit;
-    const footScreen = box.top + (box.height - drawnH) + PORTRAIT_FOOT * fit;
+    // object-fit: contain, object-position: center bottom — the design raster sits on the box's
+    // bottom edge, so the foot line is measured from there, independent of the backing store.
+    const fit = Math.min(box.width / PORTRAIT_W, box.height / PORTRAIT_H);
+    const footScreen = box.bottom - (PORTRAIT_H - PORTRAIT_FOOT) * fit;
     const cover = stageCover(panel.clientWidth, panel.clientHeight, panelBox.bottom - footScreen, this.stage.groundY ?? FLOOR);
     const image = this.liteStage ? stageThumbSrc(this.stage.image) : this.stage.image;
     panel.dataset.stageSrc = image;
