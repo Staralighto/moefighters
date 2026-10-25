@@ -129,6 +129,14 @@ export interface Fighter {
   blockBuffer: number;
   /** A released tap keeps guarding this long, so the block is actually there. */
   blockLeft: number;
+  /** 完美格挡: seconds left on the open timing window; 0 when shut. A window that runs out arms parryLock. */
+  parry: number;
+  /** 完美格挡: after a whiffed window, presses do not open a new one until this runs out. */
+  parryLock: number;
+  /** 完美格挡: the counter orb's own cooldown, so a blocked barrage does not answer shot for shot. */
+  parryOrbCd: number;
+  /** 完美格挡: stagger owed by a melee swing that was perfect-blocked; applied before the next attack step. */
+  parried: number;
   attack: Attack | null;
   attackSerial: number;
   cooldowns: number[];
@@ -214,9 +222,12 @@ export interface Fighter {
   tape?: RecTape;
   /** Scalar buffs. The same-named timers below are a projection of this list. */
   mods: Mod[];
+  /** 这次不算: hp actually lost to hit(), stamped with the game clock. Only hit() writes it; entries
+   *  older than the refund window are dropped on the next write. */
+  dmgLog: { t: number; dmg: number }[];
 }
 
-export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braceFx', 'ban', 'frail', 'recLeft', 'rainbowCd'] as const;
+export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braceFx', 'ban', 'frail', 'recLeft', 'rainbowCd', 'parry', 'parryLock', 'parryOrbCd'] as const;
 
 /** Meter cap for a character: the super's cost, but never below the arcade 100. */
 export function meterCap(data: CharacterData): number {
@@ -236,7 +247,7 @@ export function makeFighter(
     stun: 0, invuln: 0, comboTime: 0, hitFlash: 0, landing: 0, guardBroken: 0,
     knocked: 0, downTime: 0, hitBySuper: false, root: 0, rootHits: 0, rootBreak: 0, rootFx: '', rootLevel: 'move', ban: 0, beatStacks: 0, frenzy: 0,
     jabChain: 0, jabChainClock: 0, braced: 0, braceFx: 0, noGain: 0, muscle: 0, sprint: 0, slow: 0, poise: 0, purge: 0, frail: 0, frailBonus: 0, feast: 0, box: 0,
-    dodge: 0, dodgeCd: 0, dodgeRequest: false, dodgeBuffer: 0, blockTap: -1, blockBuffer: 0, blockLeft: 0,
+    dodge: 0, dodgeCd: 0, dodgeRequest: false, dodgeBuffer: 0, blockTap: -1, blockBuffer: 0, blockLeft: 0, parry: 0, parryLock: 0, parryOrbCd: 0, parried: 0,
     debt: 0, debtDmg: 0, rainbowCd: 0,
     attack: null, attackSerial: 0, cooldowns: [0, 0, 0, 0, 0, 0], queue: [],
     jumpRequest: false, jumpBuffer: 0,
@@ -251,6 +262,7 @@ export function makeFighter(
     recLeft: 0, recTape: [], recMove: 0,
     gauge: 0,
     mods: [],
+    dmgLog: [],
   };
 }
 

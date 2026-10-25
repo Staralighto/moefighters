@@ -68,6 +68,11 @@ function loco(key: keyof typeof LOCO): Clip {
   return at('common', c, r);
 }
 
+/** 天台是我的: seconds into the move when she drops from the mark, and how long the stomp cell holds
+ *  after the landing. Shared by the script (combat.ts) and the cell pick above. */
+export const ROOFTOP_DIVE = .4;
+export const ROOFTOP_STOMP = .12;
+
 /** Row of the seated drum loop. The three L-column frames play four times across the super. */
 export function drumRow(t: number, duration: number): number {
   const u = duration > 0 ? Math.min(0.999, Math.max(0, t / duration)) : 0;
@@ -320,7 +325,7 @@ export function clipFor(f: Fighter): Clip {
     if (f.attack.skill.fx === 'world') return manaWorldFrame(f.attack.t, f.attack.skill);
     if (f.attack.skill.fx === 'poem') return at('special', f.attack.index - 2, poemRow(f.attack.t, f.attack.skill.start));
     if (f.attack.skill.fx === 'star') return at('special', f.attack.index - 2, volleyRow(f.attack.t, f.attack.skill));
-    if (f.attack.skill.fx === 'rabbit' || f.attack.skill.fx === 'kiss' || f.attack.skill.fx === 'hug' || f.attack.skill.fx === 'half' || f.attack.skill.fx === 'king') {
+    if (f.attack.skill.fx === 'rabbit' || f.attack.skill.fx === 'kiss' || f.attack.skill.fx === 'hug' || f.attack.skill.fx === 'half' || f.attack.skill.fx === 'king' || f.attack.skill.fx === 'wolf') {
       const t = f.attack.t, s = f.attack.skill;
       const row = t < s.start ? 0 : t >= s.duration - .22 ? 2 : 1;
       return at('special', f.attack.index - 2, row);
@@ -377,8 +382,16 @@ export function clipFor(f: Fighter): Clip {
       const row = t < s.start ? 0 : t < s.start + activeLen ? 1 : 2;
       return at('special', f.attack.index - 2, row);
     }
+    // 天台是我的: the crouch and leap hold the first cell; the dive and the stomp are the second;
+    // the landing crouch is the third.
+    if (f.attack.skill.fx === 'rooftop') {
+      const t = f.attack.t, s = f.attack.skill;
+      const row = t < ROOFTOP_DIVE ? 0 : t < s.start + ROOFTOP_STOMP ? 1 : 2;
+      return at('special', f.attack.index - 2, row);
+    }
     // 筑紫四列都要把命中姿势留住：土笔蹲着、闹钟抛完、滚轮一直跑、姐姐叉腰。
-    if (f.attack.skill.fx === 'sprout' || f.attack.skill.fx === 'clock' || f.attack.skill.fx === 'wheel' || f.attack.skill.fx === 'sisters') {
+    if (f.attack.skill.fx === 'sprout' || f.attack.skill.fx === 'clock' || f.attack.skill.fx === 'wheel' || f.attack.skill.fx === 'sisters'
+      || f.attack.skill.fx === 'sandwich' || f.attack.skill.fx === 'excuse') {
       const t = f.attack.t, s = f.attack.skill;
       const row = t < s.start ? 0 : t >= s.duration - .22 ? 2 : 1;
       return at('special', f.attack.index - 2, row);

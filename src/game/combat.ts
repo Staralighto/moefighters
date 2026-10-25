@@ -4,13 +4,50 @@ import { addDebt, addMod, dmgDealtMul, dmgTakenMul, has, incomingMul, lifestealO
 import type { FightGame, Projectile, SealVolley } from './game.ts';
 import { CONTROLS, FLOOR, GRAVITY, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
 import { attackPhase } from './animState.ts';
-import { BUSHIDO_TAIL, clipFor, drumRow, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, TEA_PHASE, TEA_RECOVER } from '../render/clips.ts';
+import { BUSHIDO_TAIL, clipFor, drumRow, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER } from '../render/clips.ts';
 import { SCRIPTS } from './scripts.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
 
 /** Blocking a projectile siphons the attacker's energy, proportional to the shot's full damage. */
 const GUARD_DRAIN = .3;
+
+/** 完美格挡 (see PARRY_WINDOW): what a perfect block pays out instead of the normal guard. */
+const PARRY_SIPHON = .6;          // projectile meter drain, × the shot's full damage
+const PARRY_DRAIN = 9;            // flat meter drain on a perfect-blocked melee hit
+const PARRY_GAIN = 10;            // the blocker's own meter (a normal block gives 5)
+const PARRY_STAGGER = .15;        // the melee swinger's stagger: room for a jab back
+const PARRY_STAGGER_REACH = 260;  // past this the swing came from afar and nobody staggers
+const PARRY_SUPER_CHIP = .12;     // supers still chip a little; normals chip nothing
+const PARRY_HITSTOP = .07;
+const PARRY_ORB_CD = 1.5;
+/** CPU chance to perfect-block a hit it chose to guard, by AI tier (easy, standard, master). */
+const PARRY_CPU = [0, .12, .3];
+
+const PARRY_ORB: Skill = {
+  key: '', name: '反击光球', type: 'projectile', damage: 6, range: 0, start: 0, duration: 0, cd: 0, super: false,
+  fx: 'parry-orb', brief: '', detail: '', knock: 90, gain: 3, speed: 640, size: 40, life: 1.3,
+  react: { stun: .14 }, noSiphon: true, parryOrb: true,
+};
+
+function cpuParries(g: FightGame, f: Fighter): boolean {
+  if (f.controller !== null || f.ai.block <= 0 || f.parryLock > 0) return false;
+  if (g.mode === 'training' && !f.minion) return false;
+  const chance = PARRY_CPU[f.minion ? (f.easyAI ? 0 : 2) : g.difficulty] ?? 0;
+  return chance > 0 && g.random() < chance;
+}
+
+/** 完美格挡's counter: a small blue orb fired straight ahead of the blocker. */
+function counterOrb(g: FightGame, f: Fighter): void {
+  const skill = PARRY_ORB;
+  g.projectiles.push({
+    owner: f.id, x: f.x + f.facing * 53, y: f.y - 85, vx: f.facing * (skill.speed ?? 640), vy: 0,
+    life: skill.life ?? 1.3, skill, color: '#7fd8ff', radius: 12, size: skill.size ?? 40, fx: skill.fx,
+    attack: { skill, index: 0, serial: 0, t: 0, emitted: true, shots: 1, burst: 0, hit: new Set(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: f.x },
+    // Never trades with enemy shots: a blocked barrage's next shot must still reach the guard.
+    hit: new Set(), trail: [], age: 0, solid: false,
+  });
+}
 
 /** 就由我来结束一切: the arcade frenzy. Rate, J/K cooldown cut and the jab-chain live in
  *  CharacterData.frenzy now; these stay as the defaults when a character leaves it unset. */
@@ -136,6 +173,19 @@ const SOUL_ORB_HEAL = 42;
 const HEAL_TEXT = '#9dffc0';
 /** 哭泣的紫罗兰: the vanish holds this long between the two bursts; she is gone the whole way. */
 export const VIOLET_WARP = .5;
+/** 状态不好，这次不算！: hp lost within this window is on the books, and this share of it comes back. */
+const EXCUSE_WINDOW = 2;
+const EXCUSE_REFUND = .5;
+/** 专业工种: the dash out stops this far past the body, or after this long, and she turns round. */
+const SANDWICH_PASS = 80;
+const SANDWICH_OUT = .3;
+const SANDWICH_TURN = .06;
+/** 天台是我的: the mark locks this far into the move; she is gone (above the frame) from the
+ *  leap until the stomp. ROOFTOP_DIVE (clips.ts) is the second she drops back in. */
+const ROOFTOP_CROUCH = .1;
+const ROOFTOP_LOCK = .15;
+const ROOFTOP_RISE = .3;
+const ROOFTOP_TOP = 320;
 /** 火的故事: the arrow is only the fuse — the blast is the one damage event. A quarter of the stage. */
 const FUGA_RADIUS = 240;
 const FUGA_DAMAGE = 170;
@@ -320,6 +370,23 @@ function veilMiss(g: FightGame, defender: Fighter, skill: Skill): boolean {
 /** 舞台装置: this share of damage taken by the device is borne by its summoner. */
 const APPARATUS_SHARE = .8;
 
+/** 状态不好，这次不算！: one line in the ledger. Only hit() calls it, so the refund sees every source once. */
+function noteDamage(g: FightGame, f: Fighter, lost: number): void {
+  if (lost <= 0) return;
+  const log = f.dmgLog;
+  let drop = 0;
+  while (drop < log.length && log[drop].t < g.age - EXCUSE_WINDOW) drop++;
+  if (drop) log.splice(0, drop);
+  log.push({ t: g.age, dmg: lost });
+}
+
+/** hp lost to hit() inside the refund window. */
+export function recentDamage(g: FightGame, f: Fighter): number {
+  let sum = 0;
+  for (const e of f.dmgLog) if (e.t >= g.age - EXCUSE_WINDOW) sum += e.dmg;
+  return sum;
+}
+
 export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: Skill, source: HitSource, originX = attacker.x): boolean {
   // friendly is the one blast that reads everyone on the field (火的故事).
   const blast = !!skill.friendly;
@@ -408,24 +475,46 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     return true;
   }
 
+  let perfect = false;
   if (blocked) {
     const fullHit = damage;
-    damage *= skill.blockMul ?? (skill.super ? .24 : .13);
-    defender.guard -= skill.guardDmg ?? (skill.super ? 42 : skill.type === 'heavy' ? 26 : 15);
-    if (!quiet) defender.stun = hitStun(.075);
+    // 完美格挡: the hit landed inside the blocker's timing window. No guard spent, no blockstun,
+    // meter swings toward the blocker, a close swinger staggers, a blocked shot answers with an orb.
+    perfect = defender.parry > 0 || cpuParries(g, defender);
+    const chip = skill.blockMul ?? (skill.super ? .24 : .13);
+    damage *= perfect ? (skill.super ? Math.min(chip, PARRY_SUPER_CHIP) : 0) : chip;
+    if (!perfect) defender.guard -= skill.guardDmg ?? (skill.super ? 42 : skill.type === 'heavy' ? 26 : 15);
+    if (!quiet && !perfect) defender.stun = hitStun(.075);
     defender.blockTap = 1;
-    gainEnergy(defender, 5);
-    gainEnergy(attacker, 4);
+    gainEnergy(defender, perfect ? PARRY_GAIN : 5);
+    if (!perfect) gainEnergy(attacker, 4);
     // 打气: blocking taps the gauge per the defender's own spec.
     if (defender.data.gauge?.onBlock) gainGauge(defender, defender.data.gauge.onBlock);
     // 远程反制：挡下投掷物按其伤害削减对方的气，静默结算，不跳字。
     // 剪 is a trap and 火的故事 is her own blast: neither siphons meter for being blocked.
-    if (skill.type === 'projectile' && !skill.noSiphon) attacker.energy = clamp(attacker.energy - fullHit * GUARD_DRAIN, 0, attacker.energyMax);
-    g.effect('shield', defender.x - dir * 30, defender.y - 78, '#8df0ff', .22, { radius: 65 });
-    // 蝶变: the slow sticks through a block. 花道·缠 leaves the flag unset.
-    if (skill.slowOnBlock) applySlow(defender, skill);
-    g.audio.play('block', attacker.id);
-    g.text('格挡', defender.x, defender.y - 170, '#91eaff', .35, 16);
+    if (skill.type === 'projectile' && !skill.noSiphon) attacker.energy = clamp(attacker.energy - fullHit * (perfect ? PARRY_SIPHON : GUARD_DRAIN), 0, attacker.energyMax);
+    if (perfect) {
+      defender.parry = 0;
+      defender.parryLock = 0;
+      if (skill.type === 'projectile') {
+        if (!skill.parryOrb && defender.parryOrbCd <= 0) { defender.parryOrbCd = PARRY_ORB_CD; counterOrb(g, defender); }
+      } else {
+        attacker.energy = clamp(attacker.energy - PARRY_DRAIN, 0, attacker.energyMax);
+        if (!skill.super && attacker !== defender && Math.abs(attacker.x - defender.x) < PARRY_STAGGER_REACH) {
+          attacker.parried = Math.max(attacker.parried, PARRY_STAGGER * attacker.stunMul);
+        }
+      }
+      g.effect('parry', defender.x + defender.facing * 28, defender.y - 80, '#8fe6ff', .3, { radius: 58 });
+      g.sparks(defender.x + defender.facing * 34, defender.y - 85, '#bff4ff', 10, .8);
+      g.audio.play('parry', attacker.id);
+      g.text('完美格挡', defender.x, defender.y - 175, '#bff4ff', .5, 20);
+    } else {
+      g.effect('shield', defender.x - dir * 30, defender.y - 78, '#8df0ff', .22, { radius: 65 });
+      // 蝶变: the slow sticks through a block. 花道·缠 leaves the flag unset.
+      if (skill.slowOnBlock) applySlow(defender, skill);
+      g.audio.play('block', attacker.id);
+      g.text('格挡', defender.x, defender.y - 170, '#91eaff', .35, 16);
+    }
     // 彩虹色: steering a hit into the guard is a happy moment for the blocker.
     rainbowRoll(g, defender);
     if (defender.guard <= 0) {
@@ -594,7 +683,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     if (crit) damage *= 1.5;
     if (wasSlow && skill.slowBonus) damage += skill.slowBonus;
     g.audio.play('key', attacker.id);
-    g.text('-' + Math.round(damage), defender.x + dir * 8, defender.y - 148, '#fff', .35, 16);
+    if (Math.round(damage) > 0) g.text('-' + Math.round(damage), defender.x + dir * 8, defender.y - 148, '#fff', .35, 16);
   }
 
   // 舞台装置: most of a hit on the device is borne by the body that summoned it. The share is
@@ -607,7 +696,11 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       deviceHpLoss = damage * (1 - APPARATUS_SHARE);
     }
   }
+  const hpBefore = defender.hp;
   defender.hp = clamp(defender.hp - deviceHpLoss, 0, defender.data.hp);
+  // 狼王来了: while it holds, a hit cannot take the last point. The relapse is not a hit, so it still can.
+  if (has(defender, 'undying')) defender.hp = Math.max(Math.min(1, hpBefore), defender.hp);
+  noteDamage(g, defender, hpBefore - defender.hp);
   if (defender.hp <= 0 && defender.deathSave > 0) {
     // 想成为人类: lethal damage stops at 1 hp, spends a charge, and clears the hit's locks. One sparks, no text.
     defender.deathSave--;
@@ -629,18 +722,19 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   const steal = attacker.lifesteal + lifestealOf(attacker);
   if (steal > 0 && damage > 0) attacker.hp = Math.min(attacker.data.hp, attacker.hp + damage * steal);
   // 竟敢无视灯: melee hits pain the attacker back — pure hp loss, no stagger, no fx, it can kill.
-  if (defender.thorns > 0 && skill.type !== 'projectile' && damage > 0) attacker.hp = Math.max(0, attacker.hp - damage * defender.thorns);
+  const attackerFloor = has(attacker, 'undying') ? 1 : 0;
+  if (defender.thorns > 0 && skill.type !== 'projectile' && damage > 0) attacker.hp = Math.max(attackerFloor, attacker.hp - damage * defender.thorns);
   // 我可是很脆弱的哦: every source pays back a share, projectiles and grabs included.
   const reflect = reflectAmount(defender);
-  if (reflect > 0 && damage > 0) attacker.hp = Math.max(0, attacker.hp - damage * reflect);
+  if (reflect > 0 && damage > 0) attacker.hp = Math.max(attackerFloor, attacker.hp - damage * reflect);
   const rawKnock = skill.knock ?? (skill.type === 'light' ? 95 : skill.super ? 340 : 235);
   const knock = blocked && !skill.knockOnBlock ? 75 : rawKnock;
   if (!quiet && !SCRIPTS[skill.fx]?.noKnock && defender.invuln <= 0 && !endured) defender.vx = dir * knock * (braced || superBrace ? .5 : 1);
   else if (skill.react?.forceKnock) defender.vx = dir * knock;
   if (holdStill) { defender.vx = 0; defender.vy = 0; }
-  g.shake = quiet ? 0 : blocked ? 2 : skill.shake ?? (skill.super ? 12 : skill.type === 'heavy' ? 7 : 4);
+  g.shake = quiet ? 0 : blocked ? (perfect ? 3 : 2) : skill.shake ?? (skill.super ? 12 : skill.type === 'heavy' ? 7 : 4);
   const juggleHit = !blocked && !!skill.air && defender.y < FLOOR - .5;
-  g.hitstop = quiet ? 0 : blocked ? .018 : juggleHit ? .085 : skill.hitstop ?? (skill.super ? .065 : skill.type === 'heavy' ? .065 : .032);
+  g.hitstop = quiet ? 0 : blocked ? (perfect ? PARRY_HITSTOP : .018) : juggleHit ? .085 : skill.hitstop ?? (skill.super ? .065 : skill.type === 'heavy' ? .065 : .032);
   return true;
 }
 
@@ -938,7 +1032,8 @@ function runOps(g: FightGame, f: Fighter, s: Skill, ops: Op[]): void {
       if (op.king) f.king = true;
     } else if (op.op === 'mod') {
       const time = op.time ?? formTime;
-      if (op.kind === 'brace') addMod(f, 'brace', time, { v: BRACED_DAMAGE, max: !op.set });
+      // v: the damage multiplier while braced; 1 is pure armour with no damage cut (狼王来了).
+      if (op.kind === 'brace') addMod(f, 'brace', time, { v: op.v ?? BRACED_DAMAGE, max: !op.set });
       else if (op.kind === 'noGain') addMod(f, 'noGain', time, { max: !!op.max });
       else if (op.kind === 'poise') addMod(f, 'poise', time);
       else if (op.kind === 'muscle') addMod(f, 'dmgDealt', time, {
@@ -1002,6 +1097,9 @@ function runOps(g: FightGame, f: Fighter, s: Skill, ops: Op[]): void {
       }
       // 完全复活: the cut also covers grabs and supers.
       else if (op.kind === 'guard') addMod(f, 'incoming', time, { v: op.v ?? .5, tag: 'guard' });
+      // 狼王来了: a share of the damage dealt comes back as hp (lifestealOf reads it), and hits stop at 1 hp.
+      else if (op.kind === 'lifesteal') addMod(f, 'lifesteal', time, { v: op.v ?? 0, max: !!op.max });
+      else if (op.kind === 'undying') addMod(f, 'undying', time, { max: !!op.max });
       // 我可是很脆弱的哦: every damage source is paid back while the petals hold.
       else if (op.kind === 'reflect') addMod(f, 'reflect', time, { v: op.v ?? .5, tag: 'lily', mark: 'lily' });
       // 完全复活: a fixed bill comes due when the window closes. Unlike 负债 it is not incoming
@@ -1010,6 +1108,7 @@ function runOps(g: FightGame, f: Fighter, s: Skill, ops: Op[]): void {
         const amount = Math.round(op.v ?? 0);
         addMod(f, 'relapse', time, {
           v: amount,
+          mark: op.mark,
           onExpire: (game, who) => {
             if (amount <= 0) return;
             who.hp = Math.max(0, who.hp - amount);
@@ -1095,6 +1194,9 @@ function stepHold(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   }
 }
 
+/** The pounce keeps sliding this long past the active frame, so the strike lands mid-leap. */
+const LUNGE_TAIL = .06;
+
 export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
   const a = f.attack;
   if (!a) return;
@@ -1112,6 +1214,14 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
   }
   if (s.hold) stepHold(g, f, a, dt);
   else SCRIPTS[s.fx]?.update?.(g, f, a, dt);
+
+  // 狂化 pounce: the ground K slides forward from the first frame through the strike.
+  const lunge = f.frenzy > 0 && a.index === 1 && !s.air ? f.data.frenzy?.heavyLunge : undefined;
+  if (lunge) {
+    const span = s.start + LUNGE_TAIL;
+    const prev = Math.min(span, a.t - dt * rate), now = Math.min(span, a.t);
+    if (now > prev) f.x += f.facing * lunge * (now - Math.max(0, prev)) / span;
+  }
 
   if (s.type === 'dash' && !SCRIPTS[s.fx]?.customDash && a.t >= s.start && a.t < s.duration - .08) {
     const dash = SCRIPTS[s.fx];
@@ -1172,6 +1282,7 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
     if (sc?.holdFrom != null && sc.release != null && a.shots >= sc.holdFrom && !attackHeld(g, f) && a.t < s.duration - sc.release) a.t = s.duration - sc.release;
   } else if (!a.emitted && a.t >= s.start) {
     a.emitted = true;
+    const swingFx = f.frenzy > 0 && a.index <= 1 ? f.data.frenzy?.swingFx : undefined;
     if (sc?.emit) sc.emit(g, f, a);
     else if (s.onActive) runOps(g, f, s, s.onActive);
     else if (s.type === 'projectile') {
@@ -1180,7 +1291,15 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
     } else if (s.type !== 'dash' && !sc?.noMelee) {
       if (s.type !== 'upper') applyMelee(g, f, a);
       if (sc?.flash) sc.flash(g, f, a);
-      else g.effect(s.fx, f.x + f.facing * 65, f.y - (s.type === 'sweep' ? 22 : 83), f.data.color, .22, { dir: f.facing, radius: s.range * .5 });
+      // A form's swing graphic replaces the generic slash, so the two never stack.
+      else if (!swingFx) g.effect(s.fx, f.x + f.facing * 65, f.y - (s.type === 'sweep' ? 22 : 83), f.data.color, .22, { dir: f.facing, radius: s.range * .5 });
+    }
+    // 狂化 J / K: a form may stamp a graphic on every swing, hit or whiff (swingFx is data).
+    if (swingFx) {
+      g.effect(swingFx, f.x + f.facing * s.range * .55, f.y - 105, f.data.frenzy?.tint ?? f.data.color, .33, {
+        dir: f.facing, radius: s.range, heavy: a.index === 1, hit: a.hit.size > 0, air: !!s.air,
+        follow: f.id, ox: f.facing * s.range * .55, oy: -105,
+      });
     }
     // 领域: any move that declares one opens it on its active frame. Later fields cover it.
     if (a.skill.domain) g.beginDomain(f, a.skill);
@@ -3175,6 +3294,130 @@ SCRIPTS['shout'] = Object.assign(SCRIPTS['shout'] ?? {}, { freeOnLast: true });
 SCRIPTS['flurry'] = Object.assign(SCRIPTS['flurry'] ?? {}, { ghostSwing: true });
 SCRIPTS['record'] = Object.assign(SCRIPTS['record'] ?? {}, { noMelee: true, echo: true });
 SCRIPTS['cartwheel'] = Object.assign(SCRIPTS['cartwheel'] ?? {}, { flip: true, sparseGhost: true });
+
+/** 专业工种: run through the body (the first slice of bread), stop short of nothing, turn on the spot,
+ *  run back through it (the second). The return hit lands from behind: hit() reads the defender's
+ *  facing against the attacker's side, and the defender never turned. No flag; the kernel's own rule. */
+function step_sandwich(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (a.t < s.start || a.t >= s.duration - .08) return;
+  const speed = s.speed ?? 900;
+  const mode = a.mode ?? 0;
+  if (Math.floor(a.t * 12) !== Math.floor((a.t - dt) * 12)) g.effect('ghost', f.x - f.facing * 18, f.y, f.data.color, .18, { fighter: f.id, alpha: .3 });
+  if (mode === 1) {
+    if (a.t >= a.tossAt + SANDWICH_TURN) a.mode = 2;
+    return;
+  }
+  f.x = clamp(f.x + f.facing * speed * dt, X_MIN, X_MAX);
+  const before = a.hit.size;
+  const prev = a.skill;
+  if (mode === 2) a.skill = withFinale(s, true);
+  applyMelee(g, f, a);
+  a.skill = prev;
+  if (a.hit.size > before) {
+    // Sets keep insertion order: the last id is the body this step just caught.
+    let last = -1;
+    for (const id of a.hit) last = id;
+    const foe = g.fighterById(last);
+    // The first pass lays one slice on her side; the return closes the second and presses it shut.
+    if (foe) g.effect('sandwich', foe.x, foe.y - 85, f.data.color, mode === 2 ? .62 : .45, { dir: f.facing, heavy: mode === 2, follow: foe.id, ox: 0, oy: -85 });
+  }
+  if (mode !== 0) return;
+  let nearest: Fighter | undefined;
+  for (const o of g.opponents(f)) if (!nearest || Math.abs(o.x - f.x) < Math.abs(nearest.x - f.x)) nearest = o;
+  const past = !!nearest && (nearest.x - f.x) * f.facing <= -SANDWICH_PASS;
+  const spent = Math.abs(f.x - a.anchor) >= speed * SANDWICH_OUT || f.x <= X_MIN || f.x >= X_MAX;
+  if (past || spent) {
+    a.mode = 1;
+    a.tossAt = a.t;
+    f.facing = (-f.facing) as 1 | -1;
+    a.hit = new Set();
+    g.effect('dust', f.x, FLOOR, '#afa1c1', .3, { radius: 25 });
+  }
+}
+SCRIPTS['sandwich'] = Object.assign(SCRIPTS['sandwich'] ?? {}, { update: step_sandwich, customDash: true });
+
+/** 状态不好，这次不算！: at the active frame, half of what the last two seconds cost comes back. */
+function emit_excuse(g: FightGame, f: Fighter): void {
+  const back = Math.round(recentDamage(g, f) * EXCUSE_REFUND);
+  f.dmgLog.length = 0;
+  g.effect('excuse', f.x, f.y - 90, f.data.color, .8, { radius: 130, dir: f.facing, follow: f.id, ox: 0, oy: -90 });
+  if (back > 0) {
+    f.hp = Math.min(f.data.hp, f.hp + back);
+    g.text(`+${back}`, f.x, f.y - 160, HEAL_TEXT, .8, 22);
+  }
+}
+SCRIPTS['excuse'] = Object.assign(SCRIPTS['excuse'] ?? {}, { emit: emit_excuse });
+
+/** 狼王来了: howl rings every this many seconds while the howl cell holds. */
+const HOWL_EVERY = .15;
+const HOWL_PUSH = 380;
+/** The howl cell ends this long before the move does (clips.ts holds row 2 for the last .22s). */
+const HOWL_TAIL = .22;
+
+/** 狼王来了: the press drops the moonlight at once; through the howl a white ring rolls out every
+ *  0.15s and shoves the field back. The form itself is the onActive ops at the howl's first frame. */
+function step_wolf(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (a.shots === 0) {
+    a.shots = 1;
+    g.effect('moonlight', f.x, f.y, '#8FB8FF', s.duration + .25, { follow: f.id, ox: 0, oy: 0 });
+  }
+  const end = s.duration - HOWL_TAIL;
+  if (a.t < s.start || a.t - dt > end) return;
+  const prev = Math.floor(Math.max(0, a.t - dt - s.start) / HOWL_EVERY);
+  const cur = Math.floor(Math.min(end - s.start, a.t - s.start) / HOWL_EVERY);
+  if (cur > prev) {
+    repelPulse(g, f, HOWL_PUSH, s.range);
+    g.effect('howl-ring', f.x + f.facing * 18, f.y - 120, '#ffffff', .5, { radius: s.range, dir: f.facing });
+  }
+}
+SCRIPTS['wolf'] = Object.assign(SCRIPTS['wolf'] ?? {}, { update: step_wolf, noSuperFx: true });
+
+/** 天台是我的: crouch, leap out of the frame (untouchable), pin the mark under the nearest body,
+ *  drop back in on the mark. The stock upper window then runs the disc hit on the landing; this
+ *  script only owns where she is. */
+function step_rooftop(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill, t = a.t;
+  if (t >= s.start) {
+    if (f.y !== FLOOR) { f.y = FLOOR; }
+    f.vy = 0;
+    return;
+  }
+  f.vy = 0;
+  if (t < ROOFTOP_CROUCH) { f.y = FLOOR; return; }
+  f.invuln = Math.max(f.invuln, .05);
+  if (a.shots === 0 && t >= ROOFTOP_LOCK) {
+    a.shots = 1;
+    const foe = g.opponents(f).sort((p, q) => Math.abs(p.x - f.x) - Math.abs(q.x - f.x))[0];
+    a.anchor = foe ? foe.x : clamp(f.x + f.facing * 240, X_MIN, X_MAX);
+    g.effect('rooftop-mark', a.anchor, FLOOR, f.data.color, s.start - ROOFTOP_LOCK, { fighter: f.id, radius: s.range });
+  }
+  const top = FLOOR + ROOFTOP_TOP;
+  if (t < ROOFTOP_RISE) {
+    const k = (t - ROOFTOP_CROUCH) / (ROOFTOP_RISE - ROOFTOP_CROUCH);
+    f.y = FLOOR - top * (1 - (1 - k) * (1 - k));
+  } else if (t < ROOFTOP_DIVE) {
+    f.y = FLOOR - top;
+  } else {
+    // The mark is the only place she can come down: the body is off the frame, so the x snap is unseen.
+    f.x = clamp(a.anchor, X_MIN, X_MAX);
+    if (a.shots === 1) {
+      a.shots = 2;
+      g.effect('rooftop-dive', f.x, f.y, f.data.color, s.start - ROOFTOP_DIVE + .06, { follow: f.id, ox: 0, oy: 0 });
+    }
+    const k = (t - ROOFTOP_DIVE) / (s.start - ROOFTOP_DIVE);
+    f.y = FLOOR - top * (1 - k * k);
+  }
+}
+SCRIPTS['rooftop'] = Object.assign(SCRIPTS['rooftop'] ?? {}, {
+  update: step_rooftop,
+  flash(g: FightGame, f: Fighter, a: Attack) {
+    g.effect('rooftop', f.x, FLOOR, f.data.color, .5, { radius: a.skill.range });
+    g.shake = Math.max(g.shake, 9);
+    g.sparks(f.x, FLOOR - 10, '#ffd0d0', 20, 1.2);
+  },
+});
 SCRIPTS['milk'] = Object.assign(SCRIPTS['milk'] ?? {}, { spawn: 'milk' });
 SCRIPTS['bag'] = Object.assign(SCRIPTS['bag'] ?? {}, { spawn: 'bag' });
 SCRIPTS['juggle-ball'] = Object.assign(SCRIPTS['juggle-ball'] ?? {}, { spawn: 'juggle', trail: 'speed', bounce: true });

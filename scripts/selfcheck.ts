@@ -202,6 +202,57 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(p1.energy >= before, 'blocking melee does not drain energy');
 }
 
+// 完美格挡: an attack press while guarding, just before a melee hit, spends no guard, takes no chip,
+// drains the swinger's meter and staggers them out of the swing
+{
+  const g = newGame(); const [p1, p2] = g.fighters; dummy(g);
+  p2.x = p1.x + 60; p2.facing = -1;
+  g.keyDown('ArrowDown'); run(g, .1);
+  p1.energy = 50;
+  const hp = p2.hp;
+  g.keyDown('KeyJ'); g.keyDown('Numpad1'); g.keyUp('Numpad1');
+  run(g, .2); // the hit, its longer freeze-frame, then the stagger lands on the next step
+  assert.equal(p2.guard, 100, 'a perfect block spends no guard');
+  assert.equal(p2.hp, hp, 'a perfect block takes no chip from a normal');
+  assert.ok(p1.energy < 45, `a perfect block drains the swinger's meter, saw ${p1.energy}`);
+  assert.ok(p1.stun > 0 && !p1.attack, 'the swinger staggers out of the swing');
+  assert.ok(g.texts.some(t => t.text === '完美格挡'), 'the perfect block is called out');
+}
+
+// 完美格挡: a window that closes on nothing locks the next press out, so mashing is a plain guard
+{
+  const g = newGame(); const [p1, p2] = g.fighters; dummy(g);
+  p2.x = p1.x + 60; p2.facing = -1;
+  g.keyDown('ArrowDown'); run(g, .1);
+  g.keyDown('Numpad1'); g.keyUp('Numpad1'); run(g, .2);
+  assert.ok(p2.parryLock > 0, 'a whiffed window arms the lockout');
+  g.keyDown('Numpad1'); g.keyUp('Numpad1');
+  assert.equal(p2.parry, 0, 'a press inside the lockout opens nothing');
+  g.keyDown('KeyJ'); run(g, .15);
+  assert.ok(p2.guard < 100, 'the hit is a normal block');
+  assert.ok(!g.texts.some(t => t.text === '完美格挡'), 'and no perfect block');
+}
+
+// 完美格挡: a perfect-blocked shot siphons double and answers with one counter orb; the orb's cooldown holds
+{
+  const g = newGame(at('ember'), at('boulder')); const [p1, p2] = g.fighters; dummy(g); // 星火 U = 火球
+  p2.x = p1.x + 300; p2.facing = -1;
+  g.keyDown('ArrowDown'); run(g, .1);
+  p1.energy = 50;
+  const hp1 = p1.hp;
+  g.keyDown('KeyU');
+  for (let i = 0; i < 240 && !g.projectiles.some(p => p.owner === p1.id && Math.abs(p.x - p2.x) < 75); i++) g.step(STEP);
+  g.keyDown('Numpad1'); g.keyUp('Numpad1');
+  run(g, .15);
+  assert.equal(p2.guard, 100, 'the shot is perfect-blocked');
+  assert.ok(p1.energy < 35, `a perfect-blocked shot siphons more meter, saw ${p1.energy}`);
+  assert.equal(g.projectiles.filter(p => p.owner === p2.id && p.skill.parryOrb).length, 1, 'one counter orb flies back');
+  assert.ok(p2.parryOrbCd > 0, 'the orb goes on cooldown');
+  assert.ok(g.projectiles.every(p => !p.skill.parryOrb || p.solid === false), 'the counter orb passes through enemy shots');
+  run(g, .8);
+  assert.ok(p1.hp < hp1, 'the counter orb lands on the shooter');
+}
+
 // super needs 100 energy and spends it
 {
   const g = newGame(); const [p1] = g.fighters; dummy(g);
@@ -6141,6 +6192,81 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.equal(validCodenameText(sample), sample, 'validCodenameText accepts registered adj + playable char + safe 4-digit num');
   assert.equal(validCodenameText('胆小的高松灯#0000'), '', 'validCodenameText rejects blocked 4-digit numbers');
   assert.equal(validCodenameText('自定义的随便写#0923'), '', 'validCodenameText rejects arbitrary free-text names');
+}
+
+// natsume: the wolf cannot be killed by a hit but can by its own relapse, the sandwich's return comes
+// from behind, and the excuse pays back half of the last two seconds
+{
+  const na = at('natsume');
+  const data = ROSTER[na];
+  assert.deepEqual(data.bands, ['millsage'], 'natsume stands with millsage');
+  assert.equal(data.skills[5].cost, 200, 'the wolf costs 200');
+  // undying clamps hits at 1 hp; the relapse at the end is not a hit, so it still kills
+  {
+    const g = newGame(na, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = 200;
+    p2.x = p1.x + 120;
+    g.keyDown('KeyL'); run(g, 1.1);
+    assert.ok(p2.x - p1.x > 200, 'the howl rings shove a close foe away');
+    assert.ok(p1.king && p1.mods.some(m => m.kind === 'undying' && m.left > 0), 'the wolf form is up and undying');
+    p1.hp = 20;
+    p1.invuln = 0;
+    hit(g, p2, p1, { ...ROSTER[at('boulder')].skills[0], damage: 500 }, { hit: new Set() });
+    assert.equal(p1.hp, 1, 'a lethal hit stops at 1 hp while undying holds');
+    p1.hp = 400;
+    run(g, 9);
+    assert.equal(p1.hp, 100, 'the relapse takes 300 once undying ends');
+    p1.hp = 200;
+    p1.mods.length = 0;
+    hit(g, p2, p1, { ...ROSTER[at('boulder')].skills[0], damage: 500 }, { hit: new Set() });
+    assert.equal(p1.hp, 0, 'without undying the same hit kills');
+  }
+  {
+    const g = newGame(na, at('boulder')); const [p1] = g.fighters; dummy(g);
+    p1.energy = 200;
+    g.keyDown('KeyL'); run(g, 1.1);
+    p1.hp = 150;
+    const relapse = p1.mods.find(m => m.kind === 'relapse')!;
+    relapse.left = .05;
+    run(g, .2);
+    assert.equal(p1.hp <= 0, true, 'the relapse can kill the wolf');
+  }
+  // U: the return pass lands from behind; a defender holding block toward her blocks the first pass only
+  {
+    const g = newGame(na, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 440; p1.facing = 1; p2.facing = -1;
+    g.keyDown('ArrowDown');
+    const guard0 = p2.guard;
+    g.keyDown('KeyU');
+    let max = 0;
+    for (let i = 0; i < Math.round(.9 / STEP); i++) { g.step(STEP); max = Math.max(max, p2.stun); }
+    assert.ok((p1.facing as number) === -1, 'she turned round at the far side');
+    assert.ok(p2.guard < guard0, 'the first pass hit the guard');
+    assert.ok(p2.hp < p2.data.hp - 20 && p2.knocked > 0, 'the return pass got through the block and knocked down');
+  }
+  // O: she leaves the frame untouchable, comes down on the mark, and the disc knocks down whoever stayed
+  {
+    const g = newGame(na, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 520; p1.facing = 1;
+    g.keyDown('KeyO'); run(g, .35);
+    assert.ok(p1.y < 0 && p1.invuln > 0, 'she is above the frame and untouchable');
+    run(g, .3);
+    assert.equal(p1.y, FLOOR, 'she is back on the floor');
+    assert.ok(Math.abs(p1.x - 520) < 30, 'she landed on the mark');
+    assert.ok(p2.hp < p2.data.hp && p2.knocked > 0, 'the stomp knocked the one who stayed down');
+  }
+  // I: half of what the last two seconds cost comes back
+  {
+    const g = newGame(na, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.invuln = 0;
+    hit(g, p2, p1, { ...ROSTER[at('boulder')].skills[0], damage: 100 }, { hit: new Set() });
+    const lost = p1.data.hp - p1.hp;
+    assert.ok(lost > 90, 'the hit is on the books');
+    p1.stun = 0; p1.knocked = 0;
+    g.keyDown('KeyI'); run(g, .5);
+    assert.ok(Math.abs((p1.data.hp - p1.hp) - lost / 2) < 1.5, 'half of the ledger came back');
+    assert.equal(p1.dmgLog.length, 0, 'the refund clears the ledger');
+  }
 }
 
 console.log('selfcheck ok');

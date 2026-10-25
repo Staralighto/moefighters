@@ -10,6 +10,10 @@ import { watchProp } from './propLayout.ts';
 const CUCUMBER_SRC = '/sprites/mutsumi/cucumber.png';
 const NOTE_SRC = '/sprites/mutsumi/note.png';
 const MANJU_SRC = '/sprites/hotaru/cookie.png';
+/** 狼王来了: 4×3 claw slashes on black, drawn additively. Rows: light / heavy pounce / air; columns are frames. */
+const CLAW_SRC = '/sprites/natsume/claw.png';
+/** Frame boundaries over the .33s life: quick sweep, a held full slash, then the fade and the sparks. */
+const CLAW_FRAMES = [.05, .14, .24];
 const HOTARU_PIANO_SRC = '/sprites/hotaru/piano.png';
 const MORTIS_SRC = '/sprites/mutsumi/mortis.png';
 const KIT_SRC = '/sprites/nyamu/kit.png';
@@ -467,6 +471,51 @@ export function drawLayerBass(ctx: CanvasRenderingContext2D, f: Fighter, images:
   ctx.restore();
 }
 
+/** 狼王来了: the stage goes dark behind the bodies and a pale-blue moon pillar falls on her.
+ *  'back' runs before any body is drawn (the dark veil and the pillar itself); 'front' runs after
+ *  them in screen space and only lays a faint wash of moonlight over the lit column. */
+export function drawMoonlight(ctx: CanvasRenderingContext2D, e: Effect, pass: 'back' | 'front'): void {
+  const t = e.max - e.life;
+  const fade = Math.min(1, t / .12) * Math.min(1, e.life / .3);
+  if (fade <= 0) return;
+  const x = e.x, foot = FLOOR;
+  const flick = 1 + Math.sin(t * 23) * .04;
+  ctx.save();
+  if (pass === 'back') {
+    ctx.globalAlpha = fade * .66;
+    ctx.fillStyle = '#04061a';
+    ctx.fillRect(0, 0, W, H);
+  }
+  ctx.globalCompositeOperation = 'lighter';
+  // The pillar: narrow at the sky, opening toward the floor, brightest on its axis.
+  const top = 46, bottom = 130;
+  const g = ctx.createLinearGradient(x - bottom, 0, x + bottom, 0);
+  const core = pass === 'back' ? .34 : .12;
+  g.addColorStop(0, 'rgba(120,170,255,0)');
+  g.addColorStop(.5, `rgba(170,205,255,${core * fade * flick})`);
+  g.addColorStop(1, 'rgba(120,170,255,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(x - top, 0); ctx.lineTo(x + top, 0);
+  ctx.lineTo(x + bottom, foot); ctx.lineTo(x - bottom, foot);
+  ctx.closePath(); ctx.fill();
+  if (pass === 'back') {
+    // Where the moonlight lands: a soft pool on the floor and a few motes drifting down the beam.
+    const pool = ctx.createRadialGradient(x, foot, 4, x, foot, 150);
+    pool.addColorStop(0, `rgba(190,215,255,${.45 * fade})`);
+    pool.addColorStop(1, 'rgba(190,215,255,0)');
+    ctx.fillStyle = pool;
+    ctx.beginPath(); ctx.ellipse(x, foot, 150, 34, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = `rgba(225,238,255,${.7 * fade})`;
+    for (let i = 0; i < 9; i++) {
+      const u = (i * .37 + t * (.35 + (i % 3) * .1)) % 1;
+      const mx = x + Math.sin(i * 2.3 + t * 1.7) * (top + (bottom - top) * u) * .6;
+      ctx.beginPath(); ctx.arc(mx, u * foot, 1.6 + (i % 2), 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
 export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: ImageCache): void {
   const p = 1 - e.life / e.max, r = e.radius ?? 50;
   const square = (x: number, y: number, w: number, h: number) => ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
@@ -485,6 +534,25 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.beginPath(); ctx.ellipse(e.x, e.y, r * .43, r, 0, 0, Math.PI * 2); ctx.stroke();
       ctx.globalAlpha = .12; ctx.fill();
       break;
+    case 'parry': {
+      // 完美格挡: the guard ellipse flares bright, and one faint copy swells outward and fades.
+      const fade = 1 - p;
+      ctx.fillStyle = '#e9fbff';
+      ctx.strokeStyle = '#ffffff';
+      ctx.globalAlpha = fade * .5;
+      ctx.beginPath(); ctx.ellipse(e.x, e.y, r * .43, r, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = fade;
+      ctx.lineWidth = 4;
+      ctx.stroke();
+      const s = 1 + p * .5;
+      ctx.strokeStyle = e.color;
+      ctx.fillStyle = e.color;
+      ctx.globalAlpha = fade * .45;
+      ctx.lineWidth = 2 + fade * 4;
+      ctx.beginPath(); ctx.ellipse(e.x, e.y, r * .43 * s, r * s, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = fade * .14; ctx.fill();
+      break;
+    }
     case 'hit':
       ctx.translate(e.x, e.y);
       for (let i = 0; i < 8; i++) { ctx.rotate(Math.PI / 4); square(r * .2 + p * r * .5, -3, r * (1 - p), 6); }
@@ -1780,6 +1848,260 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.beginPath(); ctx.ellipse(0, 0, rad * (.2 + p * .8), rad * .28 * (.2 + p), 0, 0, Math.PI * 2); ctx.stroke();
       break;
     }
+    case 'claw': {
+      // 狼爪: one frame of the claw sheet, drawn additively so its black ground vanishes. The row is
+      // the swing (light / pounce / air), the column the moment. Preloaded through the character's
+      // extras; until it decodes, the swing draws nothing.
+      const sheet = images?.get(CLAW_SRC);
+      if (!sheet?.naturalWidth) break;
+      const t = e.max - e.life;
+      const row = e.air ? 2 : e.heavy ? 1 : 0;
+      let col = 0;
+      while (col < CLAW_FRAMES.length && t >= CLAW_FRAMES[col]) col++;
+      const size = Math.max(150, (e.radius ?? 130) * 1.55) * (e.heavy ? 1.15 : 1);
+      ctx.translate(e.x, e.y);
+      ctx.scale(e.dir ?? 1, 1);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      // A clean hit stacks the full-slash frame twice for one extra pop of light.
+      const passes = e.hit && col === 1 ? 2 : 1;
+      for (let i = 0; i < passes; i++) ctx.drawImage(sheet, col * CELL, row * CELL, CELL, CELL, -size / 2, -size / 2, size, size);
+      break;
+    }
+    case 'sandwich': {
+      // 专业工种: she makes the sandwich and the foe is in it. The outbound pass slaps a bread
+      // triangle on from her side; the return slams the finished cut face on, squashed, crumbs flying.
+      const t = e.max - e.life;
+      const dir = e.dir ?? 1;
+      const full = !!e.heavy;
+      const R = 66;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = Math.min(1, e.life / .16);
+      // A convenience-store triangle sandwich, cut face to the camera, point up.
+      const tri = () => { ctx.beginPath(); ctx.moveTo(0, -R); ctx.lineTo(R * .95, R * .62); ctx.lineTo(-R * .95, R * .62); ctx.closePath(); };
+      const slam = Math.min(1, t / .07);
+      // Flies in from her side, overshoots into a squash, settles.
+      const settle = t < .07 ? 0 : Math.max(0, 1 - (t - .07) / .1);
+      const sx = 1 + .28 * settle, sy = 1 - .22 * settle;
+      ctx.save();
+      ctx.translate(-dir * (1 - slam) * 130, -(1 - slam) * 30);
+      ctx.rotate(-dir * (1 - slam) * .6 + (full ? 0 : -dir * .12));
+      ctx.scale(sx, sy);
+      tri();
+      ctx.fillStyle = '#c98535'; ctx.fill();
+      ctx.save();
+      ctx.scale(.86, .86); ctx.translate(0, 4);
+      tri(); ctx.clip();
+      if (!full) {
+        // The first pass: just the bread slice slapped on.
+        ctx.fillStyle = '#fff6e0'; ctx.fillRect(-R, -R, R * 2, R * 2);
+        ctx.fillStyle = 'rgba(201,133,53,.3)';
+        for (let i = 0; i < 9; i++) { ctx.beginPath(); ctx.arc(((i * 37) % 70) - 35, ((i * 23) % 70) - 30, 2, 0, Math.PI * 2); ctx.fill(); }
+      } else {
+        // Pressed shut: bread, lettuce, ham, egg, bread — the layers of the cut face.
+        const bands: [string, number][] = [['#fff6e0', -R], ['#7bc94f', -12], ['#f19aa0', 0], ['#ffd84a', 13], ['#fff6e0', 28]];
+        for (let i = 0; i < bands.length; i++) {
+          const [col, y] = bands[i];
+          ctx.fillStyle = col;
+          ctx.fillRect(-R, y, R * 2, R * 2);
+        }
+        // Lettuce frill along the top of its band.
+        ctx.fillStyle = '#5fb03a';
+        ctx.beginPath(); ctx.moveTo(-R, -10);
+        for (let x = -R; x < R; x += 10) ctx.quadraticCurveTo(x + 5, -19, x + 10, -10);
+        ctx.lineTo(R, -6); ctx.lineTo(-R, -6); ctx.closePath(); ctx.fill();
+      }
+      ctx.restore();
+      ctx.lineWidth = 3; ctx.strokeStyle = '#8a5520';
+      tri(); ctx.stroke();
+      ctx.restore();
+      // Impact: three short white strokes on her side as it lands.
+      if (t > .05 && t < .2) {
+        ctx.globalAlpha = 1 - (t - .05) / .15;
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
+        for (const y of [-30, 0, 30]) {
+          ctx.beginPath(); ctx.moveTo(-dir * (R + 8), y); ctx.lineTo(-dir * (R + 34), y + (y / 30) * 10); ctx.stroke();
+        }
+      }
+      if (full && t > .07) {
+        // A pop ring and crumbs thrown out on both sides.
+        const k = Math.min(1, (t - .07) / .4);
+        ctx.globalAlpha = (1 - k) * Math.min(1, e.life / .16);
+        ctx.strokeStyle = '#ffe9a8'; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(0, 0, R + k * 60, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = '#e2b468';
+        for (let i = 0; i < 10; i++) {
+          const ang = -Math.PI / 2 + (i - 4.5) * .32;
+          const sp = 130 + (i % 3) * 40;
+          const cx = Math.cos(ang) * sp * k * (i % 2 ? 1 : -1);
+          const cy = Math.sin(ang) * sp * k + 240 * k * k;
+          ctx.fillRect(cx - 3, cy - 3, 5 + (i % 2) * 2, 5);
+        }
+      }
+      break;
+    }
+    case 'excuse': {
+      // 状态不好，这次不算！: a stopwatch spins backwards round her chest (the last two seconds rewound)
+      // and a red 「不算」 seal slams down beside her head.
+      const t = e.max - e.life;
+      const dir = e.dir ?? 1;
+      const out = Math.min(1, e.life / .2);
+      ctx.translate(e.x, e.y);
+      // Rewind dial.
+      const rr = 74 - Math.min(1, t / .5) * 16;
+      ctx.save();
+      ctx.globalAlpha = out * .9;
+      ctx.strokeStyle = '#bfe3ff'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(0, 0, rr, 0, Math.PI * 2); ctx.stroke();
+      for (let i = 0; i < 12; i++) {
+        const a0 = i / 12 * Math.PI * 2;
+        const l = i % 3 === 0 ? 10 : 5;
+        ctx.beginPath(); ctx.moveTo(Math.cos(a0) * rr, Math.sin(a0) * rr); ctx.lineTo(Math.cos(a0) * (rr - l), Math.sin(a0) * (rr - l)); ctx.stroke();
+      }
+      const hand = -Math.PI / 2 - t * Math.PI * 5;
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(hand) * (rr - 14), Math.sin(hand) * (rr - 14)); ctx.stroke();
+      // The ↺ arrow riding the rim.
+      const arc0 = hand + .4;
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(0, 0, rr + 10, arc0, arc0 + 1.6); ctx.stroke();
+      const ax = Math.cos(arc0) * (rr + 10), ay = Math.sin(arc0) * (rr + 10);
+      const tx = Math.sin(arc0), ty = -Math.cos(arc0);
+      ctx.fillStyle = '#bfe3ff';
+      ctx.beginPath(); ctx.moveTo(ax + tx * 12, ay + ty * 12); ctx.lineTo(ax - ty * 8, ay + tx * 8); ctx.lineTo(ax + ty * 8, ay - tx * 8); ctx.closePath(); ctx.fill();
+      ctx.restore();
+      // The seal.
+      const slam = Math.min(1, t / .08);
+      const sc = 1.9 - .9 * slam + (t > .08 && t < .16 ? .06 * Math.sin((t - .08) / .08 * Math.PI) : 0);
+      ctx.save();
+      ctx.translate(dir * 62, -96);
+      ctx.rotate(-.16 * dir);
+      ctx.scale(sc, sc);
+      ctx.globalAlpha = out * (.4 + .6 * slam);
+      ctx.fillStyle = 'rgba(255,255,255,.85)';
+      ctx.fillRect(-25, -33, 50, 66);
+      ctx.strokeStyle = '#e02030'; ctx.lineWidth = 4;
+      ctx.strokeRect(-25, -33, 50, 66);
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(-20, -28, 40, 56);
+      ctx.fillStyle = '#e02030';
+      ctx.font = 'bold 24px "Ma Shan Zheng", KaiTi, STKaiti, "Noto Serif SC", serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('不', 0, -12); ctx.fillText('算', 0, 14);
+      ctx.restore();
+      if (t > .08 && t < .3) {
+        const k = (t - .08) / .22;
+        ctx.globalAlpha = 1 - k;
+        ctx.strokeStyle = '#ff6b6b'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(dir * 62, -96, 30 + k * 34, 0, Math.PI * 2); ctx.stroke();
+      }
+      break;
+    }
+    case 'rooftop-mark': {
+      // 天台是我的: the landing tell. A red target painted on the floor with the four ticks closing in,
+      // and a thin danger line from the sky onto it that thickens and blinks as the drop nears.
+      const k = e.life / e.max;
+      const blink = k < .35 && Math.floor(e.life * 14) % 2 === 0 ? .45 : 1;
+      const rad = (e.radius ?? 120) * .8;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha *= blink;
+      const beam = ctx.createLinearGradient(0, -e.y, 0, 0);
+      beam.addColorStop(0, 'rgba(255,68,68,0)');
+      beam.addColorStop(1, `rgba(255,68,68,${.25 + (1 - k) * .45})`);
+      ctx.fillStyle = beam;
+      const bw = 2 + (1 - k) * 9;
+      ctx.fillRect(-bw / 2, -e.y, bw, e.y);
+      ctx.fillStyle = `rgba(255,68,68,${.12 + (1 - k) * .18})`;
+      ctx.beginPath(); ctx.ellipse(0, 0, rad, rad * .24, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#FF4444';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.ellipse(0, 0, rad, rad * .24, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(0, 0, rad * .45, rad * .11, 0, 0, Math.PI * 2); ctx.stroke();
+      const close = rad * (.55 + k * .75);
+      ctx.lineWidth = 4;
+      for (const [sx, sy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const ex = sx * close, ey = sy * close * .24;
+        ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(ex + sx * 18, ey + sy * 18 * .24); ctx.stroke();
+      }
+      break;
+    }
+    case 'rooftop-dive': {
+      // 天台是我的: the drop. Speed lines stream above her as she falls onto the mark.
+      ctx.translate(e.x, e.y);
+      const p2 = 1 - e.life / e.max;
+      ctx.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < 6; i++) {
+        const x = (i - 2.5) * 16 + Math.sin(i * 3.1) * 6;
+        const len = 160 + (i % 3) * 60;
+        const top = -150 - len - p2 * 40;
+        const g2 = ctx.createLinearGradient(0, top, 0, -150);
+        g2.addColorStop(0, 'rgba(255,255,255,0)');
+        g2.addColorStop(1, i % 2 ? 'rgba(255,140,140,.75)' : 'rgba(255,255,255,.85)');
+        ctx.strokeStyle = g2;
+        ctx.lineWidth = i % 2 ? 2 : 3;
+        ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, -150 + (i % 3) * 20); ctx.stroke();
+      }
+      break;
+    }
+    case 'rooftop': {
+      // 天台是我的: the landing. The floor cracks out from the heel, a flat shockwave runs along it,
+      // dust bursts to both sides and chips of concrete hop up and fall.
+      const rad = e.radius ?? 120;
+      const t = e.max - e.life;
+      ctx.translate(e.x, e.y);
+      // Cracks: jagged dark lines lying on the floor, drawn in fully at once and fading slowest.
+      ctx.globalAlpha = Math.min(1, e.life / .25) * .85;
+      ctx.strokeStyle = '#3a0d12'; ctx.lineWidth = 2.5;
+      for (let i = 0; i < 7; i++) {
+        const side = i % 2 ? 1 : -1;
+        const ang = (i / 7) * Math.PI;
+        let x = 0, y = 0;
+        ctx.beginPath(); ctx.moveTo(0, 0);
+        for (let j = 1; j <= 4; j++) {
+          x = Math.cos(ang) * rad * .25 * j + Math.sin(i * 7 + j) * 6;
+          y = Math.sin(ang) * rad * .05 * j * side + Math.cos(i * 5 + j) * 2;
+          ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+      // Shockwave along the floor.
+      const q = 1 - (1 - p) * (1 - p);
+      ctx.globalAlpha = (1 - p) * .95;
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 5 * (1 - p) + 1;
+      ctx.beginPath(); ctx.ellipse(0, -2, rad * (.25 + q * 1.1), rad * .18 * (.25 + q * 1.1), 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = '#FF4444'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(0, -2, rad * (.2 + q * .8), rad * .14 * (.2 + q * .8), 0, 0, Math.PI * 2); ctx.stroke();
+      // Dust puffs rolling out both ways.
+      ctx.fillStyle = '#d9c9cf';
+      for (const side of [-1, 1]) for (let i = 0; i < 3; i++) {
+        const d = (40 + i * 26) * q;
+        ctx.globalAlpha = (1 - p) * (.55 - i * .12);
+        ctx.beginPath(); ctx.arc(side * d, -10 - i * 6, 14 + i * 6 + q * 10, Math.PI, 0); ctx.fill();
+      }
+      // Chips of concrete on short arcs.
+      ctx.fillStyle = '#6b5a60';
+      ctx.globalAlpha = 1 - p;
+      for (let i = 0; i < 8; i++) {
+        const vx = (i - 3.5) * 46;
+        const vy = -220 - (i % 3) * 70;
+        const cx = vx * t, cy = vy * t + 900 * t * t;
+        if (cy < 2) ctx.fillRect(cx - 3, cy - 3, 6, 4 + (i % 2) * 2);
+      }
+      break;
+    }
+    case 'howl-ring': {
+      // 狼王来了: one beat of the howl — a single thin white circle rolling out to the shove range.
+      const rad = e.radius ?? 220;
+      const q = 1 - (1 - p) * (1 - p);
+      ctx.translate(e.x, e.y);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = '#ffffff';
+      ctx.globalAlpha = (1 - p) * .85;
+      ctx.lineWidth = 2.2 * (1 - p) + .8;
+      ctx.beginPath(); ctx.arc(0, 0, rad * (.12 + q * .88), 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
     case 'snip-mark': {
       // 剪: a reticle rides the target through the wind-up — brackets turn inward as the window closes.
       const spin = (e.max - e.life) * 5;
@@ -2444,6 +2766,19 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   ctx.globalAlpha = 1;
   ctx.translate(p.x, p.y);
   switch (p.fx) {
+    case 'parry-orb': {
+      // 完美格挡's counter: a soft blue glow around a white core.
+      const pulse = 1 + Math.sin(p.age * 30) * .08;
+      ctx.fillStyle = '#7fd8ff';
+      ctx.globalAlpha = .25;
+      ctx.beginPath(); ctx.arc(0, 0, p.radius * 1.9 * pulse, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = .7;
+      ctx.beginPath(); ctx.arc(0, 0, p.radius * 1.2, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#f2fcff';
+      ctx.beginPath(); ctx.arc(0, 0, p.radius * .6, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
     case 'arrow': {
       ctx.scale(Math.sign(p.vx) || 1, 1);
       if (!prop(ctx, images, ARROW_SRC, Math.max(p.size, 28))) {

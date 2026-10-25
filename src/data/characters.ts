@@ -1156,7 +1156,7 @@ export const ROSTER: CharacterData[] = [
           { op: 'heal', hp: 200 },
           { op: 'fx', life: 1 },
           { op: 'mod', kind: 'guard', time: 6, v: .5 },
-          { op: 'mod', kind: 'relapse', time: 6, v: 250 },
+          { op: 'mod', kind: 'relapse', time: 6, v: 250, mark: 'halo' },
         ],
         brief: '解控并回血；期间霸体，随后减伤，结束时反噬自身',
         detail: '解控并回复 20% 最大生命；期间霸体，6 秒内受伤降低 50%，结束后承受 25% 最大生命的反噬',
@@ -1217,6 +1217,59 @@ export const ROSTER: CharacterData[] = [
         },
         brief: '霸体弹奏换幕并震开近身；数秒内回复提速附吸血',
         detail: '坐到巨大三角琴前霸体弹奏约 2 秒，起手震开近身，舞台切换为起死开战专属幕景；其后 6 秒每秒回复 20 生命、移动速度提高 30%、攻击速度提高 25%，攻击附带 25% 吸血',
+      }),
+    ],
+  },
+  {
+    id: 'natsume', name: '伊泽枣', title: '吉他 / 狼王', quote: '我就在这里，拼命赚钱……！', color: '#FF4444',
+    bands: ['millsage'],
+    ...stats('rush'),
+    // 狼王来了: the form rides the king sheet (every cell is a wolf), so the common cells are the wolf's too.
+    frenzy: { rate: 1.2, rangeMul: 1.35, cdMul: .75, damageMul: 1.3, chain: true, lock: true, air: true, time: 9.25, tint: '#FF4444', swingFx: 'claw', heavyLunge: 90 },
+    view: {
+      kind: 'sprite', common: '/sprites/natsume/common.png', special: '/sprites/natsume/special.png', height: 175,
+      king: '/sprites/natsume/wolf.png', kingScale: 1,
+      extras: ['/sprites/natsume/claw.png'],
+    },
+    skills: [
+      skill(0, 'light', '啧', { damage: 24, start: .065, cd: .2 }),
+      skill(1, 'heavy', '高年级的教育', { range: 132 }),
+      skill(2, 'dash', '专业工种', {
+        damage: 26, speed: 900, start: .1, duration: .78, cd: 5.5, range: 100, reach: 'ground', fx: 'sandwich', knock: 60,
+        react: { kind: 'stand', stun: .32 },
+        finale: { knock: 300, react: { kind: 'knockdown', vy: -220, knocked: .7 } },
+        brief: '贴地穿身往返，回程背后打；转身才能挡，末击击倒',
+        detail: '前冲穿过对手再折回，往返各打一下；回程从背后来，不转身挡不住，末击击倒；贴地，跳起可躲',
+      }),
+      skill(3, 'endure', '状态不好，这次不算！', {
+        damage: 0, range: 0, start: .2, duration: .6, cd: 14, breakout: true, fx: 'excuse',
+        brief: '解控并回血，回复量取决于刚挨的伤害',
+        detail: '解控并回复最近 2 秒内所受伤害的 50%；没挨打时只解控',
+      }),
+      skill(4, 'upper', '天台是我的', {
+        damage: 58, range: 120, start: .55, duration: 1.0, cd: 7, fx: 'rooftop',
+        hitbox: 'disc', knock: 260, react: { kind: 'knockdown', vy: -180, knocked: .7 },
+        brief: '跳出画面无敌，从标记处踩下击倒；离开标记可躲',
+        detail: '跳出画面上方并锁定对手脚下，空中无敌 0.45 秒；0.4 秒后从标记处踩下，击倒；离开标记可躲，可格挡',
+      }),
+      skill(5, 'endure', '狼王来了', {
+        // Kneel .35s, howl about 1s under the moonlight (white rings every .15s shove the field
+        // back), then rise. The form and its mods start at the howl, so 9.25s leaves 8s of wolf
+        // after the 1.25s still to play.
+        cost: 200, damage: 0, range: 220, start: .35, duration: 1.6, fx: 'wolf', holdEndure: true,
+        onActive: [
+          { op: 'form', king: true },
+          { op: 'mod', kind: 'noGain', time: 9.25 },
+          { op: 'mod', kind: 'sprint', time: 9.25 },
+          { op: 'mod', kind: 'lifesteal', time: 9.25, v: .2 },
+          { op: 'mod', kind: 'undying', time: 9.25 },
+          // True super armour (the frenzy brace) without the damage cut: only grabs and control stagger her.
+          { op: 'mod', kind: 'brace', time: 9.25, v: 1 },
+          { op: 'mod', kind: 'relapse', time: 9.25, v: 300 },
+          { op: 'fx', type: 'howl-ring', life: .5, radius: 220, y: -120, announce: { color: '#BFD8FF', life: 1, size: 19, y: -240 } },
+        ],
+        brief: '嚎叫震开后狼化：J / K、吸血不倒；结束反噬',
+        detail: '月光下嚎叫约 1 秒，持续震开周围；随后变身狼人 8 秒：只剩 J / K，三下 J 后扑咬「枣到你了」；移速提高，吸血 20%，真霸体，生命不低于 1；结束反噬 30% 最大生命，可致死；无法获得气',
       }),
     ],
   },

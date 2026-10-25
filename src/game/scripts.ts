@@ -50,6 +50,8 @@ export interface MoveScript {
   customDash?: boolean;
   /** One mid-dash facing change. */
   flip?: boolean;
+  /** The cast draws its own entrance, so the stock super square stays off (狼王来了). */
+  noSuperFx?: boolean;
   /** Spaced ghost stamps instead of the stock dash smear. */
   sparseGhost?: boolean;
   /** Off-screen centre still counts as on stage. */

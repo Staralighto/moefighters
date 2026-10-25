@@ -160,6 +160,8 @@ export class TouchInput {
   private guardEl: Element | null = null;
   private readonly atkTimer = new Map<number, number>();
   private readonly atkHeavy = new Set<number>();
+  /** 完美格挡: attack presses already sent on touch-down because the player was guarding. */
+  private readonly atkParry = new Set<number>();
   private readonly down = (e: PointerEvent) => {
     if (document.body.classList.contains('pad-tune')) return;
     const g = this.getGame();
@@ -173,6 +175,8 @@ export class TouchInput {
       this.held.set(e.pointerId, b);
       if (b.hasAttribute('data-atk')) {
         const id = e.pointerId;
+        // 完美格挡: while guarding, the press is the timing read, so it goes out on touch-down, not on release.
+        if (g.fighters.some(f => f.controller === 0 && f.blocking)) { g.keyDown('KeyJ'); g.keyUp('KeyJ'); this.atkParry.add(id); return; }
         this.atkTimer.set(id, window.setTimeout(() => {
           this.atkTimer.delete(id);
           if (!this.held.has(id)) return;
@@ -302,6 +306,7 @@ export class TouchInput {
 
   /** Short release queues a light. A hold past HEAVY_HOLD already queued a heavy and just lets go. */
   private releaseAtk(id: number, b: HTMLElement, fireLight: boolean): void {
+    if (this.atkParry.delete(id)) return;
     const timer = this.atkTimer.get(id);
     if (timer) window.clearTimeout(timer);
     this.atkTimer.delete(id);

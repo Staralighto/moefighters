@@ -5,7 +5,7 @@ import type { FightGame } from './game.ts';
 export type ModKind =
   | 'brace' | 'poise' | 'dmgDealt' | 'dmgTaken' | 'speed' | 'slow' | 'regen'
   | 'noGain' | 'lockNormals' | 'lockGuard' | 'thorns' | 'debt' | 'nocd' | 'veil'
-  | 'relapse' | 'incoming' | 'reflect' | 'soulorb' | 'lifesteal';
+  | 'relapse' | 'incoming' | 'reflect' | 'soulorb' | 'lifesteal' | 'undying';
 
 /**
  * One running buff.

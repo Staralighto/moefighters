@@ -3,7 +3,7 @@ import type { SfxKind } from '../game/game.ts';
 
 /* Synthesised arcade blips. No sample files to ship — except the horn, see whistle(). */
 const TONES: Record<SfxKind, [number, number]> = {
-  light: [380, .07], heavy: [140, .18], hit: [180, .1], block: [680, .055], super: [780, .55],
+  light: [380, .07], heavy: [140, .18], hit: [180, .1], block: [680, .055], parry: [430, .1], super: [780, .55],
   select: [650, .06], jump: [260, .12], ko: [105, .65], cast: [470, .17], key: [880, .05],
   whistle: [310, .55], slam: [95, .16],
 };
@@ -37,6 +37,7 @@ export class Sfx {
     if (this.muted || !this.ctx) return;
     if (kind === 'whistle') { this.whistle(); return; }
     if (kind === 'slam') { this.slam(); return; }
+    if (kind === 'parry') { this.parry(); return; }
     const [freq, duration] = TONES[kind];
     const t = this.ctx.currentTime, o = this.ctx.createOscillator(), g = this.ctx.createGain();
     o.type = 'square';
@@ -47,6 +48,33 @@ export class Sfx {
     o.connect(g).connect(this.ctx.destination);
     o.start(t);
     o.stop(t + duration);
+  }
+
+  /** 完美格挡: the block blip pitched down and muffled through a lowpass, over a short low thud —
+   *  a shield taking the blow, heavier and duller than the plain block. */
+  private parry(): void {
+    const ctx = this.ctx!;
+    const t = ctx.currentTime;
+    const blip = ctx.createOscillator(), lp = ctx.createBiquadFilter(), gb = ctx.createGain();
+    blip.type = 'square';
+    blip.frequency.setValueAtTime(430, t);
+    blip.frequency.exponentialRampToValueAtTime(140, t + .09);
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(1100, t);
+    lp.frequency.exponentialRampToValueAtTime(380, t + .09);
+    lp.Q.value = .7;
+    gb.gain.setValueAtTime(.075, t);
+    gb.gain.exponentialRampToValueAtTime(.0001, t + .1);
+    blip.connect(lp).connect(gb).connect(ctx.destination);
+    blip.start(t); blip.stop(t + .1);
+    const body = ctx.createOscillator(), gt = ctx.createGain();
+    body.type = 'sine';
+    body.frequency.setValueAtTime(150, t);
+    body.frequency.exponentialRampToValueAtTime(60, t + .12);
+    gt.gain.setValueAtTime(.11, t);
+    gt.gain.exponentialRampToValueAtTime(.0001, t + .13);
+    body.connect(gt).connect(ctx.destination);
+    body.start(t); body.stop(t + .13);
   }
 
   /** 燃尽: a click over a dropping thud, so the impact does not sound like the cast swoop. */

@@ -5,7 +5,7 @@ import { stageThumbSrc, type ImageCache } from '../assets/loader.ts';
 import { FLOOR, H, SIDE, W } from '../game/constants.ts';
 import { violetHidden } from '../game/combat.ts';
 import { IAIDO_PHASE, iaidoCharge } from './clips.ts';
-import { drawBanSign, drawCombo, drawEffect, drawGauge, drawHoldNote, drawKuji, drawLayerBass, drawParticles, drawProjectile, drawRainbowBack, drawRainbowFront, drawRootFx, drawSister, drawTexts, drawWheel, isLiteFx, UI_FONT, zoomAbout } from './fx.ts';
+import { drawBanSign, drawCombo, drawEffect, drawMoonlight, drawGauge, drawHoldNote, drawKuji, drawLayerBass, drawParticles, drawProjectile, drawRainbowBack, drawRainbowFront, drawRootFx, drawSister, drawTexts, drawWheel, isLiteFx, UI_FONT, zoomAbout } from './fx.ts';
 
 /** Backing-store pixels per CSS pixel. The compositor then blits 1:1.
  *  Phones use the screen ratio too: a CSS pixel is several physical pixels, and a 1× store
@@ -165,6 +165,8 @@ export class Renderer {
       c.fill();
     }
 
+    // 狼王来了: the dark veil and the moon pillar sit under every body, so the fighters stay lit.
+    for (const e of g.effects) if (e.type === 'moonlight') drawMoonlight(c, e, 'back');
     // 寿来: the mark is painted on the floor, so it sits under every body.
     for (const e of g.effects) if (e.type === 'lifedraw-mark') zoomAbout(c, bodyScale, e.x, e.y, () => drawEffect(c, e, this.images));
 
@@ -228,7 +230,7 @@ export class Renderer {
           drawEffect(c, { type: 'petal-aura', x: f.x, y: f.y - 105, color: '#ffffff', life: 1, max: 1, radius: 44, age: g.age });
         }
         // 完全复活: the gold halo follows the head from the first frame of the window.
-        if (f.hp > 0 && f.mods.some(m => m.kind === 'relapse' && m.left > 0)) {
+        if (f.hp > 0 && f.mods.some(m => m.kind === 'relapse' && m.left > 0 && m.mark === 'halo')) {
           drawEffect(c, { type: 'halo', x: f.x, y: f.y - 176, color: '#ffd54a', life: 1, max: 1, radius: 16 });
         }
         drawGauge(c, f);
@@ -268,9 +270,10 @@ export class Renderer {
       });
     }
     for (const f of g.fighters) if (f.ban > 0 && f.hp > 0) zoomAbout(c, bodyScale, f.x, f.y, () => drawBanSign(c, f));
-    for (const e of g.effects) if (e.type !== 'ghost' && e.type !== 'lifedraw-mark' && e.type !== 'petal-rain' && e.type !== 'rainbow-pop' && e.type !== 'apparatus') zoomAbout(c, bodyScale, e.x, e.y, () => drawEffect(c, e, this.images));
+    for (const e of g.effects) if (e.type !== 'ghost' && e.type !== 'lifedraw-mark' && e.type !== 'petal-rain' && e.type !== 'rainbow-pop' && e.type !== 'apparatus' && e.type !== 'moonlight') zoomAbout(c, bodyScale, e.x, e.y, () => drawEffect(c, e, this.images));
     // Screen-space effects: the petal rain and the floor-to-sky pillar must not grow with the body.
     for (const e of g.effects) if (e.type === 'petal-rain' || e.type === 'apparatus') drawEffect(c, e, this.images);
+    for (const e of g.effects) if (e.type === 'moonlight') drawMoonlight(c, e, 'front');
     drawParticles(c, g.particles, bodyScale);
     drawTexts(c, g.texts, bodyScale);
     drawKuji(c, g, bodyScale);

@@ -125,6 +125,8 @@ export interface Skill {
   friendly?: boolean;
   /** A blocked projectile does not siphon the attacker's energy (剪, 火的故事). */
   noSiphon?: boolean;
+  /** 完美格挡's counter orb: perfect-blocking it never fires another orb back. */
+  parryOrb?: boolean;
   /** 冰川打火姬: a guard does not catch this hit. A jump still clears a low shot. */
   noBlock?: boolean;
   /** 小摩卡要上了: a defender who is already 减速 cannot block this hit. */
@@ -193,11 +195,12 @@ export interface DomainSpec {
 
 /** Scalar buffs a move can arm. The kernel still stores these on Fighter until mods.ts folds them. */
 export type BuffKind = 'brace' | 'poise' | 'muscle' | 'shout' | 'feast' | 'box' | 'sprint' | 'noGain' | 'rose' | 'debt' | 'encore' | 'relapse'
-  | 'vulnerable' | 'reflect' | 'guard';
+  | 'vulnerable' | 'reflect' | 'guard' | 'lifesteal' | 'undying';
 
 /** No clock of its own. Runs at one of the three gates the attack clock already has. */
 export type Op =
-  | { op: 'mod'; kind: BuffKind; time?: number; v?: number; set?: boolean; max?: boolean }
+  /** mark: the status graphic this mod wears, when one kind serves two looks (完全复活's halo). */
+  | { op: 'mod'; kind: BuffKind; time?: number; v?: number; set?: boolean; max?: boolean; mark?: string }
   | { op: 'form'; king?: boolean }
   | { op: 'repel'; range?: number; push: number; stun?: number }
   | { op: 'heal'; hp: number }
@@ -286,6 +289,11 @@ export interface CharacterData {
     air?: boolean;
     /** U I O L stay locked for the form. The fighter's `king` flag is what the move sets. */
     lock?: boolean;
+    /** Effect key stamped at the active frame of every ground and air J / K while the form lasts,
+     *  hit or whiff (伊泽枣's claws). Data, so the kernel never reads a move name. */
+    swingFx?: string;
+    /** Pixels the ground K carries her forward, spread over the windup and the strike (伊泽枣's pounce). */
+    heavyLunge?: number;
   };
 }
 

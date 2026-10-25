@@ -10,7 +10,7 @@ import { addMod, atkMul, clearMod, has, jumpMul, regenPerSec, speedMul, tickMods
 import { SCRIPTS } from './scripts.ts';
 import { stepAI } from './ai.ts';
 import { beginDomain as openDomain, stepDomains, type Domain } from './domains.ts';
-import { COMBO_DECAY, COMBO_ESCAPE, CONTROLS, FLOOR, GRAVITY, INPUT_BUFFER, SIDE, STEP, X_MAX, X_MIN, clamp } from './constants.ts';
+import { COMBO_DECAY, COMBO_ESCAPE, CONTROLS, FLOOR, GRAVITY, INPUT_BUFFER, PARRY_WHIFF_LOCK, PARRY_WINDOW, SIDE, STEP, X_MAX, X_MIN, clamp } from './constants.ts';
 import { clipFor } from '../render/clips.ts';
 
 /* Fixed-step arcade simulation. This module never touches the DOM or a canvas; it emits effects as data. */
@@ -66,7 +66,7 @@ export const MINION_BAND: BandId = 'mygo';
 export const RECORD_TIME = 3.5;
 const ECHO_DMG = .5;
 const ECHO_FADE = .4;
-export type SfxKind = 'light' | 'heavy' | 'hit' | 'block' | 'super' | 'select' | 'jump' | 'ko' | 'cast' | 'key' | 'whistle' | 'slam';
+export type SfxKind = 'light' | 'heavy' | 'hit' | 'block' | 'parry' | 'super' | 'select' | 'jump' | 'ko' | 'cast' | 'key' | 'whistle' | 'slam';
 
 export interface Effect {
   type: string; x: number; y: number; color: string; life: number; max: number;
@@ -81,6 +81,10 @@ export interface Effect {
   dup?: boolean;
   /** Integrated motion for script-driven effects (寿来's return orb). */
   vx?: number; vy?: number;
+  /** Swing graphics: the heavier press, and whether the swing connected on its active frame. */
+  heavy?: boolean; hit?: boolean; air?: boolean;
+  /** Rides on this fighter at the stamped offset instead of staying where it was spawned (狼爪). */
+  follow?: number; ox?: number; oy?: number;
 }
 export interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string; size: number }
 export interface FloatingText { text: string; x: number; y: number; color: string; life: number; max: number; size: number }
@@ -395,6 +399,9 @@ export class FightGame {
       if (code === c.block) { f.blockTap = 0; f.blockBuffer = INPUT_BUFFER; }
       const index = c.attacks.indexOf(code);
       if (index >= 0) {
+        // 完美格挡: while guarding, an attack press also opens the timing window. It still queues as
+        // before, so letting go of the guard right after a perfect block swings into the stagger.
+        if (f.blocking && f.parry <= 0 && f.parryLock <= 0) f.parry = PARRY_WINDOW;
         const last = f.queue[f.queue.length - 1];
         if (last?.index === index) last.ttl = INPUT_BUFFER;
         else f.queue.push({ index, ttl: INPUT_BUFFER });
@@ -554,7 +561,7 @@ export class FightGame {
       this.shake = 5;
       this.audio.play('super', f.id);
       this.setBanner(skill.name, f.data.name + ' · SUPER', 1.0);
-      this.effect('super', f.x, f.y - 80, f.data.color, .8, { radius: 160 });
+      if (!SCRIPTS[skill.fx]?.noSuperFx) this.effect('super', f.x, f.y - 80, f.data.color, .8, { radius: 160 });
     } else {
       this.audio.play(slot === 0 ? 'light' : slot === 1 ? 'heavy' : 'cast', f.id);
     }
@@ -697,6 +704,7 @@ export class FightGame {
     this.stepMinions(dt);
     if (this.mode === 'team' || this.mode === 'challenge') this.separate();
     for (const f of this.fighters) advanceAnim(f, dt);
+    this.snapFollowers();
     stepProjectiles(this, dt);
 
     if (this.mode === 'training') {
@@ -1021,7 +1029,10 @@ export class FightGame {
     }
     const recWas = f.recLeft;
     const comboWas = f.comboTime;
+    const parryWas = f.parry;
     for (const key of DECAY_TIMERS) f[key] = Math.max(0, f[key] - dt);
+    // 完美格挡: a window that ran out on nothing is a whiff. A success zeroes parry in hit(), so it never gets here.
+    if (parryWas > 0 && f.parry === 0) f.parryLock = PARRY_WHIFF_LOCK;
     // 彩虹色: a finished 4-hit string is a happy moment — the window just closed on a live combo.
     if (comboWas > 0 && f.comboTime === 0 && f.combo >= 4) rainbowRoll(this, f);
     tickMods(this, f, dt);
@@ -1183,6 +1194,8 @@ export class FightGame {
       if (f.attack?.skill.air) f.attack = null;
     }
     f.x = clamp(f.x, X_MIN, X_MAX);
+    // 完美格挡: the swing that got perfect-blocked stops here and the body staggers, like a hit without the damage.
+    if (f.parried > 0) { f.stun = Math.max(f.stun, f.parried); f.attack = null; f.parried = 0; }
     updateAttack(this, f, dt);
     f.x = clamp(f.x, X_MIN, X_MAX);
     // After the cast and any channel that just lengthened a cooldown, so the same step cannot leave a skill on the clock.
@@ -1222,6 +1235,15 @@ export class FightGame {
         for (let i = effLen; i < this.effects.length; i++) this.effects[i].local = true;
       }
       if (p1) advanceAnim(p1, STEP);
+    }
+  }
+
+  /** Effects that ride a fighter take its post-step position, so a lunging swing never trails the body. */
+  private snapFollowers(): void {
+    for (const e of this.effects) {
+      if (e.follow == null) continue;
+      const o = this.fighterById(e.follow);
+      if (o) { e.x = o.x + (e.ox ?? 0); e.y = o.y + (e.oy ?? 0); }
     }
   }
 

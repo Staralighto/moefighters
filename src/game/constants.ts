@@ -14,6 +14,11 @@ export const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b
 export const COMBO_DECAY = .085;
 export const COMBO_ESCAPE = 7;
 
+/** 完美格挡: an attack press while guarding opens this window; a hit landing inside it is a perfect block. */
+export const PARRY_WINDOW = .12;
+/** A window that closes on nothing locks the next one out this long, so mashing is only a normal guard. */
+export const PARRY_WHIFF_LOCK = .35;
+
 /** 1P yellow, 2P green. */
 export const SIDE = ['#FDE979', '#C8F181'] as const;
 
