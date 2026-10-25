@@ -56,6 +56,8 @@ export function dumpGame(g: FightGame, rng: Rng, extra: Record<string, unknown> 
         const o: Record<string, unknown> = {};
         for (const [fk, fv] of Object.entries(f)) if (fk !== 'data' && typeof fv !== 'function') o[fk] = enc(fv, f.data, 0, true);
         o.$char = f.data.id;
+        // A summon carries a reduced sheet (the apparatus has 5% hp); reload it from this, not the base.
+        o.$hp = f.data.hp;
         return o;
       });
     } else if (k === 'projectiles') {
@@ -76,9 +78,11 @@ export function loadGame(g: FightGame, rng: Rng, text: string): Record<string, u
       for (const raw of v as Record<string, unknown>[]) {
         const charData = ROSTER_BY_ID.get(String(raw.$char));
         if (!charData) continue;
+        const hp = typeof raw.$hp === 'number' ? raw.$hp : charData.hp;
+        const sheet = hp === charData.hp ? charData : { ...charData, hp };
         const id = Number(raw.id);
-        const f = g.fighters.find(x => x.id === id && x.data === charData) ?? makeFighter(charData, id, { x: 0, facing: 1, controller: null, energy: 0, team: 0 });
-        for (const [fk, fv] of Object.entries(raw)) if (fk !== '$char') (f as unknown as Record<string, unknown>)[fk] = dec(fv);
+        const f = g.fighters.find(x => x.id === id && x.data === sheet) ?? makeFighter(sheet, id, { x: 0, facing: 1, controller: null, energy: 0, team: 0 });
+        for (const [fk, fv] of Object.entries(raw)) if (fk !== '$char' && fk !== '$hp') (f as unknown as Record<string, unknown>)[fk] = dec(fv);
         list.push(f);
       }
       g.fighters = list;
@@ -97,8 +101,16 @@ export function hashGame(g: FightGame, rng: Rng): number {
     }
   };
   mix(g.phase + g.round + ':' + g.time + ':' + g.wins.join(',') + ':' + rng.s);
-  for (const f of g.fighters) { prims(f); if (f.attack) mix('a' + f.attack.index + ':' + f.attack.t + ':' + f.attack.serial); }
+  for (const f of g.fighters) {
+    prims(f);
+    mix('hp' + f.data.hp + ';');
+    if (f.attack) mix('a' + f.attack.index + ':' + f.attack.t + ':' + f.attack.serial);
+  }
   for (const p of g.projectiles) prims(p);
+  for (const d of g.domains) {
+    prims(d);
+    mix('b' + d.background + ':' + d.buffs.map(b => b.kind + b.v + (b.atk ?? '')).join(',') + ';');
+  }
   return h >>> 0;
 }
 

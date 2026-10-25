@@ -80,8 +80,8 @@ export async function postMail(body: Record<string, unknown>, signal?: AbortSign
         continue;
       }
       throw new MailError(lastWasTimeout
-        ? '网络连接超时，若开启了代理请尝试切换节点或关闭后重试'
-        : '网络连接失败，若开启了代理请尝试切换节点或关闭后重试');
+        ? '网络连接超时，请检查网络后重试'
+        : '网络连接失败，请检查网络后重试');
     }
     cleanup();
     let data: unknown = null;
@@ -94,7 +94,7 @@ export async function postMail(body: Record<string, unknown>, signal?: AbortSign
       }
       if (res.status === 429) throw new MailError('联机人数较多，请稍后再试');
       if (res.status >= 500) throw new MailError('服务响应异常，请稍后再试');
-      throw new MailError('网络连接失败，若开启了代理请尝试切换节点或关闭后重试');
+      throw new MailError('网络连接失败，请检查网络后重试');
     }
     const obj = unwrap(data);
     if (!res.ok) {
@@ -111,8 +111,8 @@ export async function postMail(body: Record<string, unknown>, signal?: AbortSign
     return obj;
   }
   throw new MailError(lastWasTimeout
-    ? '网络连接超时，若开启了代理请尝试切换节点或关闭后重试'
-    : '网络连接失败，若开启了代理请尝试切换节点或关闭后重试');
+    ? '网络连接超时，请检查网络后重试'
+    : '网络连接失败，请检查网络后重试');
 }
 
 export function sleep(ms: number, signal?: AbortSignal): Promise<void> {

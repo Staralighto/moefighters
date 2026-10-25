@@ -1,6 +1,6 @@
 import type { HitReact, Op, Skill } from '../data/types.ts';
 import { gainEnergy, gainGauge, type Attack, type Fighter } from './fighter.ts';
-import { addDebt, addMod, dmgDealtMul, dmgTakenMul, has, incomingMul, reflectAmount } from './mods.ts';
+import { addDebt, addMod, dmgDealtMul, dmgTakenMul, has, incomingMul, lifestealOf, reflectAmount } from './mods.ts';
 import type { FightGame, Projectile, SealVolley } from './game.ts';
 import { CONTROLS, FLOOR, GRAVITY, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
 import { attackPhase } from './animState.ts';
@@ -317,6 +317,9 @@ function veilMiss(g: FightGame, defender: Fighter, skill: Skill): boolean {
   return g.random() < chance;
 }
 
+/** 舞台装置: this share of damage taken by the device is borne by its summoner. */
+const APPARATUS_SHARE = .8;
+
 export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: Skill, source: HitSource, originX = attacker.x): boolean {
   // friendly is the one blast that reads everyone on the field (火的故事).
   const blast = !!skill.friendly;
@@ -423,6 +426,8 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     if (skill.slowOnBlock) applySlow(defender, skill);
     g.audio.play('block', attacker.id);
     g.text('格挡', defender.x, defender.y - 170, '#91eaff', .35, 16);
+    // 彩虹色: steering a hit into the guard is a happy moment for the blocker.
+    rainbowRoll(g, defender);
     if (defender.guard <= 0) {
       defender.guard = 0;
       defender.stun = hitStun(.9);
@@ -436,6 +441,8 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       defender.blockBuffer = 0;
       defender.blockLeft = 0;
       g.text('破防!', defender.x, defender.y - 200, SIDE[0], .8, 30);
+      // 彩虹色: cracking the guard open is a happy moment for the swinger.
+      rainbowRoll(g, attacker);
     }
   } else if (!quiet) {
     attacker.combo = attacker.comboTime > 0 ? attacker.combo + 1 : 1;
@@ -443,6 +450,8 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     attacker.hitCount++;
     g.totalHits[attacker.id]++;
     g.maxCombo[attacker.id] = Math.max(g.maxCombo[attacker.id], attacker.combo);
+    // 彩虹色: the tenth clean hit of a string always pays, sharing the same cooldown.
+    if (attacker.combo === 10) rainbowRoll(g, attacker, true);
     damage *= Math.max(.4, 1 - (attacker.combo - 1) * attacker.comboDecay);
     // 最喜欢闪闪发光的东西！: unblocked hits only, and the damage number prints one size up.
     crit = attacker.critChance > 0 && g.random() < attacker.critChance;
@@ -538,6 +547,8 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
           defender.downTime = 0;
           if (pose.stun != null) defender.stun = hitStun(pose.stun);
           if (pose.holdStill) holdStill = true;
+          // 彩虹色: putting the opponent on the floor is a happy moment.
+          rainbowRoll(g, attacker);
         }
         }
       }
@@ -586,7 +597,17 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     g.text('-' + Math.round(damage), defender.x + dir * 8, defender.y - 148, '#fff', .35, 16);
   }
 
-  defender.hp = clamp(defender.hp - damage, 0, defender.data.hp);
+  // 舞台装置: most of a hit on the device is borne by the body that summoned it. The share is
+  // pure hp loss on the owner — no stagger, no hit reactions — and the total damage is unchanged.
+  let deviceHpLoss = damage;
+  if (defender.apparatus && defender.summoner != null) {
+    const owner = g.fighterById(defender.summoner);
+    if (owner && owner.hp > 0) {
+      owner.hp = clamp(owner.hp - damage * APPARATUS_SHARE, 0, owner.data.hp);
+      deviceHpLoss = damage * (1 - APPARATUS_SHARE);
+    }
+  }
+  defender.hp = clamp(defender.hp - deviceHpLoss, 0, defender.data.hp);
   if (defender.hp <= 0 && defender.deathSave > 0) {
     // 想成为人类: lethal damage stops at 1 hp, spends a charge, and clears the hit's locks. One sparks, no text.
     defender.deathSave--;
@@ -604,7 +625,9 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     attacker.vainEnergy = 0;
   }
   // 潜在表明: a quiet cut of the damage dealt comes back as healing, capped at max health.
-  if (attacker.lifesteal > 0 && damage > 0) attacker.hp = Math.min(attacker.data.hp, attacker.hp + damage * attacker.lifesteal);
+  // 起死开战: the window's lifesteal mod rides on top of the challenge-deck field.
+  const steal = attacker.lifesteal + lifestealOf(attacker);
+  if (steal > 0 && damage > 0) attacker.hp = Math.min(attacker.data.hp, attacker.hp + damage * steal);
   // 竟敢无视灯: melee hits pain the attacker back — pure hp loss, no stagger, no fx, it can kill.
   if (defender.thorns > 0 && skill.type !== 'projectile' && damage > 0) attacker.hp = Math.max(0, attacker.hp - damage * defender.thorns);
   // 我可是很脆弱的哦: every source pays back a share, projectiles and grabs included.
@@ -1013,6 +1036,7 @@ function runOps(g: FightGame, f: Fighter, s: Skill, ops: Op[]): void {
     } else if (op.op === 'summon') {
       if (op.kind === 'ally') g.summonAlly(f);
       else if (op.kind === 'named') g.summonNamed(f, op.id);
+      else if (op.kind === 'apparatus') g.summonApparatus(f);
       else g.summonHalf(f);
     }
   }
@@ -1158,6 +1182,8 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
       if (sc?.flash) sc.flash(g, f, a);
       else g.effect(s.fx, f.x + f.facing * 65, f.y - (s.type === 'sweep' ? 22 : 83), f.data.color, .22, { dir: f.facing, radius: s.range * .5 });
     }
+    // 领域: any move that declares one opens it on its active frame. Later fields cover it.
+    if (a.skill.domain) g.beginDomain(f, a.skill);
     // 解控 rides after the cast's own frame: the move lands first, the shared shockwave cleans up after.
     if (s.breakout) escapePulse(g, f);
     if (a.index >= 2 && !s.super) g.text(s.name, f.x, f.y - 190, f.data.color, .65, 17);
@@ -1496,13 +1522,16 @@ SCRIPTS['world'] = {
     if (s) addMod(f, 'noGain', s.duration + (s.root ?? 0), { max: true });
   },
 };
-/** Repel pulse while a seated super is up: anyone closing in gets bounced. Returns whether anyone was pushed. */
-function repelPulse(g: FightGame, f: Fighter, power: number, range = DRUM_REPEL_RANGE): boolean {
+/** Repel pulse while a seated super is up: anyone closing in gets bounced. Returns whether anyone
+ *  was pushed. `ahead` widens the reach on the facing side, for a hitbox that sits in front. */
+function repelPulse(g: FightGame, f: Fighter, power: number, range = DRUM_REPEL_RANGE, ahead = range): boolean {
   let pushed = false;
-  for (const o of g.opponents(f)) {
-    if (o.hp <= 0 || o.invuln > 0) continue;
+  // In-place scan: this runs every 0.1s through the war pose, so no opponents() array per tick.
+  for (const o of g.fighters) {
+    if (!g.isEnemy(f, o) || o.hp <= 0 || o.echo || o.invuln > 0) continue;
     const dx = o.x - f.x;
-    if (Math.abs(dx) < range) {
+    const reach = dx * f.facing >= 0 ? ahead : range;
+    if (Math.abs(dx) < reach) {
       const dir = Math.sign(dx) || f.facing;
       o.vx = dir * power;
       o.stun = Math.max(o.stun, .22);
@@ -2647,6 +2676,207 @@ function emit_cloak(g: FightGame, f: Fighter): void {
 SCRIPTS['iaido'] = { update: step_iaido, noMelee: true, hitY: 56 };
 SCRIPTS['tea'] = { update: step_tea, skipCount: true, noMelee: true };
 SCRIPTS['cloak'] = { emit: emit_cloak, noMelee: true };
+
+/* ---- 汐见萤 ---- */
+
+/** 彩虹色: happy moments (guard crack, own block, a knockdown, a finished combo) roll for a
+ *  small random blessing; the tenth clean hit of a string always pays. `guaranteed` skips the
+ *  roll only — the cooldown gate is shared with every other path. Declared on
+ *  CharacterData.rainbow so this stays a data check, not an id branch; the internal cooldown
+ *  lives on Fighter.rainbowCd via DECAY_TIMERS. */
+export function rainbowRoll(g: FightGame, f: Fighter, guaranteed = false): void {
+  // The guest predicts its own 2P presses; blessings are host-authoritative.
+  if (g.netRole === 'guest') return;
+  const spec = f.data.rainbow;
+  if (!spec || f.hp <= 0 || f.rainbowCd > 0 || g.phase !== 'fight') return;
+  if (!guaranteed && g.random() >= spec.chance) return;
+  f.rainbowCd = spec.cooldown;
+  g.effect('rainbow-pop', f.x, f.y - 108, f.data.color, 1.5, { fighter: f.id });
+  g.audio.play('key', f.id);
+  const pick = Math.floor(g.random() * 4);
+  if (pick === 0) {
+    f.hp = Math.min(f.data.hp, f.hp + 60);
+    g.text('+60', f.x, f.y - 168, HEAL_TEXT, .7, 20);
+  } else if (pick === 1) {
+    gainEnergy(f, 25);
+    g.text('+25 气', f.x, f.y - 168, '#ffe08a', .7, 20);
+  } else if (pick === 2) {
+    for (let i = 0; i < f.cooldowns.length; i++) f.cooldowns[i] = Math.max(0, f.cooldowns[i] - 2);
+    g.text('冷却 -2 秒', f.x, f.y - 168, '#8ad8ff', .7, 20);
+  } else {
+    addMod(f, 'speed', 3, { v: 1.15 });
+    g.text('+15% 移速', f.x, f.y - 168, '#c0a8ff', .7, 20);
+  }
+  g.text('彩虹色！', f.x, f.y - 205, '#ffffff', .8, 17);
+}
+
+/** 小馒头投喂: three short lobs, one arc pair per cookie. */
+const MANJU_ARCS = [
+  { vx: 380, vy: -620 },
+  { vx: 500, vy: -560 },
+  { vx: 620, vy: -500 },
+];
+
+function spawnManju(g: FightGame, f: Fighter, a: Attack, index: number): void {
+  const s = a.skill;
+  const arc = MANJU_ARCS[index % MANJU_ARCS.length];
+  g.projectiles.push({
+    owner: f.id,
+    x: f.x + f.facing * 42,
+    y: f.y - 118,
+    vx: f.facing * arc.vx * (f.data.trait === 'focus' ? 1.15 : 1),
+    vy: arc.vy,
+    life: s.life ?? 1.2,
+    skill: withGuard(s, index),
+    color: f.data.color,
+    radius: 10,
+    size: s.size ?? 34,
+    fx: 'manju',
+    attack: a,
+    hit: new Set(),
+    trail: [],
+    age: 0,
+  });
+}
+
+function volley_manju(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  const volley = a.burst || s.count || 1;
+  while (a.shots < volley && a.t >= s.start + a.shots * (s.interval ?? .18)) {
+    spawnManju(g, f, a, a.shots);
+    a.shots++;
+  }
+}
+
+/** 重生之乐音: eight notes fan out spinning, then one turn and they seek — far and for as
+ *  long as it takes. Only the last stretch goes straight (REBIRTH_LOCK), so the foe can slip
+ *  the line; a missed note then flies off stage and the boundary cull takes it. */
+const REBIRTH_NOTES = 8;
+const REBIRTH_SPEED = 270;
+const REBIRTH_CURL = 2.6;
+const REBIRTH_TURN = 1.0;
+const REBIRTH_LOCK = 120;
+const REBIRTH_HEAL = 5;
+
+function volley_rebirth(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  const volley = a.burst || s.count || REBIRTH_NOTES;
+  while (a.shots < volley && a.t >= s.start) {
+    const ang = a.shots * Math.PI * 2 / REBIRTH_NOTES + Math.PI / 8;
+    const speed = REBIRTH_SPEED * (f.data.trait === 'focus' ? 1.15 : 1);
+    g.projectiles.push({
+      owner: f.id,
+      x: f.x,
+      y: f.y - 96,
+      vx: Math.cos(ang) * speed,
+      vy: Math.sin(ang) * speed * .55,
+      life: s.life ?? 2.4,
+      skill: withGuard(s, a.shots),
+      color: f.data.color,
+      radius: 9,
+      size: s.size ?? 34,
+      fx: 'rebirth',
+      attack: a,
+      hit: new Set(),
+      trail: [],
+      age: 0,
+    });
+    a.shots++;
+  }
+}
+
+function shot_rebirth(g: FightGame, p: Projectile, dt: number): boolean {
+  const owner = g.fighterById(p.owner);
+  if (!p.returned) {
+    if (p.age >= REBIRTH_TURN) {
+      // The turn: heading flips to a seek, and the hit list empties so the way home can connect.
+      p.returned = true;
+      p.hit.clear();
+      p.skill = withGuard(p.skill, 1);
+    } else {
+      // The spiral: every note keeps curving the same way, so the fan winds itself out.
+      const w = REBIRTH_CURL * dt;
+      const c = Math.cos(w), sn = Math.sin(w);
+      const vx = p.vx * c - p.vy * sn;
+      p.vy = p.vx * sn + p.vy * c;
+      p.vx = vx;
+    }
+  }
+  if (p.returned && !p.locked && owner && owner.hp > 0) {
+    const foe = g.nearestEnemyTo(owner, p.x);
+    if (foe) {
+      const dx = foe.x - p.x, dy = (foe.y - 83) - p.y;
+      if (Math.hypot(dx, dy) < REBIRTH_LOCK) {
+        // Close enough to commit: the note stops steering and flies its line, so a sidestep
+        // or a jump slips it. A miss carries it off stage, where the cull drops it.
+        p.locked = true;
+      } else {
+        const spd = Math.hypot(p.vx, p.vy) || 420;
+        const ang = Math.atan2(p.vy, p.vx);
+        let diff = Math.atan2(dy, dx) - ang;
+        if (diff > Math.PI) diff -= Math.PI * 2;
+        if (diff < -Math.PI) diff += Math.PI * 2;
+        const turn = Math.max(-2.6 * dt, Math.min(2.6 * dt, diff));
+        p.vx = Math.cos(ang + turn) * spd;
+        p.vy = Math.sin(ang + turn) * spd;
+      }
+    }
+  }
+  return false;
+}
+
+function hit_rebirth(g: FightGame, attacker: Fighter, defender: Fighter): boolean {
+  // Every clean connection sings a little health back to her, blocked hits do not.
+  if (defender.hp > 0 && attacker.hp > 0 && attacker.hp < attacker.data.hp) {
+    attacker.hp = Math.min(attacker.data.hp, attacker.hp + REBIRTH_HEAL);
+    g.text('+' + REBIRTH_HEAL, attacker.x, attacker.y - 158, HEAL_TEXT, .5, 15);
+  }
+  return false;
+}
+
+/** 起死开战: the grand piano lands in front of her, so the shove reaches far past it and only a
+ *  short way behind — enemies in front read as pushed out by the piano itself. The opening
+ *  playing loop keeps pressing the shove, so standing in the piano is not survivable. */
+const WAR_REPEL_PUSH = 650;
+const WAR_REPEL_BEHIND = 170;
+const WAR_REPEL_AHEAD = 650;
+const WAR_REPEL_EVERY = .1;
+
+function repelWar(g: FightGame, f: Fighter): void {
+  repelPulse(g, f, WAR_REPEL_PUSH, WAR_REPEL_BEHIND, WAR_REPEL_AHEAD);
+}
+
+function emit_war(g: FightGame, f: Fighter): void {
+  repelWar(g, f);
+  g.flash = Math.max(g.flash, .18);
+  g.shake = Math.max(g.shake, 6);
+}
+
+/** The playing pose keeps shoving on a fast clock until the move ends. */
+function step_war(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (a.t < s.start || a.t >= s.duration) return;
+  if (Math.floor(a.t / WAR_REPEL_EVERY) > Math.floor(Math.max(0, a.t - dt) / WAR_REPEL_EVERY)) repelWar(g, f);
+}
+
+SCRIPTS['manju'] = { volley: volley_manju, trail: 5 };
+SCRIPTS['apparatus'] = { noMelee: true };
+// trail stays under the net packet budget: eight comets fly at once, and each one's
+// trail serializes as a single change (112 points is a one-comet cast, see music-note).
+SCRIPTS['rebirth'] = { volley: volley_rebirth, shot: shot_rebirth, hit: hit_rebirth, trail: 32 };
+SCRIPTS['war'] = {
+  emit: emit_war,
+  update: step_war,
+  noMelee: true,
+  // The piano and the petal rain belong to the cast pose, not the active frame: both are on
+  // screen from frame 1. The field itself (backdrop + buffs) opens at the active frame.
+  cast(g, f) {
+    const s = f.attack?.skill;
+    if (!s) return;
+    g.effect('war-piano', f.x, f.y, f.data.color, s.duration + .15, { dir: f.facing });
+    g.effect('petal-rain', f.x, f.y, '#ffffff', 1.5);
+  },
+};
 /** 武士道: the lunge is over before the first cut. The cuts then creep forward. */
 export const BUSHIDO_LUNGE = .14;
 export const BUSHIDO_SPAN = W * .15;

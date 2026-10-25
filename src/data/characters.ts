@@ -1124,7 +1124,7 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
-    id: 'kanata', name: '泽海奏多', title: '键盘 / 余命', quote: '我这人可是很脆弱的哦？', color: '#9DB9B9',
+    id: 'kanata', name: '泽海奏多', title: '键盘 / 白月光', quote: '我这人可是很脆弱的哦？', color: '#9DB9B9',
     bands: ['millsage'],
     ...stats('focus'),
     view: {
@@ -1159,7 +1159,7 @@ export const ROSTER: CharacterData[] = [
           { op: 'mod', kind: 'relapse', time: 6, v: 250 },
         ],
         brief: '解控并回血；期间霸体，随后减伤，结束时反噬自身',
-        detail: '解控并回复 20% 最大生命；期间霸体，6 秒内受伤降低 50%，结束后反噬 25% 最大生命，可致死',
+        detail: '解控并回复 20% 最大生命；期间霸体，6 秒内受伤降低 50%，结束后承受 25% 最大生命的反噬',
       }),
       skill(5, 'projectile', '让大家幸福的音乐', {
         cost: 120, damage: 34, count: 10, interval: .28, size: 34, life: .9,
@@ -1168,6 +1168,55 @@ export const ROSTER: CharacterData[] = [
         holdEndure: true, jumpCancel: 1, knock: 150, gain: 2,
         brief: '原地弹奏并霸体；周期震开近身，追踪音符飞一段即散',
         detail: '原地弹奏 3 秒，期间霸体，每 0.3 秒震开近身；其间发射十枚追踪音符，飞约 0.9 秒后消散。1 秒后可后跳取消',
+      }),
+    ],
+  },
+  {
+    id: 'hotaru', name: '汐见萤', title: '主唱兼键盘 / 装置', quote: '让millsage，就此结束。', color: '#99FF99',
+    bands: ['millsage'],
+    ...stats('focus'),
+    rainbow: { chance: .12, cooldown: 10 },
+    view: {
+      kind: 'sprite', common: '/sprites/hotaru/common.png', special: '/sprites/hotaru/special.png', height: 170,
+      extras: ['/sprites/hotaru/piano.png', '/sprites/hotaru/cookie.png'],
+    },
+    skills: [
+      skill(0, 'light', '指尖'),
+      skill(1, 'heavy', '踏板'),
+      skill(2, 'projectile', '小馒头投喂', {
+        damage: 10, count: 3, interval: .18, range: 400, start: .22, duration: .85, cd: 5,
+        life: 1.2, size: 34, knock: 60, fx: 'manju', motion: 'fall', floor: 'splash',
+        brief: '弧线连投三枚小馒头；落地即碎，可挡可跳',
+        detail: '向前上方弧线投出三枚小馒头饼干，每枚 10 伤害，飞行约半秒落地即碎；可格挡或跳过',
+      }),
+      skill(3, 'endure', '舞台装置', {
+        damage: 0, range: 140, start: .4, duration: .9, cd: 10, fx: 'apparatus',
+        onActive: [
+          { op: 'summon', kind: 'apparatus' },
+        ],
+        brief: '装置替身只会普攻；自身隐身，其被击败才计冷却',
+        detail: '召唤一台舞台装置（生命半成、攻击三成、只会普攻），受到伤害的八成由萤承担，不会自行退场，电脑对手会优先攻击它；装置在场时萤半透明隐身：敌方普攻两成打空、飞行道具九成打空，抓投和必杀仍必中；装置被击败后才进入 10 秒冷却',
+      }),
+      skill(4, 'projectile', '重生之乐音', {
+        damage: 7, count: 8, range: 520, start: .3, duration: 1.05, cd: 9,
+        life: 10, size: 34, knock: 90, gain: 2, fx: 'rebirth',
+        brief: '八枚音符折返持续追踪；贴近转直线可躲，命中回血',
+        detail: '向八方旋出八枚音符，外扩后折返并远距离持续追踪对手，每枚 7 伤害，命中任一发回复萤 5 生命；贴近对手时转为直线冲出、可侧移或跳跃躲避，可格挡，至多持续 10 秒或飞出场地即消散',
+      }),
+      skill(5, 'projectile', '起死开战', {
+        cost: 250, damage: 0, count: 0, range: 480, start: .55, duration: 2.05, fx: 'war',
+        holdEndure: true,
+        domain: {
+          background: '/stages/hotaru-war.png',
+          time: 6,
+          buffs: [
+            { kind: 'regen', v: 20 },
+            { kind: 'speed', v: 1.3, atk: 1.25 },
+            { kind: 'lifesteal', v: .25 },
+          ],
+        },
+        brief: '霸体弹奏换幕并震开近身；数秒内回复提速附吸血',
+        detail: '坐到巨大三角琴前霸体弹奏约 2 秒，起手震开近身，舞台切换为起死开战专属幕景；其后 6 秒每秒回复 20 生命、移动速度提高 30%、攻击速度提高 25%，攻击附带 25% 吸血',
       }),
     ],
   },

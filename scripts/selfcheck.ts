@@ -682,6 +682,19 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(p1.energy < 100 && p1.energy > energy, 'energy recovers on its own and is not pinned');
   assert.equal(p2.hp, 400, 'turning the switches off does not bring the regen back');
 }
+// training: the summoned ally gets a brain, the ordinary dummy stays frozen
+{
+  const g = newGame(at('hotaru'), at('boulder'), 'training');
+  const v2 = g.fighters[1];
+  g.keyDown('KeyI');
+  run(g, .8);
+  const ally = g.fighters.find(f => f.minion);
+  assert.ok(ally, 'the device joins in training');
+  const from = ally!.x;
+  run(g, 2);
+  assert.ok(Math.abs(ally!.x - from) > 1, 'the training ally moves on its own brain');
+  assert.equal(v2.ai.move, 0, 'the ordinary training dummy still has no AI stick');
+}
 
 // CPU fights back, and a player who faces it can hit it
 {
@@ -4763,6 +4776,190 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   hit(stand, s2, s1, ROSTER[at('boulder')].skills[0], { hit: new Set() });
   assert.equal(s1.attack, pose, 'the piano super holds its pose through a normal hit');
   assert.equal(s1.stun, 0, 'the piano super does not stagger');
+}
+
+// hotaru: the stage device stands in her veil, the rebirth notes come home to heal,
+// the war window buffs her, and happy moments roll the rainbow
+{
+  const ho = at('hotaru');
+  const data = ROSTER[ho];
+  assert.equal(JSON.stringify(data.bands), JSON.stringify(['millsage']), 'she stands with millsage');
+  assert.equal(data.trait, 'focus', 'she plays the long game');
+  assert.equal(data.skills[2].fx, 'manju', '小馒头投喂 lobs cookies');
+  assert.equal(data.skills[2].count, 3, 'three cookies');
+  assert.equal(data.skills[3].fx, 'apparatus', '舞台装置 is the I slot');
+  assert.equal(data.skills[3].cd, 10, 'the gated recast is ten seconds');
+  assert.equal(data.skills[4].fx, 'rebirth', '重生之乐音 is the O slot');
+  assert.equal(data.skills[4].count, 8, 'eight notes');
+  assert.equal(data.skills[5].fx, 'war', '起死开战 is the super');
+  assert.equal(data.skills[5].cost, 250, '起死开战 costs 250');
+  assert.equal(data.skills[5].damage, 0, 'the super swings no damage itself');
+  assert.equal(data.skills[5].domain?.background, '/stages/hotaru-war.png', 'the field swaps in the lily backdrop');
+  assert.equal(data.skills[5].domain?.time, 6, 'the field lasts six seconds');
+  assert.deepEqual(data.skills[5].domain?.buffs, [
+    { kind: 'regen', v: 20 },
+    { kind: 'speed', v: 1.3, atk: 1.25 },
+    { kind: 'lifesteal', v: .25 },
+  ], 'the field buffs match the copy');
+  const kinds = data.skills[5].domain!.buffs.map(b => b.kind);
+  assert.equal(new Set(kinds).size, kinds.length, 'one field buff per kind: addMod would merge duplicates');
+  assert.equal(data.rainbow?.cooldown, 10, 'the rainbow has an internal cooldown');
+
+  // The device: summoned once, veils her, pins the recast, and only its death starts the clock.
+  const dev = newGame(ho, at('boulder')); const [v1, v2] = dev.fighters; dummy(dev);
+  dev.keyDown('KeyI');
+  run(dev, .6);
+  const device = dev.fighters.find(f => f.minion);
+  assert.ok(device, 'the device joins the field');
+  assert.ok(device!.apparatus && device!.basic && device!.easyAI && device!.taunt, 'the device is a taunting easy basic');
+  assert.equal(device!.hp, 50, 'the device holds five percent of her health');
+  assert.ok(v1.mods.some(m => m.kind === 'veil' && m.left > 0), 'she wears the veil while it stands');
+  assert.ok(v1.cooldowns[3] > 9, 'the I slot stays shut while it stands');
+  dev.keyDown('KeyI');
+  run(dev, .2);
+  assert.equal(dev.fighters.filter(f => f.minion).length, 1, 'a second press does not summon twice');
+  addMod(v1, 'nocd', 5);
+  dev.keyDown('KeyI');
+  run(dev, .2);
+  assert.equal(dev.fighters.filter(f => f.minion).length, 1, '安可 cannot re-summon over the standing device');
+  // A lockstep reload keeps the device's reduced sheet, not the 1000-hp base.
+  {
+    const r = new Rng(7);
+    const copy = newGame(ho, at('boulder'));
+    loadGame(copy, new Rng(1), dumpGame(dev, r));
+    const kept = copy.fighters.find(f => f.apparatus);
+    assert.equal(kept?.data.hp, 50, 'a reloaded device keeps its 50-hp sheet');
+    assert.equal(kept?.hp, device!.hp, 'and its current hp');
+  }
+  // The device is frail, but four fifths of what hits it lands on her body.
+  const before = v1.hp;
+  const poke = { ...ROSTER[at('boulder')].skills[0], damage: 100 };
+  hit(dev, v2, device!, poke, { hit: new Set() });
+  assert.ok(Math.abs(device!.hp - 30) < 1e-6, `the device takes one fifth of the hit, ${device!.hp}`);
+  assert.ok(Math.abs(v1.hp - (before - 80)) < 1e-6, `her body bears the other four fifths, ${v1.hp}`);
+  device!.hp = 0;
+  run(dev, .1);
+  assert.ok(!dev.fighters.some(f => f.minion), 'the broken device leaves');
+  assert.ok(!v1.mods.some(m => m.kind === 'veil' && m.left > 0), 'the veil dies with the device');
+  assert.ok(v1.cooldowns[3] > 9.5 && v1.cooldowns[3] <= 10, 'the recast starts counting from ten');
+
+  // The notes: eight fan out, turn once, and every clean connection heals her.
+  const reb = newGame(ho, at('boulder')); const [b1, b2] = reb.fighters; dummy(reb);
+  b1.hp = 700;
+  b2.x = b1.x + 150; b2.facing = -1;
+  reb.keyDown('KeyO');
+  run(reb, .4);
+  const notes = reb.projectiles.filter(p => p.fx === 'rebirth');
+  assert.equal(notes.length, 8, 'eight notes fly at once');
+  assert.ok(notes.every(p => !p.returned), 'they start outbound');
+  run(reb, 1.0);
+  assert.ok(reb.projectiles.some(p => p.fx === 'rebirth' && p.returned), 'the notes turn to seek');
+  run(reb, 2.4);
+  const left = reb.projectiles.filter(p => p.fx === 'rebirth');
+  assert.ok(left.length === 0 || left.some(p => p.locked), 'a note commits to its straight line when close');
+  const healed = Math.round(b1.hp);
+  assert.ok(healed > 700, `a clean connection sings health back, ${healed}`);
+
+  // The war: seated at the piano, then the six-second field.
+  const war = newGame(ho, at('boulder')); const [w1, w2] = war.fighters; dummy(war);
+  w1.energy = w1.energyMax;
+  war.keyDown('KeyL');
+  war.step(STEP);
+  assert.ok(war.effects.some(e => e.type === 'war-piano'), 'the grand piano is on screen from the first frame');
+  assert.equal(war.domains.length, 0, 'the field waits for its active frame');
+  assert.ok(war.effects.some(e => e.type === 'petal-rain'), 'the white petal rain enters with the cast');
+  run(war, .7);
+  assert.equal(war.domains.length, 1, 'the field opens on the active frame');
+  assert.equal(war.domains[0].background, '/stages/hotaru-war.png', 'the field swaps the backdrop');
+  assert.ok(war.effects.some(e => e.type === 'war-piano'), 'the grand piano drops in');
+  const warPose = w1.attack;
+  hit(war, w2, w1, ROSTER[at('boulder')].skills[0], { hit: new Set() });
+  assert.equal(w1.attack, warPose, 'the war pose holds through a normal hit');
+  run(war, 1.6);
+  assert.ok(w1.attack === null || w1.attack.skill.fx !== 'war', 'the playing ends');
+  assert.ok(w1.mods.some(m => m.kind === 'regen' && m.left > 4), 'the window regenerates');
+  assert.ok(w1.mods.some(m => m.kind === 'speed' && m.left > 4), 'the window lifts her pace');
+  assert.ok(w1.mods.some(m => m.kind === 'lifesteal' && m.left > 4), 'the window steals life');
+  assert.ok(Math.abs(speedMul(w1) - 1.3) < 1e-9, 'the walk runs at +30%');
+  assert.ok(Math.abs(atkMul(w1) - 1.25) < 1e-9, 'the swings run at +25%');
+  run(war, 4.6);
+  assert.ok(!w1.mods.some(m => (m.kind === 'regen' || m.kind === 'speed' || m.kind === 'lifesteal') && m.left > 0), 'the window closes after six seconds');
+
+  // The piano shoves far ahead, but only a short way behind.
+  {
+    const front = newGame(ho, at('boulder')); const [f1, f2] = front.fighters; dummy(front);
+    f1.energy = f1.energyMax;
+    f2.x = f1.x + 430; f2.facing = -1;
+    front.keyDown('KeyL');
+    run(front, .7);
+    assert.ok(f2.stun > 0 && f2.x > 700, `the piano shoves a far-forward target, x ${f2.x}`);
+    run(front, 1.2);
+    assert.ok(f2.x > 880, `the playing pose keeps pressing the shove, x ${f2.x}`);
+    const back = newGame(ho, at('boulder')); const [b1, b2] = back.fighters; dummy(back);
+    b1.energy = b1.energyMax;
+    b2.x = b1.x - 200; b2.facing = 1;
+    const rear = b2.x;
+    back.keyDown('KeyL');
+    run(back, .7);
+    assert.equal(b2.stun, 0, 'the short rear reach leaves a target behind untouched');
+    assert.ok(Math.abs(b2.x - rear) < 1, 'nothing pushes it from behind');
+  }
+
+  // 领域: recency covers, the covered clock keeps running, and it returns with its remainder
+  {
+    const g = newGame(ho, at('boulder')); const [a, b] = g.fighters; dummy(g);
+    const s = ROSTER[ho].skills[5];
+    const buffed = (f: typeof a) => f.mods.some(m => m.tag === 'domain' && m.left > 0);
+    g.beginDomain(a, s);
+    run(g, .5);
+    assert.equal(g.domains.length, 1, 'the first field opens');
+    assert.ok(buffed(a), 'the owner gets the domain buffs');
+    const short = { ...s, domain: { ...s.domain!, time: 2 } };
+    g.beginDomain(b, short);
+    run(g, .5);
+    assert.equal(g.domains.length, 2, 'the later field stacks on top');
+    assert.ok(!buffed(a), 'the covered field stops applying');
+    assert.ok(buffed(b), 'the covering field applies to its owner');
+    assert.ok(Math.abs(g.domains[1].remaining - 1) < .02, 'the covering clock burns at double rate');
+    for (let i = 0; i < Math.round(1.5 / STEP) && g.domains.length > 1; i++) g.step(STEP);
+    assert.equal(g.domains.length, 1, 'the covering field ends');
+    assert.equal(g.domains[0].owner, a.id, 'the covered field returns');
+    assert.ok(buffed(a), 'its buffs come back');
+    assert.ok(g.domains[0].remaining > 4.3 && g.domains[0].remaining < 4.6, `with the remaining time, ${g.domains[0].remaining}`);
+  }
+
+  // The rainbow: a forced proc on her own block, then the internal cooldown holds.
+  const bow = newGame(ho, at('boulder')); const [r1, r2] = bow.fighters; dummy(bow);
+  const spec = data.rainbow!;
+  const realChance = spec.chance;
+  spec.chance = 1;
+  r1.blocking = true; r1.guard = 100; r1.facing = -1;
+  r2.x = r1.x - 80; r2.facing = 1;
+  const foe = ROSTER[at('boulder')].skills[0];
+  hit(bow, r2, r1, foe, { hit: new Set() }, r2.x);
+  assert.ok(r1.rainbowCd > 9, 'a blocked hit rolls the rainbow');
+  const pop = bow.effects.find(e => e.type === 'rainbow-pop');
+  assert.equal(bow.effects.filter(e => e.type === 'rainbow-pop').length, 1, 'the wash blooms');
+  assert.equal(pop?.fighter, r1.id, 'the halo follows the fighter');
+  const cdAfter = r1.rainbowCd;
+  hit(bow, r2, r1, foe, { hit: new Set() }, r2.x);
+  assert.equal(r1.rainbowCd, cdAfter, 'the internal cooldown holds off a second roll');
+  assert.equal(bow.effects.filter(e => e.type === 'rainbow-pop').length, 1, 'no second pop inside the cooldown');
+
+  // The tenth clean hit guarantees a proc without the roll, but the shared cooldown still holds.
+  {
+    const g = newGame(ho, at('boulder')); const [a, b] = g.fighters; dummy(g);
+    spec.chance = 0;
+    a.combo = 9; a.comboTime = 1;
+    hit(g, a, b, ROSTER[ho].skills[0], { hit: new Set() });
+    assert.ok(a.rainbowCd > 9, 'the tenth clean hit pays without the roll');
+    assert.equal(g.effects.filter(e => e.type === 'rainbow-pop').length, 1, 'the tenth hit blooms once');
+    a.combo = 9; a.comboTime = 1;
+    hit(g, a, b, ROSTER[ho].skills[0], { hit: new Set() });
+    assert.equal(g.effects.filter(e => e.type === 'rainbow-pop').length, 1, 'the shared cooldown blocks the next guarantee');
+    spec.chance = 1;
+  }
+  spec.chance = realChance;
 }
 
 // chuchu: three jerky, and the hold note clears only if you block the whole emission

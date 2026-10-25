@@ -9,6 +9,8 @@ import { watchProp } from './propLayout.ts';
 
 const CUCUMBER_SRC = '/sprites/mutsumi/cucumber.png';
 const NOTE_SRC = '/sprites/mutsumi/note.png';
+const MANJU_SRC = '/sprites/hotaru/cookie.png';
+const HOTARU_PIANO_SRC = '/sprites/hotaru/piano.png';
 const MORTIS_SRC = '/sprites/mutsumi/mortis.png';
 const KIT_SRC = '/sprites/nyamu/kit.png';
 const PIANO_SRC = '/sprites/kanata/piano.png';
@@ -404,6 +406,9 @@ export function drawGauge(ctx: CanvasRenderingContext2D, f: Fighter): void {
     ctx.fillRect(x, y, Math.max(3, Math.round(w * k)), 4);
   }
 }
+
+/** 0..1 pseudo-noise for stateless effect placement. */
+const noise01 = (n: number): number => { const s = Math.sin(n) * 43758.5453; return s - Math.floor(s); };
 
 /** One rose petal: a body plus a lighter lobe. 友希那用蓝，花道·缠把同一笔改成红。 */
 function drawPetal(ctx: CanvasRenderingContext2D, body: string, lobe: string): void {
@@ -848,6 +853,99 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
         ctx.beginPath();
         ctx.arc(-50 + i * 34, -90 - q * 90, 5, 0, Math.PI * 2);
         ctx.fill();
+      }
+      break;
+    }
+    case 'apparatus': {
+      // 舞台装置: 完全复活's gold pillar marks where the device lands. No ground pool.
+      const x = e.x;
+      const paint = revivePaint(ctx);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha *= 1 - p;
+      ctx.fillStyle = paint.beam;
+      ctx.beginPath();
+      ctx.moveTo(x - 22, 0);
+      ctx.lineTo(x + 22, 0);
+      ctx.lineTo(x + 100, FLOOR);
+      ctx.lineTo(x - 100, FLOOR);
+      ctx.closePath();
+      ctx.fill();
+      ctx.save();
+      ctx.translate(x, FLOOR - 88);
+      ctx.fillStyle = paint.glow;
+      ctx.beginPath();
+      ctx.arc(0, 0, 90, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      break;
+    }
+    case 'war-piano': {
+      // 起死开战: the grand piano in front of the seated pose.
+      const place = watchProp('hotaru-piano');
+      ctx.save();
+      ctx.translate(e.x, e.y + place.y);
+      ctx.scale(e.dir ?? 1, 1);
+      ctx.translate(place.x, 0);
+      const im = images?.get(HOTARU_PIANO_SRC);
+      const dw = place.size;
+      // The finished sheet is 512×512; the stand-in keeps the same footprint before it loads.
+      const dh = im?.naturalWidth ? dw * (im.naturalHeight / im.naturalWidth) : dw;
+      if (im?.naturalWidth) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(keyed(im), -dw / 2, 0, dw, dh);
+      } else {
+        // Stand-in grand: black silhouette with a lit keyboard strip, until the real art lands.
+        ctx.fillStyle = '#241d2c';
+        ctx.beginPath();
+        ctx.moveTo(-dw / 2, dh * .95);
+        ctx.quadraticCurveTo(-dw / 2, dh * .18, dw * .18, dh * .12);
+        ctx.lineTo(dw / 2, dh * .48);
+        ctx.quadraticCurveTo(dw * .08, dh * .62, -dw / 2, dh * .95);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#f3eefc';
+        for (let i = 0; i < 10; i++) ctx.fillRect(-dw / 2 + dw * .07 + i * dw * .05, dh * .26, dw * .037, dh * .09);
+      }
+      ctx.restore();
+      // The white sound wave spreads from Hotaru, not from the piano's corner.
+      const beat = (p * 12) % 1;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.globalAlpha = (1 - beat) * .55;
+      ctx.beginPath(); ctx.arc(e.x, e.y - 80, 52 + beat * 110, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
+    // 起死开战: a hard gust tears white petals across the screen from upper-left to lower-right.
+    // Movement is curl-noise flow (Keith Peters' curl, as in bobbyroe/curl-particles) on a cheap
+    // sine potential, plus a gust integral that cannot run backwards. Stateless: every petal is
+    // placed from the clock and its index.
+    case 'petal-rain': {
+      const age = e.max - e.life;
+      const fade = Math.min(1, age / .12, e.life / .35);
+      const count = liteFx ? 55 : 110;
+      // Integral of 1 + .18 sin(5.1t) + .12 sin(2.3t + 1.7): accelerates, never reverses.
+      const gust = age + .0353 * (1 - Math.cos(age * 5.1))
+        + .0522 * (Math.cos(1.7) - Math.cos(age * 2.3 + 1.7));
+      for (let i = 0; i < count; i++) {
+        const rx = noise01(i + 1), ry = noise01(i * 2.7 + 11);
+        const speed = 520 + rx * 300;
+        // Curl of a sine potential: divergence-free swirl, a few px of flutter on the gale line.
+        const px = i * .7 + age * 2.3, py = i * 1.3 - age * 1.6;
+        const swirlX = -Math.sin(px) * Math.cos(py) * 14;
+        const swirlY = Math.cos(px) * Math.sin(py) * 10;
+        const x = -W * .35 + rx * W * 1.3 + gust * speed + swirlX;
+        const y = -H * .4 + ry * H * 1.25 + gust * speed * .45 + swirlY;
+        if (x < -24 || x > W + 24 || y < -24 || y > H + 24) continue;
+        const s = .55 + noise01(i + 5) * .3;
+        ctx.save();
+        ctx.translate(x, y);
+        // Aligned roughly with the wind, then tumbling fast along it.
+        ctx.rotate(.42 + noise01(i + 9) * .6 + age * (3 + ry * 4) + swirlX * .04);
+        ctx.scale(s, s);
+        ctx.globalAlpha = fade * (.4 + noise01(i + 3) * .35);
+        drawPetal(ctx, '#ffffff', '#e8f2ec');
+        ctx.restore();
       }
       break;
     }
@@ -2332,7 +2430,7 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   if (p.fx === 'mutsumi-note' || p.fx === 'chord') noteRibbon(ctx, p);
   else if (p.fx === 'sob') noteRibbon(ctx, p, '#f4e7b4', '#e8c96a');
   else if (p.fx === 'arrow') noteRibbon(ctx, p, '#1a3a8a', '#7ec8ff');
-  else if (p.fx === 'music-note') noteComet(ctx, p);
+  else if (p.fx === 'music-note' || p.fx === 'rebirth') noteComet(ctx, p);
   else if (p.fx !== 'fuga' && p.fx !== 'smile-ship' && p.fx !== 'whale' && p.fx !== 'butterfly' && p.fx !== 'jewel' && p.fx !== 'shigure' && p.fx !== 'moca-dusk' && p.fx !== 'sprout' && p.fx !== 'clock' && p.fx !== 'iaido') {
     // 火的故事 skips the stock dots — they read as purple balls; its case draws gold afterimages.
     // 微笑号 is a screen-sized sweep, so the travelling point must not leave a dot trail.
@@ -2378,6 +2476,25 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
       ctx.beginPath();
       ctx.arc(0, 10, 4, 0, Math.PI * 2);
       ctx.fill();
+      break;
+    }
+    case 'manju': {
+      // 小馒头投喂: a golden bun tumbling through its lob; the stock dot trail reads as crumbs.
+      ctx.rotate(p.age * 9);
+      if (!prop(ctx, images, MANJU_SRC, p.size)) {
+        const R = Math.max(8, p.size * .3);
+        const bun = ctx.createRadialGradient(-R * .3, -R * .35, R * .1, 0, 0, R);
+        bun.addColorStop(0, '#ffe8b0');
+        bun.addColorStop(.55, '#f0c060');
+        bun.addColorStop(1, '#c89032');
+        ctx.fillStyle = bun;
+        ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#a86818';
+        for (let i = 0; i < 3; i++) {
+          const a = i * 2.1 + 1;
+          ctx.beginPath(); ctx.arc(Math.cos(a) * R * .45, Math.sin(a) * R * .45, R * .09, 0, Math.PI * 2); ctx.fill();
+        }
+      }
       break;
     }
     case 'jewel': {
@@ -2800,7 +2917,9 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
     }
     // 让大家幸福的音乐: 音符彗星. A lit sphere holds a near-white note; the band behind is
     // drawn by noteComet in the character's colour.
-    case 'music-note': {
+    // 重生之乐音 rides the same comet — the colour comes from each caster's rep colour.
+    case 'music-note':
+    case 'rebirth': {
       const base = rgbOf(p.color);
       const hot = mixRgb(base, [255, 255, 255], .85);
       const R = Math.max(9, Math.min(22, p.size * .42));
@@ -3478,6 +3597,224 @@ export function drawBanSign(ctx: CanvasRenderingContext2D, f: Fighter): void {
   ctx.globalAlpha = .3;
   ctx.lineWidth = 3;
   ctx.beginPath(); ctx.ellipse(f.x, f.y, 44, 10, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+
+/* ---- 彩虹色: a watercolor wash behind her head, plus hexagonal bokeh around it ----
+   The wash follows Tyler Hobbs' watercolour method (subdivide a polygon, push the new edge
+   points with Gaussian noise, then fill many low-alpha copies), after johnburnmurdoch's MIT
+   JavaScript port. The bokeh follows Rob Dawson's codebox/bokeh (MIT): 3D positions whose
+   distance sets size, saturation and edge brightness. Both are reimplemented for canvas 2D. */
+
+const RAINBOW_HUES = [345, 28, 55, 120, 175, 215, 275];
+const WASH_BLOBS = 7;
+const WASH_LAYERS = 12;
+const WASH_R = 85;
+/** Baked at 2 px per world unit; the blit is one image instead of 84 polygon fills per frame. */
+const WASH_PX = 512;
+const WASH_SPAN = WASH_PX / 2;
+
+/** Sum of three uniforms: a cheap deterministic normal-ish value for the edge deformation. */
+function wobble(seed: number): number {
+  return (noise01(seed) + noise01(seed + 11.3) + noise01(seed + 27.7) - 1.5) * 1.6;
+}
+
+/** Subdivide every edge at a perturbed midpoint. Two rounds turn an octagon into a brush edge. */
+function deform(points: number[][], factor: number, seed: number): number[][] {
+  const out: number[][] = [];
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i], q = points[(i + 1) % points.length];
+    out.push(p);
+    out.push([
+      (p[0] + q[0]) / 2 + wobble(seed + i * 2.7) * Math.abs(p[0] - q[0]) * factor,
+      (p[1] + q[1]) / 2 + wobble(seed + i * 2.7 + 1.3) * Math.abs(p[1] - q[1]) * factor,
+    ]);
+  }
+  return out;
+}
+
+/** The wash is baked once per effect: the deformed, low-alpha copies never change shape. */
+const washCache = new WeakMap<Effect, HTMLCanvasElement | null>();
+
+function buildWash(e: Effect): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') { washCache.set(e, null); return null; }
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = WASH_PX;
+  const g = cv.getContext('2d');
+  if (!g) { washCache.set(e, null); return null; }
+  g.translate(WASH_PX / 2, WASH_PX / 2);
+  g.scale(2, 2);
+  const seed = e.x * .37 + e.y * .11 + (e.fighter ?? 0) * 17;
+  for (let b = 0; b < WASH_BLOBS; b++) {
+    const a = b / WASH_BLOBS * Math.PI * 2 + noise01(b + 1) * .9;
+    const d = (.08 + noise01(b + 7) * .38) * WASH_R;
+    const cx = Math.cos(a) * d, cy = Math.sin(a) * d * .72;
+    const rr = WASH_R * (.3 + noise01(b + 13) * .22);
+    const base = Array.from({ length: 8 }, (_, i) => {
+      const t = i / 8 * Math.PI * 2 + Math.PI / 8;
+      return [cx + Math.cos(t) * rr, cy + Math.sin(t) * rr * .86];
+    });
+    // Low alpha per copy; the differing outlines blend into a soft, pigmented cloud.
+    g.fillStyle = `hsla(${RAINBOW_HUES[b]}, 60%, 76%, .022)`;
+    for (let l = 0; l < WASH_LAYERS; l++) {
+      const s = seed + b * 31 + l * 7;
+      const pts = deform(deform(base, .5, s), .4, s + 101);
+      g.beginPath();
+      g.moveTo(pts[0][0], pts[0][1]);
+      for (let k = 1; k < pts.length; k++) g.lineTo(pts[k][0], pts[k][1]);
+      g.closePath();
+      g.fill();
+    }
+  }
+  washCache.set(e, cv);
+  return cv;
+}
+
+/** The halo is centred on the crown, not the chest, so it follows her head as she moves. */
+function rainbowHead(f: Fighter): { x: number; y: number } {
+  const h = f.data.view.kind === 'sprite' ? f.data.view.height : 170;
+  return { x: f.x, y: f.y - h * .86 };
+}
+
+/** Entry blooms outward from the head; the exit snaps back to the centre over its last 0.2s. */
+function rainbowPhase(e: Effect): { age: number; spread: number; fade: number } {
+  const age = e.max - e.life;
+  const enter = Math.min(1, age / .3);
+  const grow = 1 - (1 - enter) ** 3;
+  const exit = Math.min(1, e.life / .2);
+  return { age, spread: (.18 + .82 * grow) * (.06 + .94 * exit), fade: Math.min(1, age / .1, e.life / .25) };
+}
+
+function hexagon(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, rot: number): void {
+  ctx.beginPath();
+  for (let k = 0; k < 6; k++) {
+    const a = rot + k * Math.PI / 3;
+    const px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
+    if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+}
+
+/** Pre-rendered bokeh: soft halo, hexagonal aperture with a brighter rim, tiny hot centre.
+    One 256px sprite per hue; the six-blade shape is rotated when it is blitted. */
+const bokehSprites = new Map<number, HTMLCanvasElement | null>();
+
+function bokehSprite(index: number): HTMLCanvasElement | null {
+  const hit = bokehSprites.get(index);
+  if (hit !== undefined) return hit;
+  if (typeof document === 'undefined') { bokehSprites.set(index, null); return null; }
+  const S = 256, C = S / 2, R = 40, hue = RAINBOW_HUES[index];
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const g = cv.getContext('2d');
+  if (!g) { bokehSprites.set(index, null); return null; }
+  const halo = g.createRadialGradient(C, C, R * .4, C, C, C);
+  halo.addColorStop(0, `hsla(${hue}, 58%, 84%, .34)`);
+  halo.addColorStop(.55, `hsla(${hue}, 58%, 84%, .12)`);
+  halo.addColorStop(1, `hsla(${hue}, 58%, 84%, 0)`);
+  g.fillStyle = halo;
+  g.beginPath(); g.arc(C, C, C, 0, Math.PI * 2); g.fill();
+
+  const disc = g.createRadialGradient(C, C, 0, C, C, R);
+  disc.addColorStop(0, `hsla(${hue}, 58%, 84%, .2)`);
+  disc.addColorStop(.62, `hsla(${hue}, 58%, 84%, .16)`);
+  disc.addColorStop(.88, `hsla(${hue}, 58%, 84%, .6)`);
+  disc.addColorStop(1, `hsla(${hue}, 58%, 84%, 0)`);
+  hexagon(g, C, C, R, 0);
+  g.fillStyle = disc;
+  g.fill();
+  g.strokeStyle = `hsla(${hue}, 58%, 96%, .5)`;
+  g.lineWidth = 4;
+  g.stroke();
+
+  g.fillStyle = `hsla(${hue}, 33%, 97%, .55)`;
+  g.beginPath(); g.arc(C, C, R * .16, 0, Math.PI * 2); g.fill();
+  bokehSprites.set(index, cv);
+  return cv;
+}
+
+/** Per-point depth and motion, fixed for the session; only the clock moves them. */
+const BOKEH = Array.from({ length: 14 }, (_, i) => {
+  const front = noise01(i + 41) >= .5;
+  const z = front ? .15 + noise01(i + 23) * .3 : .55 + noise01(i + 23) * .45;
+  const near = 1 - z;
+  return {
+    front, near,
+    angle: noise01(i + 1) * Math.PI * 2,
+    dist: 22 + noise01(i + 7) * 74,
+    r0: 2.4 + noise01(i + 5) * 4.2,
+    drift: (noise01(i + 31) - .5) * (10 + near * 16),
+    rise: 4 + near * 9,
+    rot0: noise01(i + 9) * Math.PI,
+    rotSpeed: .3 + noise01(i + 11) * .5,
+    phase: noise01(i + 19) * Math.PI * 2,
+    occl: noise01(i + 37) * Math.PI * 2,
+    hue: i % RAINBOW_HUES.length,
+  };
+});
+
+/** The wash and the far bokeh, painted before the body so both sit behind her. */
+export function drawRainbowBack(ctx: CanvasRenderingContext2D, e: Effect, f: Fighter): void {
+  if (f.hp <= 0) return;
+  const { spread, fade } = rainbowPhase(e);
+  const { x: cx, y: cy } = rainbowHead(f);
+  let wash = washCache.get(e);
+  if (wash === undefined) wash = buildWash(e);
+  if (wash) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(spread, spread);
+    ctx.globalAlpha = fade;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(wash, -WASH_SPAN / 2, -WASH_SPAN / 2, WASH_SPAN, WASH_SPAN);
+    ctx.globalAlpha = 1;
+    const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, WASH_R * .9);
+    glow.addColorStop(0, `rgba(255,255,255,${.12 * fade})`);
+    glow.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(0, 0, WASH_R * .9, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  drawRainbowBokeh(ctx, e, f, false);
+}
+
+/** The near bokeh, painted after the body so it floats in front of her. */
+export function drawRainbowFront(ctx: CanvasRenderingContext2D, e: Effect, f: Fighter): void {
+  if (f.hp <= 0) return;
+  drawRainbowBokeh(ctx, e, f, true);
+}
+
+/** 3D-depth bokeh: nearer lights are bigger, brighter and more saturated; far ones softer. */
+function drawRainbowBokeh(ctx: CanvasRenderingContext2D, e: Effect, f: Fighter, front: boolean): void {
+  const { age, spread, fade } = rainbowPhase(e);
+  const { x: cx, y: cy } = rainbowHead(f);
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  for (const b of BOKEH) {
+    if (b.front !== front) continue;
+    const d = b.dist * spread * (.82 + b.near * .3);
+    const x = Math.cos(b.angle) * d + b.drift * age + Math.sin(age * 1.4 + b.phase) * 2;
+    const y = Math.sin(b.angle) * d * .72 - b.rise * age + Math.cos(age * 1.1 + b.phase) * 2;
+    const r = b.r0 * spread * (.7 + b.near * .95);
+    if (r < .5) continue;
+    const sprite = bokehSprite(b.hue);
+    if (!sprite) continue;
+    const twinkle = .72 + .28 * Math.sin(age * 6 + b.phase);
+    // A brief occlusion, like a light passing behind a body.
+    const occluded = Math.sin(age * 7.3 + b.occl) > .93 ? .35 : 1;
+    const size = r * 6.4;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(b.rot0 + age * b.rotSpeed);
+    ctx.globalAlpha = fade * twinkle * occluded;
+    ctx.drawImage(sprite, -size / 2, -size / 2, size, size);
+    ctx.restore();
+  }
   ctx.restore();
 }
 

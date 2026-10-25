@@ -5,10 +5,11 @@ import { AIR_SKILLS } from '../data/skills.ts';
 import { bandMembers, ROSTER_BY_ID } from '../data/characters.ts';
 import type { BandId } from '../data/bands.ts';
 import { advanceAnim } from './animState.ts';
-import { easeSealSwells, effectSettled, ESCAPE_INVULN, stepProjectiles, updateAttack } from './combat.ts';
+import { easeSealSwells, effectSettled, ESCAPE_INVULN, rainbowRoll, stepProjectiles, updateAttack } from './combat.ts';
 import { addMod, atkMul, clearMod, has, jumpMul, regenPerSec, speedMul, tickMods } from './mods.ts';
 import { SCRIPTS } from './scripts.ts';
 import { stepAI } from './ai.ts';
+import { beginDomain as openDomain, stepDomains, type Domain } from './domains.ts';
 import { COMBO_DECAY, COMBO_ESCAPE, CONTROLS, FLOOR, GRAVITY, INPUT_BUFFER, SIDE, STEP, X_MAX, X_MIN, clamp } from './constants.ts';
 import { clipFor } from '../render/clips.ts';
 
@@ -51,6 +52,13 @@ const FRENZY_CHAIN_WINDOW = .6;
 /** 诗超绊: the teammate's health CAP is this slice of the borrowed sheet, hits land at three tenths, for this long. The brain is the master AI (stepAI). */
 const MINION_HP_RATIO = .2;
 const MINION_LIFE = 12;
+/** 舞台装置: no retirement clock (a ceiling the match never reaches) and the gated recast. */
+const APPARATUS_FOREVER = 1e9;
+const APPARATUS_CD = 10;
+/** The I slot. The recast gate follows the skill's own cooldown so balance edits stay in data. */
+const APPARATUS_SLOT = 3;
+/** The device is frailer than the other summons, which keep MINION_HP_RATIO. */
+const APPARATUS_HP_RATIO = .05;
 /** Whose bandmates answer the call. The pool itself derives from the band at cast time
  *  (bandMembers minus the caller), so the roster stays the single place members are listed. */
 export const MINION_BAND: BandId = 'mygo';
@@ -82,6 +90,8 @@ export interface Projectile {
   attack: Attack; hit: Set<number>; trail: { x: number; y: number }[];
   /** Cucumber boomerang has already turned around once. */
   returned?: boolean;
+  /** 重生之乐音: the note has stopped steering and flies its straight commit line. */
+  locked?: boolean;
   /** Chocolate milk has landed and can be picked up. Bags never set this. */
   settled?: boolean;
   /** 奇独点: the last damage tick this well fired. */
@@ -188,6 +198,10 @@ export class FightGame {
   fighters: Fighter[] = [];
   projectiles: Projectile[] = [];
   sealVolleys: SealVolley[] = [];
+  /** 领域: newest live field last. Only the last one applies; see game/domains.ts. */
+  domains: Domain[] = [];
+  /** The top field's backdrop, or ''. Kept as one string so snapshots never ship the whole list. */
+  domainBg = '';
   effects: Effect[] = [];
   particles: Particle[] = [];
   texts: FloatingText[] = [];
@@ -273,6 +287,8 @@ export class FightGame {
     return members.reduce((n, f) => n + f.hp, 0) / members.reduce((n, f) => n + f.data.hp, 0);
   }
   teamAlive(team: number): boolean { return this.fighters.some(f => f.team === team && f.hp > 0 && !f.minion && !f.echo); }
+  /** 领域: open the field declared on `s`. A later field covers the current one. */
+  beginDomain(f: Fighter, s: Skill): void { openDomain(this, f, s); }
   /** Online, this device only drives the 1P keys; the 2P keys belong to the wire. */
   isLocalControl(code: string): boolean {
     if (!this.netRole) return this.isControl(code);
@@ -320,6 +336,8 @@ export class FightGame {
     });
     this.projectiles = [];
     this.sealVolleys = [];
+    this.domains = [];
+    this.domainBg = '';
     this.effects = [];
     this.particles = [];
     this.texts = [];
@@ -452,6 +470,8 @@ export class FightGame {
     if (f.king && index >= 2) return false;
     // 带骨肉之人: one chunk on the field. A second press does nothing until she touches it.
     const skillNow = this.skillFor(f, index);
+    // 舞台装置: the I slot is shut while her device stands, whatever shortens cooldowns.
+    if (skillNow.fx === 'apparatus' && this.fighters.some(m => m.apparatus && m.summoner === f.id)) return false;
     if (index === 5 && f.energy < (skillNow.cost ?? 100)) return false;
     if (SCRIPTS[skillNow.fx]?.oneShot && this.projectiles.some(p => p.fx === skillNow.fx && p.owner === f.id && p.life > 0)) return false;
     const a = f.attack;
@@ -672,6 +692,7 @@ export class FightGame {
     if (this.mode !== 'training') this.time -= dt;
     stepAI(this, dt);
     this.stepEchos(dt);
+    stepDomains(this, dt);
     for (const f of this.fighters) this.stepFighter(f, dt);
     this.stepMinions(dt);
     if (this.mode === 'team' || this.mode === 'challenge') this.separate();
@@ -820,6 +841,42 @@ export class FightGame {
     this.text('对半分！', m.x, m.y - 210, m.data.color, .8, 20);
   }
 
+  /** 舞台装置: a basic-only copy of Hotaru with no retirement clock. While it stands she wears
+   *  the veil and her I slot stays pinned; both lift the moment the device leaves. */
+  summonApparatus(owner: Fighter): void {
+    // The guest predicts its own 2P presses; summons are host-authoritative.
+    if (this.netRole === 'guest') return;
+    // One device per owner. Another teammate's minion is not hers to replace.
+    if (this.fighters.some(f => f.apparatus && f.summoner === owner.id)) return;
+    const m = makeFighter({ ...owner.data, hp: Math.round(owner.data.hp * APPARATUS_HP_RATIO) }, this.minionSeq++, {
+      x: clamp(owner.x + owner.facing * 120, X_MIN, X_MAX),
+      facing: owner.facing,
+      controller: null,
+      energy: 0,
+      team: owner.team,
+    });
+    m.hp = m.data.hp;
+    m.minion = true;
+    m.basic = true;
+    m.apparatus = true;
+    m.easyAI = true;
+    m.taunt = true;
+    m.summoner = owner.id;
+    m.dmgMul = .3;
+    m.life = APPARATUS_FOREVER;
+    addMod(owner, 'veil', 1e6, { tag: 'apparatus' });
+    while (this.totalHits.length <= m.id) { this.totalHits.push(0); this.maxCombo.push(0); }
+    this.fighters.push(m);
+    this.sparks(m.x, m.y - 80, m.data.color, 16);
+    this.effect('apparatus', m.x, m.y - 80, m.data.color, 1);
+    this.text('舞台装置', m.x, m.y - 210, m.data.color, .8, 20);
+  }
+
+  /** The I-slot wait after the device leaves: the skill's own cooldown, scaled by her cd mul. */
+  private apparatusCd(owner: Fighter): number {
+    return (owner.data.skills[APPARATUS_SLOT]?.cd ?? APPARATUS_CD) * owner.cdMul;
+  }
+
   private dismissMinion(m: Fighter, expired: boolean): void {
     const i = this.fighters.indexOf(m);
     if (i < 0) return;
@@ -827,6 +884,14 @@ export class FightGame {
     if (m.summoner != null) {
       const owner = this.fighterById(m.summoner);
       if (owner) clearMod(owner, 'noGain', 'summon');
+    }
+    // 舞台装置: the veil dies with the device, and only now does the 10s cooldown start counting.
+    if (m.apparatus && m.summoner != null) {
+      const owner = this.fighterById(m.summoner);
+      if (owner) {
+        clearMod(owner, 'veil', 'apparatus');
+        owner.cooldowns[APPARATUS_SLOT] = Math.max(owner.cooldowns[APPARATUS_SLOT], this.apparatusCd(owner));
+      }
     }
     this.sparks(m.x, m.y - 80, m.data.color, 18);
     this.effect('burst', m.x, m.y - 80, m.data.color, .35, { radius: 60 });
@@ -841,6 +906,11 @@ export class FightGame {
       if (!m.minion) continue;
       m.life = (m.life ?? 0) - dt;
       if (m.hp <= 0 || m.life <= 0) gone.push(m);
+      // 舞台装置: the I slot stays shut while the device stands, whatever hastens cooldowns.
+      if (m.apparatus && m.summoner != null) {
+        const owner = this.fighterById(m.summoner);
+        if (owner) owner.cooldowns[APPARATUS_SLOT] = Math.max(owner.cooldowns[APPARATUS_SLOT], this.apparatusCd(owner));
+      }
     }
     for (const m of gone) this.dismissMinion(m, m.hp > 0);
   }
@@ -950,7 +1020,10 @@ export class FightGame {
       f.cooldowns[i] = Math.max(0, f.cooldowns[i] - dt * rate);
     }
     const recWas = f.recLeft;
+    const comboWas = f.comboTime;
     for (const key of DECAY_TIMERS) f[key] = Math.max(0, f[key] - dt);
+    // 彩虹色: a finished 4-hit string is a happy moment — the window just closed on a live combo.
+    if (comboWas > 0 && f.comboTime === 0 && f.combo >= 4) rainbowRoll(this, f);
     tickMods(this, f, dt);
     if (recWas > 0 && f.recLeft === 0) this.startEchoPlayback(f);
     if (f.hp <= 0) { this.retire(f); this.fall(f, dt); return; }
@@ -980,13 +1053,13 @@ export class FightGame {
     if (f.blockTap >= 0) f.blockTap += dt;
     const move = human
       ? (c && this.keys.has(c.right) ? 1 : 0) - (c && this.keys.has(c.left) ? 1 : 0)
-      : this.mode !== 'training' || f.echo ? f.ai.move : 0;
+      : this.mode !== 'training' || f.echo || f.minion ? f.ai.move : 0;
     // 录音: the tape records the stick, not the body — changes only, so the echo reads a clean script.
     if (f.recLeft > 0 && move !== f.recMove) {
       f.recTape.push({ t: RECORD_TIME - f.recLeft, kind: 'move', v: move });
       f.recMove = move;
     }
-    const blockHeld = human ? !!c && this.keys.has(c.block) : this.mode !== 'training' && f.ai.block > 0;
+    const blockHeld = human ? !!c && this.keys.has(c.block) : (this.mode !== 'training' || f.minion) && f.ai.block > 0;
 
     if (f.dodgeRequest) { f.dodgeBuffer = INPUT_BUFFER; f.dodgeRequest = false; }
     // Humans can cut recovery into a block or a dodge once the move has already hit. CPU stays committed.

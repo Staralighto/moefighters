@@ -160,6 +160,7 @@ export function assetsFor(characters: CharacterData[], stage: StageData): string
     ? [c.view.common, c.view.special, ...(c.view.frenzy ? [c.view.frenzy] : []), ...(c.view.king ? [c.view.king] : []), ...(c.view.world ? [c.view.world] : []), ...(c.view.box ? [c.view.box] : []), ...(c.view.extras ?? [])]
     : []);
   if (stage.image) srcs.push(stage.image);
+  for (const c of characters) for (const s of c.skills) if (s.domain) srcs.push(s.domain.background);
   return [...new Set(srcs)];
 }
 

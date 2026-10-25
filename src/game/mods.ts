@@ -5,7 +5,7 @@ import type { FightGame } from './game.ts';
 export type ModKind =
   | 'brace' | 'poise' | 'dmgDealt' | 'dmgTaken' | 'speed' | 'slow' | 'regen'
   | 'noGain' | 'lockNormals' | 'lockGuard' | 'thorns' | 'debt' | 'nocd' | 'veil'
-  | 'relapse' | 'incoming' | 'reflect' | 'soulorb';
+  | 'relapse' | 'incoming' | 'reflect' | 'soulorb' | 'lifesteal';
 
 /**
  * One running buff.
@@ -53,6 +53,14 @@ export function addMod(f: Fighter, kind: ModKind, time: number, opt: Partial<Mod
 export function clearMod(f: Fighter, kind: ModKind, tag = ''): void {
   const m = f.mods.find(x => x.kind === kind && (x.tag ?? '') === tag);
   if (m) m.left = 0;
+  project(f);
+}
+
+/** Drop every mod carrying `tag`, whatever its kind, and refresh the projected fields. */
+export function clearTag(f: Fighter, tag: string): void {
+  let w = 0;
+  for (const m of f.mods) if ((m.tag ?? '') !== tag) f.mods[w++] = m;
+  f.mods.length = w;
   project(f);
 }
 
@@ -108,11 +116,20 @@ export function jumpMul(f: Fighter): number {
   return m;
 }
 
-/** Attack-speed multiplier. 1 when no 减速 cuts it. J/K cooldown clocks tick at this rate. */
+/** Attack-speed multiplier. 1 when no pace mod cuts or lifts it. J/K cooldown clocks tick at this rate.
+ *  起死开战: a 'speed' mod may carry atk above 1, so the sprint and the faster swings ride one clock. */
 export function atkMul(f: Fighter): number {
   let m = 1;
-  for (const mod of f.mods) if (mod.kind === 'slow' && mod.left > 0) m *= mod.atk ?? 1;
+  for (const mod of f.mods) if ((mod.kind === 'slow' || mod.kind === 'speed') && mod.left > 0) m *= mod.atk ?? 1;
   return m;
+}
+
+/** Fraction of damage just dealt that flows back as hp. Sum of live lifesteal mods on top of the
+ *  challenge-deck field. 起死开战. */
+export function lifestealOf(f: Fighter): number {
+  let n = 0;
+  for (const m of f.mods) if (m.kind === 'lifesteal' && m.left > 0) n += m.v ?? 0;
+  return n;
 }
 
 export function addDebt(f: Fighter, amount: number): void {

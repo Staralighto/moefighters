@@ -5,7 +5,7 @@ import { stageThumbSrc, type ImageCache } from '../assets/loader.ts';
 import { FLOOR, H, SIDE, W } from '../game/constants.ts';
 import { violetHidden } from '../game/combat.ts';
 import { IAIDO_PHASE, iaidoCharge } from './clips.ts';
-import { drawBanSign, drawCombo, drawEffect, drawGauge, drawHoldNote, drawKuji, drawLayerBass, drawParticles, drawProjectile, drawRootFx, drawSister, drawTexts, drawWheel, isLiteFx, UI_FONT, zoomAbout } from './fx.ts';
+import { drawBanSign, drawCombo, drawEffect, drawGauge, drawHoldNote, drawKuji, drawLayerBass, drawParticles, drawProjectile, drawRainbowBack, drawRainbowFront, drawRootFx, drawSister, drawTexts, drawWheel, isLiteFx, UI_FONT, zoomAbout } from './fx.ts';
 
 /** Backing-store pixels per CSS pixel. The compositor then blits 1:1.
  *  Phones use the screen ratio too: a CSS pixel is several physical pixels, and a 1× store
@@ -41,8 +41,6 @@ export function teamGlowOn(g: { fighters: { team: number; minion?: boolean; echo
 }
 
 let veilBuf: HTMLCanvasElement | undefined;
-/** The scanline tile is one 1×4 pattern; the overlay itself never changes. */
-let scanPattern: CanvasPattern | null = null;
 /** Gradients below depend only on FLOOR (and the fixed origin under a translate), so they are built once. */
 let eraseGrad: CanvasGradient | null = null;
 let poolEraseGrad: CanvasGradient | null = null;
@@ -148,7 +146,6 @@ export class Renderer {
     // bitmap there would flash a blank frame on every window change.
     this.resize();
     c.setTransform(this.sx, 0, 0, this.sy, 0, 0);
-    c.imageSmoothingEnabled = false;
     c.clearRect(0, 0, W, H);
     c.save();
     // Screen shake is a picture, not the match: it must not draw from the seeded sim random (online lockstep).
@@ -156,6 +153,9 @@ export class Renderer {
     this.drawStage();
 
     const bodyScale = portraitBodyScale(document.body.classList.contains('pad-split'));
+
+    // 领域: the active field's backdrop sits under every body.
+    this.drawDomains(c, g);
     // 圆形地面影子：跳得越高影越小；中心比脚线高 7px（FLOOR+3 再上移 10），对齐成图的实际脚线。
     for (const f of g.fighters) {
       if (violetHidden(f)) continue;
@@ -181,6 +181,12 @@ export class Renderer {
       const pose = e.sheet ? { sheet: e.sheet, col: e.col ?? 0, row: e.row ?? 0, facing: e.facing ?? f.facing } : undefined;
       zoomAbout(c, bodyScale, e.x, e.y, () => this.view(f.data.id).draw(c, f, e.x, e.y, (e.alpha ?? .3) * (e.life / e.max), e.tint, undefined, pose));
     }
+    // 彩虹色: the wash and the far bokeh sit behind the body and follow her head.
+    for (const e of g.effects) {
+      if (e.type !== 'rainbow-pop' || e.fighter == null) continue;
+      const f = g.fighterById(e.fighter);
+      if (f) zoomAbout(c, bodyScale, f.x, f.y, () => drawRainbowBack(c, e, f));
+    }
     const order = [...g.fighters].sort((a, b) => Number(a.hp > 0) - Number(b.hp > 0) || a.y - b.y);
     const teamRim = teamGlowOn(g);
     for (const f of order) {
@@ -188,8 +194,17 @@ export class Renderer {
       if (violetHidden(f)) continue;
       const view = this.view(f.data.id);
       const outline = teamRim ? TEAM_GLOW[f.team] : undefined;
-      const veiled = f.mods.some(m => m.kind === 'veil' && m.left > 0);
-      const alpha = (f.hp <= 0 ? .3 : f.basic ? .55 : f.echo ? .45 : 1) * (veiled ? .4 : 1);
+      // 舞台装置: a skill cast lifts the veil look for the length of the move, so the pose reads.
+      // The veil mod itself stays: misses and targeting are untouched. Another live veil
+      // (忍法·隐身术) keeps its transparency — only the device's own veil is lifted.
+      let apparatusVeil = false, otherVeil = false;
+      for (const m of f.mods) {
+        if (m.kind !== 'veil' || m.left <= 0) continue;
+        if (m.tag === 'apparatus') apparatusVeil = true; else otherVeil = true;
+      }
+      const veiled = (apparatusVeil || otherVeil)
+        && !(apparatusVeil && !otherVeil && f.attack !== null && f.attack.index >= 2);
+      const alpha = (f.hp <= 0 ? .3 : f.apparatus ? 1 : f.basic ? .55 : f.echo ? .45 : 1) * (veiled ? .4 : 1);
       const footY = f.hp <= 0 ? FLOOR : f.y;
       zoomAbout(c, bodyScale, f.x, footY, () => {
         if (f.attack?.skill.fx === 'wheel') drawWheel(c, f, this.images);
@@ -238,6 +253,12 @@ export class Renderer {
         }
       });
     }
+    // 彩虹色: the near bokeh floats in front of the body.
+    for (const e of g.effects) {
+      if (e.type !== 'rainbow-pop' || e.fighter == null) continue;
+      const f = g.fighterById(e.fighter);
+      if (f) zoomAbout(c, bodyScale, f.x, f.y, () => drawRainbowFront(c, e, f));
+    }
     for (const f of g.fighters) if (f.attack?.skill.fx === 'change') zoomAbout(c, bodyScale, f.x, f.y, () => drawHoldNote(c, f, g.opponents(f)));
     for (const p of g.projectiles) {
       const owner = p.fx === 'sister' ? g.fighterById(p.owner) : undefined;
@@ -247,7 +268,9 @@ export class Renderer {
       });
     }
     for (const f of g.fighters) if (f.ban > 0 && f.hp > 0) zoomAbout(c, bodyScale, f.x, f.y, () => drawBanSign(c, f));
-    for (const e of g.effects) if (e.type !== 'ghost' && e.type !== 'lifedraw-mark') zoomAbout(c, bodyScale, e.x, e.y, () => drawEffect(c, e, this.images));
+    for (const e of g.effects) if (e.type !== 'ghost' && e.type !== 'lifedraw-mark' && e.type !== 'petal-rain' && e.type !== 'rainbow-pop' && e.type !== 'apparatus') zoomAbout(c, bodyScale, e.x, e.y, () => drawEffect(c, e, this.images));
+    // Screen-space effects: the petal rain and the floor-to-sky pillar must not grow with the body.
+    for (const e of g.effects) if (e.type === 'petal-rain' || e.type === 'apparatus') drawEffect(c, e, this.images);
     drawParticles(c, g.particles, bodyScale);
     drawTexts(c, g.texts, bodyScale);
     drawKuji(c, g, bodyScale);
@@ -326,21 +349,6 @@ export class Renderer {
       });
       c.restore();
     }
-    // A full-canvas tint on top of the stage. Phones skip it: it is a third fullscreen pass.
-    if (!document.body.classList.contains('touch')) {
-      if (!scanPattern) {
-        const tile = document.createElement('canvas');
-        tile.width = 1;
-        tile.height = 4;
-        const t = tile.getContext('2d');
-        if (t) {
-          t.fillStyle = '#0000000c';
-          t.fillRect(0, 0, 1, 1);
-          scanPattern = c.createPattern(tile, 'repeat');
-        }
-      }
-      if (scanPattern) { c.fillStyle = scanPattern; c.fillRect(0, 0, W, H); }
-    }
   }
 
   /** `?fps` readout for phone testing: the last sampled average frame gap, and the lite tier. */
@@ -365,6 +373,66 @@ export class Renderer {
       backing store resizes or the full art replaces the slow-link preview. */
   private stageBake: HTMLCanvasElement | undefined;
   private stageKey = '';
+
+  /** 领域 backdrop: the last painted field and the one it is crossfading from. */
+  private domainBg = '';
+  private domainPrev = '';
+  private domainSwitch = 0;
+  /** Backdrops baked at the backing-store size, so a frame is one 1:1 blit instead of a
+       full-screen filtered upscale. Cleared whenever the backing store resizes. */
+  private domainBakes = new Map<string, HTMLCanvasElement>();
+  private domainBakeSize = '';
+
+  /** Paints the active domain's backdrop, crossfading on a cover, a resume or a lift. */
+  private drawDomains(c: CanvasRenderingContext2D, g: FightGame): void {
+    const next = g.domainBg;
+    if (next !== this.domainBg) {
+      this.domainPrev = this.domainBg;
+      this.domainBg = next;
+      this.domainSwitch = performance.now() / 1000;
+    }
+    const k = Math.min(1, Math.max(0, (performance.now() / 1000 - this.domainSwitch) / .25));
+    if (this.domainPrev && k < 1) {
+      const prev = this.bakeDomain(this.domainPrev);
+      if (prev) {
+        c.globalAlpha = 1 - k;
+        c.drawImage(prev, 0, 0, W, H);
+      }
+    }
+    if (this.domainBg) {
+      const im = this.bakeDomain(this.domainBg);
+      if (im) {
+        c.globalAlpha = k;
+        c.drawImage(im, 0, 0, W, H);
+      }
+    }
+    c.globalAlpha = 1;
+    if (k >= 1) this.domainPrev = '';
+  }
+
+  /** One filtered draw per backdrop size, not one per frame. */
+  private bakeDomain(src: string): HTMLCanvasElement | null {
+    const size = this.canvas.width + 'x' + this.canvas.height;
+    if (size !== this.domainBakeSize) {
+      this.domainBakes.clear();
+      this.domainBakeSize = size;
+    }
+    const hit = this.domainBakes.get(src);
+    if (hit) return hit;
+    const im = this.images.get(src);
+    if (!im?.naturalWidth) return null;
+    const cv = document.createElement('canvas');
+    cv.width = this.canvas.width;
+    cv.height = this.canvas.height;
+    const g = cv.getContext('2d');
+    if (!g) return null;
+    g.setTransform(this.sx, 0, 0, this.sy, 0, 0);
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(im, 0, 0, W, H);
+    this.domainBakes.set(src, cv);
+    return cv;
+  }
 
   private drawStage(): void {
     const c = this.ctx, s = this.stage;

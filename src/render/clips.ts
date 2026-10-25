@@ -304,6 +304,8 @@ export function clipFor(f: Fighter): Clip {
       return at('special', f.attack.index - 2, volleyRow(f.attack.t, f.attack.skill));
     if (f.attack.skill.fx === 'drums') return at('special', f.attack.index - 2, drumRow(f.attack.t, f.attack.skill.duration));
     if (f.attack.skill.fx === 'happymusic') return at('special', f.attack.index - 2, musicRow(f.attack.t, f.attack.skill.duration));
+    // 起死开战: the same seated loop — three cells alternate hands over the cast.
+    if (f.attack.skill.fx === 'war') return at('special', f.attack.index - 2, musicRow(f.attack.t, f.attack.skill.duration));
     if (f.attack.skill.fx === 'chord') return at('special', f.attack.index - 2, chordRow(f.attack.t, f.attack.skill.duration));
     if (f.attack.skill.fx === 'riff') return at('special', f.attack.index - 2, riffRow(f.attack.t, f.attack.skill.duration));
     if (f.attack.skill.fx === 'sing') return at('special', f.attack.index - 2, singRow(f.attack.t, f.attack.skill.start, f.attack.skill.duration));

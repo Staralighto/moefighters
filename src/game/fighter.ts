@@ -147,6 +147,15 @@ export interface Fighter {
   summoner?: number;
   /** 对半分: J/K only. ponytail: also the translucent veil — a second basic fighter would fade too. */
   basic?: boolean;
+  /** 舞台装置: a basic-only copy on no retirement clock; the owner's veil and gated cooldown
+   *  ride on it and are handed back the moment it leaves. */
+  apparatus?: boolean;
+  /** 舞台装置: runs the easy brain whatever the match difficulty is. */
+  easyAI?: boolean;
+  /** 舞台装置: enemy CPUs prefer this body over anyone else while it stands. */
+  taunt?: boolean;
+  /** 彩虹色: internal cooldown between two blessing procs. */
+  rainbowCd: number;
   /** Nono国王: the king common sheet stays up through the last staff swing after the timer. */
   king?: boolean;
   /** Challenge buff: multiplier on this fighter's final damage. 1 is neutral. */
@@ -207,7 +216,7 @@ export interface Fighter {
   mods: Mod[];
 }
 
-export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braceFx', 'ban', 'frail', 'recLeft'] as const;
+export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braceFx', 'ban', 'frail', 'recLeft', 'rainbowCd'] as const;
 
 /** Meter cap for a character: the super's cost, but never below the arcade 100. */
 export function meterCap(data: CharacterData): number {
@@ -228,7 +237,7 @@ export function makeFighter(
     knocked: 0, downTime: 0, hitBySuper: false, root: 0, rootHits: 0, rootBreak: 0, rootFx: '', rootLevel: 'move', ban: 0, beatStacks: 0, frenzy: 0,
     jabChain: 0, jabChainClock: 0, braced: 0, braceFx: 0, noGain: 0, muscle: 0, sprint: 0, slow: 0, poise: 0, purge: 0, frail: 0, frailBonus: 0, feast: 0, box: 0,
     dodge: 0, dodgeCd: 0, dodgeRequest: false, dodgeBuffer: 0, blockTap: -1, blockBuffer: 0, blockLeft: 0,
-    debt: 0, debtDmg: 0,
+    debt: 0, debtDmg: 0, rainbowCd: 0,
     attack: null, attackSerial: 0, cooldowns: [0, 0, 0, 0, 0, 0], queue: [],
     jumpRequest: false, jumpBuffer: 0,
     combo: 0, hitCount: 0, walk: 0,

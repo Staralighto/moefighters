@@ -126,11 +126,14 @@ function superWhen(g: FightGame, f: Fighter, o: Fighter, dist: number, hard: num
 }
 
 export function stepAI(g: FightGame, dt: number): void {
-  if (g.mode === 'training') return;
+  // Training freezes the enemy dummy, but a summoned ally still needs a brain to test against.
+  const training = g.mode === 'training';
   for (const f of g.fighters) {
     if (f.controller !== null || f.hp <= 0 || f.echo) continue;
+    if (training && !f.minion) continue;
     // 诗超绊 teammates always run the master brain, whatever the match difficulty is.
-    const hard = f.minion ? 2 : g.difficulty;
+    // 舞台装置 has none of that: it swings on the easy tier, normals only (f.basic).
+    const hard = f.minion ? (f.easyAI ? 0 : 2) : g.difficulty;
     const o = aiTarget(g, f);
     if (!o) continue;
     f.ai.block = Math.max(0, f.ai.block - dt);
@@ -280,14 +283,17 @@ export function stepAI(g: FightGame, dt: number): void {
   }
 }
 
-/** Prefer an enemy no closer teammate is already on, so the CPUs don't pile onto one body. */
+/** Prefer an enemy no closer teammate is already on, so the CPUs don't pile onto one body.
+ *  舞台装置: while a taunting body stands (f.taunt), every CPU piles onto it first. */
 function aiTarget(g: FightGame, f: Fighter): Fighter | undefined {
+  let taunt: Fighter | undefined, tauntD = Infinity;
   // Runs every step for every CPU, so one pass and no arrays. Ties keep roster order.
   let any: Fighter | undefined, anyD = Infinity;
   let open: Fighter | undefined, openD = Infinity;
   for (const o of g.fighters) {
     if (!g.isEnemy(f, o) || o.hp <= 0 || o.echo) continue;
     const mine = Math.abs(o.x - f.x);
+    if (o.taunt && mine < tauntD) { taunt = o; tauntD = mine; }
     if (mine < anyD) { any = o; anyD = mine; }
     if (mine >= openD) continue;
     let taken = false;
@@ -296,5 +302,5 @@ function aiTarget(g: FightGame, f: Fighter): Fighter | undefined {
     }
     if (!taken) { open = o; openD = mine; }
   }
-  return open ?? any;
+  return taunt ?? open ?? any;
 }

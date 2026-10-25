@@ -161,6 +161,34 @@ export interface Skill {
   floor?: 'pop' | 'stick' | 'drop' | 'splash';
   /** False: other shots fly through. The default can be shot down. */
   solid?: boolean;
+  /** 领域: the field this move opens. See DomainSpec. */
+  domain?: DomainSpec;
+}
+
+/** One continuous effect a domain projects while it is the newest live field. */
+export type DomainBuffKind =
+  | 'regen' | 'speed' | 'slow' | 'lifesteal'
+  | 'dmgDealt' | 'dmgTaken' | 'incoming' | 'thorns';
+
+export interface DomainBuff {
+  kind: DomainBuffKind;
+  v?: number;
+  /** Attack-speed multiplier carried by a 'speed' buff. */
+  atk?: number;
+  mark?: string;
+}
+
+/** 领域: the L-skill field. It always swaps the backdrop and projects its buffs while it is the
+ *  newest live one. A later domain covers it without ending its clock; when the cover ends, the
+ *  field with remaining time comes back. */
+export interface DomainSpec {
+  /** Backdrop image. A domain always changes the stage. */
+  background: string;
+  /** Seconds the field and its buffs last, together. */
+  time: number;
+  buffs: DomainBuff[];
+  /** Who the buffs land on. Defaults to the caster; the other two are reserved for later fields. */
+  target?: 'self' | 'team' | 'enemies';
 }
 
 /** Scalar buffs a move can arm. The kernel still stores these on Fighter until mods.ts folds them. */
@@ -177,7 +205,9 @@ export type Op =
   | { op: 'shot' }
   | { op: 'summon'; kind: 'ally' | 'half' }
   /** 和姐姐在一起: `id` is the roster member who answers. */
-  | { op: 'summon'; kind: 'named'; id: string };
+  | { op: 'summon'; kind: 'named'; id: string }
+  /** 舞台装置: a basic-only copy of the caster that never retires on a clock. */
+  | { op: 'summon'; kind: 'apparatus' };
 
 /** Shared pin: lunge, catch, beats. Last-hit pose stays on Skill.finale. */
 export interface Hold {
@@ -227,6 +257,14 @@ export interface CharacterData {
   /** 二号资源条 (打气): declared per character, charged by the kernel's hit gates, spent by moves.
    *  Absent means the fighter has no gauge and nothing is drawn or charged. */
   gauge?: GaugeSpec;
+  /** 彩虹色 (汐见萤): happy moments roll for a small random blessing. Declared per character so
+   *  the kernel needs no character-id branch — the roll helper just checks for the spec. */
+  rainbow?: {
+    /** Chance per happy moment. */
+    chance: number;
+    /** Internal cooldown between two procs. */
+    cooldown: number;
+  };
   /** 狂化 (夢はパワー！): how this character's frenzy behaves. Soyo stays on the arcade defaults
    *  (rate 1.55, J/K cooldowns ×.6, the jab-chain auto-heavy) by leaving this unset. */
   frenzy?: {

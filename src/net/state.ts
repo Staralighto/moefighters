@@ -16,7 +16,7 @@ export const NO_WIRE: ReadonlySet<string> = new Set(['data', 'controller', 'queu
 /** Game-level fields the guest paints from. */
 export const GAME_FIELDS = [
   'phase', 'time', 'round', 'wins', 'shake', 'flash', 'timeStop', 'age', 'hitstop',
-  'bannerTitle', 'bannerSub', 'netEnd', 'winnerTeam',
+  'bannerTitle', 'bannerSub', 'netEnd', 'winnerTeam', 'domainBg',
 ] as const;
 
 /** Effects age on the guest; their clock is sent once, when they appear. */
