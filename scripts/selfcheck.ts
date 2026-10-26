@@ -1,6 +1,6 @@
 /* Headless rule check: runs the fixed-step engine without DOM or canvas. `npm run check`. */
 import { FightGame } from '../src/game/game.ts';
-import { BUSHIDO_CREEP, BUSHIDO_LUNGE, BUSHIDO_SPAN, VEIL_NORMAL, VEIL_SHOT, clockRings, drumShotTime, hit, holdNoteSpan, violetHidden, withGuard } from '../src/game/combat.ts';
+import { BUSHIDO_CREEP, BUSHIDO_LUNGE, BUSHIDO_SPAN, VEIL_NORMAL, VEIL_SHOT, clockRings, drumShotTime, hit, holdNoteSpan, outshines, violetHidden, withGuard } from '../src/game/combat.ts';
 import { vowBeatTime, VOW_BEATS } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
 import { PLAYABLE, ROSTER, bandMembers, guestsFor } from '../src/data/characters.ts';
@@ -125,7 +125,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(opening < 40, `${id}: the opening stays under a chipped bar, ${opening}`);
     assert.equal(withGuard(s, breakAt + 99).guardDmg, plan![plan!.length - 1], id + ': a late segment repeats the last entry');
   }
-  for (const id of ['uika', 'mutsumi', 'umiri', 'taki', 'layer', 'sayo']) {
+  for (const id of ['uika', 'mutsumi', 'umiri', 'taki', 'layer', 'sayo', 'houka']) {
     const s = ROSTER[at(id)].skills[5];
     assert.ok(!s.guardPlan && !s.guardDmg, id + ': the unblockable super carries no guard value');
   }
@@ -6266,6 +6266,109 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     g.keyDown('KeyI'); run(g, .5);
     assert.ok(Math.abs((p1.data.hp - p1.hp) - lost / 2) < 1.5, 'half of the ledger came back');
     assert.equal(p1.dmgLog.length, 0, 'the refund clears the ledger');
+  }
+}
+
+// houka: 天才♡ reads health share or an official genius on the other side; U lays 飘了 and pays a
+// genius meter; I eats a melee swing, reappears behind and roots, but a shot lands; O roots, lays
+// 主角 and fades her; L hides her in the coffin while seven small rings chip the foe and a big one bursts.
+{
+  const ho = at('houka');
+  const data = ROSTER[ho];
+  assert.deepEqual(data.bands, ['millsage'], 'houka stands with millsage');
+  assert.ok(ROSTER[at('hina')].genius && ROSTER[at('hotaru')].genius, 'hina and hotaru are the official geniuses');
+  {
+    const g = newGame(ho, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    assert.equal(outshines(g, p1, p2), false, 'even health is not a genius');
+    p1.hp = 500;
+    assert.equal(outshines(g, p1, p2), true, 'a foe with more health left shines brighter');
+    const h = newGame(ho, at('hina')); dummy(h);
+    assert.equal(outshines(h, h.fighters[0], h.fighters[1]), true, 'an official genius always shines');
+  }
+  // U: the dash lays 飘了 — a quarter off the defender's damage — and a genius pays 20 more meter
+  {
+    const gain = (hurt: boolean) => {
+      const g = newGame(ho, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+      p1.x = 300; p2.x = 420; p1.facing = 1; p1.energy = 0;
+      if (hurt) p1.hp = 400;
+      g.keyDown('KeyU'); run(g, .5);
+      assert.ok(p2.hp < p2.data.hp, 'the praise landed');
+      assert.ok(p2.mods.some(m => m.kind === 'dmgDealt' && m.left > 0 && Math.abs((m.v ?? 0) + .25) < 1e-9), '飘了 cuts a quarter of their damage');
+      return p1.energy;
+    };
+    assert.ok(gain(true) - gain(false) >= 19, 'praising a genius pays extra meter');
+  }
+  // I: a melee swing into the act deals nothing; she comes up behind and roots them
+  {
+    const g = newGame(ho, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 380; p1.facing = 1; p2.facing = -1;
+    g.keyDown('KeyI'); g.step(STEP); g.keyUp('KeyI'); run(g, .2);
+    const hp = p1.hp;
+    g.attack(p2, 0);
+    run(g, .3);
+    assert.equal(p1.hp, hp, 'the swing into the act deals nothing');
+    assert.ok(p1.x > p2.x, 'she came up behind the one who swung');
+    assert.ok(p2.root > 0 && p2.hp < p2.data.hp, 'the counter roots and hurts');
+    assert.ok(p2.root > 1 && p2.root <= 1.5, 'an even fight roots for 1.5 seconds');
+  }
+  {
+    const g = newGame(ho, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 380; p1.facing = 1; p2.facing = -1; p1.hp = 400;
+    g.keyDown('KeyI'); g.step(STEP); g.keyUp('KeyI'); run(g, .2);
+    g.attack(p2, 0);
+    run(g, .3);
+    assert.ok(p2.root > 1.6, 'a genius stays pinned longer');
+  }
+  {
+    const g = newGame(ho, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    g.keyDown('KeyI'); g.step(STEP); g.keyUp('KeyI'); run(g, .2);
+    p1.invuln = 0;
+    const hp = p1.hp;
+    hit(g, p2, p1, { ...ROSTER[at('boulder')].skills[0], type: 'projectile', damage: 40 }, { hit: new Set() });
+    assert.ok(p1.hp < hp && p1.attack === null, 'a shot catches her for real and drops the act');
+  }
+  // O: the beam roots a grounded foe, lays 主角 (+20% taken), and fades her
+  {
+    const g = newGame(ho, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 430; p1.facing = 1;
+    g.keyDown('KeyO'); run(g, .4);
+    assert.ok(p2.root > 0 && p2.hp < p2.data.hp, 'the spotlight roots the one it lands on');
+    assert.ok(p2.mods.some(m => m.kind === 'incoming' && m.mark === 'spotlight' && m.v === 1.2), 'the protagonist takes a fifth more');
+    assert.ok(p1.mods.some(m => m.kind === 'veil' && m.left > 3), 'she fades out of the light');
+  }
+  // L: in the coffin she is untouchable and unseen; seven small rings chip the foe without a stagger,
+  // then the big ring's burst knocks down whoever is still inside; running clear or a timed dodge gets out
+  {
+    const g = newGame(ho, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 520; p1.facing = 1; p1.energy = 100;
+    g.keyDown('KeyL'); g.step(STEP); g.keyUp('KeyL'); run(g, .6);
+    assert.ok(violetHidden(p1) && p1.invuln > 0, 'she is inside the coffin, untouchable');
+    let staggered = false;
+    for (let i = 0; i < Math.round(2 / STEP); i++) { g.step(STEP); if (p2.stun > 0 || p2.knocked > 0) staggered = true; }
+    const chip = p2.data.hp - p2.hp;
+    assert.ok(chip > 55 && chip < 80, 'seven small rings chip about 70: ' + chip);
+    assert.ok(!staggered, 'the small rings never stagger');
+    run(g, .5);
+    const lost = p2.data.hp - p2.hp - chip;
+    assert.ok(lost > 150 && lost < 200 && p2.knocked > 0, 'the big ring hits once and knocks down: ' + lost);
+    run(g, .6);
+    assert.ok(!violetHidden(p1), 'she steps out again');
+  }
+  {
+    const g = newGame(ho, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 450; p1.facing = 1; p1.energy = 100;
+    g.keyDown('KeyL'); g.step(STEP); g.keyUp('KeyL'); run(g, 2.1);
+    p2.x = 450 + 290;
+    run(g, 1.6);
+    assert.ok(p2.data.hp - p2.hp < 80 && p2.knocked <= 0, 'clear of the big ring, only the chip landed');
+  }
+  {
+    const g = newGame(ho, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 520; p1.facing = 1; p1.energy = 100;
+    g.keyDown('KeyL'); g.step(STEP); g.keyUp('KeyL'); run(g, 2.8);
+    p2.invuln = .2;
+    run(g, 1);
+    assert.ok(p2.data.hp - p2.hp < 80 && p2.knocked <= 0, 'a dodge timed on the big burst slips through it');
   }
 }
 

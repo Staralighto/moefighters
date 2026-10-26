@@ -62,6 +62,11 @@ export interface MoveScript {
   guitar?: string;
   /** The body is not drawn during the warp. */
   hidden?: boolean;
+  /** The body is not drawn while this holds (康乃馨盛开之日: she is inside the coffin). */
+  hideWhile?: (a: Attack) => boolean;
+  /** 好痛……♡: a melee hit that finds her still in the act. The kernel drops the hit and hands it
+   *  here; shots, grabs and supers never reach it. `a` is her own attack. */
+  counter?: (g: FightGame, f: Fighter, attacker: Fighter, a: Attack) => void;
   /** Outbound half passes through bodies, then the shot turns around. */
   boomerang?: boolean;
   /** Vertical overlap against the chest. Unset keeps the stock 72. */

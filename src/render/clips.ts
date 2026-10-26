@@ -71,6 +71,24 @@ function loco(key: keyof typeof LOCO): Clip {
 /** 天台是我的: seconds into the move when she drops from the mark, and how long the stomp cell holds
  *  after the landing. Shared by the script (combat.ts) and the cell pick above. */
 export const ROOFTOP_DIVE = .4;
+/** 好痛……♡: once the trap springs, the strike cell holds this long before the settle. */
+export const FEIGN_STRIKE = .24;
+/** 好痛……♡: from the spring to the end of the move — the strike plus the settle. */
+export const FEIGN_TAIL = .55;
+/** 康乃馨盛开之日: one ring's clock. It closes for `shrink` seconds from `r0` to `rmin`, then bursts
+ *  back out to `rmax` in `burst`; the front hits once on its way. */
+export interface RingSpec { shrink: number; burst: number; r0: number; rmin: number; rmax: number }
+/** Seven small rings land on the foe one after another: light, and they never interrupt. */
+export const RING_SMALL: RingSpec = { shrink: .5, burst: .08, r0: 120, rmin: 8, rmax: 80 };
+/** The last ring is the big one: dodge it or eat the real damage. */
+export const RING_BIG: RingSpec = { shrink: .85, burst: .12, r0: 270, rmin: 16, rmax: 250 };
+export const RING_SMALLS = 7;
+/** Attack-clock time of the first small ring, and the gap to each next ring (the big one included). */
+export const RING_FIRST = .15;
+export const RING_GAP = .26;
+export const COFFIN_OUT = .5;
+/** She tips back into the coffin this long after the spotlight lands; then she is out of sight. */
+export const COFFIN_TIP = .14;
 export const ROOFTOP_STOMP = .12;
 
 /** Row of the seated drum loop. The three L-column frames play four times across the super. */
@@ -380,6 +398,19 @@ export function clipFor(f: Fighter): Clip {
       const t = f.attack.t, s = f.attack.skill;
       const activeLen = Math.min(.1, (s.duration - s.start) * .4) * 1.5;
       const row = t < s.start ? 0 : t < s.start + activeLen ? 1 : 2;
+      return at('special', f.attack.index - 2, row);
+    }
+    // 好痛……♡: lying in the act is the first cell. A sprung trap shows the strike, then the settle;
+    // an act nobody fell for goes straight to getting up.
+    if (f.attack.skill.fx === 'feign') {
+      const a = f.attack, s = a.skill;
+      const row = a.mode === 1 ? (a.t < a.tossAt + FEIGN_STRIKE ? 1 : 2) : a.t < s.start ? 0 : 2;
+      return at('special', a.index - 2, row);
+    }
+    // 康乃馨盛开之日: hands folded, the tip back into the coffin, then the step out with a sigh.
+    if (f.attack.skill.fx === 'coffin') {
+      const t = f.attack.t, s = f.attack.skill;
+      const row = t < s.start ? 0 : t < s.duration - COFFIN_OUT ? 1 : 2;
       return at('special', f.attack.index - 2, row);
     }
     // 天台是我的: the crouch and leap hold the first cell; the dive and the stomp are the second;

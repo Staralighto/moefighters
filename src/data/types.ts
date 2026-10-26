@@ -165,6 +165,10 @@ export interface Skill {
   solid?: boolean;
   /** 领域: the field this move opens. See DomainSpec. */
   domain?: DomainSpec;
+  /** A debuff laid on the defender by a clean hit (和泉朋花: 飘了 cuts their damage, 主角 raises what
+   *  they take). `v` is the multiplier on the defender: .75 deals a quarter less, 1.2 takes a fifth more. `mark`
+   *  picks the status graphic; `text` pops once when the mod is fresh. */
+  curse?: { kind: 'dmgDealt' | 'incoming'; time: number; v: number; mark?: string; text?: string };
 }
 
 /** One continuous effect a domain projects while it is the newest live field. */
@@ -257,6 +261,9 @@ export interface CharacterData {
   view: ViewSpec;
   /** Key of the while-rooted status effect shown at the torso. Unset draws the default pink heart. */
   rootFx?: string;
+  /** Officially written as a genius (bang-dream.com: 冰川日菜「天才少女」, 汐见萤「音楽の天才」).
+   *  和泉朋花's 天才♡ condition always holds while one stands on the other team. */
+  genius?: boolean;
   /** 二号资源条 (打气): declared per character, charged by the kernel's hit gates, spent by moves.
    *  Absent means the fighter has no gauge and nothing is drawn or charged. */
   gauge?: GaugeSpec;

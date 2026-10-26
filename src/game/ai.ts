@@ -2,6 +2,7 @@ import type { FightGame } from './game.ts';
 import { FLOOR, INPUT_BUFFER, X_MAX, X_MIN } from './constants.ts';
 import type { Fighter } from './fighter.ts';
 import { has } from './mods.ts';
+import { SCRIPTS } from './scripts.ts';
 
 /* Three tiers, rule based. ponytail: fixed tables, no behaviour tree. Master is the third column.
    The extra brain is one clock check (MBAACC wakeup timing, MUGEN punish): no search, no tree. */
@@ -196,6 +197,18 @@ export function stepAI(g: FightGame, dt: number): void {
         else f.jumpRequest = true;
       }
       continue;
+    }
+    // 好痛……♡: a melee swing on its way in is what the act is for. Shots and supers see through it.
+    const swing = threatened?.attack?.skill;
+    if (swing && !grabThreat && !swing.super && swing.type !== 'projectile') {
+      const feint = [2, 3, 4].find(i => !!SCRIPTS[g.skillFor(f, i).fx]?.counter && g.canAttack(f, i));
+      if (feint != null && g.random() < DEFEND_CHANCE[hard]) {
+        f.ai.move = 0;
+        f.ai.facing = dir;
+        f.facing = dir;
+        pushAttack(f, feint);
+        continue;
+      }
     }
     if ((incoming || threatened) && !grabThreat && g.random() < (pinned ? Math.min(1, DEFEND_CHANCE[hard] + .2) : DEFEND_CHANCE[hard])) {
       f.ai.block = .18 + g.random() * .24;

@@ -24,6 +24,8 @@ export function portraitBodyScale(padSplit: boolean): number {
 
 /** Hard 1px rim, yellow for the left team and green for the right. */
 const TEAM_GLOW = SIDE;
+/** Effects painted under every body: 和泉朋花's coffin and her spotlights. */
+const BACK_FX = new Set(['coffin', 'spotlight']);
 
 /** On when one side has two real fighters, or the same character stands on both sides.
  *  2v2 and the 2-on-1 激战 are the first case; a 1v1 mirror match is the second.
@@ -169,6 +171,8 @@ export class Renderer {
     for (const e of g.effects) if (e.type === 'moonlight') drawMoonlight(c, e, 'back');
     // 寿来: the mark is painted on the floor, so it sits under every body.
     for (const e of g.effects) if (e.type === 'lifedraw-mark') zoomAbout(c, bodyScale, e.x, e.y, () => drawEffect(c, e, this.images));
+    // 康乃馨盛开之日 / 请成为主角吧♡: the coffin stands behind her and the spotlight falls behind the body it lights.
+    for (const e of g.effects) if (BACK_FX.has(e.type)) zoomAbout(c, bodyScale, e.x, e.y, () => drawEffect(c, e, this.images));
 
     const lite = isLiteFx();
     // 人和挂在身上的特效绕脚放大。命中、弹道、粒子绕各自的落点放大，战场贴图不动。
@@ -229,6 +233,12 @@ export class Renderer {
         if (f.hp > 0 && f.mods.some(m => m.kind === 'reflect' && m.left > 0 && m.mark === 'lily')) {
           drawEffect(c, { type: 'petal-aura', x: f.x, y: f.y - 105, color: '#ffffff', life: 1, max: 1, radius: 44, age: g.age });
         }
+        // 和泉朋花's curses: 飘了 bobs hearts round the head; 主角 keeps a thin spotlight on the body.
+        if (f.hp > 0) for (const m of f.mods) {
+          if (m.left <= 0) continue;
+          if (m.mark === 'praise') drawEffect(c, { type: 'praise-aura', x: f.x, y: f.y - 182, color: '#ff8fd8', life: 1, max: 1, age: g.age });
+          else if (m.mark === 'spotlight') drawEffect(c, { type: 'spot-aura', x: f.x, y: footY, color: '#fff2fb', life: 1, max: 1, age: g.age });
+        }
         // 完全复活: the gold halo follows the head from the first frame of the window.
         if (f.hp > 0 && f.mods.some(m => m.kind === 'relapse' && m.left > 0 && m.mark === 'halo')) {
           drawEffect(c, { type: 'halo', x: f.x, y: f.y - 176, color: '#ffd54a', life: 1, max: 1, radius: 16 });
@@ -270,7 +280,7 @@ export class Renderer {
       });
     }
     for (const f of g.fighters) if (f.ban > 0 && f.hp > 0) zoomAbout(c, bodyScale, f.x, f.y, () => drawBanSign(c, f));
-    for (const e of g.effects) if (e.type !== 'ghost' && e.type !== 'lifedraw-mark' && e.type !== 'petal-rain' && e.type !== 'rainbow-pop' && e.type !== 'apparatus' && e.type !== 'moonlight') zoomAbout(c, bodyScale, e.x, e.y, () => drawEffect(c, e, this.images));
+    for (const e of g.effects) if (e.type !== 'ghost' && e.type !== 'lifedraw-mark' && e.type !== 'petal-rain' && e.type !== 'rainbow-pop' && e.type !== 'apparatus' && e.type !== 'moonlight' && !BACK_FX.has(e.type)) zoomAbout(c, bodyScale, e.x, e.y, () => drawEffect(c, e, this.images));
     // Screen-space effects: the petal rain and the floor-to-sky pillar must not grow with the body.
     for (const e of g.effects) if (e.type === 'petal-rain' || e.type === 'apparatus') drawEffect(c, e, this.images);
     for (const e of g.effects) if (e.type === 'moonlight') drawMoonlight(c, e, 'front');

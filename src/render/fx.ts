@@ -4,7 +4,7 @@ import type { Fighter } from '../game/fighter.ts';
 import type { FighterView } from './view.ts';
 import { clamp, FLOOR, H, SIDE, W } from '../game/constants.ts';
 import type { ImageCache } from '../assets/loader.ts';
-import { CELL, clipFor, flameFrame, pillarFrame } from './clips.ts';
+import { CELL, clipFor, flameFrame, pillarFrame, RING_BIG, RING_SMALL } from './clips.ts';
 import { watchProp } from './propLayout.ts';
 
 const CUCUMBER_SRC = '/sprites/mutsumi/cucumber.png';
@@ -48,6 +48,12 @@ const SOYO_NOTE_SRC = '/sprites/soyo/note.png';
 const HEART_SRC = '/sprites/anon/heart.png';
 const STONE_SRC = '/sprites/tomori/stone.png';
 const PLASTER_SRC = '/sprites/tomori/plaster.png';
+/** 康乃馨盛开之日: the upright coffin, front face to the screen, on a 512×512 square with the flowers
+ *  round its foot. COFFIN_SIZE is the square's side on stage; the art's foot sits COFFIN_FOOT of the
+ *  way down the square, so that line goes on the floor. Drawn at the picture's own aspect. */
+const COFFIN_SRC = '/sprites/houka/coffin.png';
+const COFFIN_SIZE = 280;
+const COFFIN_FOOT = 492 / 512;
 const PARFAIT_SRC = '/sprites/rana/parfait.png';
 const MATCHA_SRC = '/sprites/rana/matcha.png';
 const SEAL_SRC = '/sprites/miyako/seal.png';
@@ -314,6 +320,45 @@ function arcBladePath(ctx: CanvasRenderingContext2D, cx: number, cy: number, R: 
     ctx.lineTo(cx + Math.cos(a) * ri, cy + Math.sin(a) * ri);
   }
   ctx.closePath();
+}
+
+/** 康乃馨盛开之日: a wreath of small five-petal blossoms sitting just outside a ring, faces to the
+ *  screen like the ring itself. `open` 0 is a tight bud, 1 a flower spread wide; `alpha` stays low so
+ *  the ring's own line is still the clearest edge. Alternate blossoms are a size smaller. */
+function blossomWreath(ctx: CanvasRenderingContext2D, rad: number, n: number, size: number, open: number, alpha: number, spin: number): void {
+  if (alpha <= 0 || size <= 1) return;
+  ctx.save();
+  const orbit = rad + size * .55;
+  const d = size * (.18 + open * .36), rx = size * (.26 + open * .16), ry = size * (.2 + open * .1);
+  // One gradient serves every petal: they all share the same local frame. Lite mode paints flat.
+  let fill: string | CanvasGradient = '#ffb6e6';
+  if (!liteFx) {
+    const g = ctx.createRadialGradient(0, 0, 0, 0, -d, rx * 1.6);
+    g.addColorStop(0, '#ff8fd8');
+    g.addColorStop(1, '#fff3fb');
+    fill = g;
+  }
+  ctx.fillStyle = fill;
+  for (let i = 0; i < n; i++) {
+    const ang = spin + i / n * Math.PI * 2;
+    ctx.save();
+    ctx.translate(Math.cos(ang) * orbit, Math.sin(ang) * orbit);
+    ctx.rotate(ang * 2 + i);
+    const v = i % 2 ? .82 : 1;
+    ctx.scale(v, v);
+    ctx.globalAlpha = alpha;
+    for (let j = 0; j < 5; j++) {
+      ctx.save();
+      ctx.rotate(j / 5 * Math.PI * 2);
+      ctx.beginPath(); ctx.ellipse(0, -d, ry, rx, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+    ctx.globalAlpha = Math.min(1, alpha * 1.5);
+    ctx.fillStyle = '#ffe9a3';
+    ctx.beginPath(); ctx.arc(0, 0, size * .1, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
 }
 
 /** The even-width heart: short blunt tip, full lower arcs — no long tapering point.
@@ -1941,6 +1986,246 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       }
       break;
     }
+    case 'heart-eyes': {
+      // 天才♡: two hearts pop at the eyes and float up, swelling, then a smaller pair follows.
+      const t = e.max - e.life;
+      ctx.translate(e.x, e.y);
+      for (let i = 0; i < 4; i++) {
+        const k = Math.max(0, Math.min(1, (t - (i >> 1) * .18) / .7));
+        if (k <= 0 || k >= 1) continue;
+        const side = i % 2 ? 1 : -1;
+        ctx.save();
+        ctx.translate(side * (10 + k * 16), -k * 46 - (i >> 1) * 6);
+        ctx.rotate(side * .22);
+        ctx.globalAlpha = (1 - k) * .95;
+        ctx.fillStyle = i < 2 ? '#ff6fcf' : '#ffb2e8';
+        heartPath(ctx, (i < 2 ? 11 : 8) * (.6 + k * .6));
+        ctx.fill();
+        ctx.restore();
+      }
+      break;
+    }
+    case 'feign-tears': {
+      // 好痛……♡: lying in the act — two fake teardrops arc off her and a wobbling 「呜」 hangs over her.
+      const t = e.max - e.life;
+      const dir = e.dir ?? 1;
+      ctx.translate(e.x, e.y);
+      ctx.fillStyle = '#bfe6ff';
+      for (let i = 0; i < 2; i++) {
+        const k = ((t * 1.6 + i * .5) % 1);
+        ctx.globalAlpha = (1 - k) * .85;
+        const tx = -dir * (34 + i * 14) - dir * k * 26, ty = -46 - Math.sin(k * Math.PI) * 30 + k * 26;
+        ctx.beginPath(); ctx.ellipse(tx, ty, 4, 6, 0, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = Math.min(1, t / .15) * Math.min(1, e.life / .15) * .9;
+      ctx.fillStyle = e.color;
+      ctx.font = `bold 20px "Ma Shan Zheng", KaiTi, STKaiti, "Noto Serif SC", serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText('呜', -dir * 10 + Math.sin(t * 9) * 3, -96);
+      break;
+    }
+    case 'praise-petal': {
+      // 您真是天才呢♡: one petal tossed behind the dash — it flutters down, turning, and fades.
+      const t = e.max - e.life;
+      const dir = e.dir ?? 1;
+      ctx.translate(e.x - dir * t * 40, e.y + t * t * 120 + Math.sin(t * 11) * 4);
+      ctx.rotate(t * 7 * dir);
+      ctx.globalAlpha = (1 - p) * .8;
+      if (liteFx) ctx.fillStyle = '#ffc6ea';
+      else {
+        const g2 = ctx.createLinearGradient(0, -r, 0, r);
+        g2.addColorStop(0, '#fff3fb');
+        g2.addColorStop(1, '#ff9fdc');
+        ctx.fillStyle = g2;
+      }
+      ctx.beginPath();
+      ctx.moveTo(0, r);
+      ctx.quadraticCurveTo(r * .9, 0, 0, -r);
+      ctx.quadraticCurveTo(-r * .9, 0, 0, r);
+      ctx.fill();
+      break;
+    }
+    case 'praise-pop': {
+      // 您真是天才呢♡: on the praised head, three small hearts rise in a fan and a single sparkle winks.
+      const dir = e.dir ?? 1;
+      ctx.translate(e.x, e.y);
+      for (let i = 0; i < 3; i++) {
+        const k = Math.max(0, Math.min(1, (p - i * .1) / .8));
+        if (k <= 0) continue;
+        ctx.save();
+        ctx.translate(dir * (i - 1) * 16 * (.6 + k), -k * 30 - (i === 1 ? 8 : 0));
+        ctx.rotate((i - 1) * .3);
+        ctx.globalAlpha = (1 - k) * .85;
+        ctx.fillStyle = i === 1 ? '#ff7fcf' : '#ffb6e6';
+        heartPath(ctx, 6 + k * 3);
+        ctx.fill();
+        ctx.restore();
+      }
+      if (p < .4) {
+        const k = p / .4;
+        ctx.globalAlpha = 1 - k;
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+        const sz = 4 + Math.sin(k * Math.PI) * 8;
+        ctx.beginPath(); ctx.moveTo(dir * 26, -14 - sz); ctx.lineTo(dir * 26, -14 + sz);
+        ctx.moveTo(dir * 26 - sz, -14); ctx.lineTo(dir * 26 + sz, -14); ctx.stroke();
+      }
+      break;
+    }
+    case 'fade-petals': {
+      // 请成为主角吧♡: as she fades, five pale petals peel off her and drift back and up into the dark.
+      const dir = e.dir ?? 1;
+      ctx.translate(e.x, e.y);
+      for (let i = 0; i < 5; i++) {
+        const k = Math.max(0, Math.min(1, (p - i * .06) / .85));
+        if (k <= 0 || k >= 1) continue;
+        const ox = (i - 2) * 14 - dir * k * (40 + i * 10);
+        const oy = (i % 2 ? -30 : 20) - k * (50 + i * 8);
+        ctx.save();
+        ctx.translate(ox, oy);
+        ctx.rotate(k * 4 + i);
+        ctx.globalAlpha = (1 - k) * .55;
+        ctx.fillStyle = e.color;
+        ctx.beginPath(); ctx.ellipse(0, 0, 3.5, 7, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+      break;
+    }
+    case 'feign-pop': {
+      // 骗你的♡: where she lay, a pink puff and a burst of small hearts.
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = (1 - p) * .55;
+      ctx.beginPath(); ctx.arc(0, 0, r * (.5 + p * .8), 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1 - p;
+      ctx.fillStyle = '#ffd6f4';
+      for (let i = 0; i < 6; i++) {
+        const a = i / 6 * Math.PI * 2 + .3;
+        ctx.save();
+        ctx.translate(Math.cos(a) * r * (.4 + p * 1.1), Math.sin(a) * r * (.4 + p * 1.1));
+        heartPath(ctx, 7);
+        ctx.fill();
+        ctx.restore();
+      }
+      break;
+    }
+    case 'spotlight': {
+      // 请成为主角吧♡: a stage spotlight from the top of the frame onto the floor.
+      const t = e.max - e.life;
+      const land = Math.min(1, t / .1);
+      const fade = Math.min(1, e.life / .25);
+      const bottom = r;
+      const top = bottom * .3;
+      ctx.translate(e.x, e.y);
+      ctx.globalCompositeOperation = 'lighter';
+      const strength = .42 * land;
+      const beam = ctx.createLinearGradient(-bottom, 0, bottom, 0);
+      beam.addColorStop(0, 'rgba(255,214,244,0)');
+      beam.addColorStop(.5, `rgba(255,240,250,${strength * fade})`);
+      beam.addColorStop(1, 'rgba(255,214,244,0)');
+      ctx.fillStyle = beam;
+      ctx.beginPath();
+      ctx.moveTo(-top, -e.y); ctx.lineTo(top, -e.y); ctx.lineTo(bottom, 0); ctx.lineTo(-bottom, 0);
+      ctx.closePath(); ctx.fill();
+      const pool = ctx.createRadialGradient(0, 0, 4, 0, 0, bottom * 1.2);
+      pool.addColorStop(0, `rgba(255,245,252,${.6 * fade})`);
+      pool.addColorStop(1, 'rgba(255,200,240,0)');
+      ctx.fillStyle = pool;
+      ctx.beginPath(); ctx.ellipse(0, 0, bottom * 1.2, bottom * .28, 0, 0, Math.PI * 2); ctx.fill();
+      // A few motes drift down the beam, catching the light.
+      ctx.fillStyle = '#ffffff';
+      for (let i = 0; i < 6; i++) {
+        const u = (i * .29 + t * (.5 + (i % 3) * .15)) % 1;
+        const half = top + (bottom - top) * u;
+        ctx.globalAlpha = fade * land * (.35 + .35 * Math.sin(t * 9 + i * 2)) * (1 - Math.abs(u - .55));
+        ctx.beginPath(); ctx.arc(Math.sin(i * 2.7 + t * 1.3) * half * .55, -e.y * (1 - u), 1.6 + (i % 2), 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      if (t < .18) {
+        ctx.globalAlpha = 1 - t / .18;
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.ellipse(0, 0, bottom * (1 + t * 3), bottom * .28 * (1 + t * 3), 0, 0, Math.PI * 2); ctx.stroke();
+      }
+      break;
+    }
+    case 'coffin': {
+      // 康乃馨盛开之日: her own coffin stands up behind her, front face to the screen, and holds
+      // through the drumming. It rises in, and on the way out fades as the carnations spill.
+      const im = images?.get(COFFIN_SRC);
+      const t = e.max - e.life;
+      // Snaps in on the cast; the fade out is the step out of the coffin.
+      const rise = Math.min(1, t / .08);
+      const out = Math.min(1, e.life / .35);
+      // One scale for both axes, so the rise grows the coffin instead of stretching it.
+      const grow = .85 + rise * .15;
+      const aspect = im?.naturalWidth ? im.naturalWidth / im.naturalHeight : 1;
+      const h = COFFIN_SIZE * grow, w = h * aspect;
+      const foot = h * COFFIN_FOOT;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = rise * out;
+      if (im?.naturalWidth) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(keyed(im), -w / 2, -foot, w, h);
+      } else {
+        // Placeholder: a white hexagonal coffin face with a pink carnation band, slimmed to a coffin's width.
+        ctx.save();
+        ctx.scale(.62, 1);
+        ctx.fillStyle = '#f4eef4';
+        ctx.strokeStyle = '#8a6f8a'; ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(-w * .32, -h); ctx.lineTo(w * .32, -h); ctx.lineTo(w * .5, -h * .72);
+        ctx.lineTo(w * .36, 0); ctx.lineTo(-w * .36, 0); ctx.lineTo(-w * .5, -h * .72); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#ee99ee';
+        for (let i = 0; i < 7; i++) { ctx.beginPath(); ctx.arc((i - 3) * w * .11, -h * .72 + Math.sin(i * 2.1) * 6, 9, 0, Math.PI * 2); ctx.fill(); }
+        ctx.restore();
+      }
+      if (e.life < .45) {
+        const k = 1 - e.life / .45;
+        ctx.globalAlpha = 1 - k;
+        ctx.fillStyle = '#ee99ee';
+        for (let i = 0; i < 10; i++) {
+          const a = -Math.PI / 2 + (i - 4.5) * .3;
+          ctx.save();
+          ctx.translate(Math.cos(a) * 120 * k, -h * .7 + Math.sin(a) * 90 * k + 140 * k * k);
+          ctx.rotate(i + k * 4);
+          ctx.fillRect(-5, -3, 10, 6);
+          ctx.restore();
+        }
+      }
+      break;
+    }
+    case 'praise-aura': {
+      // 飘了: two little hearts bob round the head of someone who has been praised too much.
+      const t = e.age ?? 0;
+      ctx.translate(e.x, e.y);
+      for (let i = 0; i < 2; i++) {
+        const a = t * 2.4 + i * Math.PI;
+        ctx.save();
+        ctx.translate(Math.cos(a) * 26, Math.sin(a) * 6 - 6 + Math.sin(t * 5 + i) * 3);
+        ctx.globalAlpha = .75 + Math.sin(a) * .2;
+        ctx.fillStyle = '#ff8fd8';
+        heartPath(ctx, 7);
+        ctx.fill();
+        ctx.restore();
+      }
+      break;
+    }
+    case 'spot-aura': {
+      // 主角: a thin spotlight follows the protagonist while the curse holds.
+      const t = e.age ?? 0;
+      ctx.translate(e.x, e.y);
+      ctx.globalCompositeOperation = 'lighter';
+      const g2 = ctx.createLinearGradient(-60, 0, 60, 0);
+      const s = .16 + Math.sin(t * 6) * .03;
+      g2.addColorStop(0, 'rgba(255,214,244,0)');
+      g2.addColorStop(.5, `rgba(255,240,250,${s})`);
+      g2.addColorStop(1, 'rgba(255,214,244,0)');
+      ctx.fillStyle = g2;
+      ctx.beginPath();
+      ctx.moveTo(-18, -e.y); ctx.lineTo(18, -e.y); ctx.lineTo(60, 0); ctx.lineTo(-60, 0);
+      ctx.closePath(); ctx.fill();
+      break;
+    }
     case 'excuse': {
       // 状态不好，这次不算！: a stopwatch spins backwards round her chest (the last two seconds rewound)
       // and a red 「不算」 seal slams down beside her head.
@@ -2753,7 +3038,7 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   else if (p.fx === 'sob') noteRibbon(ctx, p, '#f4e7b4', '#e8c96a');
   else if (p.fx === 'arrow') noteRibbon(ctx, p, '#1a3a8a', '#7ec8ff');
   else if (p.fx === 'music-note' || p.fx === 'rebirth') noteComet(ctx, p);
-  else if (p.fx !== 'fuga' && p.fx !== 'smile-ship' && p.fx !== 'whale' && p.fx !== 'butterfly' && p.fx !== 'jewel' && p.fx !== 'shigure' && p.fx !== 'moca-dusk' && p.fx !== 'sprout' && p.fx !== 'clock' && p.fx !== 'iaido') {
+  else if (p.fx !== 'fuga' && p.fx !== 'smile-ship' && p.fx !== 'whale' && p.fx !== 'butterfly' && p.fx !== 'jewel' && p.fx !== 'shigure' && p.fx !== 'moca-dusk' && p.fx !== 'sprout' && p.fx !== 'clock' && p.fx !== 'iaido' && p.fx !== 'coffin-ring' && p.fx !== 'coffin-ring-big') {
     // 火的故事 skips the stock dots — they read as purple balls; its case draws gold afterimages.
     // 微笑号 is a screen-sized sweep, so the travelling point must not leave a dot trail.
     ctx.fillStyle = p.color;
@@ -2766,6 +3051,61 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   ctx.globalAlpha = 1;
   ctx.translate(p.x, p.y);
   switch (p.fx) {
+    case 'coffin-ring':
+    case 'coffin-ring-big': {
+      // 康乃馨盛开之日: the pink ring closes on the foe — thicker and hotter as it tightens, ticks
+      // pointing in — then at its smallest snaps back out as a bright burst. The big one also keeps a
+      // dashed line where its burst will reach.
+      const big = p.fx === 'coffin-ring-big';
+      const spec = big ? RING_BIG : RING_SMALL;
+      const t = p.age;
+      const sc = big ? 1 : .6;
+      if (t < spec.shrink) {
+        const k = t / spec.shrink;
+        const rad = spec.r0 + (spec.rmin - spec.r0) * k * k * (3 - 2 * k);
+        // Blossoms ride the rim and open as it tightens; they shrink with it so they never crowd.
+        const n = big ? 10 : 6;
+        const size = Math.max(6, Math.min(big ? 34 : 18, rad * Math.PI * 2 / n * .42));
+        blossomWreath(ctx, rad, n, size, .25 + k * .75, Math.min(1, t / .12) * (.5 + k * .15), t * .6);
+        ctx.globalAlpha = Math.min(1, t / .08) * (.55 + k * .45);
+        ctx.fillStyle = `rgba(255,143,216,${.05 + k * .12})`;
+        ctx.beginPath(); ctx.arc(0, 0, rad, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#ff8fd8'; ctx.lineWidth = (3 + k * 5) * sc;
+        ctx.beginPath(); ctx.arc(0, 0, rad, 0, Math.PI * 2); ctx.stroke();
+        if (big) {
+          ctx.save();
+          ctx.globalAlpha *= .6;
+          ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+          ctx.setLineDash([10, 12]);
+          ctx.beginPath(); ctx.arc(0, 0, spec.rmax, 0, Math.PI * 2); ctx.stroke();
+          ctx.restore();
+        }
+        ctx.globalAlpha = Math.min(1, t / .08);
+        ctx.strokeStyle = '#ffd6f4'; ctx.lineWidth = 4 * sc;
+        for (let i = 0; i < 4; i++) {
+          const ang = i * Math.PI / 2 + t * 2;
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(ang) * (rad + 18 * sc), Math.sin(ang) * (rad + 18 * sc));
+          ctx.lineTo(Math.cos(ang) * (rad + 4 * sc), Math.sin(ang) * (rad + 4 * sc));
+          ctx.stroke();
+        }
+      } else {
+        const k = Math.min(1, (t - spec.shrink) / spec.burst);
+        const rad = spec.rmin + (spec.rmax - spec.rmin) * k;
+        // The burst carries the wreath out on its front, the blossoms swelling as they fade.
+        const bloom = Math.min(1, (t - spec.shrink) / (spec.burst + .15));
+        blossomWreath(ctx, rad, big ? 10 : 6, (big ? 34 : 18) * (1 + bloom * .5), 1, (1 - bloom) * .65 * Math.min(1, p.life / .2), spec.shrink * .6 + bloom * .8);
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = Math.min(1, p.life / .2);
+        ctx.fillStyle = `rgba(255,170,226,${.35 * (1 - k * .6)})`;
+        ctx.beginPath(); ctx.arc(0, 0, rad, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 10 * (1 - k * .5) * sc;
+        ctx.beginPath(); ctx.arc(0, 0, rad, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = '#ff8fd8'; ctx.lineWidth = 4 * sc;
+        ctx.beginPath(); ctx.arc(0, 0, rad + 8 * sc, 0, Math.PI * 2); ctx.stroke();
+      }
+      break;
+    }
     case 'parry-orb': {
       // 完美格挡's counter: a soft blue glow around a white core.
       const pulse = 1 + Math.sin(p.age * 30) * .08;

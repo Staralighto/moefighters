@@ -4,7 +4,7 @@ import { addDebt, addMod, dmgDealtMul, dmgTakenMul, has, incomingMul, lifestealO
 import type { FightGame, Projectile, SealVolley } from './game.ts';
 import { CONTROLS, FLOOR, GRAVITY, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
 import { attackPhase } from './animState.ts';
-import { BUSHIDO_TAIL, clipFor, drumRow, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER } from '../render/clips.ts';
+import { BUSHIDO_TAIL, clipFor, drumRow, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS } from '../render/clips.ts';
 import { SCRIPTS } from './scripts.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
@@ -226,6 +226,8 @@ const SWING_RING = [
 /** 哭泣的紫罗兰: she does not exist between the vanish and the reappear — no body is drawn. */
 export function violetHidden(f: Fighter): boolean {
   const a = f.attack;
+  const hide = a ? SCRIPTS[a.skill.fx]?.hideWhile : undefined;
+  if (a && hide) return hide(a);
   return !!a && !!SCRIPTS[a.skill.fx]?.hidden && a.t >= a.skill.start && a.t < a.skill.start + VIOLET_WARP;
 }
 
@@ -427,6 +429,16 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     && !(skill.noBlockSlow && defender.slow > 0);
   // Super armour: an endure move in wind-up eats one strike. 恐湖 and 哈？ keep it through the hit. Grabs and supers still go through.
   const armour = defender.attack;
+  // 好痛……♡: a melee swing that finds her lying in the act springs the trap — no damage, no flinch,
+  // the script takes the swing over. A shot catches her for real: the act is dropped and it lands.
+  const feint = armour && armour.t < armour.skill.start && (armour.mode ?? 0) === 0 ? SCRIPTS[armour.skill.fx]?.counter : undefined;
+  if (feint && g.isEnemy(attacker, defender) && !isGrab && !skill.super && !blocked && !cuts(source, defender)) {
+    if (skill.type === 'projectile') armour!.endure = 0;
+    else {
+      feint(g, defender, attacker, armour!);
+      return false;
+    }
+  }
   const rippleLive = !!armour && !!armour.skill.holdEndure && armour.t < armour.skill.duration - .22;
   const endured = !cuts(source, defender) && !blocked && !!armour && armour.endure > 0 && (rippleLive || armour.t < armour.skill.start) && !isGrab && !skill.super;
   // 绊创膏: the buffed fighter eats the damage without the flinch. Grabs and supers ignore the plaster.
@@ -677,6 +689,13 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       if (fresh || bonus >= defender.frailBonus) defender.frailBonus = bonus;
       defender.frail = Math.max(defender.frail, skill.frail);
       if (fresh) g.text('脆弱', defender.x, defender.y - 195, '#ffb4c8', .6, 18);
+    }
+    // 飘了 / 主角: the clean hit lays a mod on the defender. Data only; the mark picks the graphic.
+    if (skill.curse) {
+      const c = skill.curse;
+      const fresh = !defender.mods.some(m => m.kind === c.kind && m.tag === 'curse:' + (c.mark ?? '') && m.left > 0);
+      addMod(defender, c.kind, c.time, { v: c.kind === 'dmgDealt' ? c.v - 1 : c.v, tag: 'curse:' + (c.mark ?? ''), mark: c.mark });
+      if (fresh && c.text) g.text(c.text, defender.x, defender.y - 212, attacker.data.color, .8, 20);
     }
   } else {
     crit = attacker.critChance > 0 && g.random() < attacker.critChance;
@@ -3418,6 +3437,172 @@ SCRIPTS['rooftop'] = Object.assign(SCRIPTS['rooftop'] ?? {}, {
     g.sparks(f.x, FLOOR - 10, '#ffd0d0', 20, 1.2);
   },
 });
+/* ---- 和泉朋花 ---- */
+
+/** 天才♡: the foe shines brighter than she does — a larger share of their health left — or someone
+ *  the official profile writes as a genius stands on their side (CharacterData.genius). */
+export function outshines(g: FightGame, f: Fighter, foe: Fighter): boolean {
+  for (const o of g.fighters) if (g.isEnemy(f, o) && !o.echo && o.data.genius) return true;
+  return foe.hp / foe.data.hp > f.hp / f.data.hp;
+}
+
+/** 您真是天才呢♡: meter on top of the 飘了 the hit lays, when the one she praised really is a genius. */
+const PRAISE_GAIN = 20;
+/** 好痛……♡: she comes back up this far behind the one who fell for it, untouchable this long. */
+const FEIGN_BEHIND = 64;
+const FEIGN_INVULN = .3;
+/** 好痛……♡: a genius stays pinned longer. */
+const FEIGN_GENIUS_ROOT = 2.2;
+/** 请成为主角吧♡: she fades this long. The beam lands this far ahead of her. */
+const FADE_TIME = 4;
+const SPOT_AHEAD = 120;
+/** 康乃馨盛开之日: the ring locks on the nearest foe within the skill's range; with nobody there it
+ *  closes this far ahead of her. Its centre is at chest height above the floor. */
+const COFFIN_RING_Y = 90;
+/** 康乃馨盛开之日: each small ring's chip. Quiet: no stagger, no combo, so one never strings into the next. */
+const RING_CHIP = 10;
+/** The small rings' skill, derived once per super so every cast shares one object. */
+const chipSkills = new WeakMap<Skill, Skill>();
+function chipOf(s: Skill): Skill {
+  let c = chipSkills.get(s);
+  if (!c) chipSkills.set(s, c = { ...s, damage: RING_CHIP, knock: 0, react: { kind: 'none' } });
+  return c;
+}
+const COFFIN_MISS_AHEAD = 240;
+
+function heartEyes(g: FightGame, f: Fighter): void {
+  g.effect('heart-eyes', f.x, f.y - 150, '#ff7fd8', .9, { follow: f.id, ox: 0, oy: -150 });
+}
+
+/** 您真是天才呢♡: the curse rides on the skill; a genius also pays her meter and gets the heart eyes. */
+function hit_praise(g: FightGame, attacker: Fighter, defender: Fighter): boolean {
+  g.effect('praise-pop', defender.x, defender.y - 150, '#ff9de6', .55, { dir: attacker.facing });
+  if (outshines(g, attacker, defender)) {
+    gainEnergy(attacker, PRAISE_GAIN);
+    g.text('天才♡', attacker.x, attacker.y - 212, '#ff9de6', .8, 20);
+    heartEyes(g, attacker);
+  }
+  return false;
+}
+/** 您真是天才呢♡: the dash scatters a few petals in her wake, like flowers thrown at a star. */
+const PRAISE_PETAL_RATE = 14;
+function step_praise(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (a.t < s.start || a.t >= s.duration - .08) return;
+  if (Math.floor(a.t * PRAISE_PETAL_RATE) === Math.floor((a.t - dt) * PRAISE_PETAL_RATE)) return;
+  g.effect('praise-petal', f.x - f.facing * 22, f.y - 70 - g.random() * 60, f.data.color, .7, { dir: f.facing, radius: 6 + g.random() * 3 });
+}
+SCRIPTS['praise'] = Object.assign(SCRIPTS['praise'] ?? {}, { hit: hit_praise, update: step_praise });
+
+/** 好痛……♡: she lies down in the act. The kernel's endure gate hands a melee swing to counter_feign;
+ *  this tick only lands the strike once she is behind them. An act nobody fell for just gets up. */
+function step_feign(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  if (!a.emitted) {
+    // The act owns its frames: no stock swing at the end of the windup, and the name is called now.
+    a.emitted = true;
+    g.text(s.name, f.x, f.y - 190, f.data.color, .65, 17);
+    g.effect('feign-tears', f.x, f.y, f.data.color, s.start, { follow: f.id, ox: 0, oy: 0, dir: f.facing });
+  }
+  if (a.mode !== 1 || a.shots > 0) return;
+  a.shots = 1;
+  const o = g.fighterById(a.hold);
+  if (!o || o.hp <= 0 || Math.abs(o.x - f.x) > s.range + 60) return;
+  const strike = outshines(g, f, o) ? { ...s, root: FEIGN_GENIUS_ROOT } : s;
+  a.hit = new Set();
+  if (hit(g, f, o, strike, a)) g.effect('slash', o.x - f.facing * 12, o.y - 88, f.data.color, .22, { dir: f.facing, radius: 52 });
+}
+
+function counter_feign(g: FightGame, f: Fighter, attacker: Fighter, a: Attack): void {
+  const s = a.skill;
+  a.mode = 1;
+  a.hold = attacker.id;
+  a.t = Math.max(a.t, s.duration - FEIGN_TAIL);
+  a.tossAt = a.t;
+  g.effect('feign-pop', f.x, f.y - 70, f.data.color, .45, { radius: 52 });
+  // The act she left behind: her lying pose stays a moment as a fading decoy where they swung.
+  g.effect('ghost', f.x, f.y, f.data.color, .5, { fighter: f.id, alpha: .5, sheet: 'special', col: a.index - 2, row: 0, facing: f.facing });
+  f.x = clamp(attacker.x - attacker.facing * FEIGN_BEHIND, X_MIN, X_MAX);
+  f.y = FLOOR;
+  f.vx = 0;
+  f.vy = 0;
+  f.facing = (Math.sign(attacker.x - f.x) || attacker.facing) as 1 | -1;
+  f.invuln = Math.max(f.invuln, FEIGN_INVULN);
+  g.text('骗你的♡', f.x, f.y - 205, '#ff9de6', .8, 22);
+  if (outshines(g, f, attacker)) heartEyes(g, f);
+  g.hitstop = Math.max(g.hitstop, .05);
+}
+SCRIPTS['feign'] = Object.assign(SCRIPTS['feign'] ?? {}, { update: step_feign, counter: counter_feign, noMelee: true });
+
+/** 请成为主角吧♡: the beam does the stock sweep (root and the 主角 curse are data); she steps out of the light. */
+SCRIPTS['spotlight'] = Object.assign(SCRIPTS['spotlight'] ?? {}, {
+  flash(g: FightGame, f: Fighter) {
+    addMod(f, 'veil', FADE_TIME, { tag: 'fade' });
+    // Stepping out of the light: a few pale petals peel off her and drift back into the dark.
+    g.effect('fade-petals', f.x, f.y - 95, '#ffe1f4', .9, { dir: f.facing });
+    g.effect('spotlight', clamp(f.x + f.facing * SPOT_AHEAD, X_MIN, X_MAX), FLOOR, '#fff2fb', .55, { radius: 80 });
+  },
+});
+
+/** 康乃馨盛开之日: the coffin snaps in behind her and she tips into it — untouchable, out of sight.
+ *  Meanwhile eight pink rings land one after another wherever the nearest foe stands right then:
+ *  seven small ones that only chip (no stagger, so one never strings into the next), and last the
+ *  big one. Each ring is a parked shot (shot_coffin_ring); this tick only places them. */
+function step_coffin(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  if (!a.emitted) {
+    a.emitted = true;
+    g.effect('coffin', f.x, FLOOR, f.data.color, s.duration, { fighter: f.id });
+  }
+  f.vx = 0;
+  if (a.t >= s.start && a.t < s.duration - COFFIN_OUT + .05) f.invuln = Math.max(f.invuln, .05);
+  while (a.shots <= RING_SMALLS && a.t >= RING_FIRST + a.shots * RING_GAP) {
+    const big = a.shots === RING_SMALLS;
+    a.shots++;
+    const near = g.nearestEnemyTo(f, f.x);
+    const foe = near && Math.abs(near.x - f.x) <= s.range ? near : undefined;
+    const x = foe ? foe.x : clamp(f.x + f.facing * COFFIN_MISS_AHEAD, X_MIN, X_MAX);
+    const y = foe ? Math.min(foe.y, FLOOR) - COFFIN_RING_Y : FLOOR - COFFIN_RING_Y;
+    const spec = big ? RING_BIG : RING_SMALL;
+    g.projectiles.push({
+      owner: f.id, x, y, vx: 0, vy: 0, life: spec.shrink + spec.burst + .25,
+      skill: big ? s : chipOf(s),
+      color: '#ff8fd8', radius: spec.r0, size: spec.rmax, fx: big ? 'coffin-ring-big' : 'coffin-ring',
+      attack: a, hit: new Set(), trail: [], age: 0, solid: false,
+    });
+  }
+  if (a.mode !== 1 && a.t >= s.duration - COFFIN_OUT) {
+    a.mode = 1;
+    g.text('……还是没能死成呢♡', f.x, f.y - 215, f.data.color, 1.3, 18);
+  }
+}
+
+/** One ring: parked while it closes, then the burst front hits each foe it passes once. */
+function shot_coffin_ring(g: FightGame, p: Projectile): boolean {
+  const big = p.fx === 'coffin-ring-big';
+  const spec = big ? RING_BIG : RING_SMALL;
+  const owner = g.fighterById(p.owner);
+  if (!owner || p.age < spec.shrink || p.age > spec.shrink + spec.burst + .02) return true;
+  const k = Math.min(1, (p.age - spec.shrink) / spec.burst);
+  const front = spec.rmin + (spec.rmax - spec.rmin) * k;
+  if (big && k < .2) g.shake = Math.max(g.shake, 8);
+  for (const o of g.opponents(owner)) {
+    if (o.hp <= 0 || o.echo || p.hit.has(o.id)) continue;
+    if (Math.hypot(o.x - p.x, (o.y - 83) - p.y) > front + 24) continue;
+    if (hit(g, owner, o, p.skill, p, p.x) && big) g.text('主角是你哦♡', o.x, o.y - 228, '#ff9de6', 1.3, 22);
+  }
+  return true;
+}
+SCRIPTS['coffin-ring'] = { shot: shot_coffin_ring };
+SCRIPTS['coffin-ring-big'] = { shot: shot_coffin_ring };
+
+SCRIPTS['coffin'] = Object.assign(SCRIPTS['coffin'] ?? {}, {
+  update: step_coffin,
+  noMelee: true,
+  noSuperFx: true,
+  hideWhile: (a: Attack) => a.t >= a.skill.start + COFFIN_TIP && a.t < a.skill.duration - COFFIN_OUT,
+});
+
 SCRIPTS['milk'] = Object.assign(SCRIPTS['milk'] ?? {}, { spawn: 'milk' });
 SCRIPTS['bag'] = Object.assign(SCRIPTS['bag'] ?? {}, { spawn: 'bag' });
 SCRIPTS['juggle-ball'] = Object.assign(SCRIPTS['juggle-ball'] ?? {}, { spawn: 'juggle', trail: 'speed', bounce: true });

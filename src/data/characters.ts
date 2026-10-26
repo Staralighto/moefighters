@@ -807,6 +807,8 @@ export const ROSTER: CharacterData[] = [
   {
     id: 'hina', name: '冰川日菜', title: '吉他 / 天才', quote: '谁都不跟我一样！所以才有趣！', color: '#55DDEE',
     bands: ['pastel-palettes'],
+    // 官网：「Pastel＊Palettesのギターを務める、天才少女。」
+    genius: true,
     ...stats('rush'),
     view: { kind: 'sprite', common: '/sprites/hina/common.png', special: '/sprites/hina/special.png', height: 181 },
     skills: [
@@ -1174,6 +1176,8 @@ export const ROSTER: CharacterData[] = [
   {
     id: 'hotaru', name: '汐见萤', title: '主唱兼键盘 / 装置', quote: '让millsage，就此结束。', color: '#99FF99',
     bands: ['millsage'],
+    // 官网：「心優しき音楽の天才。」
+    genius: true,
     ...stats('focus'),
     rainbow: { chance: .12, cooldown: 10 },
     view: {
@@ -1270,6 +1274,47 @@ export const ROSTER: CharacterData[] = [
         ],
         brief: '嚎叫震开后狼化：J / K、吸血不倒；结束反噬',
         detail: '月光下嚎叫约 1 秒，持续震开周围；随后变身狼人 8 秒：只剩 J / K，三下 J 后扑咬「枣到你了」；移速提高，吸血 20%，真霸体，生命不低于 1；结束反噬 30% 最大生命，可致死；无法获得气',
+      }),
+    ],
+  },
+  {
+    id: 'houka', name: '和泉朋花', title: '鼓手 / 天才控', quote: '我最喜欢天才了♡', color: '#EE99EE',
+    bands: ['millsage'],
+    ...stats('beat'),
+    view: {
+      kind: 'sprite', common: '/sprites/houka/common.png', special: '/sprites/houka/special.png', height: 175,
+      extras: ['/sprites/houka/coffin.png'],
+    },
+    skills: [
+      skill(0, 'light', '失礼了♡'),
+      skill(1, 'heavy', '长靴'),
+      // 天才♡ (combat.ts outshines): the foe has a larger share of health left, or a genius stands on their side.
+      skill(2, 'dash', '您真是天才呢♡', {
+        damage: 40, cd: 6, fx: 'praise',
+        curse: { kind: 'dmgDealt', time: 5, v: .75, mark: 'praise', text: '飘了♡' },
+        brief: '突进；打实后对方伤害降低，对方是天才时回气',
+        detail: '突进；打实后对方飘了 5 秒，造成的伤害降低 25%；对方血量比例高于自己或对方队伍有天才时，额外回 20 气',
+      }),
+      skill(3, 'endure', '好痛……♡', {
+        damage: 35, range: 120, start: .8, duration: 1.1, cd: 8, fx: 'feign',
+        root: 1.5, rootPin: true, rootBreak: 0, knock: 0, react: { kind: 'stand' },
+        brief: '装弱倒地；近身打她则被绕背定身，飞弹可破',
+        detail: '装弱倒地 0.8 秒；期间被近身攻击打中则免伤，绕到对方背后反击并定身 1.5 秒，对方是天才时 2.2 秒；飞弹照常命中；没人上当会留下破绽',
+      }),
+      skill(4, 'sweep', '请成为主角吧♡', {
+        damage: 36, range: 200, start: .3, duration: .7, cd: 9, fx: 'spotlight',
+        root: .6, rootPin: true, knock: 0, react: { kind: 'stand' },
+        curse: { kind: 'incoming', time: 4, v: 1.2, mark: 'spotlight', text: '主角♡' },
+        brief: '身前聚光灯定身并增伤，自身半透明；跳起可躲',
+        detail: '身前落下聚光灯；打实则定身 0.6 秒，对手成为主角 4 秒，受到的伤害提高 20%；自身半透明 4 秒，J / K 有 20% 打空、飞弹 90% 打空；跳起可躲',
+      }),
+      // The rings' clocks live in clips.ts (RING_SMALL / RING_BIG). `damage` is the big ring; each
+      // small ring chips RING_CHIP (combat.ts). The coffin holds until 3.0s.
+      skill(5, 'endure', '康乃馨盛开之日', {
+        damage: 180, range: 460, start: .15, duration: 3.5, fx: 'coffin', noBlock: true, control: true,
+        knock: 380, react: { kind: 'knockdown', vy: -320, knocked: .9 },
+        brief: '入棺无敌；对手身边落七小圈一大圈，大圈可闪避',
+        detail: '躲进自己的棺材，期间无敌；对手所在处接连落下七个小粉圈和一个大粉圈，各自收缩到最小后炸开；小圈伤害低、不打断对手，大圈打中即击倒；无法格挡，跑出圈外或抓准时机闪避可躲',
       }),
     ],
   },
