@@ -1,10 +1,10 @@
 import type { HitReact, Op, Skill } from '../data/types.ts';
 import { gainEnergy, gainGauge, type Attack, type Fighter } from './fighter.ts';
-import { addDebt, addMod, dmgDealtMul, dmgTakenMul, has, incomingMul, lifestealOf, reflectAmount } from './mods.ts';
+import { addDebt, addMod, dmgDealtMul, dmgTakenMul, has, incomingMul, lifestealOf, reflectAmount, type Mod } from './mods.ts';
 import type { FightGame, Projectile, SealVolley } from './game.ts';
-import { CONTROLS, FLOOR, GRAVITY, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
+import { CONTROLS, FLOOR, GRAVITY, H, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
 import { attackPhase } from './animState.ts';
-import { BUSHIDO_TAIL, clipFor, drumRow, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS, PRACTICE_HITS, practiceBeat, SKIP_HOP, SKIP_MAX, SKIP_MIN, SKIP_TAIL } from '../render/clips.ts';
+import { BUSHIDO_TAIL, clipFor, drumRow, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS, PRACTICE_HITS, practiceBeat, SKIP_HOP, SKIP_MAX, SKIP_MIN, SKIP_TAIL, MINE_FUSE, ENCORE, ENCORE_FACE, ENCORE_GONE, BURDEN_Y, UNBOWED_STEP, UNBOWED_MAX } from '../render/clips.ts';
 import { SCRIPTS } from './scripts.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
@@ -439,6 +439,28 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       return false;
     }
   }
+  // 一肩扛下: each live charge eats one whole hit — no damage, no flinch. Grabs and supers go
+  // through. The last charge to break drops her where she stands (the voice that gave out).
+  if (!blocked && !isGrab && !skill.super && !cuts(source, defender) && g.isEnemy(attacker, defender)) {
+    const load = defender.mods.find(m => m.kind === 'burden' && m.left > 0 && (m.v ?? 0) > 0);
+    if (load) {
+      load.v = (load.v ?? 1) - 1;
+      g.effect('burden-break', defender.x, defender.y - BURDEN_Y, defender.data.color, .45, { n: load.v, follow: defender.id, ox: 0, oy: -BURDEN_Y });
+      g.hitstop = Math.max(g.hitstop, .04);
+      g.audio.play('block', attacker.id);
+      if (load.v <= 0) {
+        load.left = 0;
+        defender.stun = BURDEN_COLLAPSE * defender.stunMul;
+        defender.attack = null;
+        retainEscape(defender);
+        g.effect('burden-collapse', defender.x, defender.y - 150, '#c9cfe0', BURDEN_COLLAPSE, { follow: defender.id, ox: 0, oy: -150 });
+        g.text('……唱不出来了', defender.x, defender.y - 205, '#c9cfe0', 1, 17);
+      } else {
+        g.text('扛住', defender.x, defender.y - 190, defender.data.color, .4, 16);
+      }
+      return true;
+    }
+  }
   const rippleLive = !!armour && !!armour.skill.holdEndure && armour.t < armour.skill.duration - .22;
   const endured = !cuts(source, defender) && !blocked && !!armour && armour.endure > 0 && (rippleLive || armour.t < armour.skill.start) && !isGrab && !skill.super;
   // 绊创膏: the buffed fighter eats the damage without the flinch. Grabs and supers ignore the plaster.
@@ -559,6 +581,15 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     if (crit) damage *= 1.5;
     // 小摩卡要上了: one flat extra chunk when the body was already slowed. This hit's own slow does not count.
     if (wasSlow && skill.slowBonus) damage += skill.slowBonus;
+    // 一肩扛下, carried through: the charges she never had to spend land as aftershocks on this hit.
+    const quake = attacker.mods.find(m => m.kind === 'quake' && m.left > 0);
+    if (quake) {
+      const n = quake.acc ?? 0;
+      quake.left = 0;
+      damage += QUAKE_DAMAGE * n;
+      g.effect('quake', defender.x, defender.y - 85, attacker.data.color, .55, { n, radius: 46 });
+      g.shake = Math.max(g.shake, 6);
+    }
     // 鼓点: a clean hit adds a beat; taking one shakes two off.
     if (attacker.data.trait === 'beat') attacker.beatStacks = Math.min(BEAT_MAX, attacker.beatStacks + 1);
     if (defender.data.trait === 'beat') defender.beatStacks = Math.max(0, defender.beatStacks - 2);
@@ -720,6 +751,8 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   // 狼王来了: while it holds, a hit cannot take the last point. The relapse is not a hit, so it still can.
   if (has(defender, 'undying')) defender.hp = Math.max(Math.min(1, hpBefore), defender.hp);
   noteDamage(g, defender, hpBefore - defender.hp);
+  // 绝不退场: a mod can count the clean hits that cost her hp.
+  if (!blocked && hpBefore > defender.hp) for (const m of defender.mods) if (m.left > 0 && m.hurt) m.hurt(g, defender);
   if (defender.hp <= 0 && defender.deathSave > 0) {
     // 想成为人类: lethal damage stops at 1 hp, spends a charge, and clears the hit's locks. One sparks, no text.
     defender.deathSave--;
@@ -3794,6 +3827,309 @@ function step_practice(g: FightGame, f: Fighter, a: Attack): void {
   }
 }
 SCRIPTS['practice'] = Object.assign(SCRIPTS['practice'] ?? {}, { update: step_practice, skipCount: true, noMelee: true });
+
+/* ---- 滨崎茉幌 ---- */
+
+const BURDEN_CHARGES = 3;
+const BURDEN_TIME = 6;
+/** 一肩扛下: the last charge to break drops her for this long. */
+const BURDEN_COLLAPSE = .8;
+/** 一肩扛下, carried through: each charge left at the end is one aftershock on her next clean hit. */
+const QUAKE_DAMAGE = 20;
+const QUAKE_TIME = 5;
+/** 一肩扛下: she pats her chest and the three come up. */
+function emit_burden(g: FightGame, f: Fighter): void {
+  const m = addMod(f, 'burden', BURDEN_TIME, {
+    v: BURDEN_CHARGES,
+    onExpire: (game, who) => {
+      const left = Math.round(m.v ?? 0);
+      if (left <= 0) return;
+      addMod(who, 'quake', QUAKE_TIME, { acc: left });
+      game.effect('quake-ready', who.x, who.y - BURDEN_Y, '#ffd54a', .6, { follow: who.id, ox: 0, oy: -BURDEN_Y });
+      game.text('扛住了！', who.x, who.y - 222, who.data.color, .8, 18);
+    },
+  });
+  g.effect('burden-rise', f.x, f.y - BURDEN_Y, f.data.color, .5, { follow: f.id, ox: 0, oy: -BURDEN_Y });
+}
+SCRIPTS['burden'] = Object.assign(SCRIPTS['burden'] ?? {}, { emit: emit_burden, noMelee: true });
+
+/** 绝不退场: the slap costs this much, the window runs this long, cuts damage taken to this,
+ *  and every clean hit she takes inside it adds this much to her damage, up to the cap. */
+const SLAP_COST = 30;
+const UNBOWED_TIME = 6;
+const UNBOWED_CUT = .8;
+/** 绝不退场: both hands on her own cheeks — the red prints stay for the window — then the shout
+ *  at the sea, and a gust off the water behind her. The breakout's own shove rides after this. */
+function emit_slap(g: FightGame, f: Fighter): void {
+  const cost = Math.min(SLAP_COST, Math.max(0, Math.ceil(f.hp) - 1));
+  if (cost > 0) {
+    f.hp -= cost;
+    g.text('-' + cost, f.x - f.facing * 26, f.y - 168, '#ff8a9a', .6, 16);
+  }
+  g.effect('slap', f.x + f.facing * 8, f.y - 150, '#ff5a6e', .5, { dir: f.facing, follow: f.id, ox: f.facing * 8, oy: -150 });
+  g.effect('slap-flash', W / 2, H / 2, '#ff2846', .28);
+  g.effect('unbowed-wind', f.x, f.y - 96, '#e8f6ff', .9, { dir: f.facing, radius: 230 });
+  g.effect('unbowed-shout', f.x + f.facing * 10, f.y - 245, '#ff8a9a', 1.3, { dir: f.facing, follow: f.id, ox: f.facing * 10, oy: -245 });
+  g.shake = Math.max(g.shake, 6);
+  g.hitstop = Math.max(g.hitstop, .05);
+  addMod(f, 'dmgTaken', UNBOWED_TIME, { v: UNBOWED_CUT, tag: 'unbowed' });
+  const rage = addMod(f, 'dmgDealt', UNBOWED_TIME, {
+    v: 0, tag: 'unbowed',
+    hurt: (game, who) => {
+      if ((rage.v ?? 0) >= UNBOWED_MAX - 1e-9) return;
+      rage.v = Math.min(UNBOWED_MAX, (rage.v ?? 0) + UNBOWED_STEP);
+      game.effect('unbowed-stack', who.x, who.y - 176, '#ff8a9a', .4, { follow: who.id, ox: 0, oy: -176 });
+    },
+  });
+}
+SCRIPTS['slap'] = Object.assign(SCRIPTS['slap'] ?? {}, { emit: emit_slap, noMelee: true });
+/** 绝不退场: the window's damage bonus while it holds. The renderer reads the stacks off it. */
+export function unbowedRage(f: Fighter): Mod | undefined {
+  for (const m of f.mods) if (m.kind === 'dmgDealt' && m.tag === 'unbowed' && m.left > 0) return m;
+  return undefined;
+}
+
+/** 精准踩雷: she steps in this fast through the windup. */
+const PAT_STEP = 300;
+const PAT_DAMAGE = 8;
+/** 精准踩雷: each buff the blast sets off adds this much, up to MINE_MAX of them. */
+const MINE_BONUS = 15;
+const MINE_MAX = 3;
+/** 精准踩雷: after the blast (or a pat that found nobody) the move winds down over this. */
+const MINE_TAIL = .22;
+/** 精准踩雷: what she says with her hand on their shoulder. The kindest line she has for each of them,
+ *  and the one that hurt most (millsage band story, the 拜托了，倾心一掷 event, the 萌百 trivia). */
+const PAT_LINES: Record<string, string> = {
+  nagi: '如果很痛苦的话……退出乐队也没关系的',
+  kanata: '感觉我的人生就要开始了！',
+  houka: '你可是今天的主角啊！',
+  hotaru: '这就像是上天的礼物呢！',
+};
+const PAT_LINE = '没关系的哦～';
+/** A live mod the blast sets off: what is propping them up right now. Bills, death saves, forms,
+ *  debuffs and curses are not hers to touch. */
+function propping(m: Mod): boolean {
+  if (m.left <= 0 || (m.tag ?? '').startsWith('curse:')) return false;
+  switch (m.kind) {
+    case 'brace': case 'poise': case 'speed': case 'regen': case 'lifesteal': case 'reflect':
+    case 'thorns': case 'nocd': case 'burden': case 'quake':
+      return true;
+    case 'veil': return m.tag !== 'apparatus';
+    case 'dmgDealt': return (m.v ?? 0) > 0;
+    case 'dmgTaken': return (m.v ?? 1) < 1 && m.tag !== 'box';
+    case 'incoming': return (m.v ?? 1) < 1;
+    default: return false;
+  }
+}
+/** Sets off up to MINE_MAX of them. Each ends on the next tick, so its own expiry still runs
+ *  (荆棘's thorns go back down, 安可's cooldowns start); 一肩扛下 just ends, it never paid out. */
+function setOff(o: Fighter): number {
+  let n = 0;
+  for (const m of o.mods) {
+    if (n >= MINE_MAX) break;
+    if (!propping(m)) continue;
+    if (m.kind === 'burden') m.onExpire = undefined;
+    m.left = 1e-6;
+    n++;
+  }
+  return n;
+}
+const patOf = new WeakMap<Skill, Skill>();
+const boomOf = new WeakMap<Skill, Skill[]>();
+function patSkill(s: Skill): Skill {
+  let p = patOf.get(s);
+  if (!p) {
+    p = { ...s, damage: PAT_DAMAGE, knock: 0, gain: 4, react: { kind: 'stand', stun: MINE_FUSE + .3, holdStill: true } };
+    patOf.set(s, p);
+  }
+  return p;
+}
+function boomSkill(s: Skill, n: number): Skill {
+  let b = boomOf.get(s);
+  if (!b) {
+    b = Array.from({ length: MINE_MAX + 1 }, (_, i) => ({ ...s, damage: s.damage + MINE_BONUS * i, react: { kind: 'float' as const, vy: -620, stun: 1 } }));
+    boomOf.set(s, b);
+  }
+  return b[Math.min(n, MINE_MAX)];
+}
+/** 精准踩雷: a few kind little steps, a hand on their shoulder and the kindest thing she can think of —
+ *  and a mine clicks up under their feet. MINE_FUSE later it goes off and lifts them, setting off
+ *  whatever was propping them up. She never meant any of it. a.mode: 0 stepping in, 1 the fuse,
+ *  2 after the blast, 3 a pat that found nobody. */
+function step_landmine(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  const mode = a.mode ?? 0;
+  if (mode === 0) {
+    if (a.t < s.start) { f.x = clamp(f.x + f.facing * PAT_STEP * dt, X_MIN, X_MAX); return; }
+    let o: Fighter | undefined;
+    for (const p of g.fighters) {
+      if (!g.isEnemy(f, p) || p.hp <= 0 || p.echo) continue;
+      const gap = (p.x - f.x) * f.facing;
+      if (gap < -20 || gap > s.range || Math.abs(p.y - f.y) >= 112) continue;
+      if (!o || Math.abs(p.x - f.x) < Math.abs(o.x - f.x)) o = p;
+    }
+    a.hit = new Set();
+    if (!o || !hit(g, f, o, patSkill(s), a)) {
+      a.mode = 3;
+      a.t = Math.max(a.t, s.duration - MINE_TAIL);
+      return;
+    }
+    a.mode = 1;
+    a.hold = o.id;
+    a.tossAt = a.t;
+    o.vx = 0;
+    g.text(PAT_LINES[o.data.id] ?? PAT_LINE, f.x, f.y - 214, '#d8fbff', MINE_FUSE + .9, 15);
+    g.effect('pat', o.x - f.facing * 12, o.y - 138, '#ffffff', .45, { dir: f.facing });
+    const mouthX = f.x + f.facing * 14, mouthY = f.y - 150;
+    g.effect('kind-bubble', mouthX, mouthY, '#ffffff', .26, { tx: o.x - mouthX, ty: FLOOR - mouthY });
+    g.effect('mine', o.x, FLOOR, '#ff5a5a', MINE_FUSE + .04, { tint: f.data.color });
+    return;
+  }
+  if (mode !== 1 || a.t < a.tossAt + MINE_FUSE) return;
+  a.mode = 2;
+  const o = g.fighterById(a.hold);
+  if (!o || o.hp <= 0) return;
+  const n = setOff(o);
+  a.hit = new Set();
+  hit(g, f, o, boomSkill(s, n), a);
+  g.effect('mine-boom', o.x, FLOOR, '#ffb14a', .7, { n, radius: 64 + n * 14 });
+  g.shake = Math.max(g.shake, 8 + n * 2);
+  g.flash = Math.max(g.flash, .06);
+  g.effect('oops', f.x - f.facing * 6, f.y - 214, '#ffffff', 1, { follow: f.id, ox: -f.facing * 6, oy: -214 });
+  if (n) g.text('诶……我说错什么了吗？', f.x, f.y - 246, f.data.color, 1, 15);
+  a.t = Math.max(a.t, s.duration - MINE_TAIL - .08);
+}
+SCRIPTS['landmine'] = Object.assign(SCRIPTS['landmine'] ?? {}, { update: step_landmine, noMelee: true });
+
+/** 安可是主唱的: the two calls from the floor before the light, and the third that darkens her face. */
+const ENCORE_CALLS = [.06, .3];
+/** 安可是主唱的: the light finds the nearest foe this far away; a body this high in the air, or mid-dodge, slips it. */
+const ENCORE_AIR = 40;
+const ENCORE_MISS_AHEAD = 200;
+const ENCORE_ROOT = 1.2;
+const ENCORE_SPOT_DAMAGE = 10;
+/** 安可是主唱的: the run. Contact this close starts the three blows, ENCORE_GAP apart; a blow reaches this far. */
+const ENCORE_SPEED = 1350;
+const ENCORE_CONTACT = 70;
+const ENCORE_REACH = 260;
+const ENCORE_HITS = 3;
+const ENCORE_GAP = .07;
+/** 安可是主唱的: the run home, in from the far edge to where she stood. */
+const ENCORE_RETURN = 1000;
+const encoreParts = new WeakMap<Skill, { spot: Skill; blow: Skill; last: Skill }>();
+function encoreOf(s: Skill): { spot: Skill; blow: Skill; last: Skill } {
+  let e = encoreParts.get(s);
+  if (!e) {
+    const blow: Skill = { ...s, finale: undefined, knock: 40, react: { kind: 'stand', stun: .35 } };
+    e = {
+      spot: { ...s, finale: undefined, damage: ENCORE_SPOT_DAMAGE, root: ENCORE_ROOT, rootPin: true, rootBreak: 0, knock: 0, gain: 2, react: { kind: 'stand' } },
+      blow,
+      last: { ...blow, ...s.finale },
+    };
+    encoreParts.set(s, e);
+  }
+  return e;
+}
+function encoreCall(g: FightGame, i: number): void {
+  const x = W * (.2 + .3 * i + g.random() * .1);
+  g.effect('encore-call', x, H - 150 - g.random() * 30, '#99FF99', 1, { radius: i === 2 ? 40 : 30, dir: i % 2 ? 1 : -1 });
+}
+/** 安可是主唱的: a blank lyric page torn off behind her this often through the run. */
+const PAGE_EVERY = .05;
+/** 安可是主唱的 (millsage band story 17, the encore after the first live): the floor calls for an encore
+ *  and cheers the new vocalist. She lights the foe up as the one they are calling for, her face goes
+ *  dark on the third call, and she runs — through them, off the stage, and a second later in again
+ *  from the other side, still running, all the way back to where she stood. Off the frame she is untouchable. a.mode walks ENCORE; a.tossAt is when the phase began,
+ *  a.liftAt when the run met the body, a.shots the blows landed. */
+function step_encore(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  const parts = encoreOf(s);
+  f.vx = 0;
+  if (!a.emitted) {
+    a.emitted = true;
+    g.effect('encore-stage', W / 2, H / 2, '#ffffff', 2.8);
+    g.effect('encore-crowd', W / 2, H, '#99FF99', 2.6);
+  }
+  const mode = a.mode ?? ENCORE.crowd;
+  if (mode === ENCORE.crowd) {
+    while (a.shots < ENCORE_CALLS.length && a.t >= ENCORE_CALLS[a.shots]) encoreCall(g, a.shots++);
+    if (a.t < s.start) return;
+    a.mode = ENCORE.face;
+    a.tossAt = a.t;
+    a.shots = 0;
+    a.anchor = f.x;
+    const o = g.nearestEnemyTo(f, f.x);
+    const near = o && Math.abs(o.x - f.x) <= s.range ? o : undefined;
+    if (near) f.facing = (Math.sign(near.x - f.x) || f.facing) as 1 | -1;
+    a.hit = new Set();
+    const lit = !!near && near.y > FLOOR - ENCORE_AIR && near.dodge <= 0 && hit(g, f, near, parts.spot, a);
+    a.hold = lit && near ? near.id : -1;
+    const spotX = lit && near ? near.x : clamp(f.x + f.facing * ENCORE_MISS_AHEAD, X_MIN, X_MAX);
+    g.effect('encore-spot', spotX, FLOOR, '#fff6d8', ENCORE_FACE + .6, { radius: 78, dir: -f.facing });
+    g.effect('encore-rain', W / 2, H / 2, '#b8d6ff', 2.2);
+    if (near) g.text(near.data.id === 'hotaru' ? '大家在喊你呢，主唱小姐。' : '大家在喊你呢。', f.x, f.y - 222, '#e8e6f2', ENCORE_FACE + .6, 16);
+    encoreCall(g, 2);
+    return;
+  }
+  if (mode === ENCORE.face) {
+    if (a.t >= a.tossAt + ENCORE_FACE) { a.mode = ENCORE.dash; a.tossAt = a.t; a.liftAt = 0; }
+    return;
+  }
+  if (mode === ENCORE.dash) {
+    f.x = clamp(f.x + f.facing * ENCORE_SPEED * dt, X_MIN, X_MAX);
+    if (Math.floor(a.t * 30) !== Math.floor((a.t - dt) * 30)) g.effect('ghost', f.x - f.facing * 22, f.y, '#0a0b14', .25, { fighter: f.id, alpha: .45, tint: '#0a0b14' });
+    if (Math.floor(a.t / PAGE_EVERY) !== Math.floor((a.t - dt) / PAGE_EVERY)) {
+      g.effect('lyric-page', f.x - f.facing * 10, f.y - 70 - g.random() * 70, '#f4efe6', 1.1, { dir: f.facing, n: Math.floor(g.random() * 9) });
+    }
+    if (a.hold < 0) {
+      const o = foeAhead(g, f, ENCORE_CONTACT);
+      if (o && Math.abs(o.y - f.y) < 112) a.hold = o.id;
+    }
+    const o = a.hold >= 0 ? g.fighterById(a.hold) : undefined;
+    if (o && !a.liftAt && Math.abs(o.x - f.x) < ENCORE_CONTACT) a.liftAt = a.t;
+    const edge = f.x <= X_MIN || f.x >= X_MAX;
+    while (o && a.liftAt && a.shots < ENCORE_HITS && (edge || a.t >= a.liftAt + a.shots * ENCORE_GAP)) {
+      const last = a.shots === ENCORE_HITS - 1;
+      a.shots++;
+      if (o.hp <= 0 || Math.abs(o.x - f.x) > ENCORE_REACH) continue;
+      a.hit = new Set();
+      if (hit(g, f, o, last ? parts.last : parts.blow, a)) {
+        g.effect('encore-cut', o.x, o.y - 90, '#e8e6f2', .3, { dir: f.facing, radius: 44 + a.shots * 10, n: a.shots - 1 });
+        if (last) g.effect('encore-shatter', o.x, FLOOR, '#fff6d8', .75);
+      }
+    }
+    if (!edge) return;
+    a.mode = ENCORE.gone;
+    a.tossAt = a.t;
+    g.effect('encore-exit', f.x, FLOOR, '#c9cfe0', .55, { dir: f.facing });
+    // While she is gone, one last page drifts down in the middle of the empty stage.
+    g.effect('lyric-page', W / 2, FLOOR - 300, '#f4efe6', ENCORE_GONE + .3, { dir: -f.facing, n: 4 });
+    return;
+  }
+  if (mode === ENCORE.gone) {
+    f.invuln = Math.max(f.invuln, .05);
+    if (a.t < a.tossAt + ENCORE_GONE) return;
+    // Round the world and in again from the other side, still running the same way.
+    a.mode = ENCORE.back;
+    a.tossAt = a.t;
+    f.x = f.facing > 0 ? X_MIN : X_MAX;
+    g.effect('encore-exit', f.x, FLOOR, '#c9cfe0', .4, { dir: -f.facing });
+    return;
+  }
+  f.x += f.facing * ENCORE_RETURN * dt;
+  if (Math.floor(a.t * 30) !== Math.floor((a.t - dt) * 30)) g.effect('ghost', f.x - f.facing * 22, f.y, f.data.color, .18, { fighter: f.id, alpha: .3 });
+  if ((f.x - a.anchor) * f.facing >= 0) {
+    f.x = clamp(a.anchor, X_MIN, X_MAX);
+    a.t = s.duration;
+  }
+}
+SCRIPTS['encore'] = Object.assign(SCRIPTS['encore'] ?? {}, {
+  update: step_encore,
+  noMelee: true,
+  skipCount: true,
+  noSuperFx: true,
+  hideWhile: (a: Attack) => a.mode === ENCORE.gone,
+});
 
 SCRIPTS['milk'] = Object.assign(SCRIPTS['milk'] ?? {}, { spawn: 'milk' });
 SCRIPTS['bag'] = Object.assign(SCRIPTS['bag'] ?? {}, { spawn: 'bag' });

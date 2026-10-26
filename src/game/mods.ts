@@ -5,7 +5,11 @@ import type { FightGame } from './game.ts';
 export type ModKind =
   | 'brace' | 'poise' | 'dmgDealt' | 'dmgTaken' | 'speed' | 'slow' | 'regen'
   | 'noGain' | 'lockNormals' | 'lockGuard' | 'thorns' | 'debt' | 'nocd' | 'veil'
-  | 'relapse' | 'incoming' | 'reflect' | 'soulorb' | 'lifesteal' | 'undying';
+  | 'relapse' | 'incoming' | 'reflect' | 'soulorb' | 'lifesteal' | 'undying'
+  /** 一肩扛下: v is the charges left; each eats one whole hit (combat.ts hit()). */
+  | 'burden'
+  /** 一肩扛下, carried through: acc is the aftershocks the next clean hit adds. */
+  | 'quake';
 
 /**
  * One running buff.
@@ -27,6 +31,8 @@ export interface Mod {
   onExpire?: (g: FightGame, f: Fighter) => void;
   pulseEvery?: number;
   pulse?: (g: FightGame, f: Fighter) => void;
+  /** Runs once each time the owner takes a clean hit that costs hp (绝不退场's stacks). */
+  hurt?: (g: FightGame, f: Fighter) => void;
 }
 
 export function addMod(f: Fighter, kind: ModKind, time: number, opt: Partial<Mod> & { max?: boolean } = {}): Mod {
@@ -46,6 +52,7 @@ export function addMod(f: Fighter, kind: ModKind, time: number, opt: Partial<Mod
   if (opt.onExpire) m.onExpire = opt.onExpire;
   if (opt.pulse) m.pulse = opt.pulse;
   if (opt.pulseEvery) m.pulseEvery = opt.pulseEvery;
+  if (opt.hurt) m.hurt = opt.hurt;
   project(f);
   return m;
 }

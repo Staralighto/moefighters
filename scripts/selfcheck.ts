@@ -125,7 +125,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(opening < 40, `${id}: the opening stays under a chipped bar, ${opening}`);
     assert.equal(withGuard(s, breakAt + 99).guardDmg, plan![plan!.length - 1], id + ': a late segment repeats the last entry');
   }
-  for (const id of ['uika', 'mutsumi', 'umiri', 'taki', 'layer', 'sayo', 'houka']) {
+  for (const id of ['uika', 'mutsumi', 'umiri', 'taki', 'layer', 'sayo', 'houka', 'mahoro']) {
     const s = ROSTER[at(id)].skills[5];
     assert.ok(!s.guardPlan && !s.guardDmg, id + ': the unblockable super carries no guard value');
   }
@@ -6478,6 +6478,150 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     assert.ok(g.totalHits[p1.id] >= PRACTICE_HITS, 'all seven strums land: ' + g.totalHits[p1.id]);
     assert.ok(lost > 170 && lost < 260, 'the strums add up to a super: ' + lost);
     assert.ok(p2.knocked > 0 || p2.downTime > 0, 'the last strum knocks down');
+  }
+}
+
+// mahoro: U pats a shoulder and the mine under their feet lifts them, setting off what props them up.
+// I breaks out with a slap: a cut on damage taken, and each clean hit taken raises her damage. O carries
+// three charges that each eat a hit — all three gone drops her, any left over ride her next hit.
+// L lights the nearest foe (a jump slips it), the dark-faced run goes through them, and she leaves the frame.
+{
+  const mh = at('mahoro');
+  const data = ROSTER[mh];
+  assert.deepEqual(data.bands, ['millsage'], 'mahoro stands with millsage');
+  assert.equal(data.title, '贝斯 / 不退场', 'mahoro wears the never-leave-the-stage title');
+  assert.equal(data.trait, 'armor', 'mahoro takes the armour trait');
+  // U: pat, fuse, blast. A braced and sped-up foe loses both, and pays for each.
+  const pat = (prop: boolean) => {
+    const g = newGame(mh, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 390; p1.facing = 1; p2.facing = -1;
+    if (prop) { addMod(p2, 'brace', 6, { v: 1 }); addMod(p2, 'speed', 6, { v: 1.3 }); }
+    assert.ok(g.attack(p1, 2), 'the pat comes out');
+    run(g, .32);
+    const early = p2.data.hp - p2.hp;
+    let lifted = false;
+    for (let i = 0; i < Math.round(.6 / STEP); i++) { g.step(STEP); if (p2.y < FLOOR - 40) lifted = true; }
+    return { g, p1, p2, early, lost: p2.data.hp - p2.hp, lifted };
+  };
+  {
+    const plain = pat(false);
+    assert.ok(plain.early > 0 && plain.early < 15, 'the pat itself is light: ' + plain.early);
+    assert.ok(plain.lifted, 'the mine lifts them');
+    assert.ok(plain.lost > 45 && plain.lost < 65, 'pat plus blast: ' + plain.lost);
+    const propped = pat(true);
+    assert.ok(!propped.p2.mods.some(m => (m.kind === 'brace' || m.kind === 'speed') && m.left > 0), 'the blast sets off the brace and the sprint');
+    assert.ok(propped.lost > plain.lost + 20, 'each buff set off adds damage: ' + propped.lost + ' vs ' + plain.lost);
+  }
+  {
+    // A debt bill is not hers to touch.
+    const g = newGame(mh, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 390; p1.facing = 1;
+    addMod(p2, 'debt', 6, { acc: 0 });
+    g.attack(p1, 2);
+    run(g, 1);
+    assert.ok(p2.mods.some(m => m.kind === 'debt' && m.left > 0), 'the bill stays');
+  }
+  {
+    // A pat that finds nobody costs nothing but the cooldown.
+    const g = newGame(mh, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 100; p2.x = 700; p1.facing = 1;
+    g.attack(p1, 2);
+    run(g, 1);
+    assert.ok(p2.hp === p2.data.hp && p1.attack === null, 'a pat into the air whiffs and ends');
+  }
+  // I: out of a hitstun, the slap costs a little; then hits taken are cut and stack her damage
+  {
+    const g = newGame(mh, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 400; p1.facing = 1;
+    p1.stun = .5;
+    const hp = p1.hp;
+    assert.ok(g.attack(p1, 3), 'the slap breaks out of a hitstun');
+    run(g, .3);
+    assert.ok(hp - p1.hp >= 29 && hp - p1.hp <= 31, 'the slap costs thirty: ' + (hp - p1.hp));
+    run(g, .5);
+    p1.invuln = 0;
+    const before = p1.hp;
+    hit(g, p2, p1, { ...ROSTER[at('boulder')].skills[0], damage: 100 }, { hit: new Set() });
+    const taken = before - p1.hp;
+    assert.ok(taken > 70 && taken < 80, 'damage taken is cut to four fifths: ' + taken);
+    p1.invuln = 0; p1.stun = 0;
+    hit(g, p2, p1, { ...ROSTER[at('boulder')].skills[0], damage: 10 }, { hit: new Set() });
+    const rage = p1.mods.find(m => m.kind === 'dmgDealt' && m.tag === 'unbowed');
+    assert.ok(rage && Math.abs((rage.v ?? 0) - .12) < 1e-9, 'two clean hits taken, two stacks: ' + rage?.v);
+    for (let i = 0; i < 8; i++) { p1.invuln = 0; p1.stun = 0; hit(g, p2, p1, { ...ROSTER[at('boulder')].skills[0], damage: 1 }, { hit: new Set() }); }
+    assert.ok(Math.abs((rage?.v ?? 0) - .3) < 1e-9, 'the stacks cap at thirty percent');
+  }
+  // O: three hits eaten whole; the third one breaking drops her
+  {
+    const g = newGame(mh, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 400; p1.facing = 1;
+    g.attack(p1, 4);
+    run(g, .6);
+    const hp = p1.hp;
+    const jab = { ...ROSTER[at('boulder')].skills[0], damage: 40 };
+    for (let i = 0; i < 2; i++) { p1.invuln = 0; hit(g, p2, p1, jab, { hit: new Set() }); }
+    assert.equal(p1.hp, hp, 'two hits are carried, not taken');
+    assert.ok(p1.stun <= 0, 'and nothing flinches yet');
+    p1.invuln = 0;
+    hit(g, p2, p1, jab, { hit: new Set() });
+    assert.equal(p1.hp, hp, 'the third is carried too');
+    assert.ok(p1.stun > .7, 'and the last charge breaking drops her: ' + p1.stun);
+    p1.invuln = 0; p1.stun = 0;
+    hit(g, p2, p1, jab, { hit: new Set() });
+    assert.ok(p1.hp < hp, 'with nothing left the next hit lands');
+    const grabbed = newGame(mh, at('boulder')); const [q1, q2] = grabbed.fighters; dummy(grabbed);
+    q1.x = 300; q2.x = 400; q1.facing = 1;
+    grabbed.attack(q1, 4);
+    run(grabbed, .6);
+    const qhp = q1.hp;
+    hit(grabbed, q2, q1, ROSTER[at('boulder')].skills.find(s => s.type === 'grab')!, { hit: new Set() });
+    assert.ok(q1.hp < qhp, 'a grab goes straight through the burden');
+  }
+  {
+    // Charges left at the end ride her next clean hit.
+    const g = newGame(mh, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 900; p1.facing = 1;
+    g.attack(p1, 4);
+    run(g, 6.8);
+    const quake = p1.mods.find(m => m.kind === 'quake' && m.left > 0);
+    assert.ok(quake && quake.acc === 3, 'all three carried through become three aftershocks');
+    p2.x = p1.x + 60; p2.facing = -1;
+    const hp = p2.hp;
+    hit(g, p1, p2, data.skills[0], { hit: new Set() });
+    assert.ok(hp - p2.hp > 70, 'the aftershocks land with the jab: ' + (hp - p2.hp));
+    assert.ok(!p1.mods.some(m => m.kind === 'quake' && m.left > 0), 'and are spent');
+  }
+  // L: the light roots, the run goes through, she is gone a while, then walks back
+  {
+    const g = newGame(mh, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 520; p1.facing = 1; p1.energy = 100;
+    assert.ok(g.attack(p1, 5), 'the encore comes out');
+    run(g, .55);
+    assert.ok(p2.root > 0, 'the light pins them');
+    let gone = false, passed = false, home = false;
+    for (let i = 0; i < Math.round(3.6 / STEP); i++) {
+      g.step(STEP);
+      if (violetHidden(p1)) gone = true;
+      if (p1.x > p2.x + 40) passed = true;
+      // Back on the frame after the gap: she comes in from the left edge, still facing right.
+      if (gone && !violetHidden(p1) && p1.attack && p1.x < 200 && p1.facing === 1) home = true;
+    }
+    const lost = p2.data.hp - p2.hp;
+    assert.ok(passed, 'the run goes through them');
+    assert.ok(gone, 'she leaves the frame');
+    assert.ok(lost > 150 && lost < 200, 'the light and three blows add up to a super: ' + lost);
+    assert.ok(p2.knocked > 0 || p2.downTime > 0 || p2.y < FLOOR, 'the last blow knocks down');
+    assert.equal(g.totalHits[p1.id], 4, 'the light and three blows');
+    assert.ok(home, 'she runs in again from the other side');
+    assert.ok(p1.attack === null && Math.abs(p1.x - 300) < 1, 'and the move ends where she stood: ' + p1.x);
+  }
+  {
+    // A body in the air slips the light, and with nobody in the way the run hits nothing.
+    const g = newGame(mh, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 520; p1.facing = 1; p1.energy = 100;
+    g.attack(p1, 5);
+    for (let i = 0; i < Math.round(.6 / STEP); i++) { p2.y = FLOOR - 120; p2.vy = 0; g.step(STEP); }
+    assert.ok(p2.root <= 0, 'a jump slips the light');
   }
 }
 

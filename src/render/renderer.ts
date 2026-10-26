@@ -3,8 +3,8 @@ import type { FightGame } from '../game/game.ts';
 import type { FighterView } from './view.ts';
 import { stageThumbSrc, type ImageCache } from '../assets/loader.ts';
 import { FLOOR, H, SIDE, W } from '../game/constants.ts';
-import { violetHidden } from '../game/combat.ts';
-import { IAIDO_PHASE, iaidoCharge } from './clips.ts';
+import { unbowedRage, violetHidden } from '../game/combat.ts';
+import { BURDEN_Y, encoreDark, IAIDO_PHASE, iaidoCharge, UNBOWED_MAX, unbowedStacks } from './clips.ts';
 import { drawBanSign, drawCombo, drawEffect, drawMoonlight, drawGauge, drawHoldNote, drawKuji, drawLayerBass, drawParticles, drawProjectile, drawRainbowBack, drawRainbowFront, drawRootFx, drawSister, drawTexts, drawWheel, isLiteFx, UI_FONT, zoomAbout } from './fx.ts';
 
 /** Backing-store pixels per CSS pixel. The compositor then blits 1:1.
@@ -25,7 +25,12 @@ export function portraitBodyScale(padSplit: boolean): number {
 /** Hard 1px rim, yellow for the left team and green for the right. */
 const TEAM_GLOW = SIDE;
 /** Effects painted under every body: 和泉朋花's coffin and her spotlights. */
-const BACK_FX = new Set(['coffin', 'spotlight', 'nagi-sea']);
+const BACK_FX = new Set(['coffin', 'spotlight', 'nagi-sea', 'encore-spot']);
+/** Screen-space layers that ignore the body zoom: behind every body, and in front of them. */
+const SCREEN_BACK = new Set(['encore-stage']);
+const SCREEN_FRONT = new Set(['encore-rain', 'encore-crowd', 'encore-call', 'slap-flash']);
+/** 安可是主唱的: the eye line on the 175 px body, measured up from the feet. */
+const ENCORE_EYE_Y = 152;
 
 /** On when one side has two real fighters, or the same character stands on both sides.
  *  2v2 and the 2-on-1 激战 are the first case; a 1v1 mirror match is the second.
@@ -171,6 +176,8 @@ export class Renderer {
     for (const e of g.effects) if (e.type === 'moonlight') drawMoonlight(c, e, 'back');
     // 寿来: the mark is painted on the floor, so it sits under every body.
     for (const e of g.effects) if (e.type === 'lifedraw-mark') zoomAbout(c, bodyScale, e.x, e.y, () => drawEffect(c, e, this.images));
+    // 安可是主唱的: the house lights go down and the stage beams sweep behind every body.
+    for (const e of g.effects) if (SCREEN_BACK.has(e.type)) drawEffect(c, e, this.images);
     // 康乃馨盛开之日 / 请成为主角吧♡: the coffin stands behind her and the spotlight falls behind the body it lights.
     for (const e of g.effects) if (BACK_FX.has(e.type)) zoomAbout(c, bodyScale, e.x, e.y, () => drawEffect(c, e, this.images));
 
@@ -215,6 +222,19 @@ export class Renderer {
       zoomAbout(c, bodyScale, f.x, footY, () => {
         if (f.attack?.skill.fx === 'wheel') drawWheel(c, f, this.images);
         view.draw(c, f, f.x, footY, alpha, undefined, outline);
+        // 绝不退场: one lookup feeds the cheek, the aura and, at full stacks, a red rim pulsing round her
+        // own silhouette (the sprite's hard rim, not a shape).
+        const rage = f.hp > 0 ? unbowedRage(f) : undefined;
+        const stacks = rage ? unbowedStacks(rage.v) : 0;
+        if (rage && stacks >= unbowedStacks(UNBOWED_MAX)) {
+          view.draw(c, f, f.x, footY, alpha * (.45 + .45 * Math.abs(Math.sin(g.age * 5))), undefined, '#ff3b5c');
+        }
+        // 安可是主唱的: from the third call through the run her face goes dark — a near-black wash over
+        // the whole cell, and two points of light left where the eyes are.
+        if (f.attack?.skill.fx === 'encore' && encoreDark(f.attack.mode)) {
+          view.draw(c, f, f.x, footY, alpha * .82, '#0a0b14');
+          drawEffect(c, { type: 'encore-eye', x: f.x + f.facing * 2, y: footY - ENCORE_EYE_Y, color: '#ffffff', life: 1, max: 1, dir: f.facing });
+        }
         drawLayerBass(c, f, this.images, alpha);
         if (f.blocking) drawEffect(c, { type: 'shield', x: f.x + f.facing * 28, y: f.y - 80, color: '#a6eeff', life: .14, max: .22, radius: 58 });
         if (f.root > 0 && f.hp > 0) drawRootFx(c, f, g.age);
@@ -238,7 +258,11 @@ export class Renderer {
           if (m.left <= 0) continue;
           if (m.mark === 'praise') drawEffect(c, { type: 'praise-aura', x: f.x, y: f.y - 182, color: '#ff8fd8', life: 1, max: 1, age: g.age });
           else if (m.mark === 'spotlight') drawEffect(c, { type: 'spot-aura', x: f.x, y: footY, color: '#fff2fb', life: 1, max: 1, age: g.age });
+          // 滨崎茉幌: the pile she carries over her head, the aftershocks at her feet.
+          else if (m.kind === 'burden' && (m.v ?? 0) > 0) drawEffect(c, { type: 'burden', x: f.x, y: f.y - BURDEN_Y, color: f.data.color, life: 1, max: 1, n: m.v, age: g.age });
+          else if (m.kind === 'quake') drawEffect(c, { type: 'quake-aura', x: f.x, y: FLOOR, color: f.data.color, life: 1, max: 1, n: m.acc ?? 1, age: g.age });
         }
+        if (rage) drawEffect(c, { type: 'slap-aura', x: f.x, y: f.y - 150, color: '#ff6b7d', life: 1, max: 1, dir: f.facing, n: stacks, age: g.age });
         // 完全复活: the gold halo follows the head from the first frame of the window.
         if (f.hp > 0 && f.mods.some(m => m.kind === 'relapse' && m.left > 0 && m.mark === 'halo')) {
           drawEffect(c, { type: 'halo', x: f.x, y: f.y - 176, color: '#ffd54a', life: 1, max: 1, radius: 16 });
@@ -280,9 +304,9 @@ export class Renderer {
       });
     }
     for (const f of g.fighters) if (f.ban > 0 && f.hp > 0) zoomAbout(c, bodyScale, f.x, f.y, () => drawBanSign(c, f));
-    for (const e of g.effects) if (e.type !== 'ghost' && e.type !== 'lifedraw-mark' && e.type !== 'petal-rain' && e.type !== 'rainbow-pop' && e.type !== 'apparatus' && e.type !== 'moonlight' && !BACK_FX.has(e.type)) zoomAbout(c, bodyScale, e.x, e.y, () => drawEffect(c, e, this.images));
-    // Screen-space effects: the petal rain and the floor-to-sky pillar must not grow with the body.
-    for (const e of g.effects) if (e.type === 'petal-rain' || e.type === 'apparatus') drawEffect(c, e, this.images);
+    for (const e of g.effects) if (e.type !== 'ghost' && e.type !== 'lifedraw-mark' && e.type !== 'petal-rain' && e.type !== 'rainbow-pop' && e.type !== 'apparatus' && e.type !== 'moonlight' && !SCREEN_FRONT.has(e.type) && !SCREEN_BACK.has(e.type) && !BACK_FX.has(e.type)) zoomAbout(c, bodyScale, e.x, e.y, () => drawEffect(c, e, this.images));
+    // Screen-space effects: the petal rain, the floor-to-sky pillar and the encore crowd must not grow with the body.
+    for (const e of g.effects) if (e.type === 'petal-rain' || e.type === 'apparatus' || SCREEN_FRONT.has(e.type)) drawEffect(c, e, this.images);
     for (const e of g.effects) if (e.type === 'moonlight') drawMoonlight(c, e, 'front');
     drawParticles(c, g.particles, bodyScale);
     drawTexts(c, g.texts, bodyScale);

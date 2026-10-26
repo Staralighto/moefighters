@@ -89,6 +89,8 @@ export interface Effect {
   n?: number;
   /** Seconds into the effect's life that its own timeline is measured from (……来练习吧's sea: the first strum). */
   t0?: number;
+  /** Offset from the spawn point to where the graphic lands (精准踩雷's heart onto their feet). Data, not motion. */
+  tx?: number; ty?: number;
 }
 export interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string; size: number }
 export interface FloatingText { text: string; x: number; y: number; color: string; life: number; max: number; size: number }

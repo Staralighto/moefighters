@@ -1356,6 +1356,41 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'mahoro', name: '滨崎茉幌', title: '贝斯 / 不退场', quote: '再痛，也不能退场。', color: '#77FFFF',
+    bands: ['millsage'],
+    ...stats('armor'),
+    view: {
+      kind: 'sprite', common: '/sprites/mahoro/common.png', special: '/sprites/mahoro/special.png', height: 175,
+    },
+    skills: [
+      skill(0, 'light', '外场王牌'),
+      skill(1, 'heavy', '玛丽珍', { range: 132 }),
+      // 精准踩雷 (combat.ts step_landmine): the pat is the grab; the mine under their feet is the real hit.
+      skill(2, 'grab', '精准踩雷', {
+        damage: 45, range: 110, start: .2, duration: .9, cd: 7, fx: 'landmine', hitbox: 'front', knock: 120,
+        brief: '拍肩抓取后脚下地雷炸开挑空；引爆对方增益追加伤害',
+        detail: '前冲拍肩抓取，0.35 秒后对方脚下地雷炸开挑空，可追打；对方每有一个增益状态就引爆清除并追加 15 伤害，至多 3 个；挂账、不死和变身不受影响',
+      }),
+      skill(3, 'endure', '绝不退场', {
+        damage: 0, range: 0, start: .2, duration: .6, cd: 14, breakout: true, holdEndure: true, fx: 'slap',
+        brief: '解控拍脸自扣血；随后减伤且每挨一下伤害提高',
+        detail: '解控并双手拍脸，自扣 30 生命；随后 6 秒受到伤害降低 20%，每被打中一次造成伤害提高 6%，至多 30%',
+      }),
+      skill(4, 'endure', '一肩扛下', {
+        damage: 0, range: 0, start: .25, duration: .55, cd: 12, fx: 'burden',
+        brief: '头顶三样各挡一下；扛到最后转为余震，全碎则崩盘',
+        detail: '头顶麦克风、贝斯、歌词本，6 秒内各挡一次伤害，抓投和必杀除外；时间到时每剩一个，下一次命中追加 20 伤害；三个全碎则硬直 0.8 秒',
+      }),
+      // 安可是主唱的 (combat.ts step_encore): the light roots, then three blows on the run through, then off the frame.
+      skill(5, 'endure', '安可是主唱的', {
+        damage: 55, range: 340, start: .5, duration: 3.9, fx: 'encore', holdEndure: true, noBlock: true, control: true,
+        finale: { damage: 90, knock: 380, react: { kind: 'knockdown', vy: -220, knocked: 1, clearRoot: true } },
+        brief: '霸体定身后冲穿击倒；跳起可躲，不能格挡，离场无敌',
+        detail: '霸体；台下喊安可，聚光灯落在最近的对方身上定身 1.2 秒；随后黑脸冲刺穿过对方三段，末段击倒，冲出画面后无敌 1 秒，再从另一侧冲回原位；聚光灯落下时跳起或闪避可躲，不能格挡',
+      }),
+    ],
+  },
+  {
     id: 'viola', name: '薇欧拉', title: '队长 / 恶德', quote: '火种燃尽之后会怎么样呢？', color: '#8E5AC8',
     ...stats('armor'),
     view: {

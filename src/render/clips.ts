@@ -99,6 +99,30 @@ export const SKIP_MAX = 5;
 /** 打水漂: the landing crouch after the strike. */
 export const SKIP_TAIL = .25;
 
+/** 精准踩雷: the mine under their feet goes off this long after the pat. */
+export const MINE_FUSE = .35;
+/** 精准踩雷: the hand stays on their shoulder this long after the blast, then she straightens up. */
+export const MINE_HOLD = .12;
+/** 一肩扛下: the pile she carries sits this high over her feet (game spawns, renderer draws, fx stacks). */
+export const BURDEN_Y = 172;
+/** 绝不退场: each clean hit taken adds this much damage, up to the cap. */
+export const UNBOWED_STEP = .06;
+export const UNBOWED_MAX = .3;
+/** 绝不退场: stacks shown for a damage bonus. */
+export function unbowedStacks(v: number | undefined): number {
+  return Math.round((v ?? 0) / UNBOWED_STEP);
+}
+/** 安可是主唱的: phases on Attack.mode — the encore calls, the dark face, the run, off the stage, the run home from the other side. */
+export const ENCORE = { crowd: 0, face: 1, dash: 2, gone: 3, back: 4 } as const;
+/** 安可是主唱的: the dark face holds this long before she runs. */
+export const ENCORE_FACE = .35;
+/** 安可是主唱的: seconds off the frame before she walks back in. */
+export const ENCORE_GONE = 1;
+/** 安可是主唱的: her face goes dark from the third call through the run. */
+export function encoreDark(mode: number | undefined): boolean {
+  return mode === ENCORE.face || mode === ENCORE.dash;
+}
+
 /** ……来练习吧: seven strums. The gap shrinks evenly from the first to the last, the way the
  *  bridge of Odd Dice speeds up beat by beat. Never under 0.09s (docs/public/moves.md 削防). */
 export const PRACTICE_HITS = 7;
@@ -457,6 +481,20 @@ export function clipFor(f: Fighter): Clip {
     }
     // ……来练习吧: the downstroke and the lifted hand trade places on every strum.
     if (f.attack.skill.fx === 'practice') return at('special', f.attack.index - 2, practiceRow(f.attack.t, f.attack.skill.start));
+    // 精准踩雷: the step and the reach, the hand on their shoulder until the mine goes, then upright.
+    if (f.attack.skill.fx === 'landmine') {
+      const a = f.attack, s = a.skill;
+      const row = a.t < s.start ? 0 : a.mode === 1 || (a.mode === 2 && a.t < a.tossAt + MINE_FUSE + MINE_HOLD) ? 1 : 2;
+      return at('special', a.index - 2, row);
+    }
+    // 安可是主唱的: the 'please' holds through the calls and the dark face; the run trades the two
+    // sprint cells; the run home from the other side is the common run.
+    if (f.attack.skill.fx === 'encore') {
+      const a = f.attack, mode = a.mode ?? ENCORE.crowd;
+      if (mode === ENCORE.dash) return at('special', a.index - 2, 1 + (Math.floor(a.t * 12) % 2));
+      if (mode === ENCORE.back || mode === ENCORE.gone) return loco(RUN_FRAMES[Math.floor(a.t * 8) % 4]);
+      return at('special', a.index - 2, 0);
+    }
     // 天台是我的: the crouch and leap hold the first cell; the dive and the stomp are the second;
     // the landing crouch is the third.
     if (f.attack.skill.fx === 'rooftop') {

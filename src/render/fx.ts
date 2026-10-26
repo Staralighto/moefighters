@@ -4,7 +4,7 @@ import type { Fighter } from '../game/fighter.ts';
 import type { FighterView } from './view.ts';
 import { clamp, FLOOR, H, SIDE, W } from '../game/constants.ts';
 import type { ImageCache } from '../assets/loader.ts';
-import { CELL, clipFor, flameFrame, pillarFrame, practiceBeat, practiceStrums, PRACTICE_HITS, RING_BIG, RING_SMALL } from './clips.ts';
+import { BURDEN_Y, CELL, clipFor, flameFrame, pillarFrame, practiceBeat, practiceStrums, PRACTICE_HITS, RING_BIG, RING_SMALL } from './clips.ts';
 import { watchProp } from './propLayout.ts';
 
 const CUCUMBER_SRC = '/sprites/mutsumi/cucumber.png';
@@ -584,6 +584,166 @@ const SEA_MAX_HALF = 640;
 const seaY = new Float32Array(Math.ceil((SEA_MAX_HALF * 2) / SEA_STEP) + 2);
 /** ……来练习吧: the surface line's fade, as [from, to, alpha] over |x| / half-width. */
 const SEA_LINE_BANDS: readonly (readonly [number, number, number])[] = [[0, .5, .75], [.5, .8, .45], [.8, 1, .18]];
+
+/* ---- 安可是主唱的: the full-screen layers, pre-rendered once ----
+   Gradient fills over large areas are the expensive part of these layers, so the static ones are
+   drawn once into offscreen canvases and blitted every frame: the dimmed house with its haze and the
+   crowd's floor glow. The beams stay polygon fills (a rotated blit samples far slower than a fill);
+   only their gradients are cached, per canvas. */
+/** Stick endpoints for the crowd, five numbers per head: x, y, unit x, unit y, colour index. */
+const CROWD = new Float32Array(32 * 5);
+interface EncoreLayers { house: HTMLCanvasElement; glow: HTMLCanvasElement }
+let encoreLayers: EncoreLayers | null | undefined;
+function layer(w: number, h: number, paint: (g: CanvasRenderingContext2D) => void): HTMLCanvasElement {
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const g = cv.getContext('2d');
+  if (g) paint(g);
+  return cv;
+}
+/** Built on first use; null where there is no DOM (the headless checks never draw). */
+function getEncoreLayers(): EncoreLayers | null {
+  if (encoreLayers !== undefined) return encoreLayers;
+  if (typeof document === 'undefined') return (encoreLayers = null);
+  const house = layer(W, H, g => {
+    g.fillStyle = 'rgba(6,4,14,.5)'; g.fillRect(0, 0, W, H);
+    const haze = g.createLinearGradient(0, 0, 0, H * .4);
+    haze.addColorStop(0, 'rgba(170,140,255,.12)'); haze.addColorStop(1, 'rgba(170,140,255,0)');
+    g.fillStyle = haze; g.fillRect(0, 0, W, H * .4);
+  });
+  const glow = layer(W, 140, g => {
+    const g0 = g.createLinearGradient(0, 0, 0, 140);
+    g0.addColorStop(0, 'rgba(153,255,153,0)'); g0.addColorStop(1, 'rgba(153,255,153,.45)');
+    g.fillStyle = g0; g.fillRect(0, 0, W, 140);
+  });
+  return (encoreLayers = { house, glow });
+}
+const beamCache = new WeakMap<CanvasRenderingContext2D, CanvasGradient[]>();
+/** The two band-colour beam gradients, top to bottom of the beam, built once per canvas. */
+function beamGrads(ctx: CanvasRenderingContext2D): CanvasGradient[] {
+  let b = beamCache.get(ctx);
+  if (!b) {
+    b = ['170,34,238', '119,255,255'].map(rgb => {
+      const g0 = ctx.createLinearGradient(0, 0, 0, H * 1.2);
+      g0.addColorStop(0, `rgba(${rgb},.3)`); g0.addColorStop(1, `rgba(${rgb},0)`);
+      return g0;
+    });
+    beamCache.set(ctx, b);
+  }
+  return b;
+}
+
+/* ---- 滨崎茉幌 drawing helpers ---- */
+const easeOut = (k: number) => 1 - (1 - k) * (1 - k);
+/** Overshoots a little past 1 and settles: the comic pop-in. */
+const backOut = (k: number) => { const c = 1.9; const u = k - 1; return 1 + (c + 1) * u * u * u + c * u * u; };
+/** 一肩扛下: the pile on her head, item i's height above the stack base (0 the book, 1 the bass, 2 the mic). */
+const BURDEN_STACK = [-5, -18, -40] as const;
+/** A jagged comic star path, centred on the origin. */
+function jag(ctx: CanvasRenderingContext2D, outer: number, inner: number, spikes: number): void {
+  ctx.beginPath();
+  for (let i = 0; i < spikes * 2; i++) {
+    const rr = i % 2 ? inner : outer * (i % 4 === 0 ? 1 : .82);
+    const a = i * Math.PI / spikes;
+    if (i === 0) ctx.moveTo(Math.cos(a) * rr, Math.sin(a) * rr); else ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+  }
+  ctx.closePath();
+}
+function heart(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, color: string): void {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x, y + s * .9);
+  ctx.bezierCurveTo(x - s * 1.6, y - s * .2, x - s * .8, y - s * 1.4, x, y - s * .5);
+  ctx.bezierCurveTo(x + s * .8, y - s * 1.4, x + s * 1.6, y - s * .2, x, y + s * .9);
+  ctx.fill();
+}
+/** One half of a broken heart, its crack running down the middle. */
+function halfHeart(ctx: CanvasRenderingContext2D, s: number, color: string, left: boolean): void {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  const k = left ? -1 : 1;
+  ctx.moveTo(0, s * .9);
+  ctx.bezierCurveTo(k * s * 1.6, -s * .2, k * s * .8, -s * 1.4, 0, -s * .5);
+  ctx.lineTo(k * s * .2, -s * .1); ctx.lineTo(-k * s * .1, s * .3); ctx.closePath();
+  ctx.fill();
+}
+/** Bold comic lettering with a thick ink edge. */
+function comic(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, size: number, fill: string, rot: number): void {
+  if (size <= 1) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+  ctx.font = `900 ${size}px ${UI_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = Math.max(3, size * .22); ctx.strokeStyle = '#1a0f08'; ctx.strokeText(text, 0, 0);
+  ctx.fillStyle = fill; ctx.fillText(text, 0, 0);
+  ctx.restore();
+}
+/** The anime anger mark: four red brackets round a point. */
+function angerMark(ctx: CanvasRenderingContext2D, x: number, y: number, s: number): void {
+  if (s <= .5) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = '#ff2f4f'; ctx.lineWidth = Math.max(2, s * .32); ctx.lineCap = 'round';
+  for (let i = 0; i < 4; i++) {
+    ctx.save();
+    ctx.rotate(i * Math.PI / 2 + Math.PI / 4);
+    ctx.beginPath(); ctx.moveTo(s * .3, -s * .6); ctx.quadraticCurveTo(s * .3, -s * .3, s * .6, -s * .3); ctx.stroke();
+    ctx.restore();
+  }
+  ctx.restore();
+}
+function note(ctx: CanvasRenderingContext2D, x: number, y: number, color: string): void {
+  ctx.fillStyle = color; ctx.strokeStyle = color; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.ellipse(x, y, 5, 3.6, -.4, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x + 4, y - 1); ctx.lineTo(x + 4, y - 18); ctx.lineTo(x + 11, y - 13); ctx.stroke();
+}
+function sparkle(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, color: string): void {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x, y - s); ctx.quadraticCurveTo(x, y, x + s, y); ctx.quadraticCurveTo(x, y, x, y + s);
+  ctx.quadraticCurveTo(x, y, x - s, y); ctx.quadraticCurveTo(x, y, x, y - s);
+  ctx.fill();
+}
+
+/** 绝不退场: the anime blush hatch on a struck cheek — three short slanted red strokes, nothing more.
+ *  Centred on (x, y); `dir` is the way she faces. */
+function blush(ctx: CanvasRenderingContext2D, x: number, y: number, k: number, dir: number): void {
+  if (k <= 0) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(dir * k, k);
+  ctx.strokeStyle = '#ff4f6a'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+  for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(-6 + i * 5, 4); ctx.lineTo(-2 + i * 5, -4); ctx.stroke(); }
+  ctx.restore();
+}
+
+/** 一肩扛下: 0 the lyric book (flat, the base), 1 the bass (lying across), 2 the mic (standing on top).
+ *  Ink-outlined, a light rim in the band colour so the pile reads against any backdrop. */
+function drawBurdenItem(ctx: CanvasRenderingContext2D, i: number, color: string): void {
+  ctx.lineWidth = 2.5; ctx.strokeStyle = '#151222'; ctx.lineJoin = 'round';
+  if (i === 0) {
+    ctx.fillStyle = '#f4efe6';
+    ctx.fillRect(-20, -5, 40, 10); ctx.strokeRect(-20, -5, 40, 10);
+    ctx.fillStyle = color; ctx.fillRect(-20, -5, 6, 10);
+    ctx.strokeStyle = '#9ab6d8'; ctx.lineWidth = 1;
+    for (let k = 0; k < 2; k++) { ctx.beginPath(); ctx.moveTo(-10, -1 + k * 3); ctx.lineTo(16, -1 + k * 3); ctx.stroke(); }
+  } else if (i === 1) {
+    ctx.fillStyle = '#c9a26b';
+    ctx.fillRect(4, -3, 34, 5); ctx.strokeRect(4, -3, 34, 5);
+    ctx.fillStyle = '#3b3550'; ctx.fillRect(36, -5, 8, 9); ctx.strokeRect(36, -5, 8, 9);
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.ellipse(-12, 0, 18, 9, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(-16, -2, 8, 3);
+  } else {
+    ctx.fillStyle = '#e8e6f2';
+    ctx.beginPath(); ctx.moveTo(-3, 18); ctx.lineTo(3, 18); ctx.lineTo(4, 0); ctx.lineTo(-4, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#3b3550';
+    ctx.beginPath(); ctx.arc(0, -7, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(0, -7, 5, Math.PI * 1.1, Math.PI * 1.7); ctx.stroke();
+  }
+}
 
 export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: ImageCache): void {
   const p = 1 - e.life / e.max, r = e.radius ?? 50;
@@ -3133,6 +3293,826 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       const rr = r * (.5 + q * .5);
       if (dir > 0) ctx.arc(-rr * .55, 0, rr, -.75, .75); else ctx.arc(rr * .55, 0, rr, Math.PI - .75, Math.PI + .75);
       ctx.stroke();
+      break;
+    }
+    case 'pat': {
+      // 精准踩雷: the kind little pat — a soft halo on the shoulder and three small hearts lifting off it.
+      const dir = e.dir ?? 1;
+      const q = easeOut(p);
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = (1 - p) * .8;
+      ctx.strokeStyle = '#bff8ff'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(0, 0, 12 + q * 22, 6 + q * 10, 0, 0, Math.PI * 2); ctx.stroke();
+      for (let i = 0; i < 3; i++) {
+        const k = Math.max(0, Math.min(1, p * 1.4 - i * .15));
+        ctx.globalAlpha = (1 - k) * .95;
+        heart(ctx, dir * (-6 + i * 10) + Math.sin(k * 6 + i) * 4, -10 - k * 46, 4 + i, '#ff8fc8');
+      }
+      break;
+    }
+    case 'kind-bubble': {
+      // 精准踩雷: what she says pops out as a speech bubble with a heart in it; the heart then drops in an
+      // arc onto their feet — the kind words land where the mine comes up.
+      const tx = e.tx ?? 0, ty = e.ty ?? 0;
+      ctx.translate(e.x, e.y);
+      if (p < .35) {
+        const k = backOut(Math.min(1, p / .2));
+        ctx.globalAlpha = 1;
+        ctx.save();
+        ctx.translate(Math.sign(tx) * 18, -22);
+        ctx.scale(k, k);
+        ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#151222'; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.ellipse(0, 0, 17, 13, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-Math.sign(tx) * 6, 10); ctx.lineTo(-Math.sign(tx) * 14, 20); ctx.lineTo(-Math.sign(tx) * 1, 12); ctx.closePath(); ctx.fill();
+        heart(ctx, 0, 1, 6, '#ff5f9e');
+        ctx.restore();
+        break;
+      }
+      const k = (p - .35) / .65;
+      const x = Math.sign(tx) * 18 + (tx - Math.sign(tx) * 18) * k;
+      const y = -22 + (ty + 22) * k - Math.sin(k * Math.PI) * 60;
+      for (let i = 1; i <= 4; i++) {
+        const kk = Math.max(0, k - i * .07);
+        ctx.globalAlpha = .35 * (1 - i / 5);
+        heart(ctx, Math.sign(tx) * 18 + (tx - Math.sign(tx) * 18) * kk, -22 + (ty + 22) * kk - Math.sin(kk * Math.PI) * 60, 5, '#ffc2df');
+      }
+      ctx.globalAlpha = 1;
+      ctx.save(); ctx.translate(x, y); ctx.rotate(k * 5); heart(ctx, 0, 0, 7, '#ff5f9e'); ctx.restore();
+      break;
+    }
+    case 'mine': {
+      // 精准踩雷: the heart lands and a mine springs up out of the floor — a round dark shell in her
+      // colour band with a heart lamp that blinks faster and faster, a white fuse ring running out
+      // around it and the floor under it glowing red.
+      const t = e.max - e.life;
+      const show = .16;
+      if (t < show) break;
+      const lt = t - show, span = Math.max(.05, e.max - show), u = Math.min(1, lt / span);
+      const pop = backOut(Math.min(1, lt / .07));
+      ctx.translate(e.x, e.y);
+      const glow = ctx.createRadialGradient(0, 0, 2, 0, 0, 46);
+      glow.addColorStop(0, `rgba(255,70,90,${.25 + .35 * u})`); glow.addColorStop(1, 'rgba(255,70,90,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.ellipse(0, 0, 46, 12, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.save();
+      ctx.scale(1 + (1 - pop) * .3, pop);
+      ctx.fillStyle = '#23242f';
+      ctx.beginPath(); ctx.ellipse(0, 0, 25, 20, 0, Math.PI, 0); ctx.fill();
+      ctx.fillStyle = e.tint ?? '#77FFFF';
+      ctx.fillRect(-25, -7, 50, 4);
+      ctx.fillStyle = '#4a4e63'; ctx.fillRect(-28, -2, 56, 4);
+      ctx.strokeStyle = '#0d0c14'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.ellipse(0, 0, 25, 20, 0, Math.PI, 0); ctx.stroke();
+      ctx.fillStyle = '#9aa0b8';
+      for (const rx of [-16, -6, 6, 16]) ctx.fillRect(rx - 1, -12 + Math.abs(rx) * .25, 2, 2);
+      const blink = Math.sin(lt * (16 + lt * 120)) > -.1;
+      ctx.globalAlpha = blink ? 1 : .35;
+      heart(ctx, 0, -24, 6, blink ? '#ff3b5c' : '#7a1f30');
+      if (blink) { ctx.globalAlpha = .3; ctx.fillStyle = '#ff3b5c'; ctx.beginPath(); ctx.arc(0, -24, 13, 0, Math.PI * 2); ctx.fill(); }
+      ctx.restore();
+      ctx.globalAlpha = .9;
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(0, -14, 34, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - u)); ctx.stroke();
+      if (u > .4) {
+        ctx.fillStyle = '#ffe14a'; ctx.strokeStyle = '#151222'; ctx.lineWidth = 3;
+        ctx.font = `bold 20px ${UI_FONT}`; ctx.textAlign = 'center';
+        for (const s of [-1, 1]) {
+          const bob = Math.sin(lt * 40 + s) * 2;
+          ctx.strokeText('!', s * 44, -26 + bob); ctx.fillText('!', s * 44, -26 + bob);
+        }
+      }
+      break;
+    }
+    case 'mine-boom': {
+      // 精准踩雷: a comic blast — a white flash, a jagged orange star with an ink outline, a shock ring on
+      // the floor, a mushroom of smoke, broken-heart shards and a big 嘭！. Every buff it set off
+      // cracks one more cyan bolt out of the smoke.
+      const n = e.n ?? 0;
+      const t = e.max - e.life;
+      ctx.translate(e.x, e.y);
+      if (t < .06) {
+        ctx.globalAlpha = 1 - t / .06;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(0, -r * .6, r * 1.5, 0, Math.PI * 2); ctx.fill();
+      }
+      const q = easeOut(Math.min(1, p * 2.2));
+      ctx.globalAlpha = Math.max(0, 1 - p * 1.3) * .9;
+      ctx.strokeStyle = '#ffd59a'; ctx.lineWidth = 4 * (1 - p) + 1;
+      ctx.beginPath(); ctx.ellipse(0, 0, r * 3 * q, r * .4 * q, 0, 0, Math.PI * 2); ctx.stroke();
+      for (let i = 0; i < 7; i++) {
+        const a0 = -Math.PI / 2 + (i - 3) * .32;
+        const rise = r * (.6 + q * 1.3) + (i % 2) * 12;
+        ctx.globalAlpha = Math.max(0, .55 - p * .5);
+        ctx.fillStyle = i % 2 ? '#6d6878' : '#8a8496';
+        ctx.beginPath(); ctx.arc(Math.cos(a0) * r * .5 * q, -rise + Math.sin(a0) * 8, 14 + q * 18, 0, Math.PI * 2); ctx.fill();
+      }
+      const burst = backOut(Math.min(1, t / .14)) * (1 - Math.max(0, p - .45) / .55);
+      if (burst > 0) {
+        ctx.save();
+        ctx.translate(0, -r * .6);
+        ctx.rotate(t * 1.5);
+        ctx.globalAlpha = 1;
+        jag(ctx, r * 1.25 * burst, r * .75 * burst, 12);
+        ctx.fillStyle = '#ff7a2f'; ctx.fill();
+        ctx.lineWidth = 4; ctx.strokeStyle = '#2a1408'; ctx.stroke();
+        jag(ctx, r * .85 * burst, r * .5 * burst, 12);
+        ctx.fillStyle = '#ffd23f'; ctx.fill();
+        ctx.fillStyle = '#fffbe0';
+        ctx.beginPath(); ctx.arc(0, 0, r * .3 * burst, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+      ctx.strokeStyle = '#8ff6ff'; ctx.lineCap = 'round';
+      for (let i = 0; i < n; i++) {
+        const a0 = -Math.PI / 2 + (i - (n - 1) / 2) * .55;
+        const len = r * (1.4 + q * .8);
+        ctx.globalAlpha = Math.max(0, 1 - p * 1.6);
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(0, -r * .6);
+        for (let k = 1; k <= 4; k++) {
+          const d = len * k / 4, wob = (k % 2 ? 1 : -1) * 10;
+          ctx.lineTo(Math.cos(a0) * d + Math.cos(a0 + Math.PI / 2) * wob, -r * .6 + Math.sin(a0) * d + Math.sin(a0 + Math.PI / 2) * wob);
+        }
+        ctx.stroke();
+      }
+      const shards = 6 + n * 3;
+      for (let i = 0; i < shards; i++) {
+        const a0 = -Math.PI * .1 - (i / shards) * Math.PI * .8 + Math.sin(i * 7.3) * .2;
+        const v = r * (2 + (i % 3) * .6);
+        const x = Math.cos(a0) * v * p, y = -r * .6 + Math.sin(a0) * v * p + 380 * p * p;
+        ctx.globalAlpha = Math.max(0, 1 - p * 1.1);
+        ctx.save(); ctx.translate(x, y); ctx.rotate(t * (8 + i)); halfHeart(ctx, 6, i % 2 ? '#ff5f9e' : '#ffc2df', i % 2 === 0); ctx.restore();
+      }
+      const pop = backOut(Math.min(1, t / .12));
+      ctx.globalAlpha = Math.min(1, e.life / .2);
+      comic(ctx, '嘭！', r * .2, -r * 1.9, (30 + n * 4) * pop, '#ffe14a', -.18);
+      break;
+    }
+    case 'oops': {
+      // 精准踩雷: afterwards she has no idea — a round thought bubble with a big ？ and a sweat drop.
+      const t = e.max - e.life;
+      const k = backOut(Math.min(1, t / .15));
+      ctx.translate(e.x, e.y + Math.sin(t * 6) * 2);
+      ctx.globalAlpha = Math.min(1, e.life / .2);
+      ctx.save(); ctx.scale(k, k);
+      ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#151222'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(0, 0, 15, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(-12, 16, 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#4a7bd8'; ctx.font = `bold 22px ${UI_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('？', 1, 1);
+      ctx.restore();
+      ctx.fillStyle = '#8fd0ff';
+      ctx.beginPath(); ctx.moveTo(22, -6 + t * 18); ctx.quadraticCurveTo(28, 4 + t * 18, 22, 6 + t * 18); ctx.quadraticCurveTo(16, 4 + t * 18, 22, -6 + t * 18); ctx.fill();
+      break;
+    }
+    case 'slap': {
+      // 绝不退场: the sting of both palms — nothing over her face. A white-gold shock ring spreads from
+      // her head, comic impact flares spit out of both sides, the blush hatch lands on her cheek, 啪！.
+      const dir = e.dir ?? 1;
+      const t = e.max - e.life;
+      ctx.translate(e.x, e.y);
+      const ring = easeOut(Math.min(1, t / .25));
+      ctx.globalAlpha = Math.max(0, 1 - t / .3);
+      ctx.strokeStyle = '#fff3b0'; ctx.lineWidth = 4 * (1 - ring) + 1;
+      ctx.beginPath(); ctx.ellipse(-dir * 8, -6, 24 + ring * 46, 18 + ring * 34, 0, 0, Math.PI * 2); ctx.stroke();
+      const flare = backOut(Math.min(1, t / .07)) * Math.max(0, 1 - t / .28);
+      if (flare > 0) {
+        ctx.lineCap = 'round';
+        for (const side of [-1, 1]) {
+          for (let i = 0; i < 4; i++) {
+            const a0 = (side > 0 ? 0 : Math.PI) + (i - 1.5) * .32;
+            const r0 = 22, r1 = 22 + (16 + (i % 2) * 12) * flare;
+            ctx.globalAlpha = 1;
+            ctx.strokeStyle = i % 2 ? '#ffffff' : '#ffe14a'; ctx.lineWidth = 3.5 - (i % 2);
+            ctx.beginPath(); ctx.moveTo(-dir * 8 + Math.cos(a0) * r0, -6 + Math.sin(a0) * r0); ctx.lineTo(-dir * 8 + Math.cos(a0) * r1, -6 + Math.sin(a0) * r1); ctx.stroke();
+          }
+        }
+      }
+      const pop = backOut(Math.min(1, t / .1));
+      ctx.globalAlpha = Math.min(1, e.life / .15);
+      blush(ctx, 0, 6, 1.15 * pop, dir);
+      comic(ctx, '啪！', -dir * 44, -34, 24 * pop, '#ffffff', -dir * .2);
+      break;
+    }
+    case 'slap-flash': {
+      // 绝不退场: the sting — the edges of the screen flush red for a beat. Screen space.
+      const fade = 1 - p;
+      const g0 = ctx.createRadialGradient(W / 2, H / 2, H * .35, W / 2, H / 2, W * .65);
+      g0.addColorStop(0, 'rgba(255,40,70,0)');
+      g0.addColorStop(1, `rgba(255,40,70,${.38 * fade})`);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = g0;
+      ctx.fillRect(0, 0, W, H);
+      break;
+    }
+    case 'unbowed-shout': {
+      // 绝不退场: 不甘心——！ as manga shout lettering — each glyph slams in, white into red with a thick ink
+      // edge, the whole line shaking hard and settling; red ink streaks drag behind it and jagged
+      // shout rings roll out of her mouth.
+      const dir = e.dir ?? 1;
+      const t = e.max - e.life;
+      const text = '不甘心——！';
+      const glyphs = [...text];
+      const shake = Math.max(0, 1 - t / .5) * 5;
+      ctx.translate(e.x + Math.sin(t * 90) * shake, e.y + Math.cos(t * 77) * shake);
+      ctx.globalAlpha = Math.min(1, e.life / .3);
+      ctx.strokeStyle = '#ff3b5c'; ctx.lineCap = 'round';
+      for (let i = 0; i < 4; i++) {
+        const y = -8 + i * 7, len = 60 + i * 24;
+        ctx.globalAlpha = Math.min(1, e.life / .3) * (.5 - i * .1) * Math.min(1, t / .2);
+        ctx.lineWidth = 4 - i * .6;
+        ctx.beginPath(); ctx.moveTo(-dir * 70, y); ctx.lineTo(-dir * (70 + len), y + i * 2); ctx.stroke();
+      }
+      const size = 30;
+      const total = glyphs.length * size * .82;
+      glyphs.forEach((ch, i) => {
+        const at0 = i * .035;
+        if (t < at0) return;
+        const k = backOut(Math.min(1, (t - at0) / .1));
+        const x = -total / 2 + i * size * .82 + size * .4;
+        ctx.save();
+        ctx.translate(dir > 0 ? x : -x, Math.sin(i * 1.7) * 3);
+        ctx.rotate((i % 2 ? .06 : -.06));
+        ctx.scale(k * (i === 0 ? 1.25 : 1), k * (i === 0 ? 1.25 : 1));
+        ctx.globalAlpha = Math.min(1, e.life / .3);
+        ctx.font = `900 ${size}px ${UI_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = 8; ctx.strokeStyle = '#1e0610'; ctx.strokeText(ch, 0, 0);
+        const fill = ctx.createLinearGradient(0, -size / 2, 0, size / 2);
+        fill.addColorStop(0, '#ffffff'); fill.addColorStop(.55, '#ff8a9a'); fill.addColorStop(1, '#e0213f');
+        ctx.fillStyle = fill; ctx.fillText(ch, 0, 0);
+        ctx.restore();
+      });
+      ctx.strokeStyle = '#ffd0d8';
+      for (let i = 0; i < 3; i++) {
+        const k = Math.min(1, Math.max(0, (t - i * .08) / .45));
+        if (k <= 0 || k >= 1) continue;
+        ctx.globalAlpha = (1 - k) * .8;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        const rr = 20 + k * 120;
+        for (let a = -.9; a <= .9; a += .15) {
+          const jr = rr + (Math.round(a / .15) % 2 ? 6 : -6);
+          const x = dir * (14 + Math.cos(a) * jr), y = 95 + Math.sin(a) * jr * .7;
+          if (a === -.9) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+      break;
+    }
+    case 'unbowed-wind': {
+      // 绝不退场: the cold night wind off the sea, from behind her and on past her — long pale ribbons
+      // that curl as they go, sea spray in them, and a skin of foam sliding along the floor.
+      const dir = e.dir ?? 1;
+      ctx.translate(e.x, e.y);
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 10; i++) {
+        const y = (i - 5) * 18 + Math.sin(i * 2.3) * 8;
+        const k = Math.min(1, p * 1.5 + i * .02);
+        const head = -r * .9 + r * 2.4 * easeOut(k);
+        const len = 80 + (i % 3) * 40;
+        const curl = Math.sin(i * 1.3 + p * 6) * 14;
+        const a = (1 - p) * (.35 + (i % 2) * .3);
+        ctx.strokeStyle = '#dcf5ff'; ctx.lineWidth = 2 + (i % 3);
+        ctx.globalAlpha = a * .35;
+        ctx.beginPath(); ctx.moveTo(dir * (head - len), y); ctx.quadraticCurveTo(dir * (head - len * .7), y + curl * .6, dir * (head - len * .45), y + curl * .5); ctx.stroke();
+        ctx.globalAlpha = a;
+        ctx.beginPath(); ctx.moveTo(dir * (head - len * .45), y + curl * .5); ctx.quadraticCurveTo(dir * (head - len * .2), y + curl * .2, dir * head, y - curl * .4); ctx.stroke();
+      }
+      ctx.fillStyle = '#e8f8ff';
+      for (let i = 0; i < 16; i++) {
+        const k = Math.min(1, p * 1.3 + (i % 5) * .04);
+        const x = dir * (-r * .7 + r * 2.1 * k + Math.sin(i * 5.1) * 30);
+        const y = (i - 8) * 11 - k * 24 * ((i % 3) - 1);
+        ctx.globalAlpha = (1 - p) * .7;
+        ctx.fillRect(Math.round(x), Math.round(y), 2 + (i % 2), 2 + (i % 2));
+      }
+      const fy = 96;
+      ctx.globalAlpha = (1 - p) * .55;
+      const fx0 = dir * (-r * .8 + r * 2 * easeOut(p));
+      const foam = ctx.createLinearGradient(fx0 - dir * 160, 0, fx0, 0);
+      foam.addColorStop(0, 'rgba(180,230,255,0)'); foam.addColorStop(1, 'rgba(230,248,255,.9)');
+      ctx.fillStyle = foam;
+      ctx.beginPath(); ctx.ellipse(fx0 - dir * 80, fy, 80, 5, 0, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case 'slap-aura': {
+      // 绝不退场, held: the blush hatch stays on her cheek. From the first stack a 斗气 aura climbs her
+      // body — thin red-pink streaks rising from her feet past her head, embers drifting up with
+      // them — denser and taller with every stack; the anger mark throbs by her head. The full-stack
+      // rim on her silhouette is drawn by the renderer from the sprite itself.
+      const dir = e.dir ?? 1;
+      const n = e.n ?? 0;
+      const age = e.age ?? 0;
+      ctx.save();
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = .85;
+      blush(ctx, 0, 6, .85, dir);
+      ctx.restore();
+      if (n > 0) {
+        const feet = e.y + 150;
+        const height = 150 + n * 22;
+        const count = 3 + n * 2;
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.lineCap = 'round';
+        for (let i = 0; i < count; i++) {
+          const seed = i * 2.399;
+          const x = e.x + Math.sin(seed * 3.1) * (22 + n * 2);
+          const speed = .9 + (i % 3) * .3;
+          const k = (age * speed + i / count) % 1;
+          const len = 26 + (i % 4) * 12 + n * 4;
+          const y = feet - k * height;
+          const a = Math.sin(k * Math.PI) * (.45 + n * .08);
+          const sway = Math.sin(age * 3 + seed) * 3;
+          ctx.lineWidth = 2 + (i % 2);
+          ctx.globalAlpha = a * .45; ctx.strokeStyle = '#ff3c5a';
+          ctx.beginPath(); ctx.moveTo(x + sway * .4, y + len * .4); ctx.lineTo(x + sway, y + len); ctx.stroke();
+          ctx.globalAlpha = a; ctx.strokeStyle = '#ffbec8';
+          ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + sway * .4, y + len * .4); ctx.stroke();
+        }
+        for (let i = 0; i < 2 + n * 2; i++) {
+          const k = (age * .7 + i * .29) % 1;
+          const x = e.x + Math.sin(i * 4.7 + age * 2) * (30 + k * 10);
+          const y = feet - 20 - k * (height + 20);
+          ctx.globalAlpha = Math.sin(k * Math.PI) * .9;
+          ctx.fillStyle = i % 2 ? '#ffd2a8' : '#ff6f87';
+          ctx.fillRect(Math.round(x) - 1, Math.round(y) - 1, 2 + (i % 2), 2 + (i % 2));
+        }
+        ctx.restore();
+        const throb = 1 + Math.max(0, Math.sin(age * 9)) * .25;
+        ctx.globalAlpha = 1;
+        angerMark(ctx, e.x + dir * 26, e.y - 34, (6 + n) * throb);
+      }
+      break;
+    }
+    case 'unbowed-stack': {
+      // One more hit taken: the anger mark pops and a burst of spirit streaks jumps up off her.
+      const t = e.max - e.life;
+      const k = backOut(Math.min(1, t / .1));
+      ctx.globalAlpha = 1 - p;
+      angerMark(ctx, e.x + 18, e.y - 6, 12 * k);
+      ctx.strokeStyle = '#ffc2cc'; ctx.lineCap = 'round'; ctx.lineWidth = 2.5;
+      for (let i = 0; i < 6; i++) {
+        const x = e.x + (i - 2.5) * 12;
+        const y = e.y + 30 - p * 70 - (i % 2) * 10;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + 24 * (1 - p)); ctx.stroke();
+      }
+      break;
+    }
+    case 'burden':
+    case 'burden-rise': {
+      // 一肩扛下: everything she carries, stacked on her head — the lyric book flat at the bottom, the bass
+      // across it, the mic standing on top. The tower sways, more at the top. `n` is how many are left;
+      // they come off from the top. On the cast they drop out of the sky one after another and land.
+      const rise = e.type === 'burden-rise';
+      const n = rise ? 3 : (e.n ?? 0);
+      const t = e.max - e.life;
+      const age = e.age ?? t;
+      ctx.translate(e.x, e.y);
+      if (!rise) {
+        ctx.globalAlpha = .55;
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5;
+        for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(s * 22, 4); ctx.lineTo(s * 30, 10); ctx.stroke(); }
+      }
+      for (let i = 0; i < n; i++) {
+        let y = BURDEN_STACK[i];
+        let squash = 1;
+        if (rise) {
+          const t0 = i * .1, t1 = t0 + .13;
+          if (t < t0) continue;
+          if (t < t1) y = BURDEN_STACK[i] - 150 * (1 - ((t - t0) / (t1 - t0)) ** 2);
+          else {
+            const k = Math.min(1, (t - t1) / .1);
+            squash = 1 - Math.sin(k * Math.PI) * .25;
+            if (k < 1) {
+              ctx.globalAlpha = 1 - k;
+              ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+              for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(s * 26, y); ctx.lineTo(s * (40 + k * 10), y - 6); ctx.stroke(); }
+            }
+          }
+        }
+        const sway = Math.sin(age * 2.6) * (i + 1) * 1.8;
+        ctx.globalAlpha = 1;
+        ctx.save();
+        ctx.translate(sway, y);
+        ctx.rotate(Math.sin(age * 2.6 + .5) * .04 * (i + 1));
+        ctx.scale(1 / Math.sqrt(squash), squash);
+        drawBurdenItem(ctx, i, e.color);
+        ctx.restore();
+      }
+      break;
+    }
+    case 'burden-break': {
+      // One of them gives: an impact star where it sat, and it flies off the top of the pile, spinning,
+      // cracked, shedding bits.
+      const i = Math.max(0, Math.min(2, e.n ?? 0));
+      const t = e.max - e.life;
+      ctx.translate(e.x, e.y + BURDEN_STACK[i]);
+      const burst = backOut(Math.min(1, t / .06)) * Math.max(0, 1 - p * 2);
+      if (burst > 0) {
+        ctx.globalAlpha = 1;
+        jag(ctx, 30 * burst, 16 * burst, 8);
+        ctx.fillStyle = '#ffffff'; ctx.fill();
+      }
+      ctx.globalAlpha = 1 - p;
+      ctx.save();
+      ctx.translate(70 * p, -80 * p + 260 * p * p);
+      ctx.rotate(p * 9);
+      drawBurdenItem(ctx, i, e.color);
+      ctx.strokeStyle = '#151222'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(-8, -6); ctx.lineTo(-1, 0); ctx.lineTo(-5, 4); ctx.lineTo(7, 8); ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle = e.color;
+      for (let k = 0; k < 6; k++) {
+        const a0 = k * 1.05 + .4;
+        ctx.fillRect(Math.round(Math.cos(a0) * 40 * p), Math.round(Math.sin(a0) * 20 * p + 140 * p * p), 3, 3);
+      }
+      break;
+    }
+    case 'burden-collapse': {
+      // The last one goes and so does her voice: a grey scribble cloud with ……, a broken quaver sinking
+      // out of it.
+      const t = e.max - e.life;
+      const k = backOut(Math.min(1, t / .15));
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = Math.min(1, e.life / .3);
+      ctx.save(); ctx.scale(k, k);
+      ctx.fillStyle = '#5a5866'; ctx.strokeStyle = '#2a2833'; ctx.lineWidth = 2;
+      for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.arc(Math.cos(i * 1.05) * 16, Math.sin(i * 1.05) * 9, 10, 0, Math.PI * 2); ctx.fill(); }
+      ctx.fillStyle = '#d8d6e2';
+      for (let i = 0; i < 3; i++) ctx.fillRect(-10 + i * 8, -1, 4, 4);
+      ctx.restore();
+      ctx.save();
+      ctx.translate(26, 10 + t * 30);
+      ctx.rotate(.3 + t);
+      ctx.fillStyle = '#c9cfe0'; ctx.strokeStyle = '#c9cfe0'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.ellipse(-5, 9, 6, 4.5, -.4, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(0, 8); ctx.lineTo(0, -12); ctx.lineTo(8, -6); ctx.stroke();
+      ctx.strokeStyle = '#1a1528'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(-6, -3); ctx.lineTo(4, 2); ctx.stroke();
+      ctx.restore();
+      break;
+    }
+    case 'quake-ready': {
+      // Carried to the end: the pile turns gold and sinks into her as three gold rings dropping to her feet.
+      ctx.translate(e.x, e.y);
+      for (let i = 0; i < 3; i++) {
+        const k = Math.max(0, Math.min(1, (p - i * .12) / .6));
+        if (k <= 0) continue;
+        ctx.globalAlpha = (1 - k) * .9;
+        ctx.strokeStyle = '#ffd54a'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.ellipse(0, BURDEN_STACK[i] + k * (BURDEN_Y - BURDEN_STACK[i]), 26 + k * 14, 7 + k * 4, 0, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.globalAlpha = Math.max(0, 1 - p * 2) * .6;
+      ctx.fillStyle = '#fff2b0';
+      ctx.beginPath(); ctx.arc(0, -20, 26 * (1 - p), 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case 'quake-aura': {
+      // Aftershocks waiting at her feet: a slowly turning ring that ripples like a bass waveform,
+      // with one glowing bead circling per charge.
+      const n = Math.max(1, e.n ?? 1);
+      const age = e.age ?? 0;
+      ctx.translate(e.x, e.y);
+      ctx.strokeStyle = e.color; ctx.lineWidth = 2;
+      for (let ring = 0; ring < 2; ring++) {
+        ctx.globalAlpha = .55 - ring * .2;
+        ctx.beginPath();
+        for (let a = 0; a <= Math.PI * 2 + .01; a += .12) {
+          const rr = 40 + ring * 12 + Math.sin(a * 8 + age * (6 + ring * 3)) * 3;
+          const x = Math.cos(a) * rr, y = Math.sin(a) * rr * .26;
+          if (a === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+      for (let i = 0; i < n; i++) {
+        const a = age * 2.2 + i * Math.PI * 2 / n;
+        ctx.globalAlpha = .95;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(Math.cos(a) * 46, Math.sin(a) * 12, 3.5, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = .35; ctx.fillStyle = e.color;
+        ctx.beginPath(); ctx.arc(Math.cos(a) * 46, Math.sin(a) * 12, 8, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+    case 'quake': {
+      // The aftershocks land: a sub-bass shock through the target — expanding rings, a waveform line
+      // across them that dies away, and cracks in the floor under them. One more beat per charge.
+      const n = Math.max(1, e.n ?? 1);
+      ctx.translate(e.x, e.y);
+      for (let i = 0; i <= n; i++) {
+        const k = Math.max(0, Math.min(1, p * 1.4 - i * .12));
+        if (k <= 0) continue;
+        ctx.globalAlpha = (1 - k) * .85;
+        ctx.strokeStyle = i % 2 ? '#ffffff' : e.color; ctx.lineWidth = 4 * (1 - k) + 1;
+        ctx.beginPath(); ctx.ellipse(0, 0, r * (.4 + k * 1.8), r * (.4 + k * 1.8) * .7, 0, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.globalAlpha = 1 - p;
+      ctx.strokeStyle = '#e8fbff'; ctx.lineWidth = 3;
+      ctx.beginPath();
+      for (let x = -150; x <= 150; x += 4) {
+        const amp = 26 * (1 - p) * Math.exp(-Math.abs(x) / 90);
+        const y = Math.sin(x * .12 + p * 30) * amp;
+        if (x === -150) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.strokeStyle = '#2a2240'; ctx.lineWidth = 2.5;
+      for (let i = 0; i < 5 + n; i++) {
+        const a0 = (i / (5 + n)) * Math.PI;
+        const len = 30 + (i % 3) * 18;
+        ctx.beginPath(); ctx.moveTo(0, 85); ctx.lineTo(Math.cos(a0) * len * Math.min(1, p * 4), 85 + Math.sin(a0) * 6); ctx.stroke();
+      }
+      break;
+    }
+    case 'encore-stage': {
+      // 安可是主唱的: the arena becomes a live house — the house lights go down, two stage beams in the band
+      // colours sweep across from the top corners, a haze under the roof. Screen space, behind everyone.
+      const layers = getEncoreLayers();
+      if (!layers) break;
+      const t = e.max - e.life;
+      const fade = Math.min(1, t / .2) * Math.min(1, e.life / .4);
+      ctx.globalAlpha = fade;
+      ctx.drawImage(layers.house, 0, 0);
+      const grads = beamGrads(ctx);
+      for (let b = 0; b < 2; b++) {
+        const s0 = b ? -1 : 1;
+        const ang = Math.PI / 2 - s0 * (.55 + Math.sin(t * 1.8 + b * 1.6) * .32);
+        ctx.save();
+        ctx.translate(b ? W : 0, -10);
+        ctx.rotate(ang - Math.PI / 2);
+        ctx.fillStyle = grads[b];
+        ctx.beginPath(); ctx.moveTo(-10, 0); ctx.lineTo(10, 0); ctx.lineTo(120, H * 1.2); ctx.lineTo(-120, H * 1.2); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+      break;
+    }
+    case 'encore-crowd': {
+      // 安可是主唱的: the floor along the bottom of the frame — two rows of heads and shoulders, light sticks
+      // up and pumping together on the beat, mostly in the new vocalist's green, notes drifting up.
+      // Screen space, in front of everyone. Batched: one fill per row of bodies and one stroke per
+      // stick colour per layer, so the whole crowd is about a dozen draw calls.
+      const t = e.max - e.life;
+      const fade = Math.min(1, t / .25) * Math.min(1, e.life / .4);
+      const lite = isLiteFx();
+      const beat = Math.sin(t * Math.PI * 2 * 2.2);
+      const colours = [e.color, '#77FFFF', '#EE99EE'];
+      let n = 0;
+      for (let row = 1; row >= 0; row--) {
+        const count = row ? 18 : 14;
+        const scale = row ? .78 : 1;
+        const base = row ? H - 34 : H - 8;
+        const bob = Math.max(0, beat) * 4 * scale;
+        for (let i = 0; i < count; i++, n++) {
+          const x = (i + .5) * (W / count) + Math.sin(i * 3.1 + row) * 12;
+          const ang = (beat * .5 + Math.sin(i * 1.7) * .15) * (i % 2 ? 1 : -1) * .6;
+          const hx = x + 16 * scale, hy = base - 34 * scale - bob;
+          CROWD[n * 5] = hx; CROWD[n * 5 + 1] = hy;
+          CROWD[n * 5 + 2] = Math.sin(ang) * scale; CROWD[n * 5 + 3] = -Math.cos(ang) * scale;
+          const k = i + row * 3;
+          CROWD[n * 5 + 4] = k % 7 === 3 ? 2 : k % 5 === 2 ? 1 : 0;
+        }
+        // Sticks behind this row's heads: glow, core, then the white highlight, one path per colour.
+        const first = n - count;
+        ctx.lineCap = 'round';
+        const layers: [number, number, number, number][] = lite ? [[4.5, 1, 0, 32]] : [[12, .3, 0, 32], [4.5, 1, 0, 32]];
+        for (const [w, a, from, to] of layers) {
+          ctx.globalAlpha = fade * a;
+          ctx.lineWidth = w * scale;
+          for (let c = 0; c < 3; c++) {
+            ctx.strokeStyle = colours[c];
+            ctx.beginPath();
+            for (let j = first; j < n; j++) {
+              if (CROWD[j * 5 + 4] !== c) continue;
+              const hx = CROWD[j * 5], hy = CROWD[j * 5 + 1], ux = CROWD[j * 5 + 2], uy = CROWD[j * 5 + 3];
+              ctx.moveTo(hx + ux * from, hy + uy * from); ctx.lineTo(hx + ux * to, hy + uy * to);
+            }
+            ctx.stroke();
+          }
+        }
+        ctx.globalAlpha = fade; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5 * scale;
+        ctx.beginPath();
+        for (let j = first; j < n; j++) {
+          const hx = CROWD[j * 5], hy = CROWD[j * 5 + 1], ux = CROWD[j * 5 + 2], uy = CROWD[j * 5 + 3];
+          ctx.moveTo(hx + ux * 4, hy + uy * 4); ctx.lineTo(hx + ux * 30, hy + uy * 30);
+        }
+        ctx.stroke();
+        ctx.globalAlpha = fade * (row ? .8 : .95);
+        ctx.fillStyle = row ? '#120f1e' : '#06050b';
+        ctx.beginPath();
+        for (let i = 0; i < count; i++) {
+          const x = (i + .5) * (W / count) + Math.sin(i * 3.1 + row) * 12;
+          const hy = base - 30 * scale - bob, sy = base + 6 * scale - bob;
+          ctx.moveTo(x + 15 * scale, hy); ctx.arc(x, hy, 15 * scale, 0, Math.PI * 2);
+          ctx.moveTo(x + 30 * scale, sy); ctx.ellipse(x, sy, 30 * scale, 24 * scale, 0, 0, Math.PI, true);
+          ctx.rect(x - 30 * scale, sy, 60 * scale, 40);
+        }
+        ctx.fill();
+      }
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 7; i++) {
+        const k = ((t * .45 + i * .14) % 1);
+        const x = W * ((i * .137 + .08) % 1) + Math.sin(t * 2 + i) * 10;
+        ctx.globalAlpha = fade * (1 - k) * .8;
+        note(ctx, x, H - 70 - k * 170, i % 2 ? '#ffffff' : '#c8ffc8');
+      }
+      const layers = getEncoreLayers();
+      if (layers) { ctx.globalAlpha = fade * .5; ctx.drawImage(layers.glow, 0, H - 140); }
+      break;
+    }
+    case 'encore-call': {
+      // 安可是主唱的: a call from the floor, in neon — 安可！ blooms over the crowd and floats up. Screen space.
+      const t = e.max - e.life;
+      const k = backOut(Math.min(1, t / .14));
+      const size = (e.radius ?? 26) * k;
+      ctx.translate(e.x, e.y - t * 30);
+      ctx.rotate((e.dir ?? 0) * .08);
+      ctx.font = `900 ${size}px ${UI_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineJoin = 'round';
+      const a = Math.min(1, e.life / .3);
+      if (!isLiteFx()) {
+        ctx.globalAlpha = a * .25; ctx.strokeStyle = e.color; ctx.lineWidth = 14; ctx.strokeText('安可！', 0, 0);
+      }
+      ctx.globalAlpha = a * .6; ctx.strokeStyle = e.color; ctx.lineWidth = 6; ctx.strokeText('安可！', 0, 0);
+      ctx.globalAlpha = a; ctx.fillStyle = '#f4fff4'; ctx.fillText('安可！', 0, 0);
+      break;
+    }
+    case 'encore-spot': {
+      // 安可是主唱的: the one warm beam that picks out the body they are calling for, dust turning in it, and a
+      // microphone stand standing in front of them — they are the vocalist now.
+      const t = e.max - e.life;
+      const land = Math.min(1, t / .08);
+      const fade = Math.min(1, e.life / .3);
+      const dir = e.dir ?? 1;
+      const bottom = r, top = bottom * .22;
+      ctx.translate(e.x, e.y);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const beam = ctx.createLinearGradient(-bottom, 0, bottom, 0);
+      beam.addColorStop(0, 'rgba(255,246,216,0)');
+      beam.addColorStop(.5, `rgba(255,250,232,${.62 * land * fade})`);
+      beam.addColorStop(1, 'rgba(255,246,216,0)');
+      ctx.fillStyle = beam;
+      ctx.beginPath(); ctx.moveTo(-top, -e.y); ctx.lineTo(top, -e.y); ctx.lineTo(bottom, 0); ctx.lineTo(-bottom, 0); ctx.closePath(); ctx.fill();
+      const pool = ctx.createRadialGradient(0, 0, 4, 0, 0, bottom * 1.3);
+      pool.addColorStop(0, `rgba(255,252,240,${.85 * fade})`);
+      pool.addColorStop(1, 'rgba(255,240,200,0)');
+      ctx.fillStyle = pool;
+      ctx.beginPath(); ctx.ellipse(0, 0, bottom * 1.3, bottom * .32, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      for (let i = 0; i < 10; i++) {
+        const u = (i * .17 + t * (.35 + (i % 3) * .12)) % 1;
+        const half = top + (bottom - top) * u;
+        ctx.globalAlpha = fade * land * (.3 + .4 * Math.sin(t * 8 + i * 2)) * (1 - Math.abs(u - .5));
+        ctx.beginPath(); ctx.arc(Math.sin(i * 2.7 + t * 1.1) * half * .6, -e.y * (1 - u), 1.4 + (i % 2), 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+      if (t < .2) {
+        ctx.globalAlpha = 1 - t / .2;
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.ellipse(0, 0, bottom * (1 + t * 4), bottom * .3 * (1 + t * 4), 0, 0, Math.PI * 2); ctx.stroke();
+      }
+      const up = backOut(Math.min(1, Math.max(0, t - .05) / .12));
+      ctx.globalAlpha = fade;
+      ctx.save();
+      ctx.translate(dir * 46, 0);
+      ctx.scale(1, up);
+      ctx.strokeStyle = '#151222'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(-14, 0); ctx.lineTo(0, -6); ctx.lineTo(14, 0); ctx.moveTo(0, -6); ctx.lineTo(0, -112); ctx.lineTo(-dir * 16, -126); ctx.stroke();
+      ctx.strokeStyle = '#c9cfe0'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(0, -110); ctx.stroke();
+      ctx.fillStyle = '#2b2d3a';
+      ctx.beginPath(); ctx.ellipse(-dir * 20, -130, 6, 9, -dir * .6, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      if (t > .1) {
+        ctx.globalAlpha = fade * (.6 + .4 * Math.sin(t * 10));
+        sparkle(ctx, 0, -196, 8, '#fff3b0');
+        sparkle(ctx, -18, -184, 4, '#ffffff');
+        sparkle(ctx, 18, -186, 5, '#ffffff');
+      }
+      break;
+    }
+    case 'encore-rain': {
+      // 安可是主唱的: when her face goes dark the rain comes — cold slanting streaks over the whole stage and a
+      // faint blue wash. Screen space, in front of everyone.
+      const t = e.max - e.life;
+      const fade = Math.min(1, t / .25) * Math.min(1, e.life / .5);
+      ctx.globalAlpha = fade * .16;
+      ctx.fillStyle = '#1c3a6a';
+      ctx.fillRect(0, 0, W, H);
+      const count = isLiteFx() ? 40 : 80;
+      ctx.strokeStyle = '#b8d6ff'; ctx.lineCap = 'round';
+      // Six classes (three alphas × two widths), one stroked path each.
+      for (let cls = 0; cls < 6; cls++) {
+        ctx.globalAlpha = fade * (.25 + (cls % 3) * .15);
+        ctx.lineWidth = 1 + (cls % 2);
+        ctx.beginPath();
+        for (let i = cls; i < count; i += 6) {
+          const sx = (i * 97.3) % W, speed = 900 + (i % 5) * 120;
+          const y = ((i * 53.1 + t * speed) % (H + 80)) - 40;
+          const x = sx - (y + 40) * .25;
+          ctx.moveTo(x, y); ctx.lineTo(x - 6, y + 22 + (i % 4) * 4);
+        }
+        ctx.stroke();
+      }
+      break;
+    }
+    case 'encore-eye': {
+      // 安可是主唱的: the dark face keeps two points of light where the eyes are. Drawn by the renderer.
+      const dir = e.dir ?? 1;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = .95;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(Math.round(dir * 3), -1, 4, 2);
+      ctx.fillRect(Math.round(dir * 13), -1, 4, 2);
+      ctx.globalAlpha = .4; ctx.fillStyle = '#bff8ff';
+      ctx.fillRect(Math.round(dir * 3 - dir * 10), -1, 10 * dir, 1);
+      break;
+    }
+    case 'lyric-page': {
+      // 安可是主唱的: blank lyric-book pages torn loose behind the run, fluttering back and down.
+      const dir = e.dir ?? 1;
+      const seed = e.n ?? 0;
+      const t = e.max - e.life;
+      const x = -dir * (60 + seed % 3 * 30) * p + Math.sin(t * 7 + seed) * 12;
+      const y = -30 * Math.sin(Math.min(1, p * 2) * Math.PI / 2) + 120 * p * p;
+      ctx.translate(e.x + x, e.y + y);
+      ctx.rotate(Math.sin(t * 6 + seed * 1.3) * .8 + seed);
+      ctx.scale(Math.cos(t * 9 + seed), 1);
+      ctx.globalAlpha = Math.min(1, e.life / .3) * .95;
+      ctx.scale(1.5, 1.5);
+      ctx.fillStyle = '#f4efe6'; ctx.strokeStyle = '#151222'; ctx.lineWidth = 1.2;
+      ctx.fillRect(-8, -10, 16, 20); ctx.strokeRect(-8, -10, 16, 20);
+      ctx.strokeStyle = '#9ab6d8'; ctx.lineWidth = .8;
+      for (let k = 0; k < 4; k++) { ctx.beginPath(); ctx.moveTo(-5, -6 + k * 4); ctx.lineTo(5, -6 + k * 4); ctx.stroke(); }
+      break;
+    }
+    case 'encore-cut': {
+      // Where she goes through them: a fat black crescent blade with a cyan edge, a white flash line
+      // through it and a burst star at the middle.
+      const dir = e.dir ?? 1;
+      const q = easeOut(Math.min(1, p * 1.6));
+      const L = r * 1.8 * q;
+      ctx.translate(e.x, e.y);
+      ctx.scale(dir, 1);
+      ctx.rotate(-.3 + (e.n ?? 0) * .3);
+      ctx.globalAlpha = 1 - p;
+      ctx.fillStyle = '#0a0b14';
+      ctx.beginPath(); ctx.moveTo(-L, 8); ctx.quadraticCurveTo(0, -46, L, -2); ctx.quadraticCurveTo(0, -12, -L, 8); ctx.fill();
+      ctx.strokeStyle = '#77FFFF'; ctx.lineWidth = 3.5;
+      ctx.beginPath(); ctx.moveTo(-L, 8); ctx.quadraticCurveTo(0, -46, L, -2); ctx.stroke();
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(-L * .9, 2); ctx.lineTo(L * .9, -8); ctx.stroke();
+      if (p < .4) {
+        ctx.globalAlpha = 1 - p / .4;
+        jag(ctx, 22 * (1 - p), 9, 6);
+        ctx.fillStyle = '#ffffff'; ctx.fill();
+      }
+      break;
+    }
+    case 'encore-shatter': {
+      // The last blow: the spotlight on them breaks like glass — a white cross flash and pale gold shards
+      // raining down out of the beam.
+      const t = e.max - e.life;
+      ctx.translate(e.x, e.y);
+      if (t < .14) {
+        ctx.globalAlpha = 1 - t / .14;
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 6;
+        const s = 60 + t * 300;
+        ctx.beginPath(); ctx.moveTo(-s, -s * .5 - 90); ctx.lineTo(s, s * .5 - 90); ctx.moveTo(s, -s * .5 - 90); ctx.lineTo(-s, s * .5 - 90); ctx.stroke();
+      }
+      for (let i = 0; i < 16; i++) {
+        const x0 = (i - 8) * 9 + Math.sin(i * 4.1) * 10;
+        const y0 = -220 + (i % 5) * 30;
+        const vy = 120 + (i % 4) * 60;
+        const x = x0 + Math.sin(i * 2.3) * 60 * p, y = y0 + vy * t + 500 * t * t;
+        ctx.globalAlpha = (1 - p) * .9;
+        ctx.save(); ctx.translate(x, y); ctx.rotate(t * (6 + i));
+        ctx.fillStyle = i % 3 ? '#fff6d8' : '#ffffff';
+        ctx.beginPath(); ctx.moveTo(0, -7); ctx.lineTo(5, 4); ctx.lineTo(-4, 5); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+      break;
+    }
+    case 'encore-exit': {
+      // Out of the frame (or back in): a slit of light at the edge, dust and speed lines.
+      const dir = e.dir ?? 1;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = (1 - p) * .8;
+      ctx.fillStyle = e.color;
+      for (let i = 0; i < 7; i++) {
+        ctx.beginPath(); ctx.arc(-dir * (i * 14 + p * 40), -8 - (i % 3) * 12 - p * 20, 9 + p * 12, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5;
+      for (let i = 0; i < 6; i++) {
+        const y = -20 - i * 26;
+        ctx.beginPath(); ctx.moveTo(-dir * (10 + p * 50), y); ctx.lineTo(-dir * (110 + p * 80 + (i % 2) * 40), y); ctx.stroke();
+      }
+      ctx.globalAlpha = (1 - p);
+      const slit = ctx.createLinearGradient(0, -200, 0, 0);
+      slit.addColorStop(0, 'rgba(255,255,255,0)'); slit.addColorStop(.5, 'rgba(220,255,255,.9)'); slit.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = slit;
+      ctx.fillRect(-3 * (1 - p) - 1, -200, 6 * (1 - p) + 2, 200);
       break;
     }
     case 'nagi-tear': {
