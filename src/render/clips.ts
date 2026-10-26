@@ -91,6 +91,48 @@ export const COFFIN_OUT = .5;
 export const COFFIN_TIP = .14;
 export const ROOFTOP_STOMP = .12;
 
+/** 打水漂: one hop of the stone run; every landing is a touch. Each cast rolls SKIP_MIN～SKIP_MAX hops;
+ *  SKIP_MAX is also the face that knocks down. */
+export const SKIP_HOP = .16;
+export const SKIP_MIN = 3;
+export const SKIP_MAX = 5;
+/** 打水漂: the landing crouch after the strike. */
+export const SKIP_TAIL = .25;
+
+/** ……来练习吧: seven strums. The gap shrinks evenly from the first to the last, the way the
+ *  bridge of Odd Dice speeds up beat by beat. Never under 0.09s (docs/public/moves.md 削防). */
+export const PRACTICE_HITS = 7;
+export const PRACTICE_GAP0 = .22;
+export const PRACTICE_GAP1 = .09;
+export function practiceGap(i: number): number {
+  return PRACTICE_GAP0 + (PRACTICE_GAP1 - PRACTICE_GAP0) * Math.min(1, i / (PRACTICE_HITS - 2));
+}
+/** Offset of each strum from the skill's start, summed once: the sea reads these every frame. */
+const PRACTICE_BEATS: readonly number[] = (() => {
+  const out: number[] = [];
+  for (let i = 0, t = 0; i < PRACTICE_HITS; t += practiceGap(i++)) out.push(t);
+  return out;
+})();
+export function practiceBeat(i: number): number {
+  return PRACTICE_BEATS[Math.max(0, Math.min(PRACTICE_HITS - 1, i))];
+}
+/** Strums already struck `local` seconds after the skill's start. */
+export function practiceStrums(local: number): number {
+  let n = 0;
+  while (n < PRACTICE_HITS && PRACTICE_BEATS[n] <= local) n++;
+  return n;
+}
+/** Wind-up, then each strum shows the downstroke for the first half of its gap and the lifted hand
+ *  for the rest; after the last strum the hand stays lifted. */
+export function practiceRow(t: number, start: number): number {
+  if (t < start) return 0;
+  const local = t - start;
+  const j = Math.max(0, practiceStrums(local) - 1);
+  const since = local - PRACTICE_BEATS[j];
+  const hold = j === PRACTICE_HITS - 1 ? .12 : practiceGap(j) * .5;
+  return since < hold ? 1 : 2;
+}
+
 /** Row of the seated drum loop. The three L-column frames play four times across the super. */
 export function drumRow(t: number, duration: number): number {
   const u = duration > 0 ? Math.min(0.999, Math.max(0, t / duration)) : 0;
@@ -413,6 +455,8 @@ export function clipFor(f: Fighter): Clip {
       const row = t < s.start ? 0 : t < s.duration - COFFIN_OUT ? 1 : 2;
       return at('special', f.attack.index - 2, row);
     }
+    // ……来练习吧: the downstroke and the lifted hand trade places on every strum.
+    if (f.attack.skill.fx === 'practice') return at('special', f.attack.index - 2, practiceRow(f.attack.t, f.attack.skill.start));
     // 天台是我的: the crouch and leap hold the first cell; the dive and the stomp are the second;
     // the landing crouch is the third.
     if (f.attack.skill.fx === 'rooftop') {
@@ -422,7 +466,7 @@ export function clipFor(f: Fighter): Clip {
     }
     // 筑紫四列都要把命中姿势留住：土笔蹲着、闹钟抛完、滚轮一直跑、姐姐叉腰。
     if (f.attack.skill.fx === 'sprout' || f.attack.skill.fx === 'clock' || f.attack.skill.fx === 'wheel' || f.attack.skill.fx === 'sisters'
-      || f.attack.skill.fx === 'sandwich' || f.attack.skill.fx === 'excuse') {
+      || f.attack.skill.fx === 'sandwich' || f.attack.skill.fx === 'excuse' || f.attack.skill.fx === 'skip') {
       const t = f.attack.t, s = f.attack.skill;
       const row = t < s.start ? 0 : t >= s.duration - .22 ? 2 : 1;
       return at('special', f.attack.index - 2, row);

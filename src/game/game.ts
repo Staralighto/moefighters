@@ -85,6 +85,10 @@ export interface Effect {
   heavy?: boolean; hit?: boolean; air?: boolean;
   /** Rides on this fighter at the stamped offset instead of staying where it was spawned (狼爪). */
   follow?: number; ox?: number; oy?: number;
+  /** A small count the graphic reads (打水漂's die pips, ……来练习吧's strum index). */
+  n?: number;
+  /** Seconds into the effect's life that its own timeline is measured from (……来练习吧's sea: the first strum). */
+  t0?: number;
 }
 export interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string; size: number }
 export interface FloatingText { text: string; x: number; y: number; color: string; life: number; max: number; size: number }

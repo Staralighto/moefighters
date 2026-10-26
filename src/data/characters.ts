@@ -1319,6 +1319,43 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'nagi', name: '琴平凪', title: '吉他 / 摆烂王', quote: '我会选择有你在的地狱。', color: '#5555FF',
+    bands: ['millsage'],
+    ...stats('rush'),
+    view: {
+      kind: 'sprite', common: '/sprites/nagi/common.png', special: '/sprites/nagi/special.png', height: 181,
+    },
+    skills: [
+      skill(0, 'light', '啊哈', { range: 104 }),
+      skill(1, 'heavy', '茉幌骑士', { range: 140 }),
+      // 打水漂 (combat.ts step_skip): the hop count is rolled; the run ends on contact and the die face decides the strike.
+      skill(2, 'dash', '打水漂', {
+        damage: 30, speed: 760, range: 100, start: .12, duration: 1.17, cd: 6, fx: 'skip', reach: 'ground',
+        knock: 100, react: { kind: 'stand', stun: .3 },
+        brief: '贴地连跳碰到即结算；奇数速冷却偶数双倍，五击倒',
+        detail: '贴地随机连跳 3～5 下，骰子随跳数加点；碰到对手或跳完即出手结算：奇数冷却降为 1 秒，偶数伤害翻倍，5 点额外击倒；打空不结算冷却；跳起可躲',
+      }),
+      skill(3, 'upper', '把月亮扣下来', {
+        damage: 58, range: 120, cd: 6, fx: 'dunk', knock: 120,
+        brief: '对空起手无敌；空中对手扣倒，地面对手挑空',
+        detail: '原地起跳，起手无敌 0.2 秒；打中空中的对手则往下扣，击倒；打中地面的对手则挑空，跳起追打可连段',
+      }),
+      skill(4, 'endure', '稍好一些的地狱', {
+        damage: 40, range: 120, start: .15, duration: .6, cd: 14, breakout: true, holdEndure: true, fx: 'numb', knock: 280,
+        brief: '解控并霸体肩撞；之后记账不掉血，到时一起结算',
+        detail: '解控并霸体肩撞击退；随后 4 秒记账，期间不掉血也不硬直，结束时一次承受期间伤害的 80% 并硬直 0.35 秒；抓投照常生效',
+      }),
+      // 七下是近战必杀的上限：同一串连段的第 7 下会让对手脱离连段（立希、LAYER 同为 7 段）。
+      skill(5, 'endure', '……来练习吧', {
+        damage: 32, count: 7, interval: .16, range: 150, start: .45, duration: 1.75, fx: 'practice', holdEndure: true, knock: 60,
+        guardPlan: [6, 12, 18, 26, 40, 52, 64],
+        finale: { damage: 95, knock: 380, react: { kind: 'knockdown', vy: -240, knocked: .9 } },
+        brief: '霸体扫弦七下，越弹越快，末下击倒',
+        detail: '霸体原地前压扫弦七下，间隔从 0.22 秒缩到 0.09 秒，末下全力下扫击倒；可格挡，第 5 段破防',
+      }),
+    ],
+  },
+  {
     id: 'viola', name: '薇欧拉', title: '队长 / 恶德', quote: '火种燃尽之后会怎么样呢？', color: '#8E5AC8',
     ...stats('armor'),
     view: {

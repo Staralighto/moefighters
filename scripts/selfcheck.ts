@@ -1,7 +1,7 @@
 /* Headless rule check: runs the fixed-step engine without DOM or canvas. `npm run check`. */
 import { FightGame } from '../src/game/game.ts';
 import { BUSHIDO_CREEP, BUSHIDO_LUNGE, BUSHIDO_SPAN, VEIL_NORMAL, VEIL_SHOT, clockRings, drumShotTime, hit, holdNoteSpan, outshines, violetHidden, withGuard } from '../src/game/combat.ts';
-import { vowBeatTime, VOW_BEATS } from '../src/render/clips.ts';
+import { vowBeatTime, VOW_BEATS, PRACTICE_GAP1, PRACTICE_HITS, practiceBeat, practiceGap, practiceRow, practiceStrums } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
 import { PLAYABLE, ROSTER, bandMembers, guestsFor } from '../src/data/characters.ts';
 import { BANDS, BAND_BY_ID } from '../src/data/bands.ts';
@@ -103,11 +103,11 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const breaksAt: Record<string, number> = {
     nyamu: 9, sakiko: 5, anon: 5, rana: 10, soyo: 3, kokoro: 3, miyako: 5,
-    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2,
+    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5,
   };
   const segments: Record<string, number> = {
     nyamu: 16, sakiko: 8, anon: 6, rana: 22, soyo: 3, kokoro: 3, miyako: 6,
-    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2,
+    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7,
   };
   for (const [id, breakAt] of Object.entries(breaksAt)) {
     const s = ROSTER[at(id)].skills[5];
@@ -6369,6 +6369,115 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     p2.invuln = .2;
     run(g, 1);
     assert.ok(p2.data.hp - p2.hp < 80 && p2.knocked <= 0, 'a dodge timed on the big burst slips through it');
+  }
+}
+
+// nagi: 打水漂 rolls 3～5 hops, ends on contact and strikes by the die face — odd cuts the cooldown
+// to a second, even doubles the damage, five also knocks down. I dunks a body in
+// the air and lifts one on the floor. O breaks out, shoulders, and puts four seconds of damage on the
+// bill. L is seven strums whose gaps shrink, ending in a knockdown.
+{
+  const na = at('nagi');
+  const data = ROSTER[na];
+  assert.deepEqual(data.bands, ['millsage'], 'nagi stands with millsage');
+  assert.equal(data.title, '吉他 / 摆烂王', 'nagi wears the slacker title');
+  const roll = (g: FightGame, v: number) => { (g as unknown as { random: () => number }).random = () => v; };
+  // U: the run ends at the first landing near a grounded foe (or when the roll runs out), and the
+  // face decides the strike. She starts at 60; each hop carries her about 122, so the foe's distance
+  // picks the face. Roll 0.9 = five hops available.
+  const skim = (foeX: number, v = .9) => {
+    const g = newGame(na, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 60; p2.x = foeX; p1.facing = 1; p2.facing = -1;
+    roll(g, v);
+    assert.ok(g.attack(p1, 2), 'the skim comes out');
+    let stood = 0, down = false;
+    for (let i = 0; i < Math.round(1.3 / STEP); i++) { g.step(STEP); if (p2.stun > .35 && p2.knocked <= 0) stood++; if (p2.knocked > 0) down = true; }
+    return { g, p1, p2, lost: p2.data.hp - p2.hp, stood, down, cd: p1.cooldowns[2] };
+  };
+  {
+    const one = skim(200);
+    assert.ok(one.lost > 25 && one.lost < 35 && !one.down, 'one: the base strike, lost ' + one.lost);
+    assert.ok(one.cd <= 1, 'odd: the cooldown drops to a second, left ' + one.cd);
+    assert.equal(one.g.totalHits[one.p1.id], 1, 'one strike per run');
+    const two = skim(330);
+    assert.ok(two.lost > 55 && two.lost < 65, 'even: double damage, lost ' + two.lost);
+    assert.ok(two.stood > 0 && !two.down && two.cd > 4, 'even: they stay standing and the cooldown is the full one');
+    const three = skim(450);
+    assert.ok(three.lost > 25 && three.lost < 35 && three.cd <= 1, 'three is odd too');
+    const four = skim(580);
+    assert.ok(four.lost > 55 && four.lost < 65 && four.cd > 4, 'four doubles');
+    const five = skim(700);
+    assert.ok(five.down && five.lost > 25 && five.cd <= 1, 'five knocks down and is odd: lost ' + five.lost);
+  }
+  {
+    // A roll of three that never reaches them: the strike whiffs and the cooldown stays.
+    const miss = skim(900, 0);
+    assert.ok(miss.lost === 0 && miss.cd > 4 && miss.p1.attack === null, 'a whiffed run leaves the cooldown alone');
+  }
+  {
+    // A blocked odd strike still counts as touching them.
+    const g = newGame(na, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 60; p2.x = 200; p1.facing = 1; p2.facing = -1;
+    roll(g, .9);
+    g.attack(p1, 2);
+    for (let i = 0; i < Math.round(1.3 / STEP); i++) { p2.blocking = true; g.step(STEP); }
+    assert.ok(p2.data.hp - p2.hp < 10 && p1.cooldowns[2] <= 1, 'blocked odd: chip only, and the quick cooldown');
+  }
+  // I: in the air they are dunked into the floor; on the floor they go up
+  {
+    const g = newGame(na, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 380; p1.facing = 1;
+    p2.y = FLOOR - 120; p2.vy = -200;
+    g.attack(p1, 3);
+    let slammed = false;
+    for (let i = 0; i < Math.round(.4 / STEP); i++) { g.step(STEP); if (p2.knocked > 0 && p2.vy > 0) slammed = true; }
+    assert.ok(slammed && p2.hp < p2.data.hp, 'a body in the air is dunked');
+  }
+  {
+    const g = newGame(na, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 380; p1.facing = 1;
+    g.attack(p1, 3);
+    let lifted = false;
+    for (let i = 0; i < Math.round(.5 / STEP); i++) { g.step(STEP); if (p2.y < FLOOR - 40 && p2.knocked <= 0) lifted = true; }
+    assert.ok(lifted && p2.hp < p2.data.hp, 'a body on the floor goes up, not down');
+  }
+  // O: the shoulder lands, then what she takes goes on the bill and is paid at the end
+  {
+    const g = newGame(na, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 400; p1.facing = 1;
+    g.attack(p1, 4);
+    run(g, .5);
+    assert.ok(p2.hp < p2.data.hp, 'the shoulder lands');
+    assert.ok(p1.mods.some(m => m.kind === 'debt' && m.left > 3), 'the numbing runs four seconds');
+    p1.invuln = 0;
+    const hp = p1.hp;
+    hit(g, p2, p1, { ...ROSTER[at('boulder')].skills[1], damage: 60 }, { hit: new Set() });
+    assert.equal(p1.hp, hp, 'a hit under the numbing does not take health yet');
+    assert.ok(p1.stun <= 0 || p1.stun < .1, 'nor does it flinch');
+    run(g, 4);
+    assert.ok(p1.hp < hp, 'the bill comes due');
+  }
+  // L: seven strums, gaps shrinking and never under 0.09s, ending in a knockdown
+  {
+    assert.equal(data.skills[5].count, PRACTICE_HITS, 'the count shown is the strum count');
+    for (let i = 1; i < PRACTICE_HITS - 1; i++) assert.ok(practiceGap(i) < practiceGap(i - 1), 'each gap is shorter than the last');
+    assert.ok(practiceGap(PRACTICE_HITS - 2) >= .09 - 1e-9 && PRACTICE_GAP1 >= .09, 'no gap under the blockstun');
+    assert.ok(data.skills[5].start + practiceBeat(PRACTICE_HITS - 1) < data.skills[5].duration - .2, 'the last strum lands inside the move');
+    for (let i = 0, sum = 0; i < PRACTICE_HITS; sum += practiceGap(i++)) {
+      assert.ok(Math.abs(practiceBeat(i) - sum) < 1e-9, 'the beat table is the summed gaps at strum ' + i);
+      assert.equal(practiceStrums(practiceBeat(i)), i + 1, 'a strum counts from its own beat');
+    }
+    assert.equal(practiceStrums(-.01), 0, 'nothing struck before the start');
+    assert.equal(practiceRow(0, .45), 0, 'wind-up first');
+    assert.equal(practiceRow(.46, .45), 1, 'a strum shows the downstroke');
+    const g = newGame(na, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 400; p1.facing = 1; p1.energy = 100;
+    g.attack(p1, 5);
+    run(g, 2.2);
+    const lost = p2.data.hp - p2.hp;
+    assert.ok(g.totalHits[p1.id] >= PRACTICE_HITS, 'all seven strums land: ' + g.totalHits[p1.id]);
+    assert.ok(lost > 170 && lost < 260, 'the strums add up to a super: ' + lost);
+    assert.ok(p2.knocked > 0 || p2.downTime > 0, 'the last strum knocks down');
   }
 }
 

@@ -4,7 +4,7 @@ import type { Fighter } from '../game/fighter.ts';
 import type { FighterView } from './view.ts';
 import { clamp, FLOOR, H, SIDE, W } from '../game/constants.ts';
 import type { ImageCache } from '../assets/loader.ts';
-import { CELL, clipFor, flameFrame, pillarFrame, RING_BIG, RING_SMALL } from './clips.ts';
+import { CELL, clipFor, flameFrame, pillarFrame, practiceBeat, practiceStrums, PRACTICE_HITS, RING_BIG, RING_SMALL } from './clips.ts';
 import { watchProp } from './propLayout.ts';
 
 const CUCUMBER_SRC = '/sprites/mutsumi/cucumber.png';
@@ -560,6 +560,30 @@ export function drawMoonlight(ctx: CanvasRenderingContext2D, e: Effect, pass: 'b
   }
   ctx.restore();
 }
+
+/* ---- 琴平凪 tables, built once so the per-frame draws allocate nothing ---- */
+/** 打水漂: pip positions per die face, in units of the half-offset from the centre. */
+const DIE_PIPS: readonly (readonly (readonly [number, number])[])[] = [
+  [],
+  [[0, 0]],
+  [[-1, -1], [1, 1]],
+  [[-1, -1], [0, 0], [1, 1]],
+  [[-1, -1], [1, -1], [-1, 1], [1, 1]],
+  [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]],
+];
+/** 稍好一些的地狱: the crumbs of the bitten lollipop. */
+const CANDY_CRUMBS = ['#c9785a', '#ffb3c7', '#8b4a33', '#ffd9b8', '#c9785a'] as const;
+/** ……来练习吧: the tear gathers this long at the eye, and lands this long before the sea's t0 —
+ *  the moment the sea opens. Both effects read these, so they always meet. */
+const TEAR_GATHER = .12;
+const SEA_LEAD = .03;
+/** ……来练习吧: the sea's surface, sampled every SEA_STEP once per frame and reused for the fill, the
+ *  line and the foam. Sized for the widest sea any caller asks for (half-width ≤ SEA_MAX_HALF). */
+const SEA_STEP = 8;
+const SEA_MAX_HALF = 640;
+const seaY = new Float32Array(Math.ceil((SEA_MAX_HALF * 2) / SEA_STEP) + 2);
+/** ……来练习吧: the surface line's fade, as [from, to, alpha] over |x| / half-width. */
+const SEA_LINE_BANDS: readonly (readonly [number, number, number])[] = [[0, .5, .75], [.5, .8, .45], [.8, 1, .18]];
 
 export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: ImageCache): void {
   const p = 1 - e.life / e.max, r = e.radius ?? 50;
@@ -2858,6 +2882,532 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.fill();
       ctx.fillStyle = '#d6f4ff';
       ctx.fillRect(5, -16, 3, 20);
+      break;
+    }
+    case 'skip-wake': {
+      // 打水漂: the faint wake the stone leaves on the water between two touches; the older end fades first.
+      const dir = e.dir ?? 1;
+      ctx.translate(e.x, e.y - 1);
+      const g = ctx.createLinearGradient(-dir * r, 0, dir * r, 0);
+      g.addColorStop(0, 'rgba(207,232,255,0)');
+      g.addColorStop(1, `rgba(207,232,255,${.65 * (1 - p)})`);
+      ctx.strokeStyle = g; ctx.lineWidth = 2;
+      ctx.globalAlpha = 1;
+      ctx.beginPath(); ctx.moveTo(-r, 0); ctx.lineTo(r, 0); ctx.stroke();
+      break;
+    }
+    case 'skip-splash': {
+      // 打水漂: the stone meets the water right under her feet. A pale sheen spreads flat, two rings open
+      // across it and a few drops hop up and fall back; the touch that ends the run adds a crown of spray.
+      const t = e.max - e.life;
+      const heavy = !!e.heavy;
+      const ease = 1 - (1 - p) * (1 - p);
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = (1 - p) * .34;
+      ctx.fillStyle = '#cfe8ff';
+      ctx.beginPath(); ctx.ellipse(0, -1, r * (.45 + ease * .55), r * .19 * (.45 + ease * .55), 0, 0, Math.PI * 2); ctx.fill();
+      for (let k = 0; k < 2; k++) {
+        const q = Math.max(0, Math.min(1, (p - k * .16) / (1 - k * .16)));
+        if (q <= 0) continue;
+        const qe = 1 - (1 - q) * (1 - q);
+        ctx.globalAlpha = (1 - q) * (k ? .6 : .95);
+        ctx.strokeStyle = k ? e.color : '#f2f9ff';
+        ctx.lineWidth = (k ? 2 : 3.2) * (1 - q) + .8;
+        ctx.beginPath(); ctx.ellipse(0, -1, r * (.3 + qe * .7), r * .2 * (.3 + qe * .7), 0, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.fillStyle = '#e8f6ff';
+      ctx.globalAlpha = (1 - p) * .95;
+      const drops = heavy ? 9 : 5, dr = heavy ? 3.2 : 2.6;
+      ctx.beginPath();
+      for (let i = 0; i < drops; i++) {
+        const side = i - (drops - 1) / 2;
+        const vx = side * (heavy ? 34 : 30), vy = -(heavy ? 250 : 170) - (i % 3) * 36 + Math.abs(side) * 14;
+        const cx = vx * t, cy = vy * t + 1100 * t * t;
+        if (cy >= 0) continue;
+        ctx.moveTo(cx + dr, cy - 2); ctx.arc(cx, cy - 2, dr, 0, Math.PI * 2);
+      }
+      ctx.fill();
+      if (heavy && p < .55) {
+        const k = p / .55;
+        ctx.strokeStyle = '#f2f9ff'; ctx.lineWidth = 2;
+        ctx.globalAlpha = (1 - k) * .9;
+        for (let i = 0; i < 7; i++) {
+          const ang = -Math.PI / 2 + (i - 3) * .32;
+          const rr = 30 * Math.sin(k * Math.PI);
+          ctx.beginPath(); ctx.moveTo(Math.cos(ang) * 12, -2 + Math.sin(ang) * 4); ctx.lineTo(Math.cos(ang) * (12 + rr * .9), -2 + Math.sin(ang) * (4 + rr)); ctx.stroke();
+        }
+      }
+      break;
+    }
+    case 'skip-die': {
+      // 打水漂: a small die beside her head counts the hops. The last face holds a beat; an odd one tumbles
+      // away (the throw comes back fast), a five rings out in her colour.
+      const t = e.max - e.life;
+      const pips = Math.max(1, Math.min(5, e.n ?? 1));
+      const last = !!e.hit, odd = !!e.heavy;
+      const pop = Math.min(1, t / .06);
+      const half = 11 * (.75 + .25 * pop);
+      const out = last ? Math.min(1, e.life / .25) : 1;
+      ctx.translate(e.x, e.y);
+      if (odd && t > .3) {
+        const k = (t - .3) / Math.max(.01, e.max - .3);
+        ctx.translate(0, -k * 18);
+        ctx.rotate(k * Math.PI * 1.5);
+      }
+      ctx.globalAlpha = out * .92;
+      ctx.fillStyle = '#fbfcff';
+      ctx.strokeStyle = e.color;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(-half, -half, half * 2, half * 2, 4); else ctx.rect(-half, -half, half * 2, half * 2);
+      ctx.fill(); ctx.stroke();
+      const o = half * .52;
+      ctx.fillStyle = odd && t > .3 ? '#9fa3ff' : e.color;
+      for (const [x, y] of DIE_PIPS[pips]) { ctx.beginPath(); ctx.arc(x * o, y * o, 2.2, 0, Math.PI * 2); ctx.fill(); }
+      if (last && t < .22) {
+        // The result: one thin ring breathes out from the face; a five rings in her colour, a touch wider.
+        const k = t / .22;
+        const five = pips === 5;
+        ctx.globalAlpha = (1 - k) * (five ? .85 : .6);
+        ctx.strokeStyle = five ? e.color : '#ffffff'; ctx.lineWidth = five ? 2 : 1.2;
+        ctx.beginPath(); ctx.arc(0, 0, half + 4 + k * (five ? 16 : 10), 0, Math.PI * 2); ctx.stroke();
+      }
+      break;
+    }
+    case 'skip-spout': {
+      // 打水漂 five: the knockdown throws up a short column of water under the body.
+      const t = e.max - e.life;
+      const rise = Math.sin(Math.min(1, p * 1.6) * Math.PI);
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = (1 - p) * .75;
+      const h = r * 2.2 * rise;
+      const g = ctx.createLinearGradient(0, 0, 0, -h);
+      g.addColorStop(0, 'rgba(207,232,255,.85)');
+      g.addColorStop(1, 'rgba(207,232,255,0)');
+      ctx.fillStyle = g;
+      const w = 15;
+      ctx.beginPath(); ctx.moveTo(-w, 0);
+      ctx.bezierCurveTo(-w * .55, -h * .35, -w * .7, -h * .8, 0, -h);
+      ctx.bezierCurveTo(w * .7, -h * .8, w * .55, -h * .35, w, 0);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#e2f3ff';
+      for (let i = 0; i < 6; i++) {
+        const vx = (i - 2.5) * 34, vy = -260 - (i % 3) * 40;
+        const cx = vx * t, cy = vy * t + 1100 * t * t;
+        if (cy < 0) { ctx.beginPath(); ctx.arc(cx, cy, 2, 0, Math.PI * 2); ctx.fill(); }
+      }
+      break;
+    }
+    case 'moon-reach': {
+      // 把月亮扣下来: a thin pale crescent hangs over the raised hand for a breath, then dims.
+      const dir = e.dir ?? 1;
+      const inn = Math.min(1, p / .2), fade = Math.min(1, (1 - p) / .5);
+      ctx.translate(e.x, e.y - p * 8);
+      ctx.globalAlpha = inn * fade * .85;
+      ctx.fillStyle = e.color;
+      // Crescent = the disc minus a second disc nudged toward her front; clipped, so nothing else is cut.
+      ctx.save();
+      ctx.beginPath(); ctx.arc(0, 0, 11, 0, Math.PI * 2); ctx.clip();
+      ctx.beginPath(); ctx.rect(-12, -12, 24, 24); ctx.arc(dir * 5, -3, 10, 0, Math.PI * 2);
+      ctx.fill('evenodd');
+      ctx.restore();
+      ctx.globalAlpha = inn * fade * .7;
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1;
+      const g0 = 3 + 3 * Math.sin(p * Math.PI);
+      ctx.beginPath(); ctx.moveTo(-dir * 16 - g0, -10); ctx.lineTo(-dir * 16 + g0, -10); ctx.moveTo(-dir * 16, -10 - g0); ctx.lineTo(-dir * 16, -10 + g0); ctx.stroke();
+      break;
+    }
+    case 'dunk-streak': {
+      // 把月亮扣下来: the drop. Three thin lines run from where they were caught down to the floor.
+      ctx.translate(e.x, e.y);
+      ctx.strokeStyle = e.color;
+      for (let i = 0; i < 3; i++) {
+        const x = (i - 1) * 14;
+        const top = r * p * (.5 + i * .15);
+        ctx.globalAlpha = (1 - p) * (i === 1 ? .8 : .45);
+        ctx.lineWidth = i === 1 ? 2 : 1.2;
+        ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, r * (.85 + i * .05)); ctx.stroke();
+      }
+      break;
+    }
+    case 'dunk': {
+      // 把月亮扣下来: the landing. A hoop rim lies flat for an instant and sinks, a white shock runs along
+      // the floor and a little dust lifts at both sides. Held back a beat so it meets the body.
+      const t = e.max - e.life - .05;
+      if (t < 0) break;
+      const k = Math.min(1, t / (e.max - .05));
+      const q = 1 - (1 - k) * (1 - k);
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = (1 - k) * .9;
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3.5 * (1 - k) + .8;
+      ctx.beginPath(); ctx.ellipse(0, -2, r * (.4 + q * 1.1), r * .14 * (.4 + q * 1.1), 0, 0, Math.PI * 2); ctx.stroke();
+      if (k < .55) {
+        const m = k / .55;
+        ctx.globalAlpha = (1 - m) * .85;
+        ctx.strokeStyle = e.color; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.ellipse(0, -4 + m * 4, r * .42, r * .1, 0, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = '#f2efe8'; ctx.lineWidth = 1;
+        for (let i = -2; i <= 2; i++) {
+          ctx.beginPath(); ctx.moveTo(i * r * .16, -4 + m * 4); ctx.lineTo(i * r * .1, 10 * (1 - m)); ctx.stroke();
+        }
+      }
+      ctx.fillStyle = '#d8d2da';
+      for (let side = -1; side <= 1; side += 2) for (let i = 0; i < 2; i++) {
+        ctx.globalAlpha = (1 - k) * (.28 - i * .1);
+        ctx.beginPath(); ctx.ellipse(side * (r * .55 + i * 24) * (.5 + q), -3 - i * 2, 14 + i * 6 + q * 10, 5 + i * 2, 0, Math.PI, 0); ctx.fill();
+      }
+      break;
+    }
+    case 'dunk-lift': {
+      // 把月亮扣下来 on the floor: two thin chevrons rise off the chest as the body goes up.
+      ctx.translate(e.x, e.y - p * 46);
+      ctx.strokeStyle = e.color; ctx.lineWidth = 2;
+      for (let i = 0; i < 2; i++) {
+        ctx.globalAlpha = (1 - p) * (i ? .45 : .8);
+        const y = i * 14;
+        ctx.beginPath(); ctx.moveTo(-r * .45, y + 10); ctx.lineTo(0, y - 4); ctx.lineTo(r * .45, y + 10); ctx.stroke();
+      }
+      break;
+    }
+    case 'candy-crunch': {
+      // 稍好一些的地狱: a lollipop at her lips. The swirl head snaps on the bite; a few crumbs drop and the bare
+      // stick stays a moment longer.
+      const dir = e.dir ?? 1;
+      const t = e.max - e.life;
+      const bite = .16;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = Math.min(1, e.life / .2);
+      ctx.strokeStyle = '#f4efe6'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(-dir * 3, 2); ctx.lineTo(dir * 13, 6); ctx.stroke();
+      const hx = dir * 19, hy = 3;
+      if (t < bite) {
+        ctx.fillStyle = e.color;
+        ctx.beginPath(); ctx.arc(hx, hy, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#ffe6d6'; ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        for (let a0 = 0; a0 < Math.PI * 3.2; a0 += .3) {
+          const rr = 1 + a0 * .6;
+          const x = hx + Math.cos(a0) * rr, y = hy + Math.sin(a0) * rr;
+          if (a0 === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      } else {
+        const k = (t - bite) / Math.max(.01, e.max - bite);
+        if (k < .25) {
+          // The flash of the crack, once.
+          ctx.globalAlpha = (1 - k / .25) * .9;
+          ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.2;
+          for (let i = 0; i < 4; i++) {
+            const a0 = i * Math.PI / 2 + .4;
+            ctx.beginPath(); ctx.moveTo(hx + Math.cos(a0) * 5, hy + Math.sin(a0) * 5); ctx.lineTo(hx + Math.cos(a0) * 11, hy + Math.sin(a0) * 11); ctx.stroke();
+          }
+        }
+        const tt = t - bite;
+        for (let i = 0; i < 5; i++) {
+          const vx = dir * (20 + i * 14) * (i % 2 ? 1 : -.4), vy = -60 - i * 18;
+          const cx = hx + vx * tt, cy = hy + vy * tt + 700 * tt * tt;
+          ctx.globalAlpha = (1 - k) * .9;
+          ctx.fillStyle = CANDY_CRUMBS[i];
+          ctx.fillRect(Math.round(cx) - 1.5, Math.round(cy) - 1.5, 3 + (i % 2), 3);
+        }
+      }
+      break;
+    }
+    case 'numb': {
+      // 稍好一些的地狱: the shoulder. Three short streaks trail behind it and one dull arc meets whatever it hits —
+      // muted on purpose: nothing about this move is supposed to feel bright.
+      const dir = e.dir ?? 1;
+      const q = 1 - (1 - p) * (1 - p);
+      ctx.translate(e.x, e.y);
+      ctx.strokeStyle = '#c3c8d8'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+      // Behind her back, not across the chest: the effect sits ahead of the shoulder, so step back past the body.
+      for (let i = 0; i < 3; i++) {
+        const y = (i - 1) * 16 + 6;
+        const len = (28 - Math.abs(i - 1) * 8) * (1 - p);
+        ctx.globalAlpha = (1 - p) * .6;
+        ctx.beginPath(); ctx.moveTo(-dir * (92 + q * 18), y); ctx.lineTo(-dir * (92 + q * 18 + len), y); ctx.stroke();
+      }
+      ctx.globalAlpha = (1 - p) * (e.hit ? .85 : .5);
+      ctx.strokeStyle = e.hit ? '#e6e9f4' : '#9aa1b8'; ctx.lineWidth = 3 * (1 - p) + 1;
+      ctx.beginPath();
+      const rr = r * (.5 + q * .5);
+      if (dir > 0) ctx.arc(-rr * .55, 0, rr, -.75, .75); else ctx.arc(rr * .55, 0, rr, Math.PI - .75, Math.PI + .75);
+      ctx.stroke();
+      break;
+    }
+    case 'nagi-tear': {
+      // ……来练习吧, the opening: the light in her eye gathers into one tear and lets go. It falls to the
+      // floor and is gone — the sea (nagi-sea) opens from that spot. r is the fall from eye to floor.
+      const t = e.max - e.life;
+      const dir = e.dir ?? 1;
+      const gather = TEAR_GATHER;
+      // It reaches the floor exactly as the sea opens, whatever the fall: an even acceleration over the drop.
+      const fallTime = Math.max(.05, (e.t0 ?? .45) - SEA_LEAD - gather);
+      ctx.translate(e.x + dir * 2, e.y);
+      ctx.fillStyle = '#ffffff';
+      if (t < gather) {
+        // The glint shrinks into a bead at the corner of the eye.
+        const k = t / gather;
+        ctx.globalAlpha = .95;
+        const g0 = 9 * (1 - k) + 2;
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.moveTo(-g0, 0); ctx.lineTo(g0, 0); ctx.moveTo(0, -g0); ctx.lineTo(0, g0); ctx.stroke();
+        ctx.beginPath(); ctx.arc(0, 0, 2.4 + k * 2, 0, Math.PI * 2); ctx.fill();
+        break;
+      }
+      const ft = t - gather;
+      const y = Math.min(r, r * (ft / fallTime) * (ft / fallTime));
+      if (y >= r) break;
+      const stretch = 1 + Math.min(.9, ft * 3.2);
+      // A faint streak where it has just fallen through.
+      ctx.globalAlpha = .45;
+      ctx.strokeStyle = '#eef7ff'; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(0, Math.max(0, y - 14 * stretch)); ctx.lineTo(0, y - 6); ctx.stroke();
+      ctx.translate(0, y);
+      // A teardrop: round below, pointed above, stretched a little as it speeds up.
+      ctx.globalAlpha = .95;
+      ctx.fillStyle = e.color;
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, -8 * stretch);
+      ctx.quadraticCurveTo(4.6, -2, 4.4, 1.5);
+      ctx.arc(0, 1.5, 4.4, 0, Math.PI);
+      ctx.quadraticCurveTo(-4.6, -2, 0, -8 * stretch);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(-1.4, .4, 1.3, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case 'nagi-sea': {
+      // ……来练习吧: the water. It opens where the tear lands and spreads both ways as a thin sheet over
+      // the floor. Each strum (t0 + practiceBeat) makes it rougher — taller swell, faster chop, foam on
+      // the crests. After the seventh the swell dies away within a beat and the sheet goes flat as a
+      // mirror: one slow ring under her, a band of light, a few points of light, and then it is gone. 凪.
+      const t = e.max - e.life;
+      const t0 = e.t0 ?? .45;
+      const dir = e.dir ?? 1;
+      const open = t0 - SEA_LEAD;
+      if (t < open) break;
+      const w = Math.min(r, SEA_MAX_HALF, (t - open) * 1700);
+      if (w < SEA_STEP) break;
+      const landed = practiceStrums(t - t0);
+      const tf = t0 + practiceBeat(PRACTICE_HITS - 1);
+      const peak = 2 + (PRACTICE_HITS - 1) * 2.4;
+      const swell = t < tf ? 1.5 + landed * 2.4 : peak * Math.exp(-(t - tf) / .2);
+      const calm = t > tf ? Math.min(1, (t - tf) / .7) : 0;
+      const out = Math.min(1, e.life / .7);
+      const speed = 4 + landed * 1.2;
+      // Sample the surface once; the fill, the line and the foam all read the same samples.
+      // Lite halves the samples: the sheet is low and soft, the coarser line does not show.
+      const step = liteFx ? SEA_STEP * 2 : SEA_STEP;
+      const count = Math.floor((2 * w) / step) + 1;
+      for (let k = 0; k < count; k++) {
+        const x = -w + k * step;
+        const edge = Math.max(0, 1 - (x / w) * (x / w));
+        const kx = x * dir * .032;
+        seaY[k] = -2.5 - calm * 3.5 * edge - swell * edge * (.62 * Math.sin(kx - t * speed) + .38 * Math.sin(kx * 2.3 - t * speed * 1.7 + 1.3));
+      }
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = out;
+      // The sheet of water, fading out toward its edges.
+      const body = ctx.createLinearGradient(-w, 0, w, 0);
+      body.addColorStop(0, 'rgba(120,150,255,0)');
+      body.addColorStop(.5, `rgba(120,150,255,${.24 + .12 * calm})`);
+      body.addColorStop(1, 'rgba(120,150,255,0)');
+      ctx.fillStyle = body;
+      ctx.beginPath(); ctx.moveTo(-w, 4);
+      for (let k = 0; k < count; k++) ctx.lineTo(-w + k * step, seaY[k]);
+      ctx.lineTo(w, 4); ctx.closePath(); ctx.fill();
+      // The surface line, fading toward the ends in three solid steps: a gradient stroke this long
+      // costs about twice as much to raster, and at 1.5px the steps do not show.
+      ctx.strokeStyle = '#e1f0ff'; ctx.lineWidth = 1.5;
+      // Each segment belongs to the band its midpoint falls in, so neighbouring bands share an endpoint.
+      for (let band = 0; band < SEA_LINE_BANDS.length; band++) {
+        const [inner, outer, alpha] = SEA_LINE_BANDS[band];
+        ctx.globalAlpha = out * alpha;
+        ctx.beginPath();
+        let open = false;
+        for (let k = 0; k + 1 < count; k++) {
+          const x = -w + k * step;
+          const u = Math.abs(x + step / 2) / w;
+          if (u < inner || u >= outer && !(band === SEA_LINE_BANDS.length - 1 && u <= 1.01)) { open = false; continue; }
+          if (!open) { ctx.moveTo(x, seaY[k]); open = true; }
+          ctx.lineTo(x + step, seaY[k + 1]);
+        }
+        ctx.stroke();
+      }
+      ctx.globalAlpha = out;
+      // Foam on the crests while it is rough: one path, one fill (the swell already flattens toward
+      // the edges, so the dots thin out there on their own). Lite skips it.
+      if (swell > 7 && !liteFx) {
+        ctx.globalAlpha = out * Math.min(1, (swell - 7) / 8) * .7;
+        ctx.fillStyle = '#f4f9ff';
+        ctx.beginPath();
+        for (let k = 2; k < count - 2; k += 2) {
+          const x = -w + k * step, y = seaY[k];
+          if (y > -2.5 - swell * .6) continue;
+          const cx = x + Math.sin(x * 1.7 + t * 9) * 2, cy = y - 1.5;
+          ctx.moveTo(cx + 1.6, cy); ctx.arc(cx, cy, 1.6, 0, Math.PI * 2);
+        }
+        ctx.fill();
+      }
+      if (calm > 0) {
+        // Still water: one slow ring opening under her, and a few points of light on the mirror.
+        const k = Math.min(1, (t - tf - .25) / 1.1);
+        if (k > 0) {
+          ctx.globalAlpha = out * (1 - k) * .7;
+          ctx.strokeStyle = '#e6f1ff'; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.ellipse(dir * 56, -1, 30 + k * 170, (30 + k * 170) * .12, 0, 0, Math.PI * 2); ctx.stroke();
+        }
+        // A soft band of reflected light sliding slowly across the mirror.
+        const sx = dir * (-w * .6 + (t - tf) * 160);
+        const band = ctx.createLinearGradient(sx - 90, 0, sx + 90, 0);
+        band.addColorStop(0, 'rgba(255,255,255,0)');
+        band.addColorStop(.5, `rgba(255,255,255,${.6 * calm})`);
+        band.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.globalAlpha = out;
+        ctx.strokeStyle = band; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.moveTo(sx - 90, -5.5); ctx.lineTo(sx + 90, -5.5); ctx.stroke();
+        ctx.fillStyle = '#ffffff';
+        for (let i = 0; i < 5; i++) {
+          const x = (i - 2) * w * .3 + dir * 30;
+          const tw = Math.max(0, Math.sin(t * 5 + i * 1.9));
+          ctx.globalAlpha = out * calm * tw * .9;
+          const sz = 1 + tw * 2.2;
+          ctx.fillRect(x - sz * 2, -6, sz * 4, 1);
+          ctx.fillRect(x - .5, -6 - sz, 1, sz * 2);
+        }
+      }
+      break;
+    }
+    case 'nagi-wave': {
+      // ……来练习吧, one strum: a wave stands up out of the water in front of her and rolls at them —
+      // a gentle back, a steep front, a white lip — and sinks as it goes. Each strum's wave is taller.
+      // A short white flick at the strumming hand marks the beat.
+      const t = e.max - e.life;
+      const dir = e.dir ?? 1;
+      const i = e.n ?? 0;
+      ctx.translate(e.x, e.y);
+      if (t < .1) {
+        ctx.globalAlpha = (1 - t / .1) * .9;
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+        const d = Math.min(1, t / .05);
+        ctx.beginPath(); ctx.moveTo(-dir * 26, -98); ctx.lineTo(-dir * (26 - 8 * d), -98 + 40 * d); ctx.stroke();
+      }
+      const H = 22 + i * 8;
+      const rise = Math.sin(Math.min(1, p * 1.15) * Math.PI);
+      const h = H * Math.pow(Math.max(0, rise), .75);
+      const xc = dir * (1 - (1 - p) * (1 - p)) * 190;
+      const back = 56 + i * 4, front = 20 + i * 2;
+      const prof = (u: number) => u < 0 ? Math.exp(-(u / back) * (u / back) * 2.2) : Math.exp(-(u / front) * (u / front) * 2.2);
+      const fade = Math.min(1, (1 - p) * 2.2);
+      ctx.beginPath();
+      ctx.moveTo(xc - dir * back * 1.4, 2);
+      for (let k = -14; k <= 10; k++) {
+        const u = k < 0 ? (k / 14) * back * 1.4 : (k / 10) * front * 1.6;
+        ctx.lineTo(xc + dir * u, -h * prof(u));
+      }
+      ctx.lineTo(xc + dir * front * 1.6, 2);
+      ctx.closePath();
+      const g = ctx.createLinearGradient(0, -h, 0, 2);
+      g.addColorStop(0, `rgba(170,195,255,${.55 * fade})`);
+      g.addColorStop(1, `rgba(85,85,255,${.12 * fade})`);
+      ctx.fillStyle = g;
+      ctx.fill();
+      // The white lip along the top of the face.
+      ctx.globalAlpha = fade * .9;
+      ctx.strokeStyle = '#f4f9ff'; ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+      ctx.beginPath();
+      for (let k = -6; k <= 4; k++) {
+        const u = k < 0 ? (k / 14) * back * 1.4 : (k / 10) * front * 1.6;
+        const x = xc + dir * u, y = -h * prof(u);
+        if (k === -6) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      // A little spray off the crest once it has height.
+      if (h > 14) {
+        ctx.fillStyle = '#f4f9ff';
+        for (let k = 0; k < 3 + (i >> 1); k++) {
+          const st = (t * 3 + k * .27) % 1;
+          ctx.globalAlpha = fade * (1 - st) * .85;
+          ctx.beginPath(); ctx.arc(xc + dir * (4 + st * (16 + k * 6)), -h - st * 14 + st * st * 22, 1.5, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      break;
+    }
+    case 'nagi-crash': {
+      // ……来练习吧, the seventh: the big one. A wave rears up just behind them, its lip curls forward and
+      // hooks down over where they stand, and it breaks — spray thrown up, a ring of foam racing out
+      // along the floor. Then it is only water; nagi-sea carries it into the calm.
+      const t = e.max - e.life;
+      const dir = e.dir ?? 1;
+      const H = r;
+      const RISE = .1, CURL = .2, FALL = .3;
+      ctx.translate(e.x, e.y);
+      ctx.scale(dir, 1);
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      if (t < FALL) {
+        const up = Math.min(1, t / RISE);
+        const curl = Math.max(0, Math.min(1, (t - RISE) / (CURL - RISE)));
+        const fall = Math.max(0, Math.min(1, (t - CURL) / (FALL - CURL)));
+        const h = H * (.3 + .7 * (1 - (1 - up) * (1 - up))) * (1 - fall * .7);
+        const lipX = -8 + curl * 52, lipY = -h * (.92 - curl * .5);
+        const crest = (from: boolean) => {
+          if (from) { ctx.moveTo(-112, 4); ctx.bezierCurveTo(-80, -h * .12, -64, -h, -32, -h); }
+          ctx.bezierCurveTo(4, -h * 1.06, lipX + 10, -h * .98, lipX, lipY);
+        };
+        const g = ctx.createLinearGradient(0, -h, 0, 4);
+        g.addColorStop(0, `rgba(190,208,255,${.66 * (1 - fall * .5)})`);
+        g.addColorStop(1, `rgba(85,85,255,${.18 * (1 - fall * .5)})`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        crest(true);
+        ctx.quadraticCurveTo(lipX - 12, -h * .5, -14, -h * .5);
+        ctx.quadraticCurveTo(-26, -h * .22, -10, 4);
+        ctx.closePath(); ctx.fill();
+        // The tube under the lip, a shade deeper.
+        ctx.fillStyle = `rgba(60,60,190,${.18 * curl * (1 - fall)})`;
+        ctx.beginPath(); ctx.moveTo(lipX, lipY); ctx.quadraticCurveTo(lipX - 12, -h * .5, -14, -h * .5); ctx.quadraticCurveTo(-4, -h * .8, lipX, lipY); ctx.fill();
+        // The white edge along the back, over the crest and round the lip.
+        ctx.globalAlpha = 1 - fall * .5;
+        ctx.strokeStyle = '#f6faff'; ctx.lineWidth = 2.4;
+        ctx.beginPath(); ctx.moveTo(-62, -h * .8); ctx.bezierCurveTo(-54, -h * .97, -44, -h, -32, -h); crest(false); ctx.stroke();
+        // Spray peeling off the lip.
+        ctx.fillStyle = '#f6faff';
+        for (let k = 0; k < 7; k++) {
+          const s0 = ((t * 5) + k * .14) % 1;
+          ctx.globalAlpha = (1 - s0) * .85 * (1 - fall);
+          ctx.beginPath(); ctx.arc(lipX + s0 * (14 + k * 5), lipY - 6 - s0 * 14 + s0 * s0 * 30, 1.6 + (k % 2) * .6, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      if (t > CURL) {
+        // The break: spray thrown up and out, a few short splash streaks, the foam ring along the floor.
+        const bt = t - CURL;
+        const k = Math.min(1, bt / (e.max - CURL));
+        const q = 1 - (1 - k) * (1 - k);
+        ctx.globalAlpha = (1 - k) * .85;
+        ctx.strokeStyle = '#f6faff'; ctx.lineWidth = 2.6 * (1 - k) + .6;
+        ctx.beginPath(); ctx.ellipse(10, -1, 26 + q * 150, (26 + q * 150) * .14, 0, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = '#eaf3ff'; ctx.lineWidth = 1.6;
+        for (let i = 0; i < 5; i++) {
+          const x = (i - 2) * 18 + 10;
+          const top = -(36 + (i % 2) * 22) * Math.sin(Math.min(1, k * 2.2) * Math.PI);
+          ctx.globalAlpha = (1 - k) * .7;
+          ctx.beginPath(); ctx.moveTo(x, -4); ctx.lineTo(x + (i - 2) * 4, top); ctx.stroke();
+        }
+        ctx.fillStyle = '#eaf3ff';
+        ctx.globalAlpha = (1 - k) * .9;
+        ctx.beginPath();
+        for (let i = 0; i < (liteFx ? 6 : 12); i++) {
+          const ang = -Math.PI / 2 + (i - 5.5) * .2;
+          const v = 300 + (i % 4) * 60;
+          const x = 10 + Math.cos(ang) * v * bt * 1.2, y = -24 + Math.sin(ang) * v * bt + 1100 * bt * bt;
+          if (y > 0) continue;
+          const dr = 2 + (i % 3) * .7;
+          ctx.moveTo(x + dr, y); ctx.arc(x, y, dr, 0, Math.PI * 2);
+        }
+        ctx.fill();
+      }
       break;
     }
     case 'super':

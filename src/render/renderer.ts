@@ -25,7 +25,7 @@ export function portraitBodyScale(padSplit: boolean): number {
 /** Hard 1px rim, yellow for the left team and green for the right. */
 const TEAM_GLOW = SIDE;
 /** Effects painted under every body: 和泉朋花's coffin and her spotlights. */
-const BACK_FX = new Set(['coffin', 'spotlight']);
+const BACK_FX = new Set(['coffin', 'spotlight', 'nagi-sea']);
 
 /** On when one side has two real fighters, or the same character stands on both sides.
  *  2v2 and the 2-on-1 激战 are the first case; a 1v1 mirror match is the second.

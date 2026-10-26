@@ -4,7 +4,7 @@ import { addDebt, addMod, dmgDealtMul, dmgTakenMul, has, incomingMul, lifestealO
 import type { FightGame, Projectile, SealVolley } from './game.ts';
 import { CONTROLS, FLOOR, GRAVITY, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
 import { attackPhase } from './animState.ts';
-import { BUSHIDO_TAIL, clipFor, drumRow, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS } from '../render/clips.ts';
+import { BUSHIDO_TAIL, clipFor, drumRow, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS, PRACTICE_HITS, practiceBeat, SKIP_HOP, SKIP_MAX, SKIP_MIN, SKIP_TAIL } from '../render/clips.ts';
 import { SCRIPTS } from './scripts.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
@@ -3602,6 +3602,198 @@ SCRIPTS['coffin'] = Object.assign(SCRIPTS['coffin'] ?? {}, {
   noSuperFx: true,
   hideWhile: (a: Attack) => a.t >= a.skill.start + COFFIN_TIP && a.t < a.skill.duration - COFFIN_OUT,
 });
+
+/* ---- 琴平凪 ---- */
+
+/** Nearest living foe in front of her, closer than `reach`. One pass and no allocation: 打水漂 asks
+ *  every step, where g.opponents() would build a fresh array 120 times a second. */
+function foeAhead(g: FightGame, f: Fighter, reach = Infinity): Fighter | undefined {
+  let best: Fighter | undefined;
+  let bestGap = reach;
+  for (const o of g.fighters) {
+    if (!g.isEnemy(f, o) || o.hp <= 0 || o.echo) continue;
+    const gap = (o.x - f.x) * f.facing;
+    if (gap > 0 && gap < bestGap) { bestGap = gap; best = o; }
+  }
+  return best;
+}
+
+/** 打水漂: each hop rises this high off the floor. */
+const SKIP_LIFT = 24;
+/** 打水漂: she skims up to the body she is touching and no further. */
+const SKIP_HOLD = 70;
+/** 打水漂: a landing this close to a grounded foe ends the run and the die is read. */
+const SKIP_TOUCH = 90;
+/** 打水漂: a foe higher than this off the floor is in the air — the stone skims under them. */
+const SKIP_GROUNDED = 40;
+/** 打水漂 奇数: the cooldown left after an odd face lands (the rethrow). */
+const SKIP_ODD_CD = 1;
+/** 打水漂: the die rides beside her head, on the side she came from, clear of the move-name text. */
+const SKIP_DIE_X = -34;
+const SKIP_DIE_Y = -196;
+/** 打水漂: a.mode once the strike is out; she only lands from then on. */
+const SKIP_DONE = 1;
+/** 打水漂: the strike per face, derived once per skill so every cast shares the objects. Odd is the
+ *  skill itself; even doubles the damage and holds them standing; the top face (SKIP_MAX) also knocks down. */
+const skipFaces = new WeakMap<Skill, { even: Skill; top: Skill }>();
+function skipFace(s: Skill, n: number): Skill {
+  let faces = skipFaces.get(s);
+  if (!faces) {
+    faces = {
+      even: { ...s, damage: s.damage * 2, knock: 60, react: { kind: 'stand', stun: .45 } },
+      top: { ...s, knock: 320, react: { kind: 'knockdown', vy: -260, knocked: .8 } },
+    };
+    skipFaces.set(s, faces);
+  }
+  return n === SKIP_MAX ? faces.top : n % 2 ? s : faces.even;
+}
+
+/** 打水漂: she skims along the floor like a thrown stone. How far it can skip is rolled per cast
+ *  (SKIP_MIN～SKIP_MAX hops) and a small die beside her head counts the hops. The run ends at the first
+ *  landing that finds a grounded foe close by, or when the roll runs out; only then does she strike,
+ *  and the face decides the strike. Odd: the cooldown drops to a second (throw again). Even: double
+ *  damage. The top face: a knockdown on top. A strike that touches nobody leaves the cooldown alone.
+ *  a.burst is the rolled hop count, a.shots the hops landed, a.anchor the x of the last touch. */
+function step_skip(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (a.t < s.start) return;
+  if (a.mode === SKIP_DONE) { f.y = FLOOR; f.vy = 0; return; }
+  if (!a.burst) a.burst = SKIP_MIN + Math.floor(g.random() * (SKIP_MAX - SKIP_MIN + 1));
+  // Only a grounded foe stops the stone; one in the air is skimmed under.
+  const foe = foeAhead(g, f);
+  const target = foe && foe.y > FLOOR - SKIP_GROUNDED ? foe : undefined;
+  if (!target || (target.x - f.x) * f.facing >= SKIP_HOLD) f.x = clamp(f.x + f.facing * (s.speed ?? 760) * dt, X_MIN, X_MAX);
+  const local = a.t - s.start;
+  f.y = FLOOR - Math.sin(((local % SKIP_HOP) / SKIP_HOP) * Math.PI) * SKIP_LIFT;
+  f.vy = 0;
+  if (Math.floor(a.t * 8) !== Math.floor((a.t - dt) * 8)) g.effect('ghost', f.x - f.facing * 18, f.y, f.data.color, .16, { fighter: f.id, alpha: .2 });
+  while (a.shots < a.burst && local >= (a.shots + 1) * SKIP_HOP) {
+    const n = ++a.shots;
+    const last = n === a.burst || (!!target && (target.x - f.x) * f.facing < SKIP_TOUCH);
+    // The wake between two touches, the splash right under her feet, the die's new face.
+    g.effect('skip-wake', (a.anchor + f.x) / 2, FLOOR, '#cfe8ff', .45, { radius: Math.abs(f.x - a.anchor) / 2, dir: f.facing });
+    g.effect('skip-splash', f.x, FLOOR, '#a8dcff', last ? .6 : .45, { radius: last ? 76 : 50 + n * 4, heavy: last });
+    g.effect('skip-die', f.x + f.facing * SKIP_DIE_X, f.y + SKIP_DIE_Y, f.data.color, last ? .8 : SKIP_HOP + .04, {
+      follow: f.id, ox: f.facing * SKIP_DIE_X, oy: SKIP_DIE_Y, n, hit: last, heavy: last && n % 2 === 1,
+    });
+    a.anchor = f.x;
+    if (!last) continue;
+    a.hit = new Set();
+    a.skill = skipFace(s, n);
+    applyMelee(g, f, a);
+    a.skill = s;
+    if (a.hit.size) {
+      if (n % 2) f.cooldowns[a.index] = Math.min(f.cooldowns[a.index], SKIP_ODD_CD);
+      if (n === SKIP_MAX && target) g.effect('skip-spout', target.x, FLOOR, '#cfe8ff', .55, { radius: 40 });
+    }
+    a.mode = SKIP_DONE;
+    f.y = FLOOR;
+    a.t = Math.max(a.t, s.duration - SKIP_TAIL);
+    return;
+  }
+}
+SCRIPTS['skip'] = Object.assign(SCRIPTS['skip'] ?? {}, { update: step_skip, customDash: true });
+
+/** 把月亮扣下来: a body in the air is caught and dunked into the floor; one on the floor goes up instead. */
+const DUNK_SLAM = 1150;
+const DUNK_FLOAT_VY = -620;
+const DUNK_FLOAT_STUN = 1;
+/** She rides the dunk down at least this fast. */
+const DUNK_RIDE = 520;
+/** Above this height off the floor the body counts as in the air. */
+const DUNK_AIR = 30;
+function hit_dunk(g: FightGame, attacker: Fighter, defender: Fighter): boolean {
+  if (defender.y < FLOOR - DUNK_AIR) {
+    defender.vy = DUNK_SLAM;
+    defender.knocked = .9;
+    defender.downTime = 0;
+    attacker.vy = Math.max(attacker.vy, DUNK_RIDE);
+    g.shake = Math.max(g.shake, 9);
+    const top = defender.y - 80;
+    g.effect('dunk-streak', defender.x, top, '#eef3ff', .22, { radius: FLOOR - top });
+    g.effect('dunk', defender.x, FLOOR, '#ff9a4d', .6, { radius: 84 });
+    return true;
+  }
+  defender.vy = DUNK_FLOAT_VY;
+  defender.stun = DUNK_FLOAT_STUN * defender.stunMul;
+  g.effect('dunk-lift', defender.x, defender.y - 70, '#eef3ff', .35, { dir: attacker.facing, radius: 40 });
+  g.text('浮空!', defender.x, defender.y - 200, '#ffd27a', .6, 20);
+  return true;
+}
+SCRIPTS['dunk'] = Object.assign(SCRIPTS['dunk'] ?? {}, {
+  hit: hit_dunk,
+  flash(g: FightGame, f: Fighter) {
+    // The reach: a thin crescent over the raised hand, there and gone within the rise.
+    g.effect('moon-reach', f.x + f.facing * 18, f.y - 236, '#fff4c8', .42, { dir: f.facing, follow: f.id, ox: f.facing * 18, oy: -236 });
+  },
+});
+
+/** 稍好一些的地狱: the shoulder rides forward this fast, from a beat before the strike to just after it. */
+const NUMB_LUNGE = 300;
+const NUMB_LUNGE_FROM = .08;
+const NUMB_LUNGE_TO = .1;
+/** 稍好一些的地狱: the bill runs this long (the stock 直接无限大 debt, paid at 80% when it runs out). */
+const NUMB_OPS: Op[] = [{ op: 'mod', kind: 'debt', time: 4 }];
+/** 稍好一些的地狱: she bites through a lollipop (a steak one), leans into the shoulder, and from then on what
+ *  she takes goes on the bill. a.shots is 1 once the lollipop is out. */
+function step_numb(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (!a.shots) {
+    a.shots = 1;
+    g.effect('candy-crunch', f.x + f.facing * 13, f.y - 147, '#c9785a', .55, { dir: f.facing, follow: f.id, ox: f.facing * 13, oy: -147 });
+  }
+  if (a.t > s.start - NUMB_LUNGE_FROM && a.t < s.start + NUMB_LUNGE_TO) f.x = clamp(f.x + f.facing * NUMB_LUNGE * dt, X_MIN, X_MAX);
+}
+SCRIPTS['numb'] = Object.assign(SCRIPTS['numb'] ?? {}, {
+  update: step_numb,
+  flash(g: FightGame, f: Fighter, a: Attack) {
+    runOps(g, f, a.skill, NUMB_OPS);
+    g.effect('numb', f.x + f.facing * 46, f.y - 110, f.data.color, .32, { dir: f.facing, radius: 44, hit: a.hit.size > 0 });
+  },
+});
+
+/** ……来练习吧: each strum leans her this far into them. */
+const PRACTICE_CREEP = 8;
+/** ……来练习吧: the sea stays this long after the move to settle into the calm. */
+const SEA_CALM = 1.1;
+/** ……来练习吧: half the width the sea spreads to from where the tear lands. */
+const SEA_REACH = 520;
+/** ……来练习吧: the big wave breaks on the nearest foe this far past her reach, else this far ahead of her. */
+const CRASH_REACH = 80;
+const CRASH_AHEAD = 130;
+/** ……来练习吧: the tear leaves from her eye, this high and this far forward. */
+const TEAR_Y = -158;
+const TEAR_X = 12;
+/** ……来练习吧 (凪, the sea gone still): the light leaves her eyes as one tear — the crybaby she was —
+ *  and where it lands the floor turns to water. Each strum lifts a wave that rolls at them, taller
+ *  and quicker each time; the seventh rises over them and breaks. Then the water goes flat as a
+ *  mirror and settles: that stillness is her name. Segment i rides guardPlan[i]; the seventh is the finale.
+ *  The tear and the sea both time themselves from t0 (the first strum), so they always meet. */
+function step_practice(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  if (!a.mode) {
+    a.mode = 1;
+    g.effect('nagi-tear', f.x + f.facing * TEAR_X, f.y + TEAR_Y, '#dff1ff', s.start + .08, { dir: f.facing, radius: -TEAR_Y, t0: s.start });
+    g.effect('nagi-sea', f.x, FLOOR, f.data.color, s.duration + SEA_CALM, { dir: f.facing, radius: SEA_REACH, t0: s.start });
+  }
+  while (a.shots < PRACTICE_HITS && a.t >= s.start + practiceBeat(a.shots)) {
+    const i = a.shots++;
+    const last = i === PRACTICE_HITS - 1;
+    a.hit = new Set();
+    a.skill = withGuard(withFinale(s, last), i);
+    applyMelee(g, f, a);
+    a.skill = s;
+    f.x = clamp(f.x + f.facing * PRACTICE_CREEP, X_MIN, X_MAX);
+    if (!last) {
+      g.effect('nagi-wave', f.x + f.facing * 40, FLOOR, f.data.color, .55, { dir: f.facing, n: i });
+      continue;
+    }
+    const foe = foeAhead(g, f, s.range + CRASH_REACH);
+    g.effect('nagi-crash', foe ? foe.x : clamp(f.x + f.facing * CRASH_AHEAD, X_MIN, X_MAX), FLOOR, f.data.color, .75, { dir: f.facing, radius: 120 });
+    g.text('啊哈。', f.x, f.y - 222, '#cfd8ff', 1.2, 16);
+  }
+}
+SCRIPTS['practice'] = Object.assign(SCRIPTS['practice'] ?? {}, { update: step_practice, skipCount: true, noMelee: true });
 
 SCRIPTS['milk'] = Object.assign(SCRIPTS['milk'] ?? {}, { spawn: 'milk' });
 SCRIPTS['bag'] = Object.assign(SCRIPTS['bag'] ?? {}, { spawn: 'bag' });
