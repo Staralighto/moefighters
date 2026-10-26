@@ -22,6 +22,7 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<script>try{var t=localStorage.getItem('mf-theme');if(t==='light'||t==='system'&&matchMedia('(prefers-color-scheme: light)').matches)document.documentElement.dataset.theme='light'}catch(e){}</script>
 <link rel="stylesheet" href="/src/style.css">
 <script type="application/ld+json">
 {
@@ -89,7 +90,7 @@
 <main id="selection">
   <div class="sectionline"><span><i>01</i> 选择你的角色</span><span class="rules-row"><span class="rules-summary"><span id="rules-text">1V1 · 你打人机 · 标准</span></span><button id="random" class="icon-btn" type="button" title="随机当前槽位" aria-label="随机当前槽位"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-shuffle"/></svg><span class="btn-label">⤨ 随机</span></button></span></div>
   <div class="stage-frame">
-  <div class="select-stage" id="select-stage">
+  <div class="select-stage" id="select-stage" data-scheme="dark">
     <div class="fighter-preview left" id="preview-left" data-slot="0">
       <div class="slot-head">
         <span class="side-label" id="p1tag">1P</span>
@@ -236,7 +237,7 @@
       <button id="fullscreen" class="icon-btn icon-only" type="button" title="宽屏" aria-label="宽屏"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-corners-out"/></svg><span class="btn-label">宽屏</span></button>
     </div>
   </div>
-  <div class="arena" id="arena">
+  <div class="arena" id="arena" data-scheme="dark">
     <div class="arena-view">
     <canvas id="game" width="960" height="540" tabindex="0" aria-label="格斗画面"></canvas>
     <div class="hud">
@@ -313,7 +314,7 @@
   <p>萌趣格斗为非官方同人游戏，仅供免费、非商业娱乐，与《BanG Dream!》官方无关，亦未获其授权或认可。角色名称、形象及相关权利归各自权利人所有，禁止商用。</p>
 </footer>
 
-<div class="buff-picker" id="buff-picker" hidden>
+<div class="buff-picker" id="buff-picker" data-scheme="dark" hidden>
   <small>CHALLENGE</small>
   <h2 id="buff-title"></h2>
   <small class="buff-foe-label">本关对手</small>
@@ -426,6 +427,20 @@
 
 <dialog id="settings-dialog">
   <div class="dialog-head"><h2>设置</h2><button id="close-settings" aria-label="关闭">×</button></div>
+  <section class="setting-group">
+    <h3 class="setting-title">外观</h3>
+    <div class="setting-row">
+      <b id="set-theme">主题</b>
+      <button type="button" class="pick-btn" popovertarget="set-theme-menu" aria-haspopup="listbox" aria-expanded="false" aria-controls="set-theme-menu" aria-labelledby="set-theme set-theme-value">
+        <span class="pick-value" id="set-theme-value">暗色</span>
+      </button>
+      <div id="set-theme-menu" class="pick-menu" popover role="listbox" aria-labelledby="set-theme">
+        <button type="button" role="option" data-value="dark" aria-selected="true">暗色</button>
+        <button type="button" role="option" data-value="light" aria-selected="false">亮色</button>
+        <button type="button" role="option" data-value="system" aria-selected="false">跟随系统</button>
+      </div>
+    </div>
+  </section>
   <section class="setting-group">
     <h3 class="setting-title">名册</h3>
     <div class="setting-row">

@@ -3,6 +3,20 @@ import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, type Plugin } from 'vite';
+import { themeCss } from './src/theme/palette.ts';
+
+/** 亮色主题：style.css 只写暗色 token，加载时在文件尾追加推导出的亮色块和暗色美术面块。
+    开发和构建走同一条，改了暗色 token 亮色立刻跟着变。规则见 src/theme/palette.ts。 */
+function themeLight(): Plugin {
+  return {
+    name: 'theme-light',
+    enforce: 'pre',
+    transform(code, id) {
+      if (!id.split('?')[0].replaceAll('\\', '/').endsWith('/src/style.css')) return;
+      return { code: code + themeCss(code), map: null };
+    },
+  };
+}
 
 /** Dev panel posts the live numbers here. The fight keeps running; this file is not hot-reloaded. */
 function propLayout(): Plugin {
@@ -133,7 +147,7 @@ export default defineConfig(({ command }) => ({
   define: { __NET_HASH__: JSON.stringify(sourceHash()) },
   // Toy hosts the built page under /toy/<slug>/. Dev stays at the site root.
   base: command === 'build' ? './' : '/',
-  plugins: [propLayout(), touchLayout()],
+  plugins: [themeLight(), propLayout(), touchLayout()],
   server: { host: true },
   preview: { host: true },
 }));

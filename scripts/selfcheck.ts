@@ -30,6 +30,7 @@ import { DEFAULT_ULT_ICON, ultIcon } from '../src/ui/touchIcons.ts';
 import { assignSlotWho, guideIndex, skillHTML, stageCover } from '../src/ui/select.ts';
 import { BLOCKED_CODE_HASHES, CODE_SALT, CODENAME_ADJS, CODENAME_CHARS, READY_SECONDS, formatCodename, hashCodeNum, isBlockedCodeNum, rollCodeNum, validCodenameText } from '../src/ui/online.ts';
 import { placePick } from '../src/ui/settings.ts';
+import { DARK_ISLAND, MIN_CONTRAST, PAPER, auditCss, contrast, deriveScheme, parseColor, readTokens, themeCss } from '../src/theme/palette.ts';
 import { cycleMusicOrder, nextTrack, resolveMusicPrefs, shouldShuffleOnFight, shouldWarmNext, shuffleStartIndex, stepTrack } from '../src/audio/bgm.ts';
 import { migrateLinearSlider, musicGain, MUSIC_CAP } from '../src/audio/mix.ts';
 import { POOL, aggregatePicks, bestLabel, drawThree, readBest, rollEnemies, stageSetup } from '../src/ui/challenge.ts';
@@ -1934,7 +1935,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const onlineGroup = dialogHtml.match(/<section class="setting-group" id="set-online-group">[\s\S]*?<\/section>/)?.[0] ?? '';
     assert.equal(onlineGroup.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(), '联机 联机代号 修改代号', 'online codename setting row has control name and button only');
     const visible = dialogHtml.replace(onlineGroup, '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-    assert.equal(visible, '设置 × 名册 名册显示 直接排开 直接排开 按乐队分组 训练场 无技能冷却 开 开 关 无限大招 开 开 关 音乐 开打换曲 ? 只在随机播放时生效，其他时候不能改。 开 开 关', 'settings dialog keeps control names, plus the fight-shuffle tip (with #set-online-group exempted)');
+    assert.equal(visible, '设置 × 外观 主题 暗色 暗色 亮色 跟随系统 名册 名册显示 直接排开 直接排开 按乐队分组 训练场 无技能冷却 开 开 关 无限大招 开 开 关 音乐 开打换曲 ? 只在随机播放时生效，其他时候不能改。 开 开 关', 'settings dialog keeps control names, plus the fight-shuffle tip (with #set-online-group exempted)');
     const css = readFileSync('src/style.css', 'utf8');
     assert.ok(css.includes('width: min(760px, calc(100% - 2rem))'), 'settings dialog width is reserved, not content-sized');
     assert.ok(css.includes('minmax(0, 1fr) min(16em, 46%)'), 'settings dropdowns share one column so their lengths stay aligned');
@@ -1944,6 +1945,36 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(css.includes('color-scheme: dark'), ':root declares dark color-scheme so native controls and scrollbars never fall back to light OS white+grey');
     assert.ok(css.includes('*::-webkit-scrollbar {') && css.includes('*::-webkit-scrollbar-thumb { background: var(--line)'), 'global scrollbar uses site tokens (--line / --muted) by default for all scrollable containers');
     assert.ok(!/[^\s*(]::-webkit-scrollbar/.test(css), 'scrollbar styling lives only on the global * selector; panels do not invent separate scrollbar skins');
+    // 亮色主题由暗色 token 推导（src/theme/palette.ts），这里锁住「亮色能自动涌现」的前提和结果。
+    {
+      assert.deepEqual(auditCss(css), [], 'style.css keeps theme-dependent colors in :root tokens, and accent text/borders use -ink');
+      const tokens = readTokens(css);
+      assert.ok(tokens.some(t => t.name === PAPER), `${PAPER} is the paper surface the light theme folds around`);
+      const { light } = deriveScheme(tokens);
+      const dark = Object.fromEntries(tokens.map(t => [t.name, t.value]));
+      const textOn = (scheme: Record<string, string>) => {
+        const grounds = tokens.filter(t => t.role === 'surface' && !t.name.startsWith('--line')).map(t => parseColor(scheme[t.name])!);
+        const inks = [...tokens.filter(t => t.role === 'ink').map(t => t.name), ...tokens.filter(t => t.role === 'accent').map(t => t.name + '-ink')];
+        for (const ink of inks) {
+          const fg = parseColor(scheme[ink] ?? scheme[ink.replace(/-ink$/, '')])!;
+          for (const g of grounds) assert.ok(contrast(fg, g) >= MIN_CONTRAST - 0.01, `${ink} stays readable on every surface (${contrast(fg, g).toFixed(2)})`);
+        }
+      };
+      textOn(light);
+      for (const t of tokens.filter(t => t.role === 'ink' && t.name !== '--muted')) {
+        // 暗色是手配的，只验正文这一档；--muted 在暗色里本就是低对比的说明字。
+        assert.ok(contrast(parseColor(dark[t.name])!, parseColor(dark['--panel'])!) >= MIN_CONTRAST, `${t.name} reads on the dark panel`);
+      }
+      const gen = themeCss(css);
+      assert.ok(gen.includes(':root[data-theme="light"] {') && gen.includes(`:root[data-theme="light"] ${DARK_ISLAND} {`), 'generated CSS has the light block and the dark art-island block');
+      for (const id of ['select-stage', 'arena', 'buff-picker']) {
+        assert.ok(new RegExp(`id="${id}"[^>]*data-scheme="dark"`).test(html), `#${id} draws over game art, so it stays dark in the light theme`);
+      }
+      assert.ok(readFileSync('vite.config.ts', 'utf8').includes('themeLight()'), 'vite appends the derived light theme to style.css');
+      const head = html.slice(0, html.indexOf('<link rel="stylesheet"'));
+      assert.ok(head.includes("localStorage.getItem('mf-theme')"), 'the saved theme is applied in <head>, before the stylesheet paints');
+      assert.ok(readFileSync('src/ui/theme.ts', 'utf8').includes("THEME_KEY = 'mf-theme'"), 'head script and theme.ts read the same key');
+    }
     assert.deepEqual(
       placePick({ right: 200, top: 40, bottom: 70 }, { width: 80, height: 60 }, { width: 400, height: 300 }),
       { top: 74, left: 120 },

@@ -17,6 +17,7 @@ import { applyTouchDevice, watchTouch } from './ui/device.ts';
 import { applyTouchLayout, bindBattleFrame } from './ui/touchLayout.ts';
 import { bindSwipeGuard } from './ui/swipeBack.ts';
 import { bindPick, bindTip, setTrainPrefs, trainPrefs } from './ui/settings.ts';
+import { setThemePref, themePref, type ThemePref } from './ui/theme.ts';
 import { bindOnline, CODENAME_ADJS, CODENAME_CHARS, ensureCodename, formatCodename, setCodenameWords, type NetPlan } from './ui/online.ts';
 import { beginNet, endNet, keepLink, netAfter, netAudio, netBefore, netEpoch, netHidden, netLock, netLockFrame, netLog, netRematch, noteEnd, type NetEnd } from './net/play.ts';
 import type { Link } from './net/rtc.ts';
@@ -807,6 +808,10 @@ $('close-settings').onclick = () => settingsDialog.close();
 
 /* 设置里每一行都是左名、右下拉。名册显示改分组后名册重渲染，滚动预加载观察器跟着重挂。
    训练场两项写进同一份 prefs，进行中的对局下一帧就生效。 */
+bindPick('set-theme-menu', {
+  get: themePref,
+  set: value => setThemePref(value as ThemePref),
+});
 bindPick('set-roster-menu', {
   get: () => select.isGrouped ? 'band' : 'flat',
   set: value => { select.setRosterGrouped(value === 'band'); observeRoster(); },
