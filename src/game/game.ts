@@ -516,9 +516,9 @@ export class FightGame {
     f.attack = {
       skill, index: slot, serial: ++f.attackSerial, t: escaping ? skill.start : 0, emitted: false, shots: 0, hit: new Set(),
       burst: SCRIPTS[skill.fx]?.burst?.(f) ?? 0,
-      // holdEndure is a promise of armour through the cast, so a projectile super that asks for it
-      // gets the same one-strike shield the endure template arms.
-      endure: skill.type === 'endure' || (skill.type === 'projectile' && skill.holdEndure) ? 1 : 0,
+      // holdEndure is a promise of armour through the cast, so any move that asks for it (a projectile
+      // super, 须贺蕾叶's dash and hug) gets the same one-strike shield the endure template arms.
+      endure: skill.type === 'endure' || skill.holdEndure ? 1 : 0,
       liftAt: 0,
       tossAt: 0,
       hold: -1,

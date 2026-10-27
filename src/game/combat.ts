@@ -4,7 +4,7 @@ import { addDebt, addMod, dmgDealtMul, dmgTakenMul, has, incomingMul, lifestealO
 import type { FightGame, Projectile, SealVolley } from './game.ts';
 import { CONTROLS, FLOOR, GRAVITY, H, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
 import { attackPhase } from './animState.ts';
-import { BUSHIDO_TAIL, clipFor, drumRow, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS, PRACTICE_HITS, practiceBeat, SKIP_HOP, SKIP_MAX, SKIP_MIN, SKIP_TAIL, MINE_FUSE, ENCORE, ENCORE_FACE, ENCORE_GONE, BURDEN_Y, UNBOWED_STEP, UNBOWED_MAX } from '../render/clips.ts';
+import { BUSHIDO_TAIL, clipFor, drumRow, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS, PRACTICE_HITS, practiceBeat, SKIP_HOP, SKIP_MAX, SKIP_MIN, SKIP_TAIL, MINE_FUSE, ENCORE, ENCORE_FACE, ENCORE_GONE, BURDEN_Y, UNBOWED_STEP, UNBOWED_MAX, PIGGY, PIGGY_DASH, PIGGY_CARRY, PIGGY_TAIL, PIGGY_BACK_X, PIGGY_BACK_Y, HUG, HUG_LUNGE, HUG_FIRST, HUG_GAP, HUG_TAIL, MEAL_GRACE, FAMILY, FAMILY_MEMBERS, FAMILY_LUNGE, FAMILY_FINALE, FAMILY_ZONE_AHEAD, FAMILY_ZONE_R, FAMILY_TAIL, familyLife } from '../render/clips.ts';
 import { SCRIPTS } from './scripts.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
@@ -4130,6 +4130,394 @@ SCRIPTS['encore'] = Object.assign(SCRIPTS['encore'] ?? {}, {
   noSuperFx: true,
   hideWhile: (a: Attack) => a.mode === ENCORE.gone,
 });
+
+/* ---- 须贺蕾叶 ---- */
+
+/** 恶鬼退散 (band story 2): 「恶鬼～滚出去！福气～进门来！」 at the suit who keeps coming back for the
+ *  Live House. The palm shove, and a fistful of beans thrown past it, setsubun-style. */
+SCRIPTS['oni-out'] = Object.assign(SCRIPTS['oni-out'] ?? {}, {
+  flash(g: FightGame, f: Fighter, a: Attack) {
+    g.effect('slash', f.x + f.facing * 65, f.y - 83, f.data.color, .22, { dir: f.facing, radius: a.skill.range * .5 });
+    g.effect('oni-beans', f.x + f.facing * 56, f.y - 116, '#e9c46a', .6, { dir: f.facing, hit: a.hit.size > 0 });
+  },
+});
+
+/** 我背你！: the catch is light; the throw at the end of the run is the skill's own damage. */
+const PIGGY_PICK = 8;
+const PIGGY_RUN = 560;
+const PIGGY_STUMBLE = .5;
+/** 我背你！: the throw puts them down this far ahead of her, a little off the floor. */
+const PIGGY_DROP_X = 44;
+const PIGGY_DROP_Y = 30;
+const piggyPicks = new WeakMap<Skill, Skill>();
+function piggyPick(s: Skill): Skill {
+  let p = piggyPicks.get(s);
+  if (!p) {
+    p = { ...s, damage: PIGGY_PICK, knock: 0, gain: 4, react: { kind: 'pin', stun: PIGGY_CARRY + .3, holdStill: true } };
+    piggyPicks.set(s, p);
+  }
+  return p;
+}
+/** The rider: on her back, facing the way she runs, held up off the floor. */
+function rideOn(f: Fighter, o: Fighter): void {
+  o.x = clamp(f.x - f.facing * PIGGY_BACK_X, X_MIN, X_MAX);
+  o.y = FLOOR - PIGGY_BACK_Y;
+  o.vx = 0;
+  o.vy = 0;
+  o.knocked = 0;
+  o.stun = Math.max(o.stun, .3);
+  o.facing = f.facing;
+}
+/** 我背你！ (band story 1, 5 and 8): 「来，快到我背上来！我背你！」 — whoever looks hurt, scared or
+ *  asleep goes on her back, wanted or not. The dash; a body it meets goes on her back and she runs
+ *  with them, flailing, until a wall or PIGGY_CARRY, then puts them down hard. A guarded dash trips
+ *  her up instead. a.mode walks PIGGY; a.tossAt is the pick-up. */
+function step_piggyback(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  const mode = a.mode ?? PIGGY.dash;
+  if (mode === PIGGY.dash) {
+    if (a.t < s.start) return;
+    f.x = clamp(f.x + f.facing * (s.speed ?? 820) * dt, X_MIN, X_MAX);
+    const bucket = Math.floor(a.t * 30);
+    if (bucket % 3 === 0 && bucket !== Math.floor((a.t - dt) * 30)) g.effect('ghost', f.x - f.facing * 18, f.y, f.data.color, .18, { fighter: f.id, alpha: .3 });
+    const o = foeAhead(g, f, s.range);
+    if (o && Math.abs(o.y - f.y) < 112 && o.invuln <= 0) {
+      const before = g.totalHits[f.id];
+      a.hit = new Set();
+      hit(g, f, o, piggyPick(s), a);
+      if (g.totalHits[f.id] > before) {
+        a.mode = PIGGY.carry;
+        a.hold = o.id;
+        a.tossAt = a.t;
+        o.attack = null;
+        retainEscape(o);
+        rideOn(f, o);
+        // Band story 1: 「心、心脏……！？糟了，必须马上去医院！来，快到我背上来！」 — a siren on her head the
+        // whole run, and their heart thumping out of their chest, faster and faster.
+        g.text('必须马上去医院！', f.x, f.y - 236, '#ff6a6a', .9, 17);
+        g.effect('piggy-siren', f.x, f.y - 196, '#ff3b3b', PIGGY_CARRY + .08, { follow: f.id, ox: 0, oy: -196 });
+        g.effect('piggy-sweat', o.x, o.y - 150, '#8fd0ff', PIGGY_CARRY + .1, { follow: o.id, ox: 0, oy: -150 });
+        g.effect('piggy-heart', o.x + f.facing * 10, o.y - 108, '#ff4f7a', PIGGY_CARRY + .1, { follow: o.id, ox: f.facing * 10, oy: -108, dir: f.facing });
+        return;
+      }
+      if (a.hit.has(o.id)) {
+        // Guarded: she runs into the arm and goes over.
+        a.mode = PIGGY.blocked;
+        a.t = s.duration;
+        f.stun = Math.max(f.stun, PIGGY_STUMBLE);
+        g.effect('dust', f.x, FLOOR, '#d8c8b0', .35, { radius: 26 });
+        g.text('哎呀！', f.x, f.y - 205, '#ffb46a', .6, 16);
+        return;
+      }
+    }
+    if (a.t >= s.start + PIGGY_DASH || f.x <= X_MIN || f.x >= X_MAX) {
+      a.mode = PIGGY.done;
+      a.t = Math.max(a.t, s.duration - PIGGY_TAIL);
+    }
+    return;
+  }
+  if (mode !== PIGGY.carry) return;
+  const o = g.fighterById(a.hold);
+  if (!o || o.hp <= 0) {
+    a.mode = PIGGY.done;
+    a.hold = -1;
+    a.t = Math.max(a.t, s.duration - PIGGY_TAIL);
+    return;
+  }
+  f.x = clamp(f.x + f.facing * PIGGY_RUN * dt, X_MIN, X_MAX);
+  rideOn(f, o);
+  if (Math.floor(a.t * 10) !== Math.floor((a.t - dt) * 10)) g.effect('dust', f.x - f.facing * 16, FLOOR, '#d8c8b0', .3, { radius: 18 });
+  const wall = f.x <= X_MIN || f.x >= X_MAX;
+  if (!wall && a.t < a.tossAt + PIGGY_CARRY) return;
+  o.x = clamp(f.x + f.facing * PIGGY_DROP_X, X_MIN, X_MAX);
+  o.y = FLOOR - PIGGY_DROP_Y;
+  a.hit = new Set();
+  hit(g, f, o, s, a);
+  g.effect('piggy-toss', o.x, FLOOR, '#ffd9a8', .45, { dir: f.facing, radius: 60 });
+  a.mode = PIGGY.done;
+  a.hold = -1;
+  a.t = Math.max(a.t, s.duration - PIGGY_TAIL);
+}
+SCRIPTS['piggyback'] = Object.assign(SCRIPTS['piggyback'] ?? {}, { update: step_piggyback, customDash: true, noMelee: true });
+
+/** 爱之拥抱: she holds them this close. */
+const HUG_REACH = 44;
+const hugParts = new WeakMap<Skill, { squeeze: Skill; last: Skill }>();
+function hugOf(s: Skill): { squeeze: Skill; last: Skill } {
+  let h = hugParts.get(s);
+  if (!h) {
+    h = {
+      squeeze: { ...s, finale: undefined, knock: 0, react: { kind: 'pin', stun: .35, holdStill: true } },
+      last: { ...s, ...s.finale, finale: undefined },
+    };
+    hugParts.set(s, h);
+  }
+  return h;
+}
+/** 爱之拥抱 (band story 8, 9, 10, 18): her hugs are the 120% kind her grandmother gives — 千樱梨
+ *  「快、放开！」, 心玖「勒得我喘不过气了……力气真大！」. A lunge, the catch, then four squeezes on a
+ *  fixed beat, each one tighter, the hearts over them bigger each time; the last lets go with them
+ *  reeling. a.mode walks HUG; a.tossAt is the catch, a.liftAt the latest squeeze. */
+function step_bear_hug(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  const mode = a.mode ?? HUG.lunge;
+  if (mode === HUG.lunge) {
+    if (a.t < s.start) return;
+    const o = foeAhead(g, f, s.range);
+    if (o && Math.abs(o.y - f.y) < 112 && o.invuln <= 0) {
+      a.mode = HUG.held;
+      a.hold = o.id;
+      a.tossAt = a.t;
+      f.x = clamp(o.x - f.facing * HUG_REACH, X_MIN, X_MAX);
+      o.vx = 0;
+      o.vy = 0;
+      o.knocked = 0;
+      o.attack = null;
+      o.stun = Math.max(o.stun, .35);
+      retainEscape(o);
+      g.hitstop = Math.max(g.hitstop, .05);
+      g.text('最喜欢你了！', f.x, f.y - 214, '#ffb48a', .9, 16);
+      return;
+    }
+    f.x = clamp(f.x + f.facing * (s.speed ?? 520) * dt, X_MIN, X_MAX);
+    if (a.t >= s.start + HUG_LUNGE || f.x <= X_MIN || f.x >= X_MAX) {
+      a.mode = HUG.done;
+      a.t = Math.max(a.t, s.duration - .25);
+    }
+    return;
+  }
+  if (mode !== HUG.held) return;
+  const o = g.fighterById(a.hold);
+  if (!o || o.hp <= 0) {
+    a.mode = HUG.done;
+    a.hold = -1;
+    a.t = Math.max(a.t, s.duration - HUG_TAIL);
+    return;
+  }
+  o.x = clamp(f.x + f.facing * HUG_REACH, X_MIN, X_MAX);
+  o.y = FLOOR;
+  o.vx = 0;
+  o.vy = 0;
+  o.knocked = 0;
+  o.stun = Math.max(o.stun, .3);
+  o.facing = (-f.facing) as 1 | -1;
+  const parts = hugOf(s);
+  const count = s.count ?? 4;
+  while (a.shots < count && a.t >= a.tossAt + HUG_FIRST + a.shots * HUG_GAP) {
+    const i = a.shots++;
+    const last = i === count - 1;
+    a.hit = new Set();
+    hit(g, f, o, last ? parts.last : parts.squeeze, a);
+    a.liftAt = a.t;
+    const mx = (f.x + o.x) / 2;
+    g.effect('hug-heart', mx, f.y - 150, '#ff6f9e', .5, { n: i, hit: last });
+    g.effect('hug-squeeze', mx, f.y - 92, '#ffd0e0', .22, { n: i, radius: 40 + i * 6 });
+    if (!last) continue;
+    g.effect('hug-soul', o.x, o.y - 168, '#eef3ff', .9, { follow: o.id, ox: 0, oy: -168 });
+    g.text('快、放开……！', o.x, o.y - 205, '#d8e0ff', .9, 15);
+    a.mode = HUG.done;
+    a.hold = -1;
+    a.t = Math.max(a.t, s.duration - HUG_TAIL);
+  }
+}
+SCRIPTS['bear-hug'] = Object.assign(SCRIPTS['bear-hug'] ?? {}, { update: step_bear_hug, noMelee: true, skipCount: true });
+
+/** 我开动了！: what the bowl buys, and for how long. */
+const MEAL_TIME = 6;
+const MEAL_SPEED = 1.15;
+const MEAL_ATK = 1.25;
+/** 我开动了！: one cast in ten the rice cooker blows (家团最能炸的就是电饭锅). Looks only; she eats anyway. */
+const MEAL_BOOM = .1;
+/** The cooker stands this far behind her, on the floor. */
+const MEAL_COOKER_X = 50;
+/** 我开动了！ (band story 5, 7, 13): 「一日之计在于和 Family 一起吃早饭！」 — palms together, a heaped bowl of
+ *  white rice, three big mouthfuls; 「美味加倍，也就是会比平时更有干劲」. a.shots is 1 once the bowl is up. */
+function step_meal(g: FightGame, f: Fighter, a: Attack): void {
+  if (a.shots) return;
+  a.shots = 1;
+  // The rice cooker pops up beside her first: 「叮♪」, lid up, steam — or, one time in ten, 嘭.
+  const boom = g.random() < MEAL_BOOM;
+  g.effect('meal-cooker', f.x - f.facing * MEAL_COOKER_X, FLOOR, '#f2efe8', a.skill.start + .25, { dir: f.facing, hit: boom });
+  if (boom) {
+    g.text('嘭！', f.x - f.facing * MEAL_COOKER_X, f.y - 120, '#ffb15a', .6, 20);
+    g.effect('meal-soot', f.x + f.facing * 8, f.y - 150, '#2b2522', a.skill.duration + 1.2, { follow: f.id, ox: f.facing * 8, oy: -150, dir: f.facing });
+  } else {
+    g.text('叮♪', f.x - f.facing * MEAL_COOKER_X, f.y - 120, '#fff4c8', .55, 18);
+  }
+  // 「这是心玖来了以后的第一顿早饭，所以我大方地煮了五碗米！」 — the heap is taller than her head.
+  g.effect('meal-bowl', f.x + f.facing * 22, f.y - 128, '#ffffff', a.skill.start + .12, {
+    dir: f.facing, follow: f.id, ox: f.facing * 22, oy: -128, t0: MEAL_GRACE,
+  });
+}
+function emit_meal(g: FightGame, f: Fighter): void {
+  addMod(f, 'speed', MEAL_TIME, {
+    v: MEAL_SPEED, atk: MEAL_ATK, tag: 'meal', pulseEvery: 3,
+    pulse: (game, who) => game.effect('meal-steam', who.x - who.facing * 6, who.y - 150, '#fff1dc', .7, { follow: who.id, ox: -who.facing * 6, oy: -150 }),
+    // The bowl over her head goes with the buff, even when something cuts it short.
+    onExpire: (game, who) => { for (const e of game.effects) if (e.type === 'meal-timer' && e.follow === who.id) e.life = 0; },
+  });
+  g.effect('meal-done', f.x, f.y - 96, '#ffb15a', .5, { radius: 70 });
+  g.text('美味加倍！', f.x, f.y - 222, '#ffb15a', .9, 16);
+  // One grain stuck at the corner of her mouth, and a little bowl over her head that empties with the buff.
+  g.effect('meal-grain', f.x + f.facing * 14, f.y - 142, '#fffdf6', 1.4, { follow: f.id, ox: f.facing * 14, oy: -142 });
+  for (const e of g.effects) if (e.type === 'meal-timer' && e.follow === f.id) e.life = 0;
+  g.effect('meal-timer', f.x, f.y - 206, '#ffb15a', MEAL_TIME, { follow: f.id, ox: 0, oy: -206 });
+}
+SCRIPTS['itadakimasu'] = Object.assign(SCRIPTS['itadakimasu'] ?? {}, { update: step_meal, emit: emit_meal, noMelee: true });
+
+/** 上吧，My Family！: she holds them this close while the family comes in. */
+const FAMILY_REACH = 56;
+/** Every strike of every member, in order, then her own strum (the skill's finale). */
+const FAMILY_STRIKES = FAMILY_MEMBERS.flatMap((m, n) => m.strikes.map(at => ({ at, n }))).sort((p, q) => p.at - q.at);
+/** 上吧，My Family！ zone (nobody caught): lighter, blockable blows on the ground ahead of her. */
+const ZONE_STRIKE = 18;
+const ZONE_FINALE = 50;
+const ZONE_GUARD = 10;
+const ZONE_FINALE_GUARD = 20;
+/** A body higher than this off the floor is clear of the zone. */
+const ZONE_AIR = 120;
+const familyParts = new WeakMap<Skill, { strike: Skill; last: Skill; zone: Skill; zoneLast: Skill }>();
+function familyOf(s: Skill): { strike: Skill; last: Skill; zone: Skill; zoneLast: Skill } {
+  let p = familyParts.get(s);
+  if (!p) {
+    const last: Skill = { ...s, ...s.finale, finale: undefined };
+    // Zone blows are not grabs, so a guard catches them; each carries its own small guard chip.
+    const zone: Skill = { ...s, type: 'heavy', finale: undefined, damage: ZONE_STRIKE, guardDmg: ZONE_GUARD, knock: 60, react: { kind: 'stand', stun: .35 } };
+    p = {
+      strike: { ...s, finale: undefined, knock: 0, react: { kind: 'pin', stun: .45, holdStill: true } },
+      last,
+      zone,
+      zoneLast: { ...last, type: 'heavy', damage: ZONE_FINALE, guardDmg: ZONE_FINALE_GUARD, knock: 320 },
+    };
+    familyParts.set(s, p);
+  }
+  return p;
+}
+/** Every living foe on the ground near the zone point takes the blow. */
+function familyZoneHit(g: FightGame, f: Fighter, a: Attack, x: number, skill: Skill): void {
+  a.hit = new Set();
+  for (const o of g.fighters) {
+    if (!g.isEnemy(f, o) || o.hp <= 0 || o.echo) continue;
+    if (Math.abs(o.x - x) > FAMILY_ZONE_R || o.y < FLOOR - ZONE_AIR) continue;
+    hit(g, f, o, skill, a, f.x);
+  }
+}
+/** 上吧，My Family！: the door of light stands this far behind her; the family come out of it. */
+const FAMILY_DOOR_BACK = 84;
+/** Spawn the four silhouettes on a point `x` (where they strike). The house lights go down and a door
+ *  of warm light swings open behind her — their Home — and each of them comes out of it in turn. */
+function familyCall(g: FightGame, f: Fighter, x: number): void {
+  g.text('来，上吧，My Family！', f.x, f.y - 226, f.data.color, 1.5, 20);
+  const door = clamp(f.x - f.facing * FAMILY_DOOR_BACK, X_MIN, X_MAX);
+  g.effect('family-dim', W / 2, H / 2, '#0b0814', FAMILY_FINALE + FAMILY_TAIL + .15);
+  g.effect('family-door', door, FLOOR, f.data.color, FAMILY_FINALE + .3, { dir: f.facing });
+  FAMILY_MEMBERS.forEach((m, n) => {
+    const t0 = m.strikes[0] - m.enter;
+    g.effect('family-member', x, FLOOR, m.color, t0 + familyLife(m), { n, dir: f.facing, radius: Math.abs(x - door), t0 });
+  });
+}
+/** 上吧，My Family！: each strike flashes the screen a little; the strum and the photo, a lot. */
+const FAMILY_HIT_FLASH = .05;
+const FAMILY_FINALE_FLASH = .16;
+/** The strum, wherever it lands: the burst, the line-up behind her, and the family photo snapping round it. */
+function familyFinale(g: FightGame, f: Fighter, x: number, y: number): void {
+  g.effect('family-finale', x, y - 96, f.data.color, .6, { dir: f.facing, radius: 130 });
+  g.effect('family-lineup', f.x, FLOOR, f.data.color, FAMILY_TAIL + .35, { dir: f.facing });
+  g.effect('family-photo', f.x, FLOOR, '#ffffff', FAMILY_TAIL + .35, { dir: f.facing });
+  g.flash = Math.max(g.flash, FAMILY_FINALE_FLASH);
+}
+/** 上吧，My Family！ (band story 1, 9, 14, 18, 20: 「来，上吧，My Family！」): she grabs them and turns
+ *  to shout, and the family come in behind her one at a time as glowing silhouettes in their own
+ *  colours — 千樱梨 leaps in with the sticks, 蓬咲 peeks out from behind her and swings the bass,
+ *  宁月 drops the keys from above, 心玖 cuts straight through — and 蕾叶's own strum ends it.
+ *  The four silhouettes are one effect each, all spawned at the catch with their entrance delayed
+ *  (t0), so they never need a clock of their own. A lunge that catches nobody still calls them: they
+ *  pound a patch of ground ahead of where she stopped (lighter and blockable), so a missed super still
+ *  leaves a space nobody wants to walk into. a.mode walks FAMILY; a.tossAt is the catch (or the stop),
+ *  a.liftAt the strum, a.anchor the zone point. */
+function step_family(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  const mode = a.mode ?? FAMILY.lunge;
+  if (mode === FAMILY.lunge) {
+    if (a.t < s.start) return;
+    const o = foeAhead(g, f, s.range);
+    if (o && Math.abs(o.y - f.y) < 170 && o.invuln <= 0) {
+      a.mode = FAMILY.held;
+      a.hold = o.id;
+      a.tossAt = a.t;
+      f.x = clamp(o.x - f.facing * FAMILY_REACH, X_MIN, X_MAX);
+      o.x = clamp(f.x + f.facing * FAMILY_REACH, X_MIN, X_MAX);
+      o.attack = null;
+      retainEscape(o, true);
+      g.hitstop = Math.max(g.hitstop, .06);
+      g.effect('grab', o.x, o.y - 80, f.data.color, .25, { radius: 48 });
+      familyCall(g, f, o.x);
+      return;
+    }
+    f.x = clamp(f.x + f.facing * (s.speed ?? 520) * dt, X_MIN, X_MAX);
+    if (a.t >= s.start + FAMILY_LUNGE || f.x <= X_MIN || f.x >= X_MAX) {
+      // Nobody caught: the family still come, and pound the ground ahead of where she stopped.
+      a.mode = FAMILY.zone;
+      a.tossAt = a.t;
+      a.anchor = clamp(f.x + f.facing * FAMILY_ZONE_AHEAD, X_MIN, X_MAX);
+      familyCall(g, f, a.anchor);
+      g.effect('family-zone', a.anchor, FLOOR, f.data.color, FAMILY_FINALE + .1, { radius: FAMILY_ZONE_R });
+    }
+    return;
+  }
+  if (mode === FAMILY.zone) {
+    const parts = familyOf(s);
+    while (a.shots < FAMILY_STRIKES.length && a.t >= a.tossAt + FAMILY_STRIKES[a.shots].at) {
+      const { n } = FAMILY_STRIKES[a.shots++];
+      familyZoneHit(g, f, a, a.anchor, parts.zone);
+      g.effect('family-hit', a.anchor, FLOOR - 92, FAMILY_MEMBERS[n].color, .6, { n, dir: f.facing, radius: 52 });
+      g.flash = Math.max(g.flash, FAMILY_HIT_FLASH);
+    }
+    if (a.shots < FAMILY_STRIKES.length || a.t < a.tossAt + FAMILY_FINALE) return;
+    a.shots++;
+    familyZoneHit(g, f, a, a.anchor, parts.zoneLast);
+    a.mode = FAMILY.done;
+    a.liftAt = a.t;
+    familyFinale(g, f, a.anchor, FLOOR);
+    g.shake = Math.max(g.shake, 10);
+    a.t = Math.max(a.t, s.duration - FAMILY_TAIL);
+    return;
+  }
+  if (mode !== FAMILY.held) return;
+  const o = g.fighterById(a.hold);
+  if (!o || o.hp <= 0) {
+    a.mode = FAMILY.whiff;
+    a.hold = -1;
+    a.t = Math.max(a.t, s.duration - .3);
+    return;
+  }
+  o.x = clamp(f.x + f.facing * FAMILY_REACH, X_MIN, X_MAX);
+  o.y = FLOOR;
+  o.vx = 0;
+  o.vy = 0;
+  o.knocked = 0;
+  o.stun = Math.max(o.stun, .3);
+  o.facing = (-f.facing) as 1 | -1;
+  const parts = familyOf(s);
+  while (a.shots < FAMILY_STRIKES.length && a.t >= a.tossAt + FAMILY_STRIKES[a.shots].at) {
+    const { n } = FAMILY_STRIKES[a.shots++];
+    a.hit = new Set();
+    hit(g, f, o, parts.strike, a);
+    g.effect('family-hit', o.x, o.y - 92, FAMILY_MEMBERS[n].color, .6, { n, dir: f.facing, radius: 52 });
+    g.flash = Math.max(g.flash, FAMILY_HIT_FLASH);
+  }
+  if (a.shots < FAMILY_STRIKES.length || a.t < a.tossAt + FAMILY_FINALE) return;
+  a.shots++;
+  a.hit = new Set();
+  hit(g, f, o, parts.last, a);
+  a.mode = FAMILY.done;
+  a.liftAt = a.t;
+  a.hold = -1;
+  familyFinale(g, f, o.x, o.y);
+  g.shake = Math.max(g.shake, 12);
+  a.t = Math.max(a.t, s.duration - FAMILY_TAIL);
+}
+SCRIPTS['my-family'] = Object.assign(SCRIPTS['my-family'] ?? {}, { update: step_family, noMelee: true, skipCount: true });
 
 SCRIPTS['milk'] = Object.assign(SCRIPTS['milk'] ?? {}, { spawn: 'milk' });
 SCRIPTS['bag'] = Object.assign(SCRIPTS['bag'] ?? {}, { spawn: 'bag' });

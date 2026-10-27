@@ -123,6 +123,64 @@ export function encoreDark(mode: number | undefined): boolean {
   return mode === ENCORE.face || mode === ENCORE.dash;
 }
 
+/** 我背你！: phases on Attack.mode — the dash, the run with them on her back, the throw's tail,
+ *  and the stumble after a blocked dash. */
+export const PIGGY = { dash: 0, carry: 1, done: 2, blocked: 3 } as const;
+/** 我背你！: the dash looks for a back to fill this long after the start. */
+export const PIGGY_DASH = .3;
+/** 我背你！: she runs with them at most this long, or until a wall. */
+export const PIGGY_CARRY = .75;
+/** 我背你！: the turn after the throw. */
+export const PIGGY_TAIL = .25;
+/** 我背你！: the rider sits this far behind her and this high off the floor. */
+export const PIGGY_BACK_X = 26;
+export const PIGGY_BACK_Y = 72;
+
+/** 爱之拥抱: the lunge looks for a body this long after the start; the first squeeze lands this
+ *  long after the catch, then one every HUG_GAP. Each squeeze shows the tight cell for HUG_SQUEEZE. */
+export const HUG_LUNGE = .28;
+export const HUG_FIRST = .12;
+export const HUG_GAP = .2;
+export const HUG_SQUEEZE = .09;
+export const HUG_TAIL = .3;
+/** 爱之拥抱: a.mode — lunging, holding, let go (or nobody caught). */
+export const HUG = { lunge: 0, held: 1, done: 2 } as const;
+
+/** 我开动了！: palms together this long before the bowl comes up. */
+export const MEAL_GRACE = .15;
+
+/** 上吧，My Family！: the four who answer, in the order they come in. Strikes are seconds after the
+ *  catch; `enter` is how long each is on screen before her first strike (蓬咲 peeks out first, 心玖
+ *  is just a flash); `cm` is the official height, so the silhouettes stand as tall as they really
+ *  are next to 蕾叶 (RAIKA_CM). The column on family.png is the index. Colours are the official ones. */
+export interface FamilyMember { name: string; color: string; cm: number; enter: number; strikes: readonly number[] }
+export const FAMILY_MEMBERS: readonly FamilyMember[] = [
+  { name: '千樱梨', color: '#FF55AA', cm: 154, enter: .22, strikes: [.24, .38] },
+  { name: '蓬咲', color: '#448888', cm: 168, enter: .36, strikes: [.68] },
+  { name: '宁月', color: '#9999FF', cm: 143, enter: .24, strikes: [.98] },
+  { name: '心玖', color: '#22CCFF', cm: 162, enter: .14, strikes: [1.26] },
+];
+export const RAIKA_CM = 162;
+/** 上吧，My Family！: the lunge window, and how long a member lingers after her last strike.
+ *  Her own strum lands FAMILY_FINALE after the catch. */
+export const FAMILY_LUNGE = .3;
+export const FAMILY_LINGER = .3;
+export const FAMILY_FINALE = 1.58;
+export const FAMILY_TAIL = .55;
+/** 上吧，My Family！: the strum cell holds this long after the finale. */
+export const FAMILY_STRUM = .18;
+/** 上吧，My Family！: a.mode — lunging, holding while the family comes in, done, the hold lost
+ *  midway, and the zone: nobody caught, so the family pound the ground ahead of where she stopped. */
+export const FAMILY = { lunge: 0, held: 1, done: 2, whiff: 3, zone: 4 } as const;
+/** 上吧，My Family！ zone: the strike point sits this far ahead of her; a foe within FAMILY_ZONE_R of it
+ *  (and not high in the air) is hit by every strike that lands there. */
+export const FAMILY_ZONE_AHEAD = 130;
+export const FAMILY_ZONE_R = 95;
+/** Seconds a member's silhouette is on screen: in, every strike, out. */
+export function familyLife(m: FamilyMember): number {
+  return m.enter + (m.strikes[m.strikes.length - 1] - m.strikes[0]) + FAMILY_LINGER;
+}
+
 /** ……来练习吧: seven strums. The gap shrinks evenly from the first to the last, the way the
  *  bridge of Odd Dice speeds up beat by beat. Never under 0.09s (docs/public/moves.md 削防). */
 export const PRACTICE_HITS = 7;
@@ -494,6 +552,30 @@ export function clipFor(f: Fighter): Clip {
       if (mode === ENCORE.dash) return at('special', a.index - 2, 1 + (Math.floor(a.t * 12) % 2));
       if (mode === ENCORE.back || mode === ENCORE.gone) return loco(RUN_FRAMES[Math.floor(a.t * 8) % 4]);
       return at('special', a.index - 2, 0);
+    }
+    // 我背你！: the dash, then the run with them on her back trades the two carry cells.
+    if (f.attack.skill.fx === 'piggyback') {
+      const a = f.attack, mode = a.mode ?? PIGGY.dash;
+      if (mode === PIGGY.carry) return at('special', a.index - 2, 1 + (Math.floor(a.t * 10) % 2));
+      return at('special', a.index - 2, mode === PIGGY.dash ? 0 : 1);
+    }
+    // 爱之拥抱: arms out on the lunge; the hug, tightened for a beat on every squeeze.
+    if (f.attack.skill.fx === 'bear-hug') {
+      const a = f.attack, mode = a.mode ?? HUG.lunge;
+      if (mode === HUG.lunge) return at('special', a.index - 2, 0);
+      if (mode === HUG.held) return at('special', a.index - 2, a.liftAt > 0 && a.t < a.liftAt + HUG_SQUEEZE ? 2 : 1);
+      return at('special', a.index - 2, 2);
+    }
+    // 我开动了！: palms together, the bowl at her mouth, then the full cheeks.
+    if (f.attack.skill.fx === 'itadakimasu') {
+      const t = f.attack.t, s = f.attack.skill;
+      return at('special', f.attack.index - 2, t < MEAL_GRACE ? 0 : t < s.start ? 1 : 2);
+    }
+    // 上吧，My Family！: the reach and the shout hold while the family comes in; her strum, then the settle.
+    if (f.attack.skill.fx === 'my-family') {
+      const a = f.attack, mode = a.mode ?? FAMILY.lunge;
+      if (mode === FAMILY.done) return at('special', a.index - 2, a.t < a.liftAt + FAMILY_STRUM ? 1 : 2);
+      return at('special', a.index - 2, mode === FAMILY.whiff ? 2 : 0);
     }
     // 天台是我的: the crouch and leap hold the first cell; the dive and the stomp are the second;
     // the landing crouch is the third.

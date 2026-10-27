@@ -1391,6 +1391,49 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'raika', name: '须贺蕾叶', title: '吉他 / Family 笨蛋', quote: '来，上吧，My Family！', color: '#FF7700',
+    bands: ['ikka-dumb-rock'],
+    ...stats('rush'),
+    view: {
+      kind: 'sprite', common: '/sprites/raika/common.png', special: '/sprites/raika/special.png', height: 179,
+      extras: ['/sprites/raika/family.png'],
+    },
+    // 只攻不守: no breakout anywhere. U I O wear armour for the whole cast instead (holdEndure).
+    skills: [
+      skill(0, 'light', '啊哈哈，抱歉！'),
+      // 恶鬼退散 (combat.ts oni-out): 「恶鬼～滚出去！福气～进门来！」 — a palm shove that scatters beans.
+      skill(1, 'heavy', '恶鬼退散', { range: 124, knock: 300, fx: 'oni-out' }),
+      // 我背你！ (combat.ts step_piggyback): she catches them on her back and runs until a wall or the clock.
+      skill(2, 'dash', '我背你！', {
+        damage: 40, speed: 820, range: 70, start: .12, duration: 1.45, cd: 7, fx: 'piggyback', holdEndure: true,
+        knock: 380, react: { kind: 'knockdown', vy: -260, knocked: .8 },
+        brief: '霸体突进背起对手跑，撞墙或跑完扔出；被挡摔倒',
+        detail: '霸体冲刺，命中背起对手往前跑，撞到画面边缘或跑满 0.75 秒扔出击倒，共 48 伤害；被挡则硬直 0.5 秒',
+      }),
+      // 爱之拥抱 (combat.ts step_bear_hug): a lunge, the hug, four squeezes that get tighter.
+      skill(3, 'grab', '爱之拥抱', {
+        damage: 10, count: 4, range: 66, speed: 520, start: .14, duration: 1.45, cd: 8, fx: 'bear-hug', holdEndure: true,
+        knock: 0, gain: 4,
+        finale: { damage: 16, knock: 200, react: { kind: 'stand', stun: .45 } },
+        brief: '霸体扑上去熊抱勒紧连打，末下对手硬直',
+        detail: '霸体前扑抓取，熊抱勒紧四下：前三下各 10 伤害，末下 16 伤害并使对手硬直 0.45 秒',
+      }),
+      // 我开动了！ (combat.ts emit_itadakimasu): 「一日之计在于和 Family 一起吃早饭」.
+      skill(4, 'endure', '我开动了！', {
+        damage: 0, range: 0, start: .6, duration: .8, cd: 15, fx: 'itadakimasu', holdEndure: true,
+        brief: '霸体站着吃饭；吃完 J / K 更快、移速提高',
+        detail: '霸体站定 0.6 秒吃完一碗饭；之后 6 秒 J / K 冷却加快 25%，移速提高 15%',
+      }),
+      // 上吧，My Family！ (combat.ts step_family): the grab, four family silhouettes in turn, her own strum last.
+      skill(5, 'grab', '上吧，My Family！', {
+        damage: 26, count: 6, range: 70, speed: 520, start: .35, duration: 2.8, fx: 'my-family', knock: 0, gain: 2,
+        finale: { damage: 110, knock: 380, react: { kind: 'knockdown', vy: -240, knocked: .9 } },
+        brief: '前冲抓人，家人轮流连打；没抓到就打身前一片',
+        detail: '前冲抓取，家人剪影轮流打五段，末段扫弦 110 伤害并击倒；没抓到则在身前一片区域照样连打，每段 18、末段 50，可格挡',
+      }),
+    ],
+  },
+  {
     id: 'viola', name: '薇欧拉', title: '队长 / 恶德', quote: '火种燃尽之后会怎么样呢？', color: '#8E5AC8',
     ...stats('armor'),
     view: {

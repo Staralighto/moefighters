@@ -4,7 +4,7 @@ import type { Fighter } from '../game/fighter.ts';
 import type { FighterView } from './view.ts';
 import { clamp, FLOOR, H, SIDE, W } from '../game/constants.ts';
 import type { ImageCache } from '../assets/loader.ts';
-import { BURDEN_Y, CELL, clipFor, flameFrame, pillarFrame, practiceBeat, practiceStrums, PRACTICE_HITS, RING_BIG, RING_SMALL } from './clips.ts';
+import { BURDEN_Y, CELL, clipFor, FAMILY_LINGER, FAMILY_MEMBERS, flameFrame, pillarFrame, practiceBeat, practiceStrums, PRACTICE_HITS, RAIKA_CM, RING_BIG, RING_SMALL } from './clips.ts';
 import { watchProp } from './propLayout.ts';
 
 const CUCUMBER_SRC = '/sprites/mutsumi/cucumber.png';
@@ -284,6 +284,189 @@ function drawMortisGhost(ctx: CanvasRenderingContext2D, im: HTMLImageElement, co
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.drawImage(sil, col * CELL, row * CELL, CELL, CELL, -10 - MORTIS_H / 2, -MORTIS_H, MORTIS_H, MORTIS_H);
+  ctx.restore();
+}
+
+/** 我开动了！: the rice mountain's height over the bowl, full and after each of the three mouthfuls. */
+const MEAL_HEAP = [62, 40, 20, 5] as const;
+
+/** 上吧，My Family！: one colour-block column per member (千樱梨 / 蓬咲 / 宁月 / 心玖), rows in / strike / stand.
+ *  Drawn as glowing silhouettes in each member's colour with the art faintly showing through (FAMILY_SHOW). */
+const FAMILY_SRC = '/sprites/raika/family.png';
+/** 上吧，My Family！: where a member is and how she is drawn at `u` seconds after she appears.
+ *  x is +dir toward and past the foe, measured from the strike point; y is up off the floor.
+ *  `door` is the door of light behind 蕾叶 (a negative x). Rotation and squash are about her middle. */
+interface FamilyPose { x: number; y: number; rot: number; sx: number; sy: number; a: number; row: number; glow: number }
+/** ponytail: family-member refills these instead of allocating a pose per sample. One effect
+ *  finishes before the next starts, and nothing keeps a pose, so four slots cover the body
+ *  (now/before) and one trail sample. A reentrant second pose draw would clobber them;
+ *  family-lineup does not use this. */
+const FAMILY_POSE: FamilyPose[] = [
+  { x: 0, y: 0, rot: 0, sx: 1, sy: 1, a: 1, row: 0, glow: 0 },
+  { x: 0, y: 0, rot: 0, sx: 1, sy: 1, a: 1, row: 0, glow: 0 },
+  { x: 0, y: 0, rot: 0, sx: 1, sy: 1, a: 1, row: 0, glow: 0 },
+  { x: 0, y: 0, rot: 0, sx: 1, sy: 1, a: 1, row: 0, glow: 0 },
+];
+const easeInOut = (k: number) => k < .5 ? 2 * k * k : 1 - 2 * (1 - k) * (1 - k);
+/** A strike's squash: a fast drop and a bounce back over FAMILY_SQUASH seconds. */
+const FAMILY_SQUASH = .12;
+/** After her last strike she holds this long, then dissolves into motes of her own light. */
+const FAMILY_HOLD = .1;
+function familyPose(n: number, u: number, door: number, out: FamilyPose): FamilyPose {
+  const m = FAMILY_MEMBERS[n];
+  const E = m.enter;
+  const S1 = E + (m.strikes[m.strikes.length - 1] - m.strikes[0]);
+  out.x = 0; out.y = 0; out.rot = 0; out.sx = 1; out.sy = 1; out.a = 1; out.row = 0; out.glow = 0;
+  // Squash on every strike, and the strike cell around it.
+  for (const st of m.strikes) {
+    const v = u - (E + st - m.strikes[0]);
+    if (v > -.05 && v < .14) out.row = 1;
+    if (v >= 0 && v < FAMILY_SQUASH) {
+      const q = Math.sin(v / FAMILY_SQUASH * Math.PI);
+      out.sx = 1 + q * .18;
+      out.sy = 1 - q * .16;
+      out.glow = Math.max(out.glow, q);
+    }
+  }
+  if (n === 0) {
+    // 千樱梨: out of the door in one big forward flip, comes down over them and drums on them from above.
+    if (u < E) {
+      const k = Math.max(0, u) / E;
+      const e = easeInOut(k);
+      out.x = door + 10 + (-26 - door - 10) * e;
+      out.y = 60 * k + 4 * 190 * k * (1 - k);
+      out.rot = -Math.PI * 2 * e;
+    } else {
+      out.x = -26;
+      out.y = 60 + Math.sin(u * 18) * 3 - (out.row ? 18 : 0);
+      out.rot = out.row ? .12 : 0;
+    }
+  } else if (n === 1) {
+    // 蓬咲: peeks round the door frame first (leaning out, not all the way), then bolts.
+    const peek = E * .55;
+    if (u < peek) {
+      const k = easeOut(Math.max(0, u) / peek);
+      out.x = door + 16 * k;
+      out.rot = -.22 * k;
+      out.a = .85;
+    } else if (u < E) {
+      const k = (u - peek) / (E - peek);
+      out.x = door + 16 + (-4 - door - 16) * k * k;
+      out.rot = .18 * k;
+    } else {
+      out.x = -4;
+      out.rot = out.row ? .2 : .05;
+    }
+  } else if (n === 2) {
+    // 宁月: a high hop up over them, a breath at the top, then straight down onto them.
+    const rise = E * .62;
+    if (u < rise) {
+      const k = Math.max(0, u) / rise;
+      out.x = door + (0 - door) * easeOut(k);
+      out.y = 180 * Math.sin(k * Math.PI / 2);
+      out.rot = -.25 * Math.sin(k * Math.PI);
+    } else if (u < E) {
+      const k = (u - rise) / (E - rise);
+      out.x = 0;
+      out.y = 180 - 146 * k * k;
+    } else {
+      out.x = 0;
+      out.y = 34;
+    }
+  } else {
+    // 心玖: steps out of the door, crouches — and is gone. A beat later she stands past them, the cut done.
+    const blink = E * .55;
+    if (u < blink) {
+      out.x = door + 8 * easeOut(Math.max(0, u) / blink);
+      out.a = Math.min(1, u / .06);
+    } else if (u < E) {
+      out.x = 84;
+      out.a = 0;
+    } else {
+      out.x = 84;
+      out.row = u < E + .2 ? 1 : 2;
+    }
+  }
+  // Dissolve: she holds, then lifts into light.
+  const fade = u - (S1 + FAMILY_HOLD);
+  if (fade > 0) {
+    const k = Math.min(1, fade / FAMILY_LINGER);
+    out.a *= 1 - k;
+    out.sx *= 1 + k * .18;
+    out.sy *= 1 + k * .18;
+    out.glow = Math.max(out.glow, k);
+    out.row = 2;
+  }
+  // Coming out of the door: a quick flare as she steps through.
+  if (u < .1) out.glow = Math.max(out.glow, 1 - Math.max(0, u) / .1);
+  return out;
+}
+
+/** 上吧，My Family！: how much of the real art shows through the colour wash — enough to tell who
+ *  she is, still read as a glowing silhouette. 0 is a flat silhouette, 1 the plain art. */
+const FAMILY_SHOW = .35;
+
+/** One member, in her colour with a soft white rim and the art faintly showing through. Falls back
+ *  to a capsule figure until family.png is in the cache. */
+function drawFamilySilhouette(ctx: CanvasRenderingContext2D, im: HTMLImageElement | undefined, n: number, row: number, h: number, color: string, alpha: number, glow = 0): void {
+  if (alpha <= 0) return;
+  if (im?.naturalWidth) {
+    const sheet = keyed(im);
+    const sil = tintedSilhouette(sheet, im.naturalWidth, im.naturalHeight, color);
+    const rim = tintedSilhouette(sheet, im.naturalWidth, im.naturalHeight, '#ffffff');
+    if (!sil || !rim) return;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = phoneRaster() ? 'low' : 'high';
+    const big = h * 1.08;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = Math.min(1, alpha * (.38 + glow * .5));
+    ctx.drawImage(rim, n * CELL, row * CELL, CELL, CELL, -big / 2, -big + h * .03, big, big);
+    if (glow > .05) {
+      const huge = h * (1.08 + glow * .12);
+      ctx.globalAlpha = alpha * glow * .45;
+      ctx.drawImage(sil, n * CELL, row * CELL, CELL, CELL, -huge / 2, -huge + h * .05, huge, huge);
+    }
+    ctx.restore();
+    // The art first, then the same shape in her colour over it: the wash covers all but FAMILY_SHOW.
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(sheet, n * CELL, row * CELL, CELL, CELL, -h / 2, -h, h, h);
+    ctx.globalAlpha = alpha * (1 - FAMILY_SHOW);
+    ctx.drawImage(sil, n * CELL, row * CELL, CELL, CELL, -h / 2, -h, h, h);
+    return;
+  }
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.fillRect(-9, -h * .66, 18, h * .4);
+  ctx.fillRect(-8, -h * .28, 6, h * .28);
+  ctx.fillRect(2, -h * .28, 6, h * .28);
+  ctx.beginPath(); ctx.arc(0, -h * .76, h * .09, 0, Math.PI * 2); ctx.fill();
+}
+
+/** Place one sample of a family member. `q` and `prev` are a 1/60s pair so the stretch follows
+ *  her motion. Trail samples pass glow 0: the bloom is the body's, not the afterimage's. */
+function paintFamilyAt(
+  ctx: CanvasRenderingContext2D, im: HTMLImageElement | undefined, n: number, color: string, h: number, dir: number,
+  ox: number, oy: number, q: FamilyPose, prev: FamilyPose, alphaMul: number, trail: boolean,
+): void {
+  if (q.a * alphaMul <= .01) return;
+  const vx = (q.x - prev.x) * 60, vy = (q.y - prev.y) * 60;
+  const speed = Math.hypot(vx, vy);
+  ctx.save();
+  ctx.translate(ox + dir * q.x, oy - q.y);
+  ctx.scale(dir, 1);
+  ctx.translate(0, -h / 2);
+  if (speed > 80) {
+    const ang = Math.atan2(-vy, vx);
+    const k = Math.min(.3, speed / 2600);
+    ctx.rotate(ang);
+    ctx.scale(1 + k, 1 - k * .55);
+    ctx.rotate(-ang);
+  }
+  ctx.rotate(q.rot);
+  ctx.scale(q.sx, q.sy);
+  ctx.translate(0, h / 2);
+  drawFamilySilhouette(ctx, im, n, q.row, h, color, q.a * alphaMul, trail ? 0 : q.glow);
   ctx.restore();
 }
 
@@ -3446,6 +3629,717 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       const pop = backOut(Math.min(1, t / .12));
       ctx.globalAlpha = Math.min(1, e.life / .2);
       comic(ctx, '嘭！', r * .2, -r * 1.9, (30 + n * 4) * pop, '#ffe14a', -.18);
+      break;
+    }
+    case 'oni-beans': {
+      // 恶鬼退散: 「恶鬼～滚出去！」 — a fistful of roasted beans flung past the palm, bouncing once on the way down.
+      const dir = e.dir ?? 1;
+      const t = e.max - e.life;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = Math.min(1, e.life / .2);
+      for (let i = 0; i < 7; i++) {
+        const vx = dir * (150 + i * 38), vy = -(110 + (i % 3) * 70);
+        const x = vx * t, y = vy * t + 900 * t * t;
+        ctx.save();
+        ctx.translate(x, Math.min(y, 110 - (i % 2) * 8));
+        ctx.rotate(t * (6 + i));
+        ctx.fillStyle = '#e2b25a'; ctx.strokeStyle = '#7a5520'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.ellipse(0, 0, 4.6, 3.8, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#fff0c4';
+        ctx.beginPath(); ctx.arc(-1.2, -1.2, 1.2, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+      if (e.hit && t < .3) comic(ctx, '福！', dir * 34, -30 - t * 40, 22 * backOut(Math.min(1, t / .1)), '#ffcf4a', dir * .2);
+      break;
+    }
+    case 'piggy-sweat': {
+      // 我背你！: the rider, carried off whether they like it or not — a sweat drop and flailing marks.
+      const t = e.max - e.life;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = Math.min(1, e.life / .15);
+      const flip = Math.floor(t * 12) % 2 ? 1 : -1;
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+      for (let i = 0; i < 3; i++) {
+        const y = 34 + i * 16;
+        ctx.beginPath(); ctx.moveTo(flip * (34 + i * 3), y); ctx.lineTo(flip * (48 + i * 5), y - 6); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-flip * (30 + i * 3), y + 6); ctx.lineTo(-flip * (44 + i * 5), y); ctx.stroke();
+      }
+      ctx.fillStyle = e.color;
+      const dy = (t * 40) % 18;
+      ctx.beginPath(); ctx.moveTo(22, -2 + dy); ctx.quadraticCurveTo(29, 9 + dy, 22, 12 + dy); ctx.quadraticCurveTo(15, 9 + dy, 22, -2 + dy); ctx.fill();
+      break;
+    }
+    case 'piggy-toss': {
+      // 我背你！: set down hard — dust thrown both ways and a flat star of impact lines.
+      const q = easeOut(p);
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = 1 - p;
+      ctx.fillStyle = '#e9dcc4';
+      for (let i = 0; i < 6; i++) {
+        const side = i % 2 ? 1 : -1;
+        const k = Math.floor(i / 2);
+        ctx.beginPath(); ctx.ellipse(side * (18 + q * (30 + k * 22)), -8 - k * 6 - q * 10, 10 + k * 3, 7 + k * 2, 0, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.strokeStyle = '#fff6e0'; ctx.lineWidth = 3 * (1 - p) + 1; ctx.lineCap = 'round';
+      for (let i = 0; i < 7; i++) {
+        const a0 = Math.PI + (i / 6) * Math.PI;
+        ctx.beginPath(); ctx.moveTo(Math.cos(a0) * r * .3, Math.sin(a0) * r * .3 - 20); ctx.lineTo(Math.cos(a0) * r * (.5 + q * .5), Math.sin(a0) * r * (.5 + q * .5) - 20); ctx.stroke();
+      }
+      break;
+    }
+    case 'hug-heart': {
+      // 爱之拥抱: one heart per squeeze, each bigger than the last; the last one bursts into a ring of little ones.
+      const n = e.n ?? 0;
+      const t = e.max - e.life;
+      const size = 9 + n * 5;
+      ctx.translate(e.x, e.y - p * 26);
+      if (!e.hit || t < .14) {
+        const k = backOut(Math.min(1, t / .12));
+        ctx.globalAlpha = Math.min(1, e.life / .2);
+        ctx.save(); ctx.scale(k, k);
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
+        heartPath(ctx, size); ctx.stroke();
+        ctx.fillStyle = e.color; heartPath(ctx, size); ctx.fill();
+        ctx.fillStyle = '#ffe0ea'; ctx.beginPath(); ctx.arc(-size * .4, -size * .45, size * .18, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+        break;
+      }
+      const k = easeOut((t - .14) / Math.max(.01, e.max - .14));
+      ctx.globalAlpha = 1 - k;
+      for (let i = 0; i < 9; i++) {
+        const a0 = i * Math.PI * 2 / 9 - Math.PI / 2;
+        ctx.save();
+        ctx.translate(Math.cos(a0) * (14 + k * 62), Math.sin(a0) * (14 + k * 62));
+        ctx.rotate(a0 + Math.PI / 2);
+        ctx.fillStyle = i % 2 ? '#ff8fb8' : e.color;
+        heartPath(ctx, 7 + (i % 3)); ctx.fill();
+        ctx.restore();
+      }
+      break;
+    }
+    case 'hug-squeeze': {
+      // 爱之拥抱: the squeeze — two pink brackets clamp in round the pair, tighter on every beat.
+      const n = e.n ?? 0;
+      const q = easeOut(p);
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = (1 - p) * .9;
+      ctx.strokeStyle = e.color; ctx.lineWidth = 3 + n; ctx.lineCap = 'round';
+      const w = r * (1.4 - q * .45);
+      for (const side of [-1, 1]) {
+        ctx.beginPath(); ctx.arc(-side * w * .2, 0, w, side > 0 ? -.55 : Math.PI - .55, side > 0 ? .55 : Math.PI + .55); ctx.stroke();
+        for (let i = -1; i <= 1; i++) {
+          ctx.beginPath(); ctx.moveTo(side * (w + 14), i * 14); ctx.lineTo(side * (w + 4 - q * 6), i * 12); ctx.stroke();
+        }
+      }
+      break;
+    }
+    case 'hug-soul': {
+      // 爱之拥抱: hugged too hard — a little white soul slips out of the top of their head and wobbles up.
+      const t = e.max - e.life;
+      ctx.translate(e.x + Math.sin(t * 9) * 6, e.y - t * 46);
+      ctx.globalAlpha = Math.min(1, e.life / .3) * .92;
+      const k = backOut(Math.min(1, t / .15));
+      ctx.scale(k, k);
+      ctx.fillStyle = e.color; ctx.strokeStyle = '#9aa6c8'; ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(-11, 2);
+      ctx.bezierCurveTo(-11, -16, 11, -16, 11, 2);
+      ctx.quadraticCurveTo(10, 12, 2, 16);
+      ctx.quadraticCurveTo(-1, 22, 6, 28);
+      ctx.quadraticCurveTo(-8, 24, -9, 12);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#4a5270';
+      ctx.fillRect(-6, -4, 3, 2); ctx.fillRect(3, -4, 3, 2);
+      ctx.beginPath(); ctx.arc(0, 3, 2.2, 0, Math.PI); ctx.fill();
+      break;
+    }
+    case 'meal-bowl': {
+      // 我开动了！: after the palms, a heaped bowl of white rice comes up to her mouth and goes down in three
+      // big mouthfuls, the chopsticks working, steam off the top.
+      const dir = e.dir ?? 1;
+      const local = (e.max - e.life) - (e.t0 ?? 0);
+      if (local < 0) break;
+      const span = Math.max(.1, e.max - (e.t0 ?? 0) - .12);
+      const eaten = Math.min(3, Math.floor(local / span * 3));
+      ctx.translate(e.x, e.y);
+      ctx.scale(dir, 1);
+      ctx.globalAlpha = Math.min(1, local / .06, e.life / .1);
+      // Steam.
+      ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+      for (let i = 0; i < 3; i++) {
+        const phase = (local * 1.6 + i * .33) % 1;
+        ctx.globalAlpha = Math.min(1, local / .06, e.life / .1) * (1 - phase) * .8;
+        const x0 = -8 + i * 8;
+        ctx.beginPath(); ctx.moveTo(x0, -16 - phase * 30);
+        ctx.quadraticCurveTo(x0 + 5, -22 - phase * 30, x0, -28 - phase * 30); ctx.stroke();
+      }
+      ctx.globalAlpha = Math.min(1, local / .06, e.life / .1);
+      // The rice: 「我大方地煮了五碗米！」 — a mountain taller than her head, one tier gone per mouthful.
+      const heap = MEAL_HEAP[eaten];
+      const wide = 16 + heap * .12;
+      ctx.fillStyle = '#fffdf6'; ctx.strokeStyle = '#cfc6b0'; ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(-wide, -2);
+      for (let i = 0; i <= 10; i++) {
+        const u = i / 10;
+        const x = -wide + u * wide * 2;
+        const y = -2 - Math.sin(u * Math.PI) * heap - Math.sin(u * Math.PI * 7) * 1.6;
+        ctx.lineTo(x, y);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#e9e1cc';
+      for (let i = 0; i < 9; i++) {
+        const u = .12 + (i * .37) % .76;
+        const x = -wide + u * wide * 2;
+        const y = -2 - Math.sin(u * Math.PI) * heap * ((i * .53) % .8 + .1);
+        ctx.beginPath(); ctx.ellipse(x, y, 2.2, 1.2, i, 0, Math.PI * 2); ctx.fill();
+      }
+      // The bowl.
+      ctx.fillStyle = '#c4473a'; ctx.strokeStyle = '#3a1612'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(-17, -2); ctx.quadraticCurveTo(-15, 14, 0, 15); ctx.quadraticCurveTo(15, 14, 17, -2); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#f2d9a0'; ctx.fillRect(-6, 13, 12, 3);
+      // Chopsticks, scooping on every mouthful.
+      const scoop = Math.sin((local / span * 3) * Math.PI * 2) * .25;
+      ctx.save();
+      ctx.translate(10, -6);
+      ctx.rotate(-.9 + scoop);
+      ctx.strokeStyle = '#7a4a22'; ctx.lineWidth = 2.4;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -30); ctx.moveTo(4, 1); ctx.lineTo(5, -29); ctx.stroke();
+      ctx.restore();
+      break;
+    }
+    case 'piggy-siren': {
+      // 我背你！ (band story 1, 「必须马上去医院！」): a little emergency light on her head for the whole run,
+      // red and white turning, with the 嘀嘟 popping out on each side in turn.
+      const t = e.max - e.life;
+      const k = backOut(Math.min(1, t / .1));
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = Math.min(1, e.life / .1);
+      ctx.scale(k, k);
+      const spin = t * 14;
+      // Beams: two soft wedges sweeping round.
+      for (let i = 0; i < 2; i++) {
+        const ang = spin + i * Math.PI;
+        const front = Math.cos(ang);
+        ctx.save();
+        ctx.globalAlpha *= .22 + Math.max(0, front) * .3;
+        ctx.fillStyle = i ? '#ffffff' : e.color;
+        ctx.beginPath(); ctx.moveTo(0, -10);
+        ctx.lineTo(Math.sin(ang) * 70 - 14, -10 - 18); ctx.lineTo(Math.sin(ang) * 70 + 14, -10 + 18); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+      ctx.fillStyle = '#3a3a44'; ctx.strokeStyle = '#151222'; ctx.lineWidth = 2;
+      ctx.fillRect(-11, -2, 22, 6); ctx.strokeRect(-11, -2, 22, 6);
+      const red = Math.floor(t * 8) % 2 === 0;
+      ctx.fillStyle = red ? e.color : '#ffd4d4';
+      ctx.beginPath(); ctx.arc(0, -2, 9, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,.75)';
+      ctx.beginPath(); ctx.ellipse(-3, -6, 2.4, 1.4, -.5, 0, Math.PI * 2); ctx.fill();
+      const side = Math.floor(t * 4) % 2 ? 1 : -1;
+      comic(ctx, Math.floor(t * 4) % 2 ? '嘟' : '嘀', side * 30, -18, 15, '#ff6a6a', side * .2);
+      break;
+    }
+    case 'piggy-heart': {
+      // 我背你！ (蓬咲: 「心脏都要被吓得蹦出来了！」): the rider's heart thumps out of their chest, each beat
+      // quicker than the last.
+      const t = e.max - e.life;
+      const dir = e.dir ?? 1;
+      // Beat phase: the period shrinks from .34s to .12s over the run.
+      const period = .34 - .22 * Math.min(1, t / Math.max(.1, e.max));
+      const beat = (t % period) / period;
+      const pump = beat < .25 ? Math.sin(beat / .25 * Math.PI) : 0;
+      ctx.translate(e.x + dir * pump * 6, e.y);
+      ctx.globalAlpha = Math.min(1, t / .08, e.life / .12);
+      const size = 9 + pump * 5;
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5;
+      heartPath(ctx, size); ctx.stroke();
+      ctx.fillStyle = e.color; heartPath(ctx, size); ctx.fill();
+      if (pump > .2) {
+        ctx.strokeStyle = '#ffd0dc'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+        for (const sgn of [-1, 1]) {
+          ctx.beginPath(); ctx.arc(0, 0, size + 6 + pump * 4, sgn > 0 ? -.6 : Math.PI - .6, sgn > 0 ? .6 : Math.PI + .6); ctx.stroke();
+        }
+      }
+      break;
+    }
+    case 'meal-cooker': {
+      // 我开动了！: the rice cooker pops up beside her — 叮♪, the lid flips up, steam. One time in ten it
+      // blows instead (家团最能炸的就是电饭锅): a black puff, the lid flying, the pot left scorched.
+      const t = e.max - e.life;
+      const dir = e.dir ?? 1;
+      const boom = !!e.hit;
+      const pop = backOut(Math.min(1, t / .1));
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = Math.min(1, e.life / .15);
+      ctx.save();
+      ctx.scale(dir * pop, pop);
+      const burnt = boom && t > .1;
+      // Body.
+      ctx.fillStyle = burnt ? '#5a524c' : e.color; ctx.strokeStyle = '#151222'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(-22, 0); ctx.lineTo(-24, -26); ctx.quadraticCurveTo(0, -32, 24, -26); ctx.lineTo(22, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = burnt ? '#3a3430' : '#c9c3b6'; ctx.fillRect(-23, -16, 46, 5);
+      ctx.fillStyle = burnt ? '#222' : '#ff9a3c'; ctx.beginPath(); ctx.arc(14, -8, 2.6, 0, Math.PI * 2); ctx.fill();
+      // Lid: flips open on the ding, or flies off on the boom.
+      const open = boom ? 0 : Math.min(1, Math.max(0, (t - .05) / .1));
+      ctx.save();
+      if (boom && t > .1) {
+        const u = t - .1;
+        ctx.translate(-30 * u * 6, -26 - 260 * u + 600 * u * u);
+        ctx.rotate(-u * 14);
+        ctx.translate(0, 26);
+      } else {
+        ctx.translate(-22, -26);
+        ctx.rotate(-open * 1.2);
+        ctx.translate(22, 26);
+      }
+      ctx.fillStyle = burnt ? '#4a423c' : e.color;
+      ctx.beginPath(); ctx.moveTo(-24, -26); ctx.quadraticCurveTo(0, -42, 24, -26); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#7a756c'; ctx.fillRect(-4, -38, 8, 4);
+      ctx.restore();
+      ctx.restore();
+      if (!boom) {
+        // Steam out of the open pot.
+        ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+        for (let i = 0; i < 3; i++) {
+          const ph = ((t - .08) * 1.4 + i * .3) % 1;
+          if (t < .08) break;
+          ctx.globalAlpha = Math.min(1, e.life / .15) * (1 - ph) * .85;
+          const x0 = (i - 1) * 9;
+          ctx.beginPath(); ctx.moveTo(x0, -34 - ph * 40); ctx.quadraticCurveTo(x0 + 6, -42 - ph * 40, x0, -50 - ph * 40); ctx.stroke();
+        }
+      } else if (t > .08) {
+        // The blast: grey-black puffs rolling up and out.
+        const u = Math.min(1, (t - .08) / .45);
+        for (let i = 0; i < 7; i++) {
+          const a0 = -Math.PI / 2 + (i - 3) * .45;
+          const d = 14 + easeOut(u) * (30 + (i % 3) * 12);
+          ctx.globalAlpha = Math.min(1, e.life / .15) * (1 - u) * .85;
+          ctx.fillStyle = i % 2 ? '#3a3633' : '#6b6560';
+          ctx.beginPath(); ctx.arc(Math.cos(a0) * d, -24 + Math.sin(a0) * d, 9 + u * 10, 0, Math.PI * 2); ctx.fill();
+        }
+        if (u < .3) {
+          ctx.globalAlpha = (1 - u / .3) * .9;
+          ctx.fillStyle = '#ffd25a';
+          jag(ctx, 30, 14, 9); ctx.fill();
+        }
+      }
+      break;
+    }
+    case 'meal-soot': {
+      // 我开动了！ after the blow-up: soot on her face and a curl of smoke off her hair. She eats anyway.
+      const t = e.max - e.life;
+      const dir = e.dir ?? 1;
+      ctx.translate(e.x, e.y);
+      ctx.scale(dir, 1);
+      ctx.globalAlpha = Math.min(1, t / .1, e.life / .4) * .8;
+      ctx.fillStyle = e.color;
+      ctx.beginPath(); ctx.ellipse(2, 4, 6, 3.4, .3, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(-8, -2, 4, 2.6, -.2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(8, -8, 3, 2, .5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(120,114,108,.8)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+      const ph = (t * .9) % 1;
+      ctx.globalAlpha *= 1 - ph;
+      ctx.beginPath(); ctx.moveTo(-6, -30 - ph * 26); ctx.quadraticCurveTo(0, -36 - ph * 26, -6, -42 - ph * 26); ctx.quadraticCurveTo(-12, -48 - ph * 26, -6, -54 - ph * 26); ctx.stroke();
+      break;
+    }
+    case 'meal-grain': {
+      // 我开动了！: one grain of rice left stuck at the corner of her mouth.
+      const t = e.max - e.life;
+      ctx.translate(e.x, e.y + Math.sin(t * 5) * 1);
+      ctx.globalAlpha = Math.min(1, t / .08, e.life / .3);
+      ctx.fillStyle = e.color; ctx.strokeStyle = '#b8ad94'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.ellipse(0, 0, 3.2, 1.9, .5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      break;
+    }
+    case 'meal-timer': {
+      // 我开动了！: a little bowl over her head; the rice in it goes down with the buff's clock, and the bowl
+      // blinks through the last second.
+      const k = e.life / e.max;
+      const blink = e.life < 1 && Math.floor(e.life * 8) % 2 === 0;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = Math.min(1, (e.max - e.life) / .15) * (blink ? .35 : .95);
+      const heap = 2 + k * 9;
+      ctx.fillStyle = '#fffdf6'; ctx.strokeStyle = '#cfc6b0'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.ellipse(0, -1, 9.5, heap, 0, Math.PI, 0); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#c4473a'; ctx.strokeStyle = '#151222'; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(-11, -1); ctx.quadraticCurveTo(-9, 9, 0, 10); ctx.quadraticCurveTo(9, 9, 11, -1); ctx.closePath(); ctx.fill(); ctx.stroke();
+      break;
+    }
+    case 'meal-steam': {
+      // 我开动了！: full and fired up — a little warm puff rises off her now and then while the buff holds.
+      ctx.translate(e.x, e.y - p * 34);
+      ctx.globalAlpha = (1 - p) * .7;
+      ctx.strokeStyle = e.color; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+      for (let i = 0; i < 2; i++) {
+        const x0 = (i ? 7 : -7);
+        ctx.beginPath(); ctx.moveTo(x0, 0); ctx.quadraticCurveTo(x0 + 6, -6, x0, -12); ctx.quadraticCurveTo(x0 - 6, -18, x0, -24); ctx.stroke();
+      }
+      break;
+    }
+    case 'meal-done': {
+      // 我开动了！: the last mouthful — a warm orange ring and a scatter of grains.
+      const q = easeOut(p);
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = 1 - p;
+      ctx.lineWidth = 6 * (1 - p) + 1;
+      ctx.beginPath(); ctx.ellipse(0, 0, r * (.4 + q * .8), r * (.3 + q * .5), 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#fffdf6';
+      for (let i = 0; i < 10; i++) {
+        const a0 = i * Math.PI * 2 / 10;
+        ctx.save(); ctx.translate(Math.cos(a0) * r * q, Math.sin(a0) * r * q * .7); ctx.rotate(a0);
+        ctx.beginPath(); ctx.ellipse(0, 0, 3.4, 2, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      }
+      break;
+    }
+    case 'family-member': {
+      // 上吧，My Family！: one of the four, coming out of the door of light behind 蕾叶 on her own move —
+      // 千樱梨 flips over, 蓬咲 peeks then bolts, 宁月 hops high and drops, 心玖 blinks through. Sized to her
+      // real height, washed in her colour with the art faintly through, stretched along her motion with a
+      // short trail of afterimages, squashed on every strike, then lifting away as motes of light.
+      const n = e.n ?? 0;
+      const m = FAMILY_MEMBERS[n];
+      const dir = e.dir ?? 1;
+      const local = (e.max - e.life) - (e.t0 ?? 0);
+      if (!m || local < 0) break;
+      const door = -(e.radius ?? 140);
+      const h = 179 * m.cm / RAIKA_CM;
+      const im = images?.get(FAMILY_SRC);
+      const S1 = m.enter + (m.strikes[m.strikes.length - 1] - m.strikes[0]);
+      // Afterimages while she is moving fast. The body pose is kept and painted once below;
+      // lite keeps only the freshest ghost, the same cut the fighter trails already make.
+      const now = familyPose(n, local, door, FAMILY_POSE[0]);
+      const before = familyPose(n, local - 1 / 60, door, FAMILY_POSE[1]);
+      const moving = Math.hypot(now.x - before.x, now.y - before.y) * 60 > 300;
+      if (moving) for (let k = liteFx ? 1 : 3; k >= 1; k--) {
+        const u = local - k * .028;
+        paintFamilyAt(ctx, im, n, m.color, h, dir, e.x, e.y, familyPose(n, u, door, FAMILY_POSE[2]), familyPose(n, u - 1 / 60, door, FAMILY_POSE[3]), .32 / k, true);
+      }
+      // 心玖's blink: the streak of the cut, from where she vanished to where she stands.
+      if (n === 3 && local >= m.enter * .55 && local < m.enter + .18) {
+        const k = Math.min(1, (local - m.enter * .55) / .05);
+        const fade = local < m.enter ? 1 : 1 - (local - m.enter) / .18;
+        ctx.save();
+        ctx.globalAlpha = fade;
+        ctx.strokeStyle = m.color; ctx.lineWidth = 7; ctx.lineCap = 'round';
+        const y0 = e.y - h * .55;
+        const x0 = e.x + dir * (door + 8), x1 = e.x + dir * (door + 8 + (84 - door - 8) * k);
+        ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y0); ctx.stroke();
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y0); ctx.stroke();
+        ctx.restore();
+      }
+      // The glow on the floor under her, weaker the higher she is.
+      ctx.save();
+      ctx.globalAlpha = now.a * .45 * Math.max(0, 1 - now.y / 180);
+      ctx.fillStyle = m.color;
+      ctx.beginPath(); ctx.ellipse(e.x + dir * now.x, e.y, 34, 9, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      paintFamilyAt(ctx, im, n, m.color, h, dir, e.x, e.y, now, before, 1, false);
+      // Dissolving: motes of her colour drift up off where she stood.
+      const fadeT = local - (S1 + FAMILY_HOLD);
+      if (fadeT > 0) {
+        const k = Math.min(1, fadeT / FAMILY_LINGER);
+        ctx.save();
+        for (let i = 0; i < 12; i++) {
+          const px = e.x + dir * (now.x + ((i * 37) % 44) - 22) + Math.sin(fadeT * 7 + i) * 4;
+          const py = e.y - now.y - h * (.15 + ((i * .17) % .75)) - fadeT * (70 + (i % 3) * 30);
+          ctx.globalAlpha = (1 - k) * .9;
+          ctx.fillStyle = i % 3 === 0 ? '#ffffff' : m.color;
+          const r0 = 2.6 - (i % 3) * .5;
+          ctx.fillRect(px - r0, py - r0, r0 * 2, r0 * 2);
+        }
+        ctx.restore();
+      }
+      break;
+    }
+    case 'family-hit': {
+      // 上吧，My Family！: every blow lands under a burst of manga focus lines and a ring in her colour, on
+      // top of her own signature — 千樱梨 a drum head that booms, 蓬咲 a bass wave rolling out along the
+      // floor, 宁月 a whole row of keys slammed down from above, 心玖 one clean cut that splits a beat later.
+      const n = e.n ?? 0;
+      const dir = e.dir ?? 1;
+      const t = e.max - e.life;
+      const q = easeOut(p);
+      ctx.translate(e.x, e.y);
+      // Common: the white core and the focus lines.
+      if (t < .07) {
+        ctx.globalAlpha = 1 - t / .07;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(0, 0, 26 + t * 300, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = Math.max(0, 1 - p * 1.6);
+      for (let i = 0; i < 20; i++) {
+        const a0 = i * Math.PI * 2 / 20 + (i % 2) * .08;
+        const r0 = r * (1.1 + (i % 3) * .2 + q * .5), r1 = r0 + r * (.9 + (i % 4) * .25);
+        ctx.strokeStyle = i % 3 ? '#ffffff' : e.color; ctx.lineWidth = i % 2 ? 2 : 3.5;
+        ctx.beginPath(); ctx.moveTo(Math.cos(a0) * r0, Math.sin(a0) * r0); ctx.lineTo(Math.cos(a0) * r1, Math.sin(a0) * r1); ctx.stroke();
+      }
+      ctx.globalAlpha = 1 - p;
+      ctx.strokeStyle = e.color; ctx.lineWidth = 6 * (1 - p) + 1;
+      ctx.beginPath(); ctx.arc(0, 0, r * (.5 + q * 1.4), 0, Math.PI * 2); ctx.stroke();
+      if (n === 0) {
+        // The drum head: a skin with its tension rods, booming out twice.
+        for (let ring = 0; ring < 2; ring++) {
+          const k = Math.max(0, q - ring * .25);
+          ctx.globalAlpha = (1 - p) * (ring ? .6 : .9);
+          ctx.strokeStyle = '#ffd6ea'; ctx.lineWidth = 4 - ring * 2;
+          ctx.beginPath(); ctx.ellipse(0, 0, r * (.9 + k * .9), r * (.9 + k * .9) * .92, 0, 0, Math.PI * 2); ctx.stroke();
+        }
+        ctx.globalAlpha = 1 - p;
+        ctx.strokeStyle = e.color; ctx.lineWidth = 3;
+        for (let i = 0; i < 8; i++) {
+          const a0 = i * Math.PI / 4;
+          const rr = r * (.9 + q * .9);
+          ctx.beginPath(); ctx.moveTo(Math.cos(a0) * rr, Math.sin(a0) * rr * .92); ctx.lineTo(Math.cos(a0) * (rr + 10), Math.sin(a0) * (rr + 10) * .92); ctx.stroke();
+        }
+        comic(ctx, '咚！', dir * 34, -60, 30 * backOut(Math.min(1, t / .1)), e.color, dir * .18);
+      } else if (n === 1) {
+        // The bass: a low wave racing out both ways along the floor, and the ground cracking under them.
+        ctx.translate(0, 92);
+        ctx.globalAlpha = 1 - p;
+        ctx.strokeStyle = e.color; ctx.lineWidth = 4;
+        const reach = 60 + q * 280;
+        for (const side of [-1, 1]) {
+          ctx.beginPath();
+          for (let x = 0; x <= reach; x += 6) {
+            const amp = 18 * (1 - x / (reach + 1)) * (1 - p);
+            const y = -Math.abs(Math.sin(x * .07 - t * 40)) * amp;
+            if (x === 0) ctx.moveTo(side * x, y); else ctx.lineTo(side * x, y);
+          }
+          ctx.stroke();
+        }
+        ctx.strokeStyle = '#1d3a3a'; ctx.lineWidth = 2.5;
+        for (let i = 0; i < 5; i++) {
+          const a0 = Math.PI + .3 + i * .6;
+          const len = (30 + (i % 2) * 22) * Math.min(1, t / .08);
+          ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a0) * len, Math.sin(a0) * len * .25 + 2); ctx.stroke();
+        }
+        comic(ctx, '嗡！', -dir * 40, -128, 26 * backOut(Math.min(1, t / .1)), e.color, -dir * .15);
+      } else if (n === 2) {
+        // The keys: a full octave slammed down from above, notes bursting off the impact.
+        const drop = Math.min(1, t / .1);
+        for (let i = 0; i < 7; i++) {
+          const x = (i - 3) * 22;
+          const y = -240 + drop * 196;
+          ctx.globalAlpha = 1 - Math.max(0, p - .3) / .7;
+          ctx.fillStyle = '#ffffff'; ctx.strokeStyle = e.color; ctx.lineWidth = 2;
+          ctx.fillRect(x - 10, y - 70, 20, 76); ctx.strokeRect(x - 10, y - 70, 20, 76);
+          if (i < 6 && i !== 2) { ctx.fillStyle = '#2a2440'; ctx.fillRect(x + 4, y - 70, 12, 44); }
+        }
+        if (t > .1) {
+          const k = (t - .1) / Math.max(.01, e.max - .1);
+          ctx.fillStyle = e.color;
+          for (let i = 0; i < 6; i++) {
+            const a0 = -Math.PI / 2 + (i - 2.5) * .45;
+            const d = 20 + easeOut(k) * 90;
+            ctx.globalAlpha = 1 - k;
+            note(ctx, Math.cos(a0) * d, -30 + Math.sin(a0) * d, i % 2 ? '#ffffff' : e.color);
+          }
+        }
+      } else {
+        // The cut: a thin line first; a beat later it splits open into a bright band and shards.
+        ctx.scale(dir, 1);
+        ctx.rotate(-.42);
+        const len = r * 5;
+        if (t < .12) {
+          ctx.globalAlpha = 1;
+          ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(-len / 2, 0); ctx.lineTo(len / 2, 0); ctx.stroke();
+        } else {
+          const k = (t - .12) / Math.max(.01, e.max - .12);
+          ctx.globalAlpha = 1 - k;
+          ctx.fillStyle = e.color;
+          const w = 16 * (1 - k) + 2;
+          ctx.fillRect(-len / 2, -w / 2, len, w);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(-len / 2, -1.5, len, 3);
+          for (let i = 0; i < 8; i++) {
+            const sx = (i - 3.5) * 22;
+            const side = i % 2 ? 1 : -1;
+            ctx.save();
+            ctx.translate(sx, side * (8 + easeOut(k) * 40));
+            ctx.rotate(i);
+            ctx.fillStyle = i % 3 ? '#e6fbff' : e.color;
+            ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(4, 4); ctx.lineTo(-4, 4); ctx.closePath(); ctx.fill();
+            ctx.restore();
+          }
+        }
+      }
+      break;
+    }
+    case 'family-finale': {
+      // 上吧，My Family！: 蕾叶's own strum — a huge orange crescent, focus lines, and five rays in the five
+      // colours driving into the point.
+      const dir = e.dir ?? 1;
+      const t = e.max - e.life;
+      const q = easeOut(p);
+      ctx.translate(e.x, e.y);
+      ctx.scale(dir, 1);
+      if (t < .08) {
+        ctx.globalAlpha = 1 - t / .08;
+        ctx.fillStyle = '#fff4e0';
+        ctx.beginPath(); ctx.arc(0, 0, 40 + t * 600, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1 - p;
+      const cols = [e.color, ...FAMILY_MEMBERS.map(m => m.color)];
+      ctx.lineCap = 'round';
+      cols.forEach((c, i) => {
+        const a0 = Math.PI - .9 + i * .45;
+        const rr = r * (2.2 - q * 1.4);
+        ctx.strokeStyle = c; ctx.lineWidth = 9 * (1 - p) + 2;
+        ctx.beginPath(); ctx.moveTo(Math.cos(a0) * rr, Math.sin(a0) * rr); ctx.lineTo(Math.cos(a0) * (rr + 90), Math.sin(a0) * (rr + 90)); ctx.stroke();
+      });
+      for (let i = 0; i < 24; i++) {
+        const a0 = i * Math.PI * 2 / 24;
+        const r0 = r * (.9 + q * .6), r1 = r0 + r * (.8 + (i % 3) * .3);
+        ctx.strokeStyle = i % 2 ? '#ffffff' : e.color; ctx.lineWidth = i % 2 ? 2 : 4;
+        ctx.beginPath(); ctx.moveTo(Math.cos(a0) * r0, Math.sin(a0) * r0); ctx.lineTo(Math.cos(a0) * r1, Math.sin(a0) * r1); ctx.stroke();
+      }
+      ctx.strokeStyle = e.color; ctx.lineWidth = 22 * (1 - p) + 4;
+      ctx.beginPath(); ctx.arc(-30, 10, r * (.8 + q * .35), -1.5, 1); ctx.stroke();
+      ctx.strokeStyle = '#fff4e0'; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(-30, 10, r * (.8 + q * .35), -1.5, 1); ctx.stroke();
+      ctx.strokeStyle = e.color; ctx.lineWidth = 5 * (1 - p) + 1;
+      ctx.beginPath(); ctx.arc(0, 0, r * (.6 + q * 1.8), 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
+    case 'family-dim': {
+      // 上吧，My Family！: the house lights go down while the family is out — a dark wash, darkest at the
+      // edges, so the light of the door and their glow carry. Screen space, behind every body.
+      const t = e.max - e.life;
+      const fade = Math.min(1, t / .15) * Math.min(1, e.life / .3);
+      ctx.globalAlpha = fade;
+      ctx.fillStyle = 'rgba(11,8,20,.38)';
+      ctx.fillRect(0, 0, W, H);
+      const g0 = ctx.createRadialGradient(W / 2, H * .6, H * .3, W / 2, H * .6, W * .7);
+      g0.addColorStop(0, 'rgba(11,8,20,0)');
+      g0.addColorStop(1, 'rgba(11,8,20,.5)');
+      ctx.fillStyle = g0;
+      ctx.fillRect(0, 0, W, H);
+      break;
+    }
+    case 'family-door': {
+      // 上吧，My Family！: their Home — a door of warm light under a little house roof swings open behind
+      // her, light spilling across the floor toward them. It flares each time one of them steps through,
+      // and swings shut after the last.
+      const dir = e.dir ?? 1;
+      const t = e.max - e.life;
+      const open = Math.min(1, t / .18) * Math.min(1, e.life / .25);
+      const W0 = 66, H0 = 150;
+      let flare = 0;
+      for (const m of FAMILY_MEMBERS) {
+        const v = (t - (m.strikes[0] - m.enter)) / .07;
+        flare = Math.max(flare, Math.exp(-v * v));
+      }
+      ctx.translate(e.x, e.y);
+      // Light on the floor, thrown forward.
+      ctx.globalAlpha = open * (.28 + flare * .2);
+      ctx.fillStyle = '#ffd9a0';
+      ctx.beginPath();
+      ctx.moveTo(-W0 / 2, 0); ctx.lineTo(W0 / 2, 0);
+      ctx.lineTo(dir * 260 + W0, 14); ctx.lineTo(dir * 260 - W0 * 1.6, 14); ctx.closePath(); ctx.fill();
+      // Rays out of the doorway.
+      for (let i = 0; i < 6; i++) {
+        const a0 = -Math.PI / 2 + (i - 2.5) * .32 + Math.sin(t * 2 + i) * .04;
+        ctx.globalAlpha = open * (.12 + flare * .2);
+        ctx.fillStyle = '#fff1cf';
+        ctx.beginPath(); ctx.moveTo(-6, -H0 * .6); ctx.lineTo(6, -H0 * .6);
+        ctx.lineTo(Math.cos(a0) * 320 + 18, -H0 * .6 + Math.sin(a0) * 320); ctx.lineTo(Math.cos(a0) * 320 - 18, -H0 * .6 + Math.sin(a0) * 320); ctx.closePath(); ctx.fill();
+      }
+      // The doorway: bright inside, brightest in the middle.
+      ctx.globalAlpha = open;
+      ctx.fillStyle = '#ffc978';
+      ctx.fillRect(-W0 / 2, -H0, W0, H0);
+      ctx.fillStyle = '#fff6e2';
+      ctx.globalAlpha = open * (.7 + flare * .3);
+      ctx.fillRect(-W0 / 2 + 8, -H0 + 10, W0 - 16, H0 - 10);
+      // Two panels swinging open (narrowing toward the frame).
+      const pw = W0 / 2 * (1 - open);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#5a3a24'; ctx.strokeStyle = '#2a1810'; ctx.lineWidth = 2;
+      if (pw > .5) {
+        ctx.fillRect(-W0 / 2, -H0, pw, H0); ctx.strokeRect(-W0 / 2, -H0, pw, H0);
+        ctx.fillRect(W0 / 2 - pw, -H0, pw, H0); ctx.strokeRect(W0 / 2 - pw, -H0, pw, H0);
+      }
+      // Frame and roof: a house, drawn in her colour.
+      ctx.globalAlpha = Math.min(1, t / .12) * Math.min(1, e.life / .25);
+      ctx.strokeStyle = e.color; ctx.lineWidth = 5; ctx.lineJoin = 'round';
+      ctx.strokeRect(-W0 / 2 - 4, -H0 - 4, W0 + 8, H0 + 4);
+      ctx.beginPath(); ctx.moveTo(-W0 / 2 - 22, -H0 - 4); ctx.lineTo(0, -H0 - 46); ctx.lineTo(W0 / 2 + 22, -H0 - 4); ctx.stroke();
+      if (flare > .05) {
+        // The step through: the doorway itself flashes white, with a thin halo round the frame.
+        ctx.globalAlpha = flare * .55;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(-W0 / 2, -H0, W0, H0);
+        ctx.globalAlpha = flare * .35;
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
+        ctx.strokeRect(-W0 / 2 - 10 - flare * 6, -H0 - 10 - flare * 6, W0 + 20 + flare * 12, H0 + 10 + flare * 6);
+      }
+      break;
+    }
+    case 'family-photo': {
+      // 上吧，My Family！ the finale: a camera flash, 咔嚓, and a family photo snaps round the five of them —
+      // 蕾叶 in front, the four behind her — a white frame with the band's name on the caption strip.
+      const dir = e.dir ?? 1;
+      const t = e.max - e.life;
+      const pop = backOut(Math.min(1, t / .14));
+      const fade = Math.min(1, e.life / .3);
+      const cx = e.x - dir * 98, cy = e.y - 124;
+      const fw = 370, fh = 236;
+      ctx.translate(cx, cy);
+      ctx.rotate(-dir * .045);
+      ctx.scale(1.25 - .25 * pop, 1.25 - .25 * pop);
+      ctx.globalAlpha = fade * Math.min(1, t / .06);
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 12; ctx.lineJoin = 'miter';
+      ctx.strokeRect(-fw / 2, -fh / 2, fw, fh);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(-fw / 2 - 6, fh / 2 - 2, fw + 12, 38);
+      ctx.fillStyle = '#2a1a10';
+      ctx.font = `900 20px ${UI_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('一家Dumb Rock!', 0, fh / 2 + 17);
+      // The flash inside the frame, gone in an instant.
+      if (t < .14) {
+        ctx.globalAlpha = (1 - t / .14) * .85 * fade;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(-fw / 2, -fh / 2, fw, fh);
+      }
+      ctx.globalAlpha = fade;
+      comic(ctx, '咔嚓！', fw / 2 - 30, -fh / 2 - 6, 24 * backOut(Math.min(1, t / .1)), '#ffffff', dir * .12);
+      break;
+    }
+    case 'family-zone': {
+      // 上吧，My Family！ zone: nobody caught, so the patch of ground the family pound is marked — a warm
+      // ring on the floor that pulses on every beat until the strum.
+      const t = e.max - e.life;
+      const beat = .5 + .5 * Math.cos(t * Math.PI * 2 / .3);
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = Math.min(1, t / .12, e.life / .2) * (.35 + beat * .25);
+      ctx.fillStyle = e.color;
+      ctx.beginPath(); ctx.ellipse(0, 0, r, r * .22, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = Math.min(1, t / .12, e.life / .2) * .8;
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.ellipse(0, 0, r * (1 + beat * .06), r * .22 * (1 + beat * .06), 0, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
+    case 'family-lineup': {
+      // 上吧，My Family！: after the strum the four stand in a row behind her for a beat, then fade.
+      const dir = e.dir ?? 1;
+      const t = e.max - e.life;
+      const a = Math.min(1, t / .15) * Math.min(1, e.life / .3);
+      const im = images?.get(FAMILY_SRC);
+      for (let i = FAMILY_MEMBERS.length - 1; i >= 0; i--) {
+        const m = FAMILY_MEMBERS[i];
+        const h = 179 * m.cm / RAIKA_CM;
+        const x = e.x - dir * (74 + i * 44);
+        ctx.save();
+        ctx.globalAlpha = a * .4;
+        ctx.fillStyle = m.color;
+        ctx.beginPath(); ctx.ellipse(x, e.y, 30, 8, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.translate(x, e.y);
+        ctx.scale(dir, 1);
+        drawFamilySilhouette(ctx, im, i, 2, h, m.color, a * .85);
+        ctx.restore();
+      }
       break;
     }
     case 'oops': {

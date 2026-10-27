@@ -1,7 +1,7 @@
 /* Headless rule check: runs the fixed-step engine without DOM or canvas. `npm run check`. */
 import { FightGame } from '../src/game/game.ts';
 import { BUSHIDO_CREEP, BUSHIDO_LUNGE, BUSHIDO_SPAN, VEIL_NORMAL, VEIL_SHOT, clockRings, drumShotTime, hit, holdNoteSpan, outshines, violetHidden, withGuard } from '../src/game/combat.ts';
-import { vowBeatTime, VOW_BEATS, PRACTICE_GAP1, PRACTICE_HITS, practiceBeat, practiceGap, practiceRow, practiceStrums } from '../src/render/clips.ts';
+import { vowBeatTime, VOW_BEATS, PRACTICE_GAP1, PRACTICE_HITS, practiceBeat, practiceGap, practiceRow, practiceStrums, FAMILY_MEMBERS, familyLife } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
 import { PLAYABLE, ROSTER, bandMembers, guestsFor } from '../src/data/characters.ts';
 import { BANDS, BAND_BY_ID } from '../src/data/bands.ts';
@@ -88,7 +88,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const g = c.bands?.[0] ?? 'none';
     if (runs[runs.length - 1] !== g) runs.push(g);
   }
-  assert.deepEqual(runs, ['ave-mujica', 'mygo', 'yumemita', 'poppin-party', 'roselia', 'hello-happy', 'sumimi', 'pastel-palettes', 'afterglow', 'raise-a-suilen', 'morfonica', 'millsage', 'none'], 'roster order is the select-screen band order');
+  assert.deepEqual(runs, ['ave-mujica', 'mygo', 'yumemita', 'poppin-party', 'roselia', 'hello-happy', 'sumimi', 'pastel-palettes', 'afterglow', 'raise-a-suilen', 'morfonica', 'millsage', 'ikka-dumb-rock', 'none'], 'roster order is the select-screen band order');
   assert.deepEqual(ROSTER[at('uika')].bands, ['ave-mujica', 'sumimi'], '初华 sings for two units');
   assert.deepEqual(bandMembers('mygo', 'tomori').map(c => c.id), ['anon', 'rana', 'soyo', 'taki'], 'the sing calls her bandmates, never herself');
   assert.deepEqual(guestsFor([ROSTER[at('tomori')]], 'mygo').map(c => c.id), ['anon', 'rana', 'soyo', 'taki'], 'a sing loads the bandmates who are not already in');
@@ -126,7 +126,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(opening < 40, `${id}: the opening stays under a chipped bar, ${opening}`);
     assert.equal(withGuard(s, breakAt + 99).guardDmg, plan![plan!.length - 1], id + ': a late segment repeats the last entry');
   }
-  for (const id of ['uika', 'mutsumi', 'umiri', 'taki', 'layer', 'sayo', 'houka', 'mahoro']) {
+  for (const id of ['uika', 'mutsumi', 'umiri', 'taki', 'layer', 'sayo', 'houka', 'mahoro', 'raika']) {
     const s = ROSTER[at(id)].skills[5];
     assert.ok(!s.guardPlan && !s.guardDmg, id + ': the unblockable super carries no guard value');
   }
@@ -6653,6 +6653,125 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     g.attack(p1, 5);
     for (let i = 0; i < Math.round(.6 / STEP); i++) { p2.y = FLOOR - 120; p2.vy = 0; g.step(STEP); }
     assert.ok(p2.root <= 0, 'a jump slips the light');
+  }
+}
+
+// raika: no breakout anywhere — U I O are armoured for the whole cast instead. U carries them on her
+// back and throws them; a guarded dash trips her. I hugs four squeezes. O eats, then J / K and the walk
+// speed up. L holds them while the four family silhouettes come in, then her strum knocks them down.
+{
+  const rk = at('raika');
+  const data = ROSTER[rk];
+  assert.deepEqual(data.bands, ['ikka-dumb-rock'], 'raika stands with 一家Dumb Rock!');
+  assert.equal(data.title, '吉他 / Family 笨蛋', 'raika wears the Family-fool title');
+  assert.equal(data.trait, 'rush', 'raika takes the rush trait');
+  assert.ok(!data.skills.some(s => s.breakout), 'all offence: no breakout');
+  assert.ok([2, 3, 4].every(i => data.skills[i].holdEndure), 'U I O hold armour through the cast');
+  const jab = { ...ROSTER[at('boulder')].skills[0], damage: 20 };
+  // U: picked up, carried, thrown; the armour holds through a jab mid-dash
+  {
+    const g = newGame(rk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 420; p1.facing = 1; p2.facing = -1;
+    assert.ok(g.attack(p1, 2), 'the piggyback comes out');
+    let rode = false;
+    let jabbed = false;
+    const seen = { siren: false, heart: false };
+    for (let i = 0; i < Math.round(1.6 / STEP); i++) {
+      g.step(STEP);
+      if (!jabbed && p1.attack && p1.attack.t > .14) { jabbed = true; hit(g, p2, p1, jab, { hit: new Set() }); assert.ok(p1.attack, 'a jab does not stop the dash'); }
+      if (p2.y < FLOOR - 50 && Math.abs(p2.x - (p1.x - p1.facing * 26)) < 4) rode = true;
+      if (g.effects.some(e => e.type === 'piggy-siren' && e.follow === p1.id)) seen.siren = true;
+      if (g.effects.some(e => e.type === 'piggy-heart' && e.follow === p2.id)) seen.heart = true;
+    }
+    const lost = p2.data.hp - p2.hp;
+    assert.ok(rode, 'they ride on her back');
+    assert.ok(g.effects.some(e => e.type === 'piggy-siren') || seen.siren, 'a siren on her head on the way to 医院');
+    assert.ok(seen.heart, 'their heart thumps on her back');
+    assert.ok(lost > 40 && lost < 56, 'the pick-up and the throw: ' + lost);
+    assert.ok(p2.knocked > 0 || p2.downTime > 0 || p2.y < FLOOR, 'the throw knocks down');
+    assert.ok(p1.x > 600, 'she runs them a long way: ' + p1.x);
+  }
+  {
+    // A guarded dash trips her up.
+    const g = newGame(rk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 420; p1.facing = 1; p2.facing = -1;
+    g.attack(p1, 2);
+    for (let i = 0; i < Math.round(.5 / STEP); i++) { p2.blocking = true; g.step(STEP); }
+    assert.ok(p2.data.hp - p2.hp < 5, 'blocked: chip only');
+    assert.ok(p2.y >= FLOOR - 1, 'nobody gets carried');
+    assert.ok(p1.attack === null && p1.stun > 0, 'she stumbles out of it');
+  }
+  // I: four squeezes, the last lets go with them reeling
+  {
+    const g = newGame(rk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 350; p1.facing = 1; p2.facing = -1;
+    assert.ok(g.attack(p1, 3), 'the hug comes out');
+    run(g, 1.6);
+    const lost = p2.data.hp - p2.hp;
+    assert.equal(g.totalHits[p1.id], 4, 'four squeezes');
+    assert.ok(lost > 32 && lost < 50, 'the squeezes add up, combo decay included: ' + lost);
+    assert.ok(p1.attack === null, 'and she lets go');
+  }
+  // O: armoured through the meal; J / K and the walk speed up afterwards
+  {
+    const g = newGame(rk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 900; p1.facing = 1;
+    assert.ok(g.attack(p1, 4), 'the meal comes out');
+    run(g, .05);
+    assert.ok(g.effects.some(e => e.type === 'meal-cooker'), 'the rice cooker pops up first');
+    run(g, .25);
+    hit(g, p2, p1, jab, { hit: new Set() });
+    assert.ok(p1.attack !== null, 'a jab does not knock the bowl away');
+    run(g, .6);
+    assert.ok(atkMul(p1) > 1.2 && speedMul(p1) > 1.1, 'full and fired up: ' + atkMul(p1) + ' / ' + speedMul(p1));
+    assert.equal(g.effects.filter(e => e.type === 'meal-timer' && e.follow === p1.id).length, 1, 'one timer bowl over her head');
+    // Cut short the way 精准踩雷 sets a buff off: the clock drops to a hair, so its expiry still runs.
+    p1.mods.find(m => m.kind === 'speed' && m.tag === 'meal')!.left = 1e-6;
+    run(g, .05);
+    assert.ok(!g.effects.some(e => e.type === 'meal-timer' && e.follow === p1.id && e.life > 0), 'the bowl goes with the buff');
+  }
+  // L: held through five family strikes and her strum, which knocks them down
+  {
+    assert.ok(FAMILY_MEMBERS.every(m => m.strikes[0] - m.enter >= 0), 'every member comes in after the catch');
+    assert.equal(FAMILY_MEMBERS.reduce((n, m) => n + m.strikes.length, 0) + 1, data.skills[5].count, 'the count is every family strike plus her strum');
+    assert.ok(FAMILY_MEMBERS.every(m => familyLife(m) > m.enter), 'a member stays on after she strikes');
+    const g = newGame(rk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 360; p1.facing = 1; p1.energy = 100;
+    assert.ok(g.attack(p1, 5), 'the family comes out');
+    run(g, 1.2);
+    assert.ok(Math.abs(p2.x - p1.x - 56) < 2 && p2.y >= FLOOR - 1, 'they are held in front of her');
+    assert.equal(g.effects.filter(e => e.type === 'family-member').length, 4, 'four silhouettes answer');
+    run(g, 2);
+    const lost = p2.data.hp - p2.hp;
+    assert.equal(g.totalHits[p1.id], 6, 'five family strikes and the strum');
+    assert.ok(lost > 140 && lost < 190, 'it adds up to a super, combo decay included: ' + lost);
+    assert.ok(p2.knocked > 0 || p2.downTime > 0 || p2.y < FLOOR, 'the strum knocks down');
+    assert.ok(p1.attack === null, 'and it ends');
+  }
+  {
+    // Nobody in reach: the family still come and pound the ground ahead of where she stopped.
+    const g = newGame(rk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 100; p2.x = 800; p1.facing = 1; p1.energy = 100;
+    g.attack(p1, 5);
+    run(g, 1);
+    assert.equal(g.effects.filter(e => e.type === 'family-member').length, 4, 'a missed grab still calls the family');
+    run(g, 2);
+    assert.ok(p2.hp === p2.data.hp && p1.attack === null, 'far outside the zone nothing lands, and it ends');
+  }
+  {
+    // A foe standing in the zone eats the lighter blows, and a guard catches them.
+    const zone = (guard: boolean) => {
+      const g = newGame(rk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+      p1.x = 100; p2.x = 390; p1.facing = 1; p2.facing = -1; p1.energy = 100;
+      g.attack(p1, 5);
+      for (let i = 0; i < Math.round(3 / STEP); i++) { p2.x = 390; if (guard) { p2.blocking = true; p2.guard = 100; } g.step(STEP); }
+      return { lost: p2.data.hp - p2.hp, held: p1.attack, hits: g.totalHits[p1.id] };
+    };
+    const open = zone(false);
+    assert.ok(open.hits >= 5, 'the zone blows land: ' + open.hits);
+    assert.ok(open.lost > 40 && open.lost < 120, 'lighter than the caught version: ' + open.lost);
+    const guarded = zone(true);
+    assert.ok(guarded.lost < open.lost / 2, 'a guard catches the zone: ' + guarded.lost);
   }
 }
 
