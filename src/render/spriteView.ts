@@ -177,6 +177,10 @@ export class SpriteView implements FighterView {
     return !!this.images.get(this.common)?.naturalWidth;
   }
 
+  sheetReady(): boolean {
+    return !!this.images.get(this.common)?.naturalWidth;
+  }
+
   draw(ctx: CanvasRenderingContext2D, f: Fighter, x: number, y: number, alpha: number, tint?: string, outline?: string, pose?: FrozenPose): void {
     const clip = pose
       ? { sheet: pose.sheet as Clip['sheet'], col: pose.col, row: pose.row, sx: pose.col * CELL, sy: pose.row * CELL }

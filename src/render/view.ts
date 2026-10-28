@@ -17,6 +17,8 @@ export interface FighterView {
   draw(ctx: CanvasRenderingContext2D, f: Fighter, x: number, y: number, alpha: number, tint?: string, outline?: string, pose?: FrozenPose): void;
   /** False while the idle sheet is still downloading. Select portraits hold their box instead of drawing the block figure. */
   idleReady?(): boolean;
+  /** True once the full common sheet is decoded, so a portrait may borrow a loco cell (jump) instead of the idle crop. */
+  sheetReady?(): boolean;
 }
 
 function buildFor(data: CharacterData): 'slim' | 'bulky' | 'tall' {

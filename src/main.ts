@@ -13,6 +13,8 @@ import { matchName, SelectScreen, type MatchSetup } from './ui/select.ts';
 import { bestLabel, challengeName, deckLabel, foeCount, hideBuffPicker, readBest, readRun, rollEnemies, showBuffPicker, stageSetup, writeBest, writeRun, type ChallengeKind, type ChallengeRun } from './ui/challenge.ts';
 import { cycleSkillTier, hideEnd, setBattleGuide, setRoundLabel, showBanner, showEnd, updateHUD } from './ui/hud.ts';
 import { setIconBtn } from './ui/iconBtn.ts';
+import { hideVersus, showVersus, versusHeld, versusProgress, versusSides } from './ui/versusCut.ts';
+import { mountSegThumbs } from './ui/segThumb.ts';
 import { applyTouchDevice, watchTouch } from './ui/device.ts';
 import { applyTouchLayout, bindBattleFrame } from './ui/touchLayout.ts';
 import { bindSwipeGuard } from './ui/swipeBack.ts';
@@ -151,6 +153,7 @@ function tickBoot(now: number): void {
   }
   bootDisplay = easeLoad(bootDisplay, real, elapsed);
   $('stage-load-bar').style.width = `${Math.round(bootDisplay * 1000) / 10}%`;
+  versusProgress(real >= 1 ? 1 : bootDisplay);
   if (real < 1 || bootDisplay <= 0.995) return;
   bootDone = true;
   noteMissing();
@@ -183,11 +186,35 @@ const select = new SelectScreen(PLAYABLE, previewViews, setup => {
     return;
   }
   void startGame(setup);
-}, () => { sfx.unlock(); sfx.play('select'); }, shown => {
+}, cue => {
+  sfx.unlock();
+  if (cue === 'pick') sfx.ui('confirm');
+  else if (cue === 'mode') sfx.ui('swish');
+  else if (cue === 'deny') sfx.ui('deny');
+  else sfx.play('select');
+}, shown => {
   if (followCast) queue.soon(portraitOf(shown));
 });
 select.liteStage = slowLink();
+select.onLand = () => sfx.ui('land');
 select.mount();
+mountSegThumbs($('selection'));
+/* Mouse hover ticks on the select screen and header. Touch has no hover, so it stays quiet. */
+{
+  let over: Element | null = null;
+  let at = 0;
+  document.addEventListener('pointerover', e => {
+    if (e.pointerType !== 'mouse' || !(e.target instanceof Element)) return;
+    const el = e.target.closest('button:not(:disabled), summary, .fighter-preview');
+    if (el === over) return;
+    over = el;
+    if (!el || !el.closest('#selection, header')) return;
+    const now = performance.now();
+    if (now - at < 45) return;
+    at = now;
+    sfx.ui('hover');
+  }, { passive: true });
+}
 let pendingLink: Link | null = null;
 bindOnline(() => select.onlinePick(), (role, hostChar, guestChar, stageId, link, plan: NetPlan) => {
   const host = ROSTER_BY_ID.get(hostChar);
@@ -266,6 +293,10 @@ async function startGame(setup: MatchSetup): Promise<void> {
   shuffleFightTrack();
   pokeMusic();
   syncMusicUi();
+  const versusLabel = setup.online ? '联机对战'
+    : setup.mode === 'challenge' ? challengeName(setup.challengeKind ?? 'brawl') + ' · 第 ' + setup.stageNumber + ' 关'
+    : matchName(setup);
+  showVersus(versusSides(setup.characters, setup.mode === 'team'), setup.stage.name, versusLabel, previewViews, k => sfx.ui(k));
   const cast = withGuests(setup.characters);
   const srcs = fightSources(setup.characters, setup.stage);
   const lite = litePlan(cast, setup.stage);
@@ -277,7 +308,11 @@ async function startGame(setup: MatchSetup): Promise<void> {
   queue.pause();
   let missing: string[];
   try {
-    [missing] = await Promise.all([preload(images, need), loadKujiFont()]);
+    // Online starts the instant it is ready: the cut only covers the load, it never holds a live match.
+    [missing] = await Promise.all([preload(images, need), loadKujiFont(), setup.online ? Promise.resolve() : versusHeld()]);
+  } catch (err) {
+    hideVersus();
+    throw err;
   } finally {
     queue.resume();
   }
@@ -297,6 +332,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
   $('selection').hidden = true;
   $('battle').hidden = false;
   document.body.classList.add('in-battle');
+  hideVersus();
   hideEnd();
   hideBuffPicker();
   $('battle-mode').textContent = setup.online
@@ -703,11 +739,16 @@ const helpDialog = $('help-dialog') as HTMLDialogElement;
 $('help').onclick = () => { if (game && !game.paused) game.togglePause(true); openDialog(helpDialog); };
 $('close-help').onclick = () => helpDialog.close();
 
-$('sound').onclick = () => {
+/* 竖屏手机把音效开关收进音乐弹层（#sound-toggle），两处是同一个开关。 */
+function toggleSound(): void {
   sfx.muted = !sfx.muted;
   setIconBtn($('sound'), sfx.muted ? '♪ 音效关' : '♪ 音效开');
+  $('sound-toggle').textContent = sfx.muted ? '♪ 音效关' : '♪ 音效开';
+  $('sound-toggle').setAttribute('aria-pressed', String(!sfx.muted));
   if (!sfx.muted) { sfx.unlock(); sfx.play('select'); }
-};
+}
+$('sound').onclick = toggleSound;
+$('sound-toggle').onclick = toggleSound;
 
 /* 音乐与音效各自独立，这条只管 BGM。做法对齐参考站的 music-settings：开关是同步布尔，
    点击立即翻转并刷 UI，点击路径上不 await 任何东西，关闭永远跟手；面板用原生 details

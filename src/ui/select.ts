@@ -10,7 +10,11 @@ import { bestLabel, challengeName, foeCount, readBest, readRun, rollEnemies, typ
 import { trainPrefs } from './settings.ts';
 import { MAILBOX_URL, mailboxUsable } from '../net/endpoint.ts';
 import { cancelOnline, ensureCodename, formatCodename, noteOnlinePlace, notifyOnlinePick } from './online.ts';
-import { fitCanvas } from './canvasFit.ts';
+import { fitCanvasCached } from './canvasFit.ts';
+import { StageMotion } from './stageMotion.ts';
+
+/** What a select-screen change should sound like. Unset is the plain blip. */
+export type PickCue = 'pick' | 'mode' | 'deny';
 
 export interface MatchSetup {
   characters: CharacterData[];
@@ -86,6 +90,21 @@ const PORTRAIT_FOOT = 276;
 /** The portrait raster authored in index.html; CSS may shrink the box, never the drawing. */
 const PORTRAIT_W = 240;
 const PORTRAIT_H = 290;
+/** 登场: seconds she takes to condense out of the spotlight, then of the landing settle. */
+const APPEAR = .3;
+const SQUASH = .36;
+/** Seconds after the entrance starts when nothing on a stage portrait moves any more: the landing
+ *  swell of the floor ring (exp decay at rate 4) is under 2% by then. Past this, a canvas whose
+ *  character, facing and backing size are unchanged is left alone instead of repainted. */
+const SETTLE = APPEAR + 1.1;
+/** World units she settles down through while condensing. Small enough to stay inside the canvas. */
+const DESCEND = 22;
+/** The drawn soles sit this far above the fighter origin (the cell keeps a margin under the feet);
+ *  the floor ring and the contact shadow are laid at the soles, not at the origin. */
+const SOLE = -9;
+/** The backdrop layer overhangs the panel by this much on every side, so the parallax never shows its edge. */
+const BG_BLEED = 14;
+const reduceMotion = (): boolean => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** Apply a slot-control click. A lone chip (`mateHidden`) flips, and on a full roster it takes the player seat from someone else. `null` means leave it. */
 export function assignSlotWho(who: readonly ('player' | 'cpu')[], lead: number, clicked: 'player' | 'cpu', mateHidden: boolean, maxPlayers: number): ('player' | 'cpu')[] | null {
@@ -127,7 +146,9 @@ export function skillHTML(c: CharacterData, pad = 0, touch = isTouch()): string 
   return c.skills.map((s, i) => {
     const dmg = (s.count ? s.count + ' × ' : '') + s.damage + ' 基础伤害';
     const cost = s.super ? ' · ' + (s.cost ?? 100) + ' 气' : s.cd ? ' · ' + s.cd + 's 冷却' : '';
-    return `<div class="skill ${s.super ? 'super' : ''}"><kbd>${keys[i]}</kbd><div><b>${s.name}</b><p class="brief">${swap(s.brief)}</p><p class="nums">${dmg}${cost}</p><p class="detail">${swap(s.detail)}</p></div>${s.super ? '<span class="charge" aria-hidden="true"><i></i></span>' : ''}</div>`;
+    // The ultimate's 必杀 tag rides in <small>, which the battle table already hides.
+    const tag = s.super ? '<small class="ult-tag">必杀</small>' : '';
+    return `<div class="skill ${s.super ? 'super' : ''}"><kbd>${keys[i]}</kbd><div><b>${s.name}${tag}</b><p class="brief">${swap(s.brief)}</p><p class="nums">${dmg}${cost}</p><p class="detail">${swap(s.detail)}</p></div>${s.super ? '<span class="charge" aria-hidden="true"><i></i></span>' : ''}</div>`;
   }).join('');
 }
 
@@ -141,7 +162,7 @@ export class SelectScreen {
   private readonly roster: CharacterData[];
   private readonly views: Map<string, FighterView>;
   private readonly onStart: (setup: MatchSetup) => void;
-  private readonly onPick: () => void;
+  private readonly onPick: (cue?: PickCue) => void;
   private readonly onShown: (shown: CharacterData[]) => void;
   private selected: number[] = [0, 1];
   /** Per slot, earlier player slots take the first key set. */
@@ -162,13 +183,18 @@ export class SelectScreen {
   private rosterCanvases: HTMLCanvasElement[] = [];
   private lastRosterDraw = 0;
   /** One idle stand-in per portrait canvas, rebuilt only when the slot switches character. */
-  private readonly previewCache = new WeakMap<HTMLCanvasElement, { id: string; facing: number; f: Fighter }>();
-  /** Each canvas's authored raster size, read before the backing store starts following the display. */
+  /** `drawn` is the signature of the settled picture already on the canvas ('' = needs a paint). */
+  private readonly previewCache = new WeakMap<HTMLCanvasElement, { id: string; facing: number; f: Fighter; enter: number; landed: boolean; drawn: string }>();
+  /** Fired when a big portrait lands from its drop; main.ts plays the thud. */
+  onLand: () => void = () => {};
+  private lastLand = 0;
+  private motion: StageMotion | null = null;
+  private readonly typing = new Map<HTMLElement, number>();  /** Each canvas's authored raster size, read before the backing store starts following the display. */
   private readonly designs = new WeakMap<HTMLCanvasElement, { w: number; h: number }>();
   /** Slow link: the panel backdrop is the 480px preview, behind a 40% shade. */
   liteStage = false;
 
-  constructor(roster: CharacterData[], views: Map<string, FighterView>, onStart: (setup: MatchSetup) => void, onPick: () => void, onShown: (shown: CharacterData[]) => void = () => {}) {
+  constructor(roster: CharacterData[], views: Map<string, FighterView>, onStart: (setup: MatchSetup) => void, onPick: (cue?: PickCue) => void, onShown: (shown: CharacterData[]) => void = () => {}) {
     this.roster = roster;
     this.views = views;
     this.onStart = onStart;
@@ -200,14 +226,15 @@ export class SelectScreen {
       + STAGES.map(s => `<button type="button" class="stage-card" data-stage="${s.id}" aria-pressed="false">${s.image ? `<img data-src="${s.image}" alt="${s.name}场景预览">` : ''}<b>${s.name}</b></button>`).join('');
     this.watchStageCards();
     $('stage-grid').querySelectorAll<HTMLButtonElement>('button').forEach(b => b.onclick = () => {
-      if (this.netLocked || document.body.classList.contains('net-ready-phase')) return;
+      if (this.netLocked || document.body.classList.contains('net-ready-phase')) { this.onPick('deny'); this.nope(b); return; }
       this.stageId = b.dataset.stage ?? 'random';
-      this.onPick();
+      this.onPick('pick');
       this.refresh();
     });
     // The backdrop geometry only changes with the viewport; per-frame restyling did a
     // read-then-write layout pass 60 times a second for the same output.
     window.addEventListener('resize', () => this.placeStage(), { passive: true });
+    this.motion = new StageMotion($('select-stage'));
     document.querySelectorAll<HTMLElement>('.fighter-preview').forEach(el => {
       el.onclick = e => {
         if ((e.target as HTMLElement).closest('.slot-control')) return;
@@ -233,17 +260,29 @@ export class SelectScreen {
       this.refresh();
     }));
     $('random').onclick = () => {
-      if (this.netLocked) return;
+      if (this.netLocked) { this.onPick('deny'); return; }
       if (this.place === 'net') this.side = 0;
       this.pick(Math.floor(Math.random() * this.roster.length));
     };
+    // Portrait phones drop the title row; the same shuffle sits on the stage's corner instead.
+    $('random-stage').onclick = e => { e.stopPropagation(); $('random').click(); };
+    // Portrait phones fold the difficulty bar into each CPU chip. Every chip shows the one global
+    // difficulty and any tap cycles it; stopPropagation keeps the slot-head toggle and the focus out.
+    document.querySelectorAll<HTMLButtonElement>('.slot-diff').forEach(b => b.addEventListener('click', e => {
+      e.stopPropagation();
+      if (this.netLocked) { this.onPick('deny'); return; }
+      this.difficulty = (this.difficulty + 1) % 3;
+      this.onPick('mode');
+      this.refresh();
+      document.querySelectorAll<HTMLElement>('.slot-diff:not([hidden])').forEach(x => restartClass(x, 'bump'));
+    }));
     document.querySelectorAll<HTMLButtonElement>('[data-place]').forEach(b => b.onclick = () => this.setPlace(b.dataset.place === 'net' ? 'net' : 'local'));
     document.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach(b => b.onclick = () => this.setMode(b.dataset.mode as Mode));
     document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach(b => b.onclick = () => {
       const d = Number(b.dataset.difficulty);
       if (this.difficulty !== d) {
         this.difficulty = d;
-        this.onPick();
+        this.onPick('mode');
         this.refresh();
       }
     });
@@ -317,7 +356,7 @@ export class SelectScreen {
             : `<div class="band-head"><b>无所属</b><span>${count} 人</span></div>`;
         }
       }
-      html += `<button class="character" data-index="${i}" title="${c.name} · ${c.title}" aria-label="选择${c.name}"><canvas width="96" height="96" aria-hidden="true"></canvas><span class="slot-tag" hidden></span><span class="char-name">${c.name}</span></button>`;
+      html += `<button class="character" style="--c:${c.color}" data-index="${i}" title="${c.name} · ${c.title}" aria-label="选择${c.name}"><canvas width="96" height="96" aria-hidden="true"></canvas><span class="slot-tag" hidden></span><span class="char-name">${c.name}</span></button>`;
     });
     return html;
   }
@@ -379,7 +418,7 @@ export class SelectScreen {
   private setPlace(place: 'local' | 'net'): void {
     if (place === 'net' && !mailboxUsable(MAILBOX_URL)) return;
     if (place === this.place) return;
-    this.onPick();
+    this.onPick('mode');
     const leaving = this.place === 'net';
     this.place = place;
     if (place === 'net') this.side = 0;
@@ -460,7 +499,7 @@ export class SelectScreen {
       this.refresh();
       return;
     }
-    this.onPick();
+    this.onPick('mode');
     if (mode === 'challenge') {
       // A fresh look at the stage-1 foe(s) every time the mode is entered — unless a run is
       // waiting, then the locked pair comes back exactly as it was.
@@ -490,7 +529,7 @@ export class SelectScreen {
   /** Switch challenge sub-mode. Each kind keeps its own run, so picking one never blocks the other. */
   private setChallengeKind(kind: ChallengeKind): void {
     if (kind === this.challengeKind || this.mode !== 'challenge') return;
-    this.onPick();
+    this.onPick('mode');
     this.challengeKind = kind;
     if (!readRun(kind)) this.challengeEnemies = rollEnemies(foeCount(kind));
     this.who = ['player', ...Array.from({ length: foeCount(kind) }, () => 'cpu' as const)];
@@ -499,14 +538,43 @@ export class SelectScreen {
   }
 
   private pick(index: number): void {
-    if (this.netLocked) return;
-    if (this.place === 'net') this.side = 0;
+    const card = $('roster').querySelector<HTMLElement>(`.character[data-index="${index}"]`);
     // A waiting run locks the cast: the stage keeps its character until it is fought or abandoned.
-    if (this.place !== 'net' && this.mode === 'challenge' && readRun(this.challengeKind)) return;
+    if (this.netLocked || (this.place !== 'net' && this.mode === 'challenge' && readRun(this.challengeKind))) {
+      this.onPick('deny');
+      if (card) this.nope(card);
+      return;
+    }
+    if (this.place === 'net') this.side = 0;
     this.selected[this.side] = index;
     if (this.place === 'net') notifyOnlinePick(this.roster[this.selected[0]].id);
-    this.onPick();
+    this.onPick('pick');
     this.refresh();
+    if (card) restartClass(card, 'picked');
+  }
+
+  /** Refused click: the thing shakes its head instead of doing nothing. */
+  private nope(el: HTMLElement): void {
+    restartClass(el, 'nope');
+  }
+
+  /** 台词 types itself out whenever the slot changes hands. */
+  private type(el: HTMLElement, text: string): void {
+    clearInterval(this.typing.get(el));
+    el.classList.remove('typing');
+    if (reduceMotion() || !text) { el.textContent = text; return; }
+    const chars = [...text];
+    let n = 0;
+    el.textContent = '';
+    el.classList.add('typing');
+    this.typing.set(el, window.setInterval(() => {
+      n++;
+      el.textContent = chars.slice(0, n).join('');
+      if (n >= chars.length) {
+        clearInterval(this.typing.get(el));
+        el.classList.remove('typing');
+      }
+    }, 34));
   }
 
   private slotMark(p: number): string {
@@ -641,10 +709,21 @@ export class SelectScreen {
         : solo && on ? `改为${b.dataset.who === 'player' ? '人机' : '玩家'}`
         : '';
     });
-    for (const v of this.shown()) {
+    const diffName = ['轻松', '标准', '大师'][this.difficulty] ?? '标准';
+    document.querySelectorAll<HTMLButtonElement>('.slot-diff').forEach(b => {
+      const box = b.parentElement?.querySelector<HTMLElement>('.slot-control');
+      b.hidden = !box || box.hidden || this.who[Number(box.dataset.lead)] !== 'cpu';
+      b.textContent = diffName;
+      b.setAttribute('aria-label', `人机强度：${diffName}，点按切换`);
+    });
+    const shown = this.shown();
+    for (const v of shown) {
       const c = this.slotChar(v);
       $(v.name).textContent = c.name;
       $(v.tag).textContent = this.mode === 'challenge' && v.slot > 0 ? '人机' : this.slotMark(v.slot);
+      // Online, the far slot is a stranger until their pick arrives: no colour, no words.
+      const blank = net && v.slot === 1 && !this.netPeerCharId;
+      this.dress(v, blank ? null : c);
     }
     const p1code = document.getElementById('p1code');
     const p2code = document.getElementById('p2code');
@@ -742,6 +821,21 @@ export class SelectScreen {
     this.onShown(this.cast());
   }
 
+  /** A slot's colour, title and typed quote. Animations restart only when the character changes. */
+  private dress(v: SlotView, c: CharacterData | null): void {
+    const box = $(v.portrait).closest<HTMLElement>('.fighter-preview');
+    const suffix = v.name.slice(4);
+    if (!box) return;
+    const id = c?.id ?? '';
+    if (c) box.style.setProperty('--c', c.color);
+    else box.style.removeProperty('--c');
+    if (box.dataset.cid === id) return;
+    box.dataset.cid = id;
+    $('title' + suffix).textContent = c?.title ?? '';
+    this.type($('quote' + suffix), c ? `「${c.quote.replace(/^「|」$/g, '')}」` : '');
+    if (c) restartClass(box, 'arrive', 800);
+  }
+
   /** Whoever is standing on the stage right now. The first screen loads these idle sheets before the rest of the roster. */
   cast(): CharacterData[] {
     return this.shown().map(v => this.slotChar(v));
@@ -752,11 +846,11 @@ export class SelectScreen {
     const dt = Math.min((now - this.lastFrame) / 1000, .05);
     this.lastFrame = now;
     this.time += dt;
+    this.motion?.tick(this.time, dt);
     for (const v of this.shown()) {
-      this.portrait($(v.portrait) as HTMLCanvasElement, this.slotChar(v), v.facing, PORTRAIT_SCALE, PORTRAIT_FOOT);
+      this.portrait($(v.portrait) as HTMLCanvasElement, this.slotChar(v), v.facing, PORTRAIT_SCALE, PORTRAIT_FOOT, true);
     }
-    // 96px thumbs idle at ~15fps: they are small and peripheral, and 20 full redraws per
-    // frame was the select screen's biggest ongoing cost.
+    // Thumbs are checked at ~15fps; a settled one costs a signature compare, not a repaint.
     if (now - this.lastRosterDraw >= 66) {
       this.lastRosterDraw = now;
       for (let i = 0; i < this.rosterCanvases.length; i++) {
@@ -779,52 +873,174 @@ export class SelectScreen {
     return d;
   }
 
-  private portrait(canvas: HTMLCanvasElement, c: CharacterData, facing: 1 | -1, scale: number, baseY: number): void {
+  private portrait(canvas: HTMLCanvasElement, c: CharacterData, facing: 1 | -1, scale: number, baseY: number, stage = false): void {
     const ctx = canvas.getContext('2d');
     const view = this.views.get(c.id);
     if (!ctx || !view) return;
     const design = this.design(canvas);
-    const k = fitCanvas(canvas, design.w, design.h);
+    const k = fitCanvasCached(canvas, design.w, design.h);
     if (k === null) return;
     const waiting = !!view.idleReady && !view.idleReady();
     canvas.classList.toggle('pending', waiting);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (waiting) return;
+    if (waiting) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
     // Reuse the stand-in instead of building a fresh Fighter every frame; the view only
     // reads its anim clock, so advancing it in place draws exactly the same pose.
     let pv = this.previewCache.get(canvas);
     if (!pv || pv.id !== c.id || pv.facing !== facing) {
-      pv = { id: c.id, facing, f: previewFighter(c, 0, facing) };
+      pv = { id: c.id, facing, f: previewFighter(c, 0, facing), enter: NaN, landed: false, drawn: '' };
       this.previewCache.set(canvas, pv);
     }
     pv.f.animTime = this.time;
+    // The entrance starts on the first frame that can actually show her, so a slow picture still
+    // gets its spotlight; the CSS beam is cued from here so the two always share one clock.
+    if (Number.isNaN(pv.enter)) {
+      const show = stage && !reduceMotion();
+      pv.enter = show ? this.time : -99;
+      const box = canvas.closest<HTMLElement>('.fighter-preview');
+      if (show && box) restartClass(box, 'beam');
+    }
+    const e = this.time - pv.enter;
+    // The idle sprite is a single still cell, so once the entrance has settled the picture only
+    // changes with the backing size (fitCanvas resizes, which also clears). A missing sheet's
+    // block-figure stand-in therefore holds still too, which is fine for an error path.
+    const settled = e >= SETTLE;
+    const sig = `${canvas.width}x${canvas.height}`;
+    if (settled && pv.drawn === sig) return;
+    pv.drawn = settled ? sig : '';
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.save();
     ctx.translate(design.w / 2 * k, baseY * k);
     ctx.scale(scale * k, scale * k);
+    if (stage) this.drawGround(ctx, c, e);
+    if (e >= APPEAR + SQUASH) view.draw(ctx, pv.f, 0, 0, 1);
+    else this.drawEntrance(ctx, view, pv, c, e);
+    ctx.restore();
+  }
+
+  /** Under a stage portrait, in world units with the feet at 0, painted before the body: a flat
+   *  ring of her signature colour on the floor (lifted toward white so dark colours still read; it
+   *  swells briefly when she lands) and the dark contact shadow that puts her feet on the stage.
+   *  Drawn in the canvas so it is pinned to the feet at every canvas size and never resizes the grid. */
+  private drawGround(ctx: CanvasRenderingContext2D, c: CharacterData, e: number): void {
+    const land = e < APPEAR ? 0 : Math.exp(-(e - APPEAR) * 4);
+    ctx.save();
+    ctx.translate(0, SOLE);
+    ctx.scale(1, .16);
+    const pool = ctx.createRadialGradient(0, 0, 0, 0, 0, 62 + 10 * land);
+    pool.addColorStop(0, lighten(c.color, .45));
+    pool.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalAlpha = .2 + .35 * land;
+    ctx.fillStyle = pool;
+    ctx.beginPath();
+    ctx.arc(0, 0, 72, 0, Math.PI * 2);
+    ctx.fill();
+    const shade = ctx.createRadialGradient(0, 0, 0, 0, 0, 34);
+    shade.addColorStop(0, 'rgba(0,0,0,0.55)');
+    shade.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = shade;
+    ctx.beginPath();
+    ctx.arc(0, 0, 34, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  /** 登场: she condenses out of the spotlight. A white silhouette settles a short way down inside
+   *  the canvas (never across its edge), colour comes in as the light leaves her, then a small
+   *  squash and one thin ring on the floor. World units, foot at 0. */
+  private drawEntrance(ctx: CanvasRenderingContext2D, view: FighterView, pv: { f: Fighter; landed: boolean; facing: number }, c: CharacterData, e: number): void {
+    if (e < APPEAR) {
+      const u = Math.max(0, e) / APPEAR;
+      const y = -DESCEND * (1 - u * u);
+      ctx.save();
+      ctx.translate(0, y);
+      ctx.scale(1 - .03 * (1 - u), 1 + .05 * (1 - u));
+      view.draw(ctx, pv.f, 0, 0, Math.min(1, u * 1.6));
+      view.draw(ctx, pv.f, 0, 0, (1 - u) * .95, '#ffffff');
+      ctx.restore();
+      return;
+    }
+    const s = e - APPEAR;
+    if (!pv.landed) {
+      pv.landed = true;
+      if (performance.now() - this.lastLand > 90) { this.lastLand = performance.now(); this.onLand(); }
+    }
+    // One thin ring, floor first so the body covers it.
+    const r = Math.min(1, s / SQUASH);
+    const ease = 1 - (1 - r) ** 3;
+    ctx.save();
+    ctx.globalAlpha = (1 - r) * .55;
+    ctx.strokeStyle = lighten(c.color, .55);
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 24 + 46 * ease, (24 + 46 * ease) * .18, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    // Damped squash about the feet, small enough to read as weight rather than rubber.
+    const wob = Math.exp(-7 * r) * Math.cos(r * 10);
+    ctx.save();
+    ctx.scale(1 + .05 * wob, 1 - .07 * wob);
     view.draw(ctx, pv.f, 0, 0, 1);
+    const glint = Math.max(0, 1 - s / .16);
+    if (glint > 0) view.draw(ctx, pv.f, 0, 0, glint * .35, '#ffffff');
     ctx.restore();
   }
 
   /** One backdrop for the whole select panel. Cover first, then sit the floor on the portrait feet. */
   private placeStage(): void {
     const panel = $('select-stage');
+    const layer = $('stage-bg');
     const canvas = $('portrait1') as HTMLCanvasElement;
     const panelBox = panel.getBoundingClientRect();
     const box = canvas.getBoundingClientRect();
     if (!this.stage.image || !panel.clientWidth || !panel.clientHeight || !box.height) return;
+    // The picture lives on a layer that overhangs the panel by BG_BLEED, so the parallax can slide it.
     // object-fit: contain, object-position: center bottom — the design raster sits on the box's
     // bottom edge, so the foot line is measured from there, independent of the backing store.
     const fit = Math.min(box.width / PORTRAIT_W, box.height / PORTRAIT_H);
     const footScreen = box.bottom - (PORTRAIT_H - PORTRAIT_FOOT) * fit;
-    const cover = stageCover(panel.clientWidth, panel.clientHeight, panelBox.bottom - footScreen, this.stage.groundY ?? FLOOR);
+    const cover = stageCover(panel.clientWidth + BG_BLEED * 2, panel.clientHeight + BG_BLEED * 2, panelBox.bottom + BG_BLEED - footScreen, this.stage.groundY ?? FLOOR);
     const image = this.liteStage ? stageThumbSrc(this.stage.image) : this.stage.image;
     panel.dataset.stageSrc = image;
     applyImageUrl(image, url => {
       if (panel.dataset.stageSrc !== image) return;
-      panel.style.backgroundImage = `url("${url}")`;
+      layer.style.backgroundImage = `url("${url}")`;
     });
-    panel.style.backgroundRepeat = 'no-repeat';
-    panel.style.backgroundSize = `${cover.width}px ${cover.height}px`;
-    panel.style.backgroundPosition = `center bottom ${cover.fromBottom}px`;
+    layer.style.backgroundRepeat = 'no-repeat';
+    layer.style.backgroundSize = `${cover.width}px ${cover.height}px`;
+    layer.style.backgroundPosition = `center bottom ${cover.fromBottom}px`;
   }
+}
+
+/** Re-run a one-shot CSS animation class even when it is already on the element. The class comes
+ *  off when the element's own animation ends, or after `ms` when only its children animate. */
+const classTimers = new WeakMap<HTMLElement, Map<string, number>>();
+function restartClass(el: HTMLElement, cls: string, ms = 0): void {
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+  if (ms) {
+    let timers = classTimers.get(el);
+    if (!timers) classTimers.set(el, timers = new Map());
+    clearTimeout(timers.get(cls));
+    timers.set(cls, window.setTimeout(() => el.classList.remove(cls), ms));
+    return;
+  }
+  el.addEventListener('animationend', function done(ev) {
+    if (ev.target !== el) return;
+    el.classList.remove(cls);
+    el.removeEventListener('animationend', done);
+  });
+}
+
+/** Mix a #rrggbb toward white by `k` (0..1). */
+function lighten(hex: string, k: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  const ch = (shift: number) => Math.round(((n >> shift) & 255) * (1 - k) + 255 * k);
+  return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
 }

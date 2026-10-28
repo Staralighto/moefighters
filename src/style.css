@@ -3,14 +3,17 @@
   /* 只写暗色。亮色由 src/theme/palette.ts 按角色推导，规则见那里的文件头：
      中性暗底 = 面，中性亮字 = 字，彩色 = 强调色（自动带 -ink），--on-* 不变，--shade* 阴影遮罩，--wash* 提亮层。
      强调色当填充用 var(--p1)；当文字、描边、选中圈用 var(--p1-ink)。暗色里两者相同。 */
-  --bg: #111119;
-  --well: #0d0c14;
-  --panel: #1a1826;
-  --panel-2: #221f33;
-  --line: #2f2b45;
-  --text: #ece9f7;
+  --bg: #0b0e1a;
+  --well: #070912;
+  --panel: #121729;
+  --panel-2: #1a2037;
+  --line: #29324f;
+  --text: #eef0fa;
   --text-strong: #fff;
-  --muted: #9a94b8;
+  --muted: #97a1c3;
+  /* BanG Dream 粉：只做装饰（编号、引子、页签），不当大面积底色。 */
+  --brand: #ff3b7f;
+  --on-brand: #fff;
   --p1: #FDE979;
   --p2: #C8F181;
   --cyan: #76e7ff;
@@ -21,7 +24,17 @@
   --shade-scrim: rgb(0 0 0 / 67%);
   --wash: rgb(255 255 255 / 6%);
   --font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  /* 海报字：英文数字走窄体，缺的汉字逐字落到中文海报黑体，再落到系统字。 */
+  --font-display: "MF Mono", ui-monospace, "MF Poster", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-head: "MF Poster", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-hand: "MF Hand", "Comic Sans MS", cursive;
 }
+/* 自托管字体（OFL，许可见 public/fonts/*-OFL.txt）。中文海报黑体是首屏用字子集，缺字逐字回落系统字。
+   英文和数字一律等宽：Red Hat Mono 笔画圆润，粗体做海报字，常规体做小标签。 */
+@font-face { font-family: "MF Mono"; src: url("/fonts/red-hat-mono-bold.woff2") format("woff2"); font-weight: 600 900; font-display: swap; }
+@font-face { font-family: "MF Mono"; src: url("/fonts/red-hat-mono-regular.woff2") format("woff2"); font-weight: 100 500; font-display: swap; }
+@font-face { font-family: "MF Poster"; src: url("/fonts/noto-sans-sc-black-poster.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "MF Hand"; src: url("/fonts/nothing-you-could-do.woff2") format("woff2"); font-display: swap; }
 * { box-sizing: border-box; }
 /* 全站默认滚动条：走深色面板与描边 token，所有滚动容器（页面、弹窗、下拉菜单）自动继承，各面板不自制皮肤。 */
 *::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -47,9 +60,10 @@ body.touch {
   overscroll-behavior: none;
 }
 body.touch img { -webkit-user-drag: none; }
-button { font: inherit; color: inherit; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: .45em .9em; cursor: pointer; transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .08s ease, box-shadow .15s ease, filter .15s ease; }
+button { font: inherit; color: inherit; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: .45em .9em; cursor: pointer; transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .26s cubic-bezier(.34, 1.7, .5, 1), box-shadow .15s ease, filter .15s ease; }
 button:hover { border-color: var(--muted); }
-button:active:not(.touchpad button) { transform: translateY(1px) scale(0.98); }
+/* 按下即顿：50ms 内压到底并提亮，松手由上面的弹簧曲线回弹过冲。 */
+button:active:not(.touchpad button) { transform: scale(0.95); filter: brightness(1.18); transition-duration: .15s, .15s, .15s, .05s, .15s, .05s; }
 button.active { background: var(--p1); color: var(--on-accent); border-color: var(--p1); font-weight: 700; }
 .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 .btn-icon { display: none; width: 22px; height: 22px; }
@@ -66,11 +80,11 @@ button.active { background: var(--p1); color: var(--on-accent); border-color: va
    monospace: their digits change every frame and must not jitter. */
 kbd { font: 700 13px/1 var(--font); background: var(--well); border: 1px solid var(--line); border-radius: 5px; padding: .35em .5em; }
 /* Segmented pickers (mode, difficulty, challenge kind): yellow stays reserved for 1P and the start button. */
-.seg { display: flex; align-items: center; gap: 2px; padding: 3px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.seg { position: relative; display: flex; align-items: center; gap: 2px; padding: 3px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
 .seg > span { color: var(--muted); font-size: 13px; padding: 0 8px 0 6px; white-space: nowrap; }
-.seg button { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: transparent; border-color: transparent; padding: .4em .8em; font-weight: 700; transition: background-color .15s ease, color .15s ease, transform .08s ease; }
+.seg button { position: relative; z-index: 1; flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: transparent; border-color: transparent; padding: .4em .8em; font-weight: 700; transition: background-color .15s ease, color .15s ease, transform .26s cubic-bezier(.34, 1.7, .5, 1); }
 .seg button:hover:not(.active) { background: var(--wash); }
-.seg button:active { transform: scale(0.96); }
+.seg button:active { transform: scale(0.94); transition-duration: .15s, .15s, .05s; }
 .seg input { flex: 1 1 4.2em; min-width: 4.2em; max-width: 6.5em; background: var(--well); border: 1px solid var(--line); border-radius: 8px; padding: .4em .4em; font: inherit; font-weight: 700; color: inherit; text-align: center; text-transform: uppercase; }
 .seg input::placeholder { color: var(--muted); text-transform: none; font-weight: 400; }
 .lobby-actions { display: grid; gap: 10px; margin: 12px 0 16px; }
@@ -415,8 +429,7 @@ footer { display: flex; justify-content: space-between; gap: 16px; color: var(--
 
 /* 量舞台外边宽。容器不能套在 .select-stage 自己身上，否则查询改不到它的格子。 */
 .stage-frame { container-type: inline-size; container-name: stage; }
-.select-stage { position: relative; display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: 14px; overflow: hidden; background: var(--panel) center bottom / auto no-repeat; border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
-.select-stage::before { content: ""; position: absolute; inset: 0; background: rgb(0 0 0 / 40%); pointer-events: none; }
+.select-stage { position: relative; isolation: isolate; display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: 14px; overflow: hidden; background: var(--panel) center bottom / auto no-repeat; border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
 .select-stage > * { position: relative; z-index: 1; }
 /* 默认一行。2V2 正中留空列给字。字本身不占格，钉在舞台中心。窄过 36rem 的两行见文末 @container stage。 */
 .select-stage.team { grid-template-columns: 1fr 1fr 5rem 1fr 1fr; }
@@ -434,7 +447,7 @@ footer { display: flex; justify-content: space-between; gap: 16px; color: var(--
 .select-stage.challenge.solo #preview-left,
 .select-stage.challenge.solo #preview-right { grid-column: auto; }
 .select-stage.challenge #preview-right, .select-stage.challenge #preview-enemy2 { cursor: default; }
-.fighter-preview { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "chip" "art" "name"; justify-items: center; gap: 2px; cursor: pointer; outline: none; user-select: none; }
+.fighter-preview { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "chip" "art" "name" "title" "quote"; justify-items: center; gap: 2px; cursor: pointer; outline: none; user-select: none; }
 .fighter-preview h1 { grid-area: name; margin: 0; font-size: 18px; font-weight: 800; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .slot-head { grid-area: chip; display: grid; justify-items: center; align-content: start; gap: 16px; min-height: 72px; }
 .select-stage.net .slot-head { gap: 4px; min-height: 52px; }
@@ -462,6 +475,61 @@ footer { display: flex; justify-content: space-between; gap: 16px; color: var(--
 .select-stage > .versus { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; padding: 0; margin: 0; pointer-events: none; }
 .versus span { font: italic 900 48px Impact, sans-serif; color: var(--p2-ink); }
 .versus small { position: absolute; top: calc(50% + 28px); left: 50%; transform: translateX(-50%); color: var(--muted); font-size: 12px; white-space: nowrap; }
+/* ---- 首屏动效：视差、代表色、登场、台词 ---- */
+/* 视差：stageMotion.ts 只写 --mx / --my（-1..1）。舞台整体微倾，背景后退、立绘居中、芯片和 VS 前凸。 */
+.stage-frame { perspective: 1400px; }
+.select-stage { --mx: 0; --my: 0; transform: rotateY(calc(var(--mx) * 2.2deg)) rotateX(calc(var(--my) * -1.6deg)); }
+.select-stage > .stage-bg { position: absolute; inset: -14px; z-index: -1; background: var(--panel) center bottom / auto no-repeat; translate: calc(var(--mx) * -12px) calc(var(--my) * -7px); pointer-events: none; }
+/* 四成黑罩，纯色，不带任何渐变。 */
+.stage-bg::after { content: ""; position: absolute; inset: 0; z-index: 0; background: rgb(0 0 0 / 40%); }
+.fighter-preview canvas { translate: calc(var(--mx) * 5px) calc(var(--my) * 3px); }
+.select-stage .slot-head, .select-stage .fighter-preview h1, .versus span { translate: calc(var(--mx) * 10px) calc(var(--my) * 6px); }
+.versus span { display: inline-block; }
+/* 脚下的代表色地面圈和接地阴影画在立绘画布里（select.ts drawGround），钉在脚上，也不会撑高网格。
+   这里只剩登场时的舞台追光：从舞台上沿打下来，顶端渐隐，所以看不到任何切口。
+   伪元素当 art 格的网格项，stretch 加负的上外边距让它向上伸出，空内容不贡献尺寸。 */
+.fighter-preview::before { content: ""; grid-area: art; align-self: stretch; justify-self: center; width: min(170px, 72%); margin-top: -140px; margin-bottom: 4px; z-index: -1; pointer-events: none; opacity: 0;
+  clip-path: polygon(38% 0, 62% 0, 100% 100%, 0 100%);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, color-mix(in srgb, var(--c, white) 22%, white) 30%, transparent) 30%, color-mix(in srgb, color-mix(in srgb, var(--c, white) 22%, white) 46%, transparent) 50%, color-mix(in srgb, color-mix(in srgb, var(--c, white) 22%, white) 30%, transparent) 70%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, black 45%, black 88%, transparent); mask-image: linear-gradient(to bottom, transparent, black 45%, black 88%, transparent);
+  transform-origin: 50% 0; }
+.fighter-preview.beam::before { animation: beam-on .95s cubic-bezier(.2, .8, .3, 1) both; }
+@keyframes beam-on { 0% { opacity: 0; transform: scaleX(.35); } 18% { opacity: 1; transform: scaleX(1); } 45% { opacity: .75; } 100% { opacity: 0; transform: scaleX(1.06); } }
+.slot-title { grid-area: title; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 700; letter-spacing: .18em; color: color-mix(in srgb, var(--c, var(--muted)) 32%, white); opacity: .85; }
+.slot-title:empty, .slot-quote:empty:not(.typing) { visibility: hidden; }
+.slot-quote { grid-area: quote; margin: 2px 0 0; max-width: 100%; min-height: 1.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--text); }
+.slot-quote.typing::after { content: "▍"; margin-left: 1px; color: color-mix(in srgb, var(--c, var(--muted)) 70%, white); animation: caret .5s steps(1) infinite; }
+@keyframes caret { 50% { opacity: 0; } }
+.select-stage.team .slot-quote, .select-stage.challenge:not(.solo) .slot-quote { display: none; }
+/* 换人：头衔字距收拢浮现。落地在画布里。 */
+.fighter-preview.arrive .slot-title { animation: title-in .45s cubic-bezier(.16, 1, .3, 1) .18s both; }
+@keyframes title-in { from { opacity: 0; letter-spacing: .6em; } to { opacity: 1; letter-spacing: .18em; } }
+/* 名册：选中时卡片抬到邻居上层再弹，光效全收在卡片里面（内描边一闪 + 一道斜扫光），缩略图原地跳一下。
+   被拒绝的点击摇头。悬停和聚焦也抬层，放大的卡片不会被后面的卡压住。 */
+.character:hover, .character:focus, .character.picked { z-index: 2; }
+.character.picked { animation: card-pop .42s cubic-bezier(.34, 1.7, .5, 1); }
+.character.picked::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--c, white) 45%, white);
+  background: linear-gradient(115deg, transparent 30%, rgb(255 255 255 / 22%) 45%, transparent 60%) no-repeat;
+  background-size: 250% 100%; animation: card-sheen .5s ease-out forwards; }
+.character.picked canvas { animation: thumb-hop .38s cubic-bezier(.3, .7, .4, 1); }
+@keyframes card-sheen { from { opacity: 1; background-position: 100% 0; } to { opacity: 0; background-position: -60% 0; } }
+@keyframes thumb-hop { 0%, 100% { translate: 0 0; } 40% { translate: 0 -7px; } }
+.character canvas { transition: scale .28s cubic-bezier(.34, 1.7, .5, 1); }
+.character:hover canvas { scale: 1.08; }
+@keyframes card-pop { 0% { transform: scale(.9); } 55% { transform: scale(1.08); } 100% { transform: scale(1); } }
+.nope { animation: nope .32s ease-out; }
+@keyframes nope { 0%, 100% { transform: none; } 20% { transform: translateX(-5px); } 40% { transform: translateX(4px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
+/* 分段选择器：一块滑块跟着 .active 走，按钮自己不再铺底。 */
+.seg-thumb { position: absolute; z-index: 0; top: 3px; bottom: 3px; left: 0; width: var(--w, 0); transform: translateX(var(--x, 0)); background: var(--line); border-radius: 8px; pointer-events: none; opacity: 0; }
+.seg.thumb-live .seg-thumb { transition: transform .34s cubic-bezier(.34, 1.45, .5, 1), width .34s cubic-bezier(.34, 1.45, .5, 1), opacity .15s ease; }
+.seg.thumbed button.active { background: transparent; }
+.seg > span { position: relative; z-index: 1; }
+/* 开打按钮：悬停一道扫光。（不做常驻呼吸光：box-shadow 动画每帧重绘，手机上它还常驻在底部。） */
+.start::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(105deg, transparent 35%, rgb(255 255 255 / 55%) 50%, transparent 65%); translate: -120% 0; }
+.start:hover:not(:disabled)::after { translate: 120% 0; transition: translate .6s ease; }
+/* 开打过场盖住选人页时，舞台里那块小加载条让给过场底部的进度条。 */
+body.vs-on .select-stage > .stage-load { visibility: hidden; }
 /* 图还没到时占住画布原来的尺寸。颜色只用面板两档，到图后拿掉，格子不改高。 */
 canvas.pending { background: linear-gradient(90deg, var(--panel) 25%, var(--panel-2) 50%, var(--panel) 75%); background-size: 200% 100%; animation: load-shimmer 1.1s linear infinite; }
 @keyframes load-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
@@ -482,10 +550,10 @@ canvas.pending { background: linear-gradient(90deg, var(--panel) 25%, var(--pane
 .band-head:first-child { margin-top: 0; }
 .band-head i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--band, var(--line)); }
 .band-head span { font-weight: 400; color: var(--muted); font-size: 13px; }
-.character { position: relative; display: grid; justify-items: center; padding: 8px 6px; background: var(--panel); border-color: transparent; border-radius: 8px; outline: none; transition: transform .12s ease, border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
+.character { position: relative; display: grid; justify-items: center; padding: 8px 6px; background: var(--panel); border-color: transparent; border-radius: 8px; outline: none; transition: transform .28s cubic-bezier(.34, 1.7, .5, 1), border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
 .character:focus, .character:focus-visible { outline: none; }
-.character:focus, .character:hover { border-color: var(--line); background: var(--panel-2); transform: translateY(-2px); box-shadow: 0 4px 12px var(--shade); }
-.character:active { transform: translateY(0) scale(0.96); }
+.character:focus, .character:hover { border-color: var(--line); background: var(--panel-2); transform: translateY(-4px); box-shadow: 0 6px 16px var(--shade), 0 0 0 1px color-mix(in srgb, var(--c, transparent) 35%, transparent); }
+.character:active { transform: translateY(0) scale(0.93); transition-duration: .05s, .15s, .15s, .15s; }
 .character canvas { width: 96px; height: 96px; }
 .character.p1 { box-shadow: inset 0 0 0 2px var(--p1-ink), 0 0 10px rgba(253, 233, 121, 0.3); }
 .character.p2 { box-shadow: inset 0 0 0 2px var(--p2-ink), 0 0 10px rgba(200, 241, 129, 0.3); }
@@ -529,7 +597,7 @@ canvas.pending { background: linear-gradient(90deg, var(--panel) 25%, var(--pane
 .skill.super { border-left-color: var(--p1-ink); }
 .skill.super kbd { background: var(--p1); color: var(--on-accent); border-color: var(--p1); }
 .skill .cooldown { position: absolute; right: 0; top: 8px; font: 700 13px monospace; color: var(--cyan-ink); }
-.start { background: var(--p1); color: var(--on-accent); border-color: var(--p1); font-weight: 800; font-size: 18px; padding: .8em 1em; transition: transform .12s ease, filter .15s ease, box-shadow .15s ease; }
+.start { position: relative; overflow: hidden; background: var(--p1); color: var(--on-accent); border-color: var(--p1); font-weight: 800; font-size: 18px; padding: .8em 1em; transition: transform .26s cubic-bezier(.34, 1.7, .5, 1), filter .15s ease, box-shadow .15s ease; }
 .start span { display: inline-block; transition: transform .15s ease; }
 .start:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 0 16px rgba(253, 233, 121, 0.38); transform: translateY(-1px); }
 .start:hover:not(:disabled) span { transform: translate(2px, -2px); }
@@ -915,6 +983,119 @@ body.wide .touchpad.in-tower .tp-actions { --atk: clamp(86px, 16vmin, 106px); ri
 .action-options > .seg { grid-area: 1 / 1; width: 100%; }
 .action-start { width: 100%; min-width: 0; font-size: 16px; padding: .6em .7em; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* ==== 视觉语言 v3：演出海报 · 圆润 · 几何色块 ====
+   色彩冲击交给平涂几何：页面两侧的大圆、圆环、斜纹、网点，组件里的圆形徽章和色圆。不用大面积渐变。
+   形状一律圆角（面板 18、卡片 14、按钮 12、选择器胶囊），粉色只做装饰点，1P 黄 / 2P 绿照旧。
+   --cv 是把角色代表色提亮到海报明度的版本：深色代表色（海铃的藏青）也能当色块用。 */
+.character, .vs-cut .vs-disc { --cv: color-mix(in oklab, var(--c, var(--brand)) 78%, white); }
+@supports (color: oklch(from red l c h)) {
+  .character, .vs-cut .vs-disc { --cv: oklch(from var(--c, var(--brand)) max(l, .7) max(c, .12) h); }
+}
+button { border-radius: 12px; }
+kbd { border-radius: 6px; }
+
+/* 页面墙面：固定在视口后方的几何海报，图形多半落在内容两侧的留白里。 */
+/* 墙面纹理挂在 html 上，body 透明：固定的几何层（z-index -1）才能夹在两者之间露出来。 */
+html { background: radial-gradient(circle, var(--wash) 1px, transparent 1.4px) 0 0 / 18px 18px, linear-gradient(var(--well), var(--bg) 520px) var(--bg); }
+body { background: transparent; }
+.page-deco { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+/* 图形只许出现在内容列（main 的 1080px）两侧的留白里，内容列范围内整列遮掉，留 20px 渐隐。
+   屏幕比内容列窄时（手机、平板）遮罩覆盖全宽，墙面图形整体不出现，卡片缝隙里永远是干净的底色。 */
+.page-deco { -webkit-mask-image: linear-gradient(90deg, black calc(50% - 560px), transparent calc(50% - 540px), transparent calc(50% + 540px), black calc(50% + 560px));
+  mask-image: linear-gradient(90deg, black calc(50% - 560px), transparent calc(50% - 540px), transparent calc(50% + 540px), black calc(50% + 560px)); }
+.page-deco i { position: absolute; display: block; }
+.deco-disc { right: -150px; top: -170px; width: 440px; aspect-ratio: 1; border-radius: 50%; background: var(--brand); opacity: .12; }
+.deco-disc::after { content: ""; position: absolute; inset: 22%; border-radius: 50%; background: radial-gradient(circle, rgb(255 255 255 / 30%) 1.5px, transparent 2px) 0 0 / 11px 11px; }
+.deco-ring { left: -190px; top: 46vh; width: 380px; aspect-ratio: 1; border-radius: 50%; border: 22px solid var(--cyan-ink); opacity: .1; }
+.deco-stripes { right: -60px; top: 58vh; width: 240px; height: 90px; border-radius: 45px; rotate: -18deg; background: repeating-linear-gradient(135deg, var(--brand) 0 9px, transparent 9px 20px); opacity: .7; }
+.deco-dots { left: 4vw; top: 8vh; width: 150px; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, var(--cyan) 2.2px, transparent 2.7px) 0 0 / 14px 14px; opacity: .12; }
+.deco-x { right: 7vw; bottom: 9vh; font: 700 26px/1 var(--font-display); letter-spacing: .3em; color: var(--text); opacity: .22; font-style: normal; }
+.deco-tri { left: 7vw; bottom: 12vh; width: 0; height: 0; border-left: 34px solid transparent; border-right: 34px solid transparent; border-bottom: 58px solid var(--cyan-ink); opacity: .55; rotate: 14deg; }
+@media (prefers-reduced-motion: no-preference) {
+  .deco-disc, .deco-ring, .deco-stripes, .deco-dots, .deco-tri { animation: deco-float 14s ease-in-out infinite alternate; }
+  .deco-ring { animation-duration: 18s; animation-delay: -6s; }
+  .deco-stripes { animation-duration: 11s; animation-delay: -3s; }
+  .deco-tri { animation-duration: 16s; animation-delay: -9s; }
+}
+/* 打起来以后墙面退后，别抢对战的注意力。 */
+body.in-battle .page-deco { opacity: .35; }
+/* 视口窄于内容列加两侧渐隐（1080 + 40）时，上面的遮罩会把墙面整片遮掉；直接不渲染，省掉五个常驻动画。 */
+@media (max-width: 1119px) { .page-deco { display: none; } }
+@keyframes deco-float { from { translate: 0 0; } to { translate: 0 -18px; } }
+
+/* 顶栏：中文大字 + 等宽粉色英文 + 手写引子。 */
+header { border-bottom: 0; background: transparent; }
+.brand { letter-spacing: 0; }
+/* 品牌图标固定尺寸、不参与弹性压缩：窄屏时让位的是文字，不是图标。 */
+.brand-icon { flex: none; aspect-ratio: 1; border-radius: 12px; }
+.brand-lock { position: relative; display: grid; grid-template-columns: auto auto; align-items: baseline; column-gap: 10px; }
+.brand-cn { font: 900 22px/1.05 var(--font-head); letter-spacing: .04em; }
+.brand-en { font: 700 13px/1 var(--font-display); letter-spacing: .16em; color: var(--brand-ink); font-style: normal; }
+.brand-lock small { grid-column: 1 / -1; font-size: 12px; }
+.brand-kicker { position: absolute; left: calc(100% + 10px); top: 4px; font: 400 18px/1 var(--font-hand); color: var(--brand-ink); transform: rotate(-7deg); white-space: nowrap; font-style: normal; pointer-events: none; }
+header nav .icon-btn, header nav summary { border-radius: 999px; }
+
+/* 区块标题：粉色圆形编号徽章 + 中文标题 + 等宽英文小标签。 */
+.sectionline { align-items: center; margin: 22px 0 14px; }
+.sectionline > span:first-child { display: inline-flex; align-items: center; gap: 12px; font: 900 22px/1.1 var(--font-head); letter-spacing: .03em; }
+.sectionline i { flex: none; display: grid; place-items: center; width: 42px; height: 42px; margin: 0; border-radius: 50%; background: var(--brand); color: var(--on-brand); font: 700 17px/1 var(--font-display); letter-spacing: 0; font-style: normal; rotate: -8deg; }
+.sectionline > span[data-en]::after { content: attr(data-en); align-self: center; padding: 3px 9px; border-radius: 999px; border: 1.5px solid var(--line); font: 600 11px/1.2 var(--font-display); letter-spacing: .14em; color: var(--muted); white-space: nowrap; }
+
+/* 面板：平涂圆角，不描边，右上角一块网点。 */
+.stage-select, .movelist { position: relative; overflow: hidden; border: 0; border-radius: 18px; background: var(--panel); }
+.stage-select::before, .movelist::before { content: ""; position: absolute; right: -40px; top: -40px; width: 170px; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, var(--wash) 1.6px, transparent 2px) 0 0 / 12px 12px; pointer-events: none; }
+.select-stage { border: 0; border-radius: 20px; }
+
+/* 舞台上的字。VS 换成粉色圆徽章，和区块编号同一套图形。 */
+.fighter-preview h1 { font-family: var(--font-head); font-weight: 900; letter-spacing: .04em; }
+.side-label { font-family: var(--font-display); font-size: 16px; letter-spacing: .14em; }
+.select-stage .versus span { display: grid; place-items: center; width: 68px; height: 68px; border-radius: 50%; background: var(--brand); color: var(--on-brand); font: 700 26px/1 var(--font-display); font-style: normal; letter-spacing: -.02em; text-shadow: none; rotate: -8deg; box-shadow: 0 0 0 4px rgb(0 0 0 / 25%); }
+.select-stage .versus small { top: calc(50% + 46px); }
+
+/* 动作条：胶囊选择器，模式名用等宽字，开打是黄色胶囊。 */
+.seg { border-radius: 999px; padding: 4px; }
+.seg button, .seg-thumb { border-radius: 999px; }
+.action-mode button, #difficulty-row button, #challenge-kind-row button { font-family: var(--font-display); font-weight: 700; letter-spacing: .02em; }
+.start { font-family: var(--font-head); font-weight: 900; letter-spacing: .06em; border-radius: 999px; }
+.start span { display: inline-grid; place-items: center; width: 1.5em; height: 1.5em; margin-left: .3em; border-radius: 50%; background: var(--on-accent); color: var(--on-brand); font-size: .8em; }
+
+/* 名册：干净的圆角卡。卡里一个圆垫在缩略图后，平时是中性色，悬停和选中时才变成角色色；
+   未选中的卡不带任何代表色，整片名册只有选中的那几张是彩色的。未选中的圆只留三成底色，远看几乎隐形，主体是角色。 */
+.roster { gap: 10px; }
+.character { padding: 8px 4px 10px; border-radius: 14px; background: var(--panel); }
+.character::before { content: ""; position: absolute; left: 50%; top: 12px; width: 76px; aspect-ratio: 1; translate: -50% 0; border-radius: 50%; background: color-mix(in srgb, var(--panel-2) 30%, transparent); transition: background-color .25s ease, scale .35s cubic-bezier(.34, 1.7, .5, 1); pointer-events: none; }
+.character canvas { position: relative; }
+.character:hover::before, .character:focus-visible::before, .character.p1::before, .character.p2::before, .character.ally::before { background: var(--cv); }
+.character:hover::before { scale: 1.06; }
+.char-name { position: relative; margin-top: 2px; font: 900 13px/1.3 var(--font-head); letter-spacing: .04em; }
+.character:focus, .character:hover { background: var(--panel-2); }
+.slot-tag { border-radius: 999px; padding: 1px 7px; font-family: var(--font-display); }
+
+/* 场景卡：圆角，选中是黄圈。 */
+.stage-card { border-radius: 14px; }
+.stage-card b { font-family: var(--font-head); font-weight: 900; letter-spacing: .03em; }
+
+/* 招式表：按「按什么键 → 叫什么 → 做什么」排。键帽是每张卡的第一眼，名字跟在后面，
+   数值（伤害、冷却或气）是名字下一行的小字，说明再下一行。必杀的键帽保持黄色（和战斗里的必杀槽一致），
+   名字旁一枚粉色「必杀」标签，卡片一圈粉色细描边。 */
+.skill b small.ult-tag { display: none; }
+#skills { gap: 8px; }
+#skills .skill { gap: 12px; align-items: flex-start; border-left: 0; border-radius: 12px; padding: 12px 14px 12px 12px; background: var(--panel-2); }
+#skills .skill kbd { flex: none; width: 30px; height: 30px; border-radius: 8px; background: var(--well); border: 1px solid var(--line); border-bottom-width: 3px; font: 700 14px/1 var(--font-display); color: var(--text); }
+#skills .skill.super kbd { background: var(--p1); border-color: color-mix(in srgb, var(--p1) 55%, black); color: var(--on-accent); }
+#skills .skill > div { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 10px; }
+#skills .skill b { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; font: 900 15px/1.35 var(--font-head); letter-spacing: .03em; }
+#skills .skill b small.ult-tag { display: inline-block; flex: none; white-space: nowrap; padding: 2px 8px; border-radius: 999px; background: var(--brand); color: var(--on-brand); font: 900 11px/1.3 var(--font-head); letter-spacing: .1em; }
+#skills .skill .nums { flex: 1 0 100%; margin: 3px 0 0; height: auto; font: 500 12px/1.4 var(--font); font-variant-numeric: tabular-nums; color: var(--muted); opacity: .85; }
+#skills .skill .detail { flex: 1 0 100%; margin: 6px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--text); opacity: .78; }
+#skills .skill.super { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--brand) 60%, transparent); }
+/* 触屏的必杀键帽本身就写着「必」，名字旁不再重复标签。 */
+body.touch #skills .skill b small.ult-tag { display: none; }
+#skills .skill:hover { transform: translateY(-2px); background: color-mix(in srgb, var(--panel-2) 82%, var(--line)); }
+
+dialog { border-radius: 18px; }
+.dialog-head h2 { font-family: var(--font-head); font-weight: 900; letter-spacing: .04em; }
+
 /* 窄竖屏和矮视口共用的压缩：字号、芯片、图标。行列不看横竖屏，见 @container stage。 */
 @media (max-width: 760px) and (orientation: portrait), (orientation: landscape) and (max-height: 500px) {
   header { padding: 8px 12px; gap: 8px; }
@@ -1021,7 +1202,7 @@ body.wide .touchpad.in-tower .tp-actions { --atk: clamp(86px, 16vmin, 106px); ri
   main { max-width: none; padding: 10px 12px calc(84px + env(safe-area-inset-bottom)); }
   .site-foot { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
   .action-foot { display: grid; grid-template-columns: 1fr; gap: 8px; }
-  .action-start { position: fixed; z-index: 10; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); min-width: 0; font-size: 17px; box-shadow: 0 8px 24px var(--shade-strong); }
+  .action-start { position: fixed; z-index: 10; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); width: auto; min-width: 0; font-size: 17px; box-shadow: 0 8px 24px var(--shade-strong); }
   .roster { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
 
@@ -1056,3 +1237,146 @@ body.wide .touchpad.in-tower .tp-actions { --atk: clamp(86px, 16vmin, 106px); ri
   .select-stage.challenge:not(.solo) .fighter-preview canvas { height: clamp(72px, calc((100vh - 220px) / 2), 152px); height: clamp(72px, calc((100dvh - 220px) / 2), 152px); }
 }
 
+
+/* ---- 开打过场（ui/versusCut.ts）：几何海报 ----
+   双方各一枚大色圆（角色色提亮到海报明度），角色只放到接近原生像素的尺寸，不暴露细节；
+   气势交给大字、VS 徽章和图形的入场节奏。退场是一个圆形光圈收拢，露出已经开打的画面。 */
+.vs-cut { position: fixed; inset: 0; z-index: 30; overflow: hidden; pointer-events: none; color: var(--text); }
+.vs-cut::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle, var(--wash) 1px, transparent 1.4px) 0 0 / 16px 16px, var(--well); }
+.vs-side { position: absolute; top: 0; bottom: 0; width: 50%; display: grid; place-items: center; }
+.vs-side.left { left: 0; }
+.vs-side.right { right: 0; }
+.vs-disc { position: absolute; left: 50%; top: 45%; width: min(64vh, 40vw); aspect-ratio: 1; translate: -50% -50%; border-radius: 50%; background: var(--cv); }
+.vs-disc::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle, rgb(255 255 255 / 34%) 1.8px, transparent 2.3px) 0 0 / 13px 13px; -webkit-mask-image: linear-gradient(200deg, black, transparent 55%); mask-image: linear-gradient(200deg, black, transparent 55%); }
+.vs-ghost { position: absolute; inset: 0; border-radius: 50%; overflow: hidden; }
+/* 放大的像素剪影会出台阶，轻轻柔化成印刷海报那种干净的大人像。 */
+.vs-ghost canvas { display: block; width: 100%; height: 100%; filter: blur(1.5px); }
+.vs-ring { position: absolute; inset: -5%; border-radius: 50%; border: 3px solid var(--cv); opacity: .55; }
+.vs-stripe { position: absolute; left: -14%; top: 10%; width: 52%; height: 14%; border-radius: 999px; rotate: -24deg; background: repeating-linear-gradient(135deg, white 0 8px, transparent 8px 18px); opacity: .5; }
+.vs-side.right .vs-stripe { left: auto; right: -12%; rotate: 24deg; }
+.vs-cast { position: relative; display: flex; align-items: flex-end; justify-content: center; gap: 2vw; margin-top: -4vh; }
+.vs-fighter { margin: 0; display: grid; justify-items: center; }
+.vs-fighter canvas { width: auto; height: min(40vh, 330px); aspect-ratio: 320 / 400; object-fit: contain; object-position: center bottom; filter: drop-shadow(0 8px 0 rgb(0 0 0 / 22%)); }
+.vs-side.duo .vs-fighter canvas { height: min(31vh, 250px); }
+.vs-fighter figcaption { display: grid; justify-items: center; gap: 6px; margin-top: -6px; white-space: nowrap; }
+.vs-fighter figcaption small { padding: 3px 12px; border-radius: 999px; background: var(--well); font: 900 13px/1.3 var(--font-head); letter-spacing: .12em; color: var(--text); }
+.vs-fighter figcaption b { font: 900 clamp(30px, 4.2vw, 62px)/1 var(--font-head); letter-spacing: .04em; color: var(--text-strong); text-shadow: 3px 3px 0 var(--well); }
+.vs-fighter figcaption em { font: 700 12px/1 var(--font-display); letter-spacing: .34em; color: var(--well); opacity: .6; font-style: normal; }
+.vs-side.duo .vs-fighter figcaption b { font-size: clamp(20px, 2.6vw, 38px); }
+.vs-mark { position: absolute; inset: 0; display: grid; place-items: center; }
+.vs-mark span { display: grid; place-items: center; width: min(22vh, 180px); aspect-ratio: 1; border-radius: 50%; background: var(--brand); color: var(--on-brand); border: 6px solid var(--text-strong); font: 700 min(9vh, 74px)/1 var(--font-display); letter-spacing: -.04em; rotate: -8deg; box-shadow: 0 0 0 10px rgb(0 0 0 / 22%); opacity: 0; }
+.vs-flash { position: absolute; left: 50%; top: 50%; width: min(22vh, 180px); aspect-ratio: 1; translate: -50% -50%; border-radius: 50%; border: 4px solid var(--text-strong); opacity: 0; }
+.vs-head { position: absolute; left: 4vw; top: 4vh; display: flex; align-items: center; gap: 10px; opacity: 0; }
+.vs-head b { font: 700 15px/1 var(--font-display); letter-spacing: .18em; color: var(--text-strong); }
+.vs-head small { padding: 4px 10px; border-radius: 999px; background: var(--brand); color: var(--on-brand); font: 700 12px/1 var(--font-display); letter-spacing: .1em; }
+.vs-foot { position: absolute; left: 50%; bottom: 4vh; translate: -50% 0; display: grid; justify-items: center; gap: 4px; min-width: min(320px, 70vw); opacity: 0; }
+.vs-foot small { font: 600 12px/1 var(--font-display); letter-spacing: .24em; color: var(--muted); }
+.vs-foot b { font: 900 20px/1.2 var(--font-head); letter-spacing: .1em; }
+.vs-track { width: 100%; height: 6px; margin-top: 8px; background: var(--panel-2); border-radius: 999px; overflow: hidden; visibility: hidden; }
+.vs-cut.loading .vs-track { visibility: visible; }
+.vs-track i { display: block; height: 100%; width: 0; border-radius: 999px; background: var(--brand); transition: width .2s linear; }
+/* 入场：色圆弹出 → 角色升起 → 名字落位 → VS 盖章、光圈炸开，之后色圆轻轻呼吸。 */
+.vs-cut.in::before { animation: vs-fade .18s ease-out both; }
+.vs-cut.in .vs-side.left .vs-disc { animation: vs-pop .6s cubic-bezier(.34, 1.56, .64, 1) .04s both, vs-breathe 2.4s ease-in-out .9s infinite alternate; }
+.vs-cut.in .vs-side.right .vs-disc { animation: vs-pop .6s cubic-bezier(.34, 1.56, .64, 1) .12s both, vs-breathe 2.4s ease-in-out 1s infinite alternate; }
+.vs-cut.in .vs-side.left .vs-ghost canvas { animation: vs-ghost-l .7s cubic-bezier(.16, 1, .3, 1) .12s both; }
+.vs-cut.in .vs-side.right .vs-ghost canvas { animation: vs-ghost-r .7s cubic-bezier(.16, 1, .3, 1) .2s both; }
+.vs-cut.in .vs-ring { animation: vs-ring .7s cubic-bezier(.2, .8, .3, 1) .2s both; }
+.vs-cut.in .vs-stripe { animation: vs-fade .3s ease-out .3s both; }
+.vs-cut.in .vs-side.left .vs-fighter canvas { animation: vs-rise .5s cubic-bezier(.2, .9, .3, 1.15) .2s both; }
+.vs-cut.in .vs-side.right .vs-fighter canvas { animation: vs-rise .5s cubic-bezier(.2, .9, .3, 1.15) .28s both; }
+.vs-cut.in .vs-side .vs-fighter + .vs-fighter canvas { animation-delay: .36s; }
+.vs-cut.in .vs-fighter figcaption { animation: vs-cap .45s cubic-bezier(.16, 1, .3, 1) .38s both; }
+.vs-cut.in .vs-mark span { animation: vs-stamp .3s cubic-bezier(.5, 0, .75, 0) .3s both, vs-throb 1.6s ease-in-out .9s infinite; }
+.vs-cut.in .vs-flash { animation: vs-burst .55s cubic-bezier(.1, .7, .3, 1) .6s forwards; }
+.vs-cut.in .vs-cast { animation: vs-shake .26s linear .6s; }
+.vs-cut.in .vs-head, .vs-cut.in .vs-foot { animation: vs-fade .35s ease-out .5s both; }
+@keyframes vs-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes vs-pop { from { scale: 0; } to { scale: 1; } }
+@keyframes vs-breathe { from { scale: 1; } to { scale: 1.025; } }
+@keyframes vs-ghost-l { from { opacity: 0; translate: -12% 0; } to { opacity: 1; translate: 0 0; } }
+@keyframes vs-ghost-r { from { opacity: 0; translate: 12% 0; } to { opacity: 1; translate: 0 0; } }
+@keyframes vs-ring { from { opacity: 0; scale: .7; } to { opacity: .55; scale: 1; } }
+@keyframes vs-rise { from { opacity: 0; translate: 0 40px; } to { opacity: 1; translate: 0 0; } }
+@keyframes vs-cap { from { opacity: 0; translate: 0 18px; } to { opacity: 1; translate: 0 0; } }
+@keyframes vs-stamp { from { opacity: 0; scale: 2.6; } to { opacity: 1; scale: 1; } }
+@keyframes vs-throb { 0%, 100% { scale: 1; } 50% { scale: 1.05; } }
+@keyframes vs-burst { from { opacity: .9; scale: 1; } to { opacity: 0; scale: 2.4; } }
+@keyframes vs-shake { 0%, 100% { translate: 0 0; } 25% { translate: -6px 3px; } 50% { translate: 5px -3px; } 75% { translate: -3px 2px; } }
+/* 出场：一个圆形光圈从四周收向中心，露出已经开打的战斗。 */
+.vs-cut.out { animation: vs-iris .5s cubic-bezier(.65, 0, .35, 1) forwards; }
+.vs-cut.out .vs-mark span { opacity: 1; animation: vs-blowup .3s ease-in forwards; }
+@keyframes vs-iris { from { clip-path: circle(75% at 50% 50%); } to { clip-path: circle(0% at 50% 50%); } }
+@keyframes vs-blowup { from { opacity: 1; scale: 1; } to { opacity: 0; scale: 1.6; } }
+
+/* 手机竖屏和矮横屏：舞台本来就挤，头衔和台词让位。 */
+@media (max-width: 760px) and (orientation: portrait), (orientation: landscape) and (max-height: 500px) {
+  .slot-title, .slot-quote { display: none; }
+  .sectionline > span:first-child { font-size: 17px; gap: 8px; }
+  .sectionline i { width: 32px; height: 32px; font-size: 13px; }
+  .sectionline > span[data-en]::after { display: none; }
+  .brand-kicker, .brand-lock small { display: none; }
+  .brand-cn { font-size: 18px; }
+  .brand-en { font-size: 11px; letter-spacing: .1em; }
+  .brand-icon { width: 30px; height: 30px; }
+  .fighter-preview::before { margin-top: -60px; width: min(110px, 80%); }
+  .select-stage .versus span { width: 40px; height: 40px; font-size: 15px; }
+  .select-stage .versus small { top: calc(50% + 26px); }
+  #skills .skill { gap: 9px; padding: 10px 10px 10px 9px; }
+  #skills .skill kbd { width: 26px; height: 26px; border-radius: 7px; font-size: 12px; }
+  .character::before { width: 62%; top: 8px; }
+  .vs-fighter canvas { height: min(40vh, 190px); }
+  .vs-side.duo .vs-fighter canvas { height: min(32vh, 150px); }
+  .vs-fighter figcaption b { font-size: clamp(20px, 5vw, 34px); }
+  .vs-head { top: 3vh; }
+  /* 手机上色圆本来就满，大剪影只给电脑端补空。 */
+  .vs-ghost { display: none; }
+}
+/* 竖屏手机专用的控件，桌面和横屏不出现。 */
+.stage-random, .slot-diff, .sound-inpop { display: none; }
+/* 竖屏手机：首屏从 6 条横带收成 4 条，信息一条不丢。
+   · 「01 选择你的角色」整行不显示：标题不言自明，规则摘要和下面两条选择器重复；随机按钮挪到舞台右上角。
+   · 难度条不显示：难度并进每个人机标签（人机 · 大师），点按循环，全局一个值。
+   · 模式条改成无底色的文字页签，选中项一条粉色短下划线。
+   · 顶栏音效开关收进音乐弹层，四个按钮变三个。
+   色圆上下排，VS 在正中。顶栏只留图标和「萌趣格斗」。 */
+@media (max-width: 760px) and (orientation: portrait) {
+  .brand-en { display: none; }
+  #selection > .sectionline:first-child { display: none; }
+  #difficulty-row { display: none; }
+  #local-actions .action-options:has(#challenge-kind-row[hidden]):has(#abandon[hidden]) { display: none; }
+  header #sound { display: none; }
+  .music-pop .sound-inpop { display: block; }
+  .select-stage > .stage-random { position: absolute; z-index: 4; top: 10px; right: 10px; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; background: rgb(0 0 0 / 38%); color: var(--text-strong); backdrop-filter: blur(4px); }
+  .select-stage > .stage-random .btn-icon { width: 18px; height: 18px; }
+  .slot-head .slot-diff { display: inline-flex; align-items: center; border: 0; border-left: 1px solid var(--line); border-radius: 0 999px 999px 0; background: transparent; padding: .12em .6em .12em .45em; font: 700 11px/1.2 var(--font); color: var(--muted); }
+  .slot-diff.bump { animation: diff-bump .3s cubic-bezier(.34, 1.7, .5, 1); }
+  .action-mode.seg { padding: 0 2px; background: transparent; border: 0; border-radius: 0; box-shadow: inset 0 -1px 0 var(--line); }
+  .action-mode.seg button { color: var(--muted); }
+  .action-mode.seg button.active { color: var(--text-strong); }
+  .action-mode .seg-thumb { top: auto; bottom: 0; height: 3px; background: var(--brand); width: calc(var(--w, 0px) * .36); transform: translateX(calc(var(--x, 0px) + var(--w, 0px) * .32)); }
+  .vs-side { width: 100%; height: 50%; }
+  .vs-side.left { top: 0; bottom: auto; }
+  .vs-side.right { top: auto; bottom: 0; right: auto; left: 0; }
+  .vs-disc { width: min(34vh, 74vw); top: 47%; }
+  .vs-fighter canvas { height: min(22vh, 170px); }
+  .vs-side.duo .vs-fighter canvas { height: min(18vh, 130px); }
+  .vs-mark span { width: 92px; border-width: 4px; font-size: 36px; }
+  .vs-flash { width: 92px; }
+  .vs-head { left: 5vw; }
+  .vs-foot { bottom: 2vh; }
+}
+
+/* 减少动态：不倾斜、不位移、不漂浮，登场和过场只剩淡入淡出。 */
+@media (prefers-reduced-motion: reduce) {
+  .select-stage { transform: none; }
+  .select-stage > .stage-bg, .fighter-preview canvas, .select-stage .slot-head, .select-stage .fighter-preview h1, .versus span { translate: none; }
+  .fighter-preview.beam::before, .character.picked canvas, .fighter-preview.arrive .slot-title, .character.picked, .character.picked::after, .nope, .slot-quote.typing::after { animation: none; }
+  .seg.thumb-live .seg-thumb { transition: opacity .15s ease; }
+  .vs-cut.in .vs-side.left .vs-disc, .vs-cut.in .vs-side.right .vs-disc, .vs-cut.in .vs-side.left .vs-ghost canvas, .vs-cut.in .vs-side.right .vs-ghost canvas, .vs-cut.in .vs-ring, .vs-cut.in .vs-stripe, .vs-cut.in .vs-side.left .vs-fighter canvas, .vs-cut.in .vs-side.right .vs-fighter canvas, .vs-cut.in .vs-fighter figcaption, .vs-cut.in .vs-mark span, .vs-cut.in .vs-head, .vs-cut.in .vs-foot { animation: vs-fade .2s ease-out both; }
+  .vs-cut.in .vs-flash, .vs-cut.in .vs-cast { animation: none; }
+  .vs-cut.out { animation: vs-unfade .2s ease-in forwards; }
+  .vs-cut.out .vs-mark span { animation: none; }
+}
+@keyframes vs-unfade { from { opacity: 1; } to { opacity: 0; } }
+@keyframes diff-bump { 0% { transform: scale(.85); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }

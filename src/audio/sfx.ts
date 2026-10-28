@@ -13,6 +13,9 @@ const TONES: Record<SfxKind, [number, number]> = {
 const HORN_SRC = '/sfx/ship-horn.mp3';
 const HORN_GAIN = .15;
 
+/** Select-screen cues. Not SfxKind: the match never plays these. */
+export type UiSound = 'hover' | 'swish' | 'confirm' | 'deny' | 'land' | 'whoosh' | 'vs';
+
 export class Sfx {
   muted = false;
   private ctx: AudioContext | null = null;
@@ -48,6 +51,69 @@ export class Sfx {
     o.connect(g).connect(this.ctx.destination);
     o.start(t);
     o.stop(t + duration);
+  }
+
+  /** Select-screen sounds. Kept apart from SfxKind: the fight, the net relay and the lockstep
+   *  replay never see these, so nothing on the wire changes. */
+  ui(kind: UiSound): void {
+    if (this.muted || !this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const tone = (type: OscillatorType, f0: number, f1: number, at: number, dur: number, gain: number, lowpass = 0) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(f0, t + at);
+      o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + at + dur);
+      g.gain.setValueAtTime(.0001, t + at);
+      g.gain.exponentialRampToValueAtTime(gain, t + at + Math.min(.012, dur / 4));
+      g.gain.exponentialRampToValueAtTime(.0001, t + at + dur);
+      let head: AudioNode = o;
+      if (lowpass) {
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = lowpass;
+        head = o.connect(lp);
+      }
+      head.connect(g).connect(ctx.destination);
+      o.start(t + at);
+      o.stop(t + at + dur + .02);
+    };
+    const noise = (at: number, dur: number, gain: number, f0: number, f1: number, q = .8) => {
+      const n = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), g = ctx.createGain();
+      n.buffer = this.noiseBuffer();
+      bp.type = 'bandpass';
+      bp.Q.value = q;
+      bp.frequency.setValueAtTime(f0, t + at);
+      bp.frequency.exponentialRampToValueAtTime(f1, t + at + dur);
+      g.gain.setValueAtTime(.0001, t + at);
+      g.gain.exponentialRampToValueAtTime(gain, t + at + dur * .35);
+      g.gain.exponentialRampToValueAtTime(.0001, t + at + dur);
+      n.connect(bp).connect(g).connect(ctx.destination);
+      n.start(t + at);
+      n.stop(t + at + dur + .02);
+    };
+    switch (kind) {
+      case 'hover': tone('sine', 2300, 1900, 0, .03, .016); break;
+      case 'swish': noise(0, .2, .07, 700, 3400); break;
+      case 'confirm': tone('triangle', 660, 640, 0, .08, .06); tone('triangle', 990, 980, .055, .12, .06); break;
+      case 'deny': tone('square', 150, 95, 0, .09, .06, 700); tone('square', 130, 80, .1, .11, .06, 700); break;
+      case 'land': tone('sine', 130, 42, 0, .17, .13); noise(0, .1, .05, 900, 300, .6); break;
+      case 'whoosh': noise(0, .38, .09, 400, 2600, .6); break;
+      case 'vs':
+        tone('sine', 96, 30, 0, .6, .2);
+        tone('square', 240, 70, 0, .14, .05, 1200);
+        noise(0, .32, .12, 2400, 380, .5);
+        break;
+    }
+  }
+
+  private noise?: AudioBuffer;
+  private noiseBuffer(): AudioBuffer {
+    if (this.noise) return this.noise;
+    const ctx = this.ctx!;
+    const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * .6), ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    return this.noise = buf;
   }
 
   /** 完美格挡: the block blip pitched down and muffled through a lowpass, over a short low thud —
