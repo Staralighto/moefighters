@@ -1,10 +1,10 @@
 import type { HitReact, Op, Skill } from '../data/types.ts';
 import { gainEnergy, gainGauge, type Attack, type Fighter } from './fighter.ts';
 import { addDebt, addMod, dmgDealtMul, dmgTakenMul, has, incomingMul, lifestealOf, reflectAmount, type Mod } from './mods.ts';
-import type { FightGame, Projectile, SealVolley } from './game.ts';
+import type { Effect, FightGame, Projectile, SealVolley } from './game.ts';
 import { CONTROLS, FLOOR, GRAVITY, H, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
 import { attackPhase } from './animState.ts';
-import { BUSHIDO_TAIL, clipFor, drumRow, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS, PRACTICE_HITS, practiceBeat, SKIP_HOP, SKIP_MAX, SKIP_MIN, SKIP_TAIL, MINE_FUSE, ENCORE, ENCORE_FACE, ENCORE_GONE, BURDEN_Y, UNBOWED_STEP, UNBOWED_MAX, PIGGY, PIGGY_DASH, PIGGY_CARRY, PIGGY_TAIL, PIGGY_BACK_X, PIGGY_BACK_Y, HUG, HUG_LUNGE, HUG_FIRST, HUG_GAP, HUG_TAIL, MEAL_GRACE, FAMILY, FAMILY_MEMBERS, FAMILY_LUNGE, FAMILY_FINALE, FAMILY_ZONE_AHEAD, FAMILY_ZONE_R, FAMILY_TAIL, familyLife } from '../render/clips.ts';
+import { BUSHIDO_TAIL, clipFor, DRUM_SLUMP, drumRow, PAW, PAW_FAIL, PAW_HITS, pawRow, pawTime, ROLL, ROLL_BEATS, ROLL_MAX, ROLL_MIN, ROLL_SLUMP, ROLL_THROW, rollGap, SELFIE, SELFIE_HOLD, SELFIE_LUNGE, SELFIE_SNAP, SELFIE_TAIL, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS, PRACTICE_HITS, practiceBeat, SKIP_HOP, SKIP_MAX, SKIP_MIN, SKIP_TAIL, MINE_FUSE, ENCORE, ENCORE_FACE, ENCORE_GONE, BURDEN_Y, UNBOWED_STEP, UNBOWED_MAX, PIGGY, PIGGY_DASH, PIGGY_CARRY, PIGGY_TAIL, PIGGY_BACK_X, PIGGY_BACK_Y, HUG, HUG_LUNGE, HUG_FIRST, HUG_GAP, HUG_TAIL, MEAL_GRACE, FAMILY, FAMILY_MEMBERS, FAMILY_LUNGE, FAMILY_FINALE, FAMILY_ZONE_AHEAD, FAMILY_ZONE_R, FAMILY_TAIL, familyLife } from '../render/clips.ts';
 import { SCRIPTS } from './scripts.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
@@ -382,6 +382,25 @@ function noteDamage(g: FightGame, f: Fighter, lost: number): void {
   log.push({ t: g.age, dmg: lost });
 }
 
+/** 麦子越踩越坚强 (data: CharacterData.wheat): a heavy burst of damage may stand her back up. The window can
+ *  only look back as far as the ledger keeps (EXCUSE_WINDOW). A dead body never rolls. */
+function wheatRoll(g: FightGame, f: Fighter): void {
+  const spec = f.data.wheat;
+  if (!spec || f.hp <= 0) return;
+  const from = Math.max(g.age - Math.min(spec.window, EXCUSE_WINDOW), f.wheatFrom);
+  let sum = 0;
+  for (const e of f.dmgLog) if (e.t >= from) sum += e.dmg;
+  if (sum < spec.share * f.data.hp) return;
+  f.wheatFrom = g.age + 1e-6;
+  if (g.random() >= spec.chance) return;
+  const heal = Math.round(spec.heal * f.data.hp);
+  f.hp = Math.min(f.data.hp, f.hp + heal);
+  addMod(f, 'incoming', spec.time, { v: 1 - spec.cut, tag: 'wheat', mark: 'wheat' });
+  g.effect('wheat-rise', f.x, FLOOR, '#ffd36a', 1.4, { radius: 64, follow: f.id, ox: 0, oy: FLOOR - f.y });
+  g.text('+' + heal, f.x, f.y - 150, '#9dff9a', .8, 20);
+  g.text('麦子越踩越坚强', f.x, f.y - 214, '#ffd36a', 1.2, 18);
+}
+
 /** hp lost to hit() inside the refund window. */
 export function recentDamage(g: FightGame, f: Fighter): number {
   let sum = 0;
@@ -753,6 +772,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   noteDamage(g, defender, hpBefore - defender.hp);
   // 绝不退场: a mod can count the clean hits that cost her hp.
   if (!blocked && hpBefore > defender.hp) for (const m of defender.mods) if (m.left > 0 && m.hurt) m.hurt(g, defender);
+  if (hpBefore > defender.hp) wheatRoll(g, defender);
   if (defender.hp <= 0 && defender.deathSave > 0) {
     // 想成为人类: lethal damage stops at 1 hp, spends a charge, and clears the hit's locks. One sparks, no text.
     defender.deathSave--;
@@ -922,10 +942,21 @@ function composeTick(g: FightGame, attacker: Fighter, defender: Fighter, skill: 
   }, { hit: new Set() });
 }
 
-/** 满场: sixteen notes in two full-stage drops. Slots repeat every 8 so each wave spans the stage. */
+/** 双踩地狱: four waves of note rain, eight a wave, each wave spread across the whole stage. The first
+ *  three are moderate and do not interrupt — no hitstun, no knockback, no combo — so there is time to
+ *  move; the fourth is big notes that hit hard and knock down. */
 const DRUM_PER_WAVE = 8;
-/** Pause between the two drops, on top of the regular interval. */
-const DRUM_GAP = .55;
+const DRUM_WAVES = 4;
+/** Pause between two waves, on top of the regular interval. */
+const DRUM_GAP = .15;
+/** Each wave slides sideways by up to this share of a slot, rolled per wave, so the gaps between
+ *  notes move and a spot that was safe for one wave is not safe for the whole super. */
+const DRUM_JITTER = .42;
+/** Fall speed of the three light waves, and of the big last one. */
+const DRUM_FALL = 360;
+const DRUM_BIG_FALL = 420;
+/** The big last wave: radius of each note (the light ones derive theirs from size). */
+const DRUM_BIG_RADIUS = 17;
 /** Repel pulse while the super is up: anyone closing in gets bounced, again and again. */
 const DRUM_REPEL_EVERY = .3;
 const DRUM_REPEL_RANGE = 180;
@@ -936,23 +967,45 @@ export function drumShotTime(s: Skill, i: number): number {
   return s.start + i * interval + Math.floor(i / DRUM_PER_WAVE) * DRUM_GAP;
 }
 
+/** The light wave and the big wave, cut once per skill. The skill's own damage is the light note; the
+ *  finale is the big one. Guard is read per wave (guardPlan[wave]) — a body under the rain meets about
+ *  one note a wave, so the wave is the real segment. */
+const rainParts = new WeakMap<Skill, Skill[]>();
+function rainSkill(s: Skill, wave: number): Skill {
+  let parts = rainParts.get(s);
+  if (!parts) {
+    const light: Skill = { ...s, finale: undefined, knock: 0, react: { kind: 'none', stun: 0 }, shake: 0, hitstop: 0 };
+    const big: Skill = { ...s, ...s.finale, finale: undefined };
+    parts = Array.from({ length: DRUM_WAVES }, (_, w) => withGuard(w === DRUM_WAVES - 1 ? big : light, w));
+    rainParts.set(s, parts);
+  }
+  return parts[Math.min(wave, DRUM_WAVES - 1)];
+}
+/** Per cast: the sideways slide of each wave, rolled when the wave's first note is born. */
+const rainShift = new WeakMap<Attack, number[]>();
+
 /** Notes dropped across the whole stage. vx stays 0; stepProjectiles applies vy. */
 function spawnRain(g: FightGame, f: Fighter, a: Attack, index: number): void {
   const s = a.skill;
   const pos = index % DRUM_PER_WAVE;
   const wave = Math.floor(index / DRUM_PER_WAVE);
+  const big = wave >= DRUM_WAVES - 1;
+  let shift = rainShift.get(a);
+  if (!shift) { shift = []; rainShift.set(a, shift); }
+  if (shift[wave] == null) shift[wave] = (g.random() * 2 - 1) * DRUM_JITTER;
+  const slot = (W - 140) / DRUM_PER_WAVE;
   const p: Projectile = {
     owner: f.id,
-    x: 70 + (pos + .5) * ((W - 140) / DRUM_PER_WAVE),
-    y: -24 - (pos % 3) * 40 - wave * 70,
+    x: clamp(70 + (pos + .5 + shift[wave]) * slot, 30, W - 30),
+    y: -24 - (pos % 3) * 40,
     vx: 0,
-    vy: 280,
+    vy: big ? DRUM_BIG_FALL : DRUM_FALL,
     life: s.life ?? 2.4,
-    skill: withGuard(s, pos),
+    skill: rainSkill(s, wave),
     color: f.data.color,
-    radius: s.size ? Math.min(54, s.size * .23) : 14,
-    size: s.size ?? 36,
-    fx: 'note',
+    radius: big ? DRUM_BIG_RADIUS : s.size ? Math.min(54, s.size * .23) : 14,
+    size: big ? (s.size ?? 36) * 1.7 : s.size ?? 36,
+    fx: 'rain-note',
     attack: a,
     hit: new Set(),
     trail: [],
@@ -960,6 +1013,16 @@ function spawnRain(g: FightGame, f: Fighter, a: Attack, index: number): void {
   };
   g.projectiles.push(p);
 }
+
+/** 双踩地狱 rain: a note that reaches the floor splashes there instead of sinking through it. The stock
+ *  dot trail is off — the renderer draws a falling streak instead. */
+function after_rain(g: FightGame, p: Projectile): boolean {
+  if (p.y < FLOOR - 4) return false;
+  p.life = 0;
+  g.effect('rain-splash', p.x, FLOOR, p.color, p.radius > 12 ? .45 : .32, { radius: p.radius, heavy: p.radius > 12 });
+  return true;
+}
+SCRIPTS['rain-note'] = Object.assign(SCRIPTS['rain-note'] ?? {}, { after: after_rain, trail: 0 });
 
 /** 抹茶芭菲: fixed lob table, sides alternate through near-to-far pairs. Retune the pairs if the spread drifts. */
 const PARFAIT_ARCS = [
@@ -1752,24 +1815,49 @@ function step_shove(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   if (a.hit.size === 0 && a.t >= s.start + .72) a.t = s.duration;
 }
 
+/** 双踩地狱: the stage beams of this cast, so the last wave can turn them red. */
+const drumLights = new WeakMap<Attack, Effect>();
+
 function step_drums(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   const s = a.skill;
   if (!a.emitted) {
     a.emitted = true;
     repelPulse(g, f, DRUM_REPEL_PUSH);
     g.effect('drums', f.x, f.y, f.data.color, s.duration, { dir: f.facing });
+    // Budokan: the first thing off is her own mask, and two stage beams cross on her.
+    g.effect('mask-off', f.x, f.y - 168, '#f4ecff', .9, { dir: f.facing });
+    drumLights.set(a, g.effect('stage-lights', f.x, FLOOR, f.data.color, s.duration, {}));
+    g.effect('kick-wave', f.x, FLOOR, f.data.color, .45, { radius: DRUM_REPEL_RANGE });
   }
-  if (a.t < s.duration) {
-    const prev = Math.floor(Math.max(0, a.t - dt) / DRUM_REPEL_EVERY);
+  const prevT = Math.max(0, a.t - dt);
+  if (a.t < s.duration - DRUM_SLUMP) {
+    const prev = Math.floor(prevT / DRUM_REPEL_EVERY);
     const cur = Math.floor(a.t / DRUM_REPEL_EVERY);
-    if (cur > prev && repelPulse(g, f, DRUM_REPEL_PUSH)) {
-      g.effect('burst', f.x, f.y - 80, f.data.color, .25, { radius: DRUM_REPEL_RANGE });
+    // Every pulse is a double-kick on the bass drums: a wave along the floor and fire under her feet.
+    if (cur > prev) {
+      repelPulse(g, f, DRUM_REPEL_PUSH);
+      g.effect('kick-wave', f.x, FLOOR, f.data.color, .45, { radius: DRUM_REPEL_RANGE });
     }
   }
-  if (drumRow(a.t, s.duration) === 1 && drumRow(Math.max(0, a.t - dt), s.duration) !== 1) {
+  const row = drumRow(a.t, s.duration), was = drumRow(prevT, s.duration);
+  if (row === 1 && was !== 1) {
     const y = f.y - 78;
     g.effect('drum-wave', f.x - 110, y, '#f4ecff', .32, { radius: 24 });
     g.effect('drum-wave', f.x + 110, y, '#f4ecff', .32, { radius: 24 });
+  }
+  if (a.shots === DRUM_PER_WAVE * (DRUM_WAVES - 1) && a.liftAt === 0) {
+    // The big last wave opens on a crash, and the beams go red.
+    a.liftAt = a.t;
+    const lights = drumLights.get(a);
+    if (lights) lights.n = 1;
+    g.shake = Math.max(g.shake, 5);
+    g.effect('crash-cymbal', f.x, f.y - 210, '#ffe9a8', .4, { radius: 70 });
+  }
+  if (row === 2 && was !== 2) {
+    // 打鼓打似了: the sticks fly, she goes face down on the kit and her soul slips out.
+    g.effect('stick-fly', f.x - 34, f.y - 150, '#c4a574', .9, { dir: -1 });
+    g.effect('stick-fly', f.x + 34, f.y - 150, '#c4a574', .9, { dir: 1 });
+    g.effect('hug-soul', f.x, f.y - 190, '#f4ecff', 1, { follow: f.id, ox: 0, oy: -190 });
   }
 }
 
@@ -2226,17 +2314,6 @@ function step_onegai(g: FightGame, f: Fighter, a: Attack, dt: number): void {
     }
   }
   if (a.hold < 0 && a.t >= s.start + .42) a.t = s.duration;
-}
-
-function step_arc_kick(g: FightGame, f: Fighter, a: Attack, dt: number): void {
-  const s = a.skill;
-  if (a.t >= s.start && a.t < s.start + .34) {
-    const tick = Math.floor((a.t - s.start) * 12);
-    if (tick > a.shots && tick <= 3) {
-      a.shots = tick;
-      g.effect('ghost', f.x - f.facing * (14 + tick * 16), f.y, f.data.color, .2, { fighter: f.id, alpha: .32 });
-    }
-  }
 }
 
 function step_compose(g: FightGame, f: Fighter, a: Attack, dt: number): void {
@@ -3078,7 +3155,6 @@ SCRIPTS['bushido'] = {
 };
 SCRIPTS['invade'] = Object.assign(SCRIPTS['invade'] ?? {}, { update: step_invade, customDash: true });
 SCRIPTS['onegai'] = Object.assign(SCRIPTS['onegai'] ?? {}, { update: step_onegai, noMelee: true });
-SCRIPTS['arc-kick'] = Object.assign(SCRIPTS['arc-kick'] ?? {}, { update: step_arc_kick });
 SCRIPTS['compose'] = Object.assign(SCRIPTS['compose'] ?? {}, { update: step_compose, skipCount: true, noMelee: true });
 SCRIPTS['wish'] = Object.assign(SCRIPTS['wish'] ?? {}, { update: step_wish, skipVolley: true, skipCount: true });
 SCRIPTS['drums'] = Object.assign(SCRIPTS['drums'] ?? {}, { volley: volley_drums });
@@ -4732,3 +4808,287 @@ export function stepProjectiles(g: FightGame, dt: number): void {
   stepSealVolleys(g, dt);
   easeSealSwells(g, dt);
 }
+
+/* ---- 祐天寺喵梦 ---- */
+
+/** 左右开弓: the first beat to land is a real hit and latches the body; after that every beat on them is a
+ *  quiet tick (no stun of its own, no combo), and the script keeps them pinned between beats. */
+const ROLL_TICK = 10;
+const ROLL_HOLD = .3;
+/** How far past the stick's reach a latched body can slip before the roll lets go of it. */
+const ROLL_SLIP = 40;
+const rollParts = new WeakMap<Skill, { tick: Skill; stick: Skill }>();
+function rollOf(s: Skill): { tick: Skill; stick: Skill } {
+  let r = rollParts.get(s);
+  if (!r) {
+    r = {
+      tick: { ...s, damage: ROLL_TICK, react: { kind: 'none', stun: 0 }, shake: 0, hitstop: 0, noSparks: true, gain: 1, knock: 0 },
+      stick: {
+        ...s, type: 'projectile', fx: 'stick', damage: 48, knock: 320, gain: 4, guardDmg: 12, size: 46, speed: 720, life: .5,
+        react: { kind: 'knockdown', vy: -220, knocked: .7, stun: .4 },
+      },
+    };
+    rollParts.set(s, r);
+  }
+  return r;
+}
+/** BPM shown over her head: 120 on the first beat, 240 on the last. */
+function rollBpm(i: number): number { return Math.round(120 + 120 * Math.min(1, i / (ROLL_MAX - 1))); }
+
+function rollThrow(g: FightGame, f: Fighter, a: Attack, tired: boolean): void {
+  const s = a.skill;
+  const stick = rollOf(s).stick;
+  a.mode = tired ? ROLL.tired : ROLL.throw;
+  a.tossAt = a.t;
+  a.hold = -1;
+  g.projectiles.push({
+    owner: f.id, x: f.x + f.facing * 36, y: f.y - 128,
+    vx: f.facing * (stick.speed ?? 720), vy: 0, life: stick.life ?? .5, skill: stick, color: f.data.color,
+    radius: 16, size: stick.size ?? 46, fx: 'stick', attack: a, hit: new Set(), trail: [], age: 0, solid: false,
+  });
+}
+
+/** 左右开弓 (「祥子和鼓手有仇」「大喵老师又要把鼓棒敲飞了」): ambidextrous, she drums on the body in front of
+ *  her, left and right, faster every beat while the key is down. A tap still plays ROLL_MIN beats. Letting go
+ *  throws the front stick on the next beat, so the last strike gets its full cell and the throw lands in time;
+ *  holding to the last beat throws it too, and then she drops where she stands. CPUs have no key: a.burst is
+ *  the beat count rolled for them at the first beat. a.hold is the latched body. */
+function step_stick_roll(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  const mode = a.mode ?? ROLL.roll;
+  if (mode === ROLL.throw || mode === ROLL.tired) {
+    if (a.t < a.tossAt + ROLL_THROW) return;
+    if (mode === ROLL.throw) { a.t = s.duration; return; }
+    a.mode = ROLL.slump;
+    a.liftAt = a.t;
+    g.text('似了……', f.x, f.y - 120, '#e8dcff', 1, 16);
+    g.effect('hug-soul', f.x, f.y - 70, '#f4ecff', ROLL_SLUMP + .3, { follow: f.id, ox: 0, oy: -70 });
+    return;
+  }
+  if (mode === ROLL.slump) {
+    if (a.t >= a.liftAt + ROLL_SLUMP) a.t = s.duration;
+    return;
+  }
+  if (a.t < s.start) return;
+  if (f.controller === null && !a.burst) a.burst = ROLL_MIN + Math.floor(g.random() * (ROLL_MAX - ROLL_MIN + 1));
+  const local = a.t - s.start;
+  // The next beat is due: past the last one she is spent; past the minimum, a released key throws instead.
+  const due = a.shots >= ROLL_MAX ? ROLL_BEATS[ROLL_MAX - 1] + rollGap(ROLL_MAX - 1) : ROLL_BEATS[a.shots];
+  if (local < due) return;
+  if (a.shots >= ROLL_MAX) { rollThrow(g, f, a, true); return; }
+  if (a.shots >= ROLL_MIN && !(f.controller === null ? a.shots < a.burst : attackHeld(g, f))) { rollThrow(g, f, a, false); return; }
+  const parts = rollOf(s);
+  const i = a.shots++;
+  const side = i % 2 ? -1 : 1;
+  let o = a.hold >= 0 ? g.fighterById(a.hold) : undefined;
+  if (o && (o.hp <= 0 || o.invuln > 0 || Math.abs(o.x - f.x) > s.range + ROLL_SLIP || Math.abs(o.y - f.y) >= 112)) {
+    a.hold = -1;
+    o = undefined;
+  }
+  if (o) {
+    hit(g, f, o, parts.tick, { hit: new Set() });
+  } else {
+    a.hit = new Set();
+    applyMelee(g, f, a);
+    for (const id of a.hit) {
+      const c = g.fighterById(id);
+      // A clean first beat latches; a blocked one keeps the next beat a real swing.
+      if (c && c.hp > 0 && !c.blocking && c.stun > 0) { a.hold = c.id; o = c; break; }
+    }
+  }
+  if (o) {
+    o.vx = 0;
+    o.stun = Math.max(o.stun, ROLL_HOLD);
+    o.attack = null;
+  }
+  // The swing comes down from over her shoulder onto their head; the impact star says 咚 or 哒.
+  const ix = o ? o.x - f.facing * 14 : f.x + f.facing * (s.range - 20);
+  const iy = (o ? o.y : f.y) - 138 + side * 8;
+  const sx = f.x - f.facing * (side > 0 ? 4 : 18), sy = f.y - 150;
+  g.effect('roll-swoosh', sx, sy, f.data.color, .18, { dir: f.facing, n: i, tx: (ix - sx) * f.facing, ty: iy - sy });
+  g.effect('stick-tap', ix, iy, f.data.color, o ? .24 : .16, { n: i, hit: !!o });
+  g.effect('stick-bpm', f.x, f.y - 214, f.data.color, rollGap(i) + .06, { follow: f.id, ox: 0, oy: -214, n: rollBpm(i), hit: i === ROLL_MAX - 1 });
+}
+SCRIPTS['stick-roll'] = Object.assign(SCRIPTS['stick-roll'] ?? {}, { update: step_stick_roll, noMelee: true });
+
+/** 蹭热度: each photo borrows a random 10～40 气 (whole numbers), never more than they have. */
+const SELFIE_STEAL_MIN = 10;
+const SELFIE_STEAL_MAX = 40;
+const SELFIE_EMPTY = 5;
+/** 「蹭上睦头人流量也才 8 万播放」: next to 若叶睦 the counter will not go past this. Display only. */
+const SELFIE_MUTSUMI_CAP = 8;
+const SELFIE_REACH = 46;
+/** 蹭热度: the live window sits just over her head. */
+const SELFIE_LIVE_Y = 226;
+/** Who the counter stalls on. A roster id, not a move name. */
+const SELFIE_CAPPED = 'mutsumi';
+
+/** 蹭热度: the phone sits at the top of the stick in her peace-sign cell. Offsets from the fighter origin. */
+const SELFIE_PHONE_X = 50;
+const SELFIE_PHONE_Y = 168;
+/** 蹭热度: the bar they had at the catch, before the hit paid them their own little bit of meter. */
+const selfieHad = new WeakMap<Attack, number>();
+
+/** 蹭热度 (「喵梦怎么一点热度都没有」): the selfie-stick lunge and an arm round their shoulder; then the peace
+ *  sign, the phone up high looking down at the two of them through a viewfinder, the flash. The photo pops
+ *  out and flies up into her live window. Their 气 is the 热度 she borrows — read at the catch, taken at the
+ *  shot, a random SELFIE_STEAL_MIN～SELFIE_STEAL_MAX, straight onto her bar, and the counter rolls up a 万 per 气. A foe who had less
+ *  than SELFIE_EMPTY gives nothing: grey photo, the counter on 0. Next to 睦 it sticks at 8万. a.mode walks
+ *  SELFIE; a.tossAt is the catch; a.shots flips to 1 at the shot. */
+function step_selfie(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  const mode = a.mode ?? SELFIE.lunge;
+  if (mode === SELFIE.lunge) {
+    if (a.t < s.start) return;
+    const o = foeAhead(g, f, s.range);
+    if (o && Math.abs(o.y - f.y) < 112 && o.invuln <= 0) {
+      a.hit = new Set();
+      // Read the bar before the hit pays them their own little bit of meter.
+      const had = o.energy;
+      if (hit(g, f, o, s, a)) {
+        a.mode = SELFIE.held;
+        a.hold = o.id;
+        a.tossAt = a.t;
+        selfieHad.set(a, had);
+        f.x = clamp(o.x - f.facing * SELFIE_REACH, X_MIN, X_MAX);
+        const mid = f.x + f.facing * SELFIE_REACH / 2;
+        g.effect('selfie-frame', mid, f.y, f.data.color, SELFIE_SNAP + .04, {
+          radius: SELFIE_REACH / 2 + 46, tx: f.x + f.facing * SELFIE_PHONE_X - mid, ty: -SELFIE_PHONE_Y,
+        });
+        return;
+      }
+    }
+    f.x = clamp(f.x + f.facing * (s.speed ?? 640) * dt, X_MIN, X_MAX);
+    if (a.t >= s.start + SELFIE_LUNGE || f.x <= X_MIN || f.x >= X_MAX) {
+      // A photo of nobody: the counter comes up anyway and stays on 0.
+      a.mode = SELFIE.whiff;
+      g.effect('selfie-flash', f.x + f.facing * SELFIE_PHONE_X, f.y - SELFIE_PHONE_Y, '#ffffff', .3, { radius: 50 });
+      g.effect('selfie-live', f.x, f.y - SELFIE_LIVE_Y, f.data.color, 1.2, { follow: f.id, ox: 0, oy: -SELFIE_LIVE_Y, n: 0, hit: false });
+      a.t = Math.max(a.t, s.duration - SELFIE_TAIL);
+    }
+    return;
+  }
+  if (mode !== SELFIE.held) return;
+  const o = g.fighterById(a.hold);
+  if (!o || o.hp <= 0 || a.t >= a.tossAt + SELFIE_HOLD) {
+    a.mode = SELFIE.done;
+    a.hold = -1;
+    a.t = Math.max(a.t, s.duration - SELFIE_TAIL);
+    return;
+  }
+  o.x = clamp(f.x + f.facing * SELFIE_REACH, X_MIN, X_MAX);
+  o.y = FLOOR;
+  o.vx = 0;
+  o.vy = 0;
+  o.knocked = 0;
+  o.stun = Math.max(o.stun, .2);
+  if (a.shots > 0 || a.t < a.tossAt + SELFIE_SNAP) return;
+  // The shot.
+  a.shots = 1;
+  const had = selfieHad.get(a) ?? 0;
+  const roll = SELFIE_STEAL_MIN + Math.floor(g.random() * (SELFIE_STEAL_MAX - SELFIE_STEAL_MIN + 1));
+  const take = had >= SELFIE_EMPTY ? Math.min(roll, Math.floor(o.energy)) : 0;
+  if (take > 0) {
+    o.energy = clamp(o.energy - take, 0, o.energyMax);
+    gainEnergy(f, take);
+    g.text(`-${take} 气`, o.x, o.y - 135, '#ffd27a', .7, 16);
+  }
+  const views = o.data.id === SELFIE_CAPPED ? Math.min(take, SELFIE_MUTSUMI_CAP) : take;
+  const px = f.x + f.facing * SELFIE_PHONE_X, py = f.y - SELFIE_PHONE_Y;
+  const mid = (f.x + o.x) / 2;
+  g.effect('selfie-flash', px, py, '#ffffff', .32, { radius: 70 });
+  g.flash = Math.max(g.flash, .06);
+  g.hitstop = Math.max(g.hitstop, .05);
+  g.effect('selfie-photo', mid, f.y - 92, f.data.color, .7, { dir: f.facing, tx: f.x - mid, ty: -SELFIE_LIVE_Y + 92, hit: take > 0 });
+  g.effect('selfie-live', f.x, f.y - SELFIE_LIVE_Y, f.data.color, 1.8, { follow: f.id, ox: 0, oy: -SELFIE_LIVE_Y, n: views, hit: take > 0, t0: SELFIE_HOLD - SELFIE_SNAP });
+  if (!take) g.text('热度 0', f.x, f.y - SELFIE_LIVE_Y - 44, '#c9c4d8', 1.2, 16);
+}
+SCRIPTS['selfie'] = Object.assign(SCRIPTS['selfie'] ?? {}, { update: step_selfie, noMelee: true });
+
+/** 喵姆喵姆: the heart's reach and how long it holds them; the four syllables, one per paw. */
+const PAW_CHARM_STUN = .75;
+const PAW_SYLLABLES = ['喵', '姆', '喵', '姆'];
+const PAW_REACH = 170;
+/** 「因为名字太像猫叫被乐奈当成猫逗了」: 要乐奈 gets a teaser over her head instead of the heart. A roster id. */
+const PAW_TEASED = 'rana';
+const pawParts = new WeakMap<Skill, { charm: Skill; paw: Skill; last: Skill }>();
+function pawOf(s: Skill): { charm: Skill; paw: Skill; last: Skill } {
+  let p = pawParts.get(s);
+  if (!p) {
+    p = {
+      charm: { ...s, finale: undefined, damage: 6, gain: 3, react: { kind: 'pin', stun: PAW_CHARM_STUN, holdStill: true } },
+      paw: { ...s, finale: undefined },
+      last: { ...s, ...s.finale, finale: undefined },
+    };
+    pawParts.set(s, p);
+  }
+  return p;
+}
+
+/** 喵姆喵姆: where her head and hip sit in each O cell, from the fighter origin (x facing-local). */
+const PAW_HEAD = [[-8, -162], [-10, -158], [14, -136]] as const;
+const PAW_HIP = [[-12, -84], [-14, -84], [-6, -70]] as const;
+/** 喵姆喵姆: the big last swing holds this long before the settle (or before the stranded pose, on a miss). */
+const PAW_GAP_TAIL = .12;
+const pawEars = new WeakMap<Attack, Effect>();
+
+/** 喵姆喵姆 (「扣你几喵姆喵姆～」): paws at her cheeks, head tilted, and a little burst of hearts comes off her.
+ *  The nearest foe in front it reaches cleanly is charmed and pinned; four paws then land on the four
+ *  syllables, the last one shoving them off. Blocked or missed, the four paws swipe the air and she is
+ *  left holding the cute pose. a.mode walks PAW; a.hold is the charmed body. */
+function step_nyamu_paw(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  // The cat ears and tail ride the cell that is up; the script tops their life up every frame.
+  let ears = pawEars.get(a);
+  if (!ears) {
+    ears = g.effect('cat-ears', f.x, f.y, f.data.color, .1, { follow: f.id, dir: f.facing, t0: 0 });
+    ears.max = 10;
+    pawEars.set(a, ears);
+  }
+  const row = pawRow(a.t, s.start, a.mode ?? PAW.pose);
+  const [hx, hy] = PAW_HEAD[row], [kx, ky] = PAW_HIP[row];
+  const lift = f.data.view.kind === 'sprite' ? f.data.view.lift ?? 0 : 0;
+  ears.ox = f.facing * hx; ears.oy = hy - lift;
+  ears.tx = kx - hx; ears.ty = ky - hy;
+  ears.life = .1;
+  ears.t0 = a.t;
+  if (a.t < s.start) return;
+  const parts = pawOf(s);
+  if (!a.emitted) {
+    a.emitted = true;
+    g.text(s.name, f.x, f.y - 190, f.data.color, .65, 17);
+    g.effect('paw-charm', f.x + f.facing * 30, f.y - 150, '#c86bd6', .5, { dir: f.facing, radius: s.range });
+    a.mode = PAW.failed;
+    const o = foeAhead(g, f, s.range);
+    if (o && Math.abs(o.y - f.y) < 112) {
+      a.hit = new Set();
+      if (hit(g, f, o, parts.charm, a) && !o.blocking && o.stun > 0) {
+        a.mode = PAW.charmed;
+        a.hold = o.id;
+        const teased = o.data.id === PAW_TEASED;
+        g.effect(teased ? 'cat-teaser' : 'paw-heart', o.x, o.y - 196, teased ? '#ffcf5a' : '#c86bd6', PAW_CHARM_STUN + .2, { follow: o.id, ox: 0, oy: -196 });
+        if (teased) g.text('猫……', o.x, o.y - 236, '#77DD77', .9, 16);
+      }
+    }
+  }
+  const local = a.t - s.start;
+  while (a.shots < PAW_HITS && local >= pawTime(a.shots)) {
+    const i = a.shots++;
+    const last = i === PAW_HITS - 1;
+    const side = i % 2 ? -1 : 1;
+    const o = a.mode === PAW.charmed ? g.fighterById(a.hold) : undefined;
+    const live = !!o && o.hp > 0 && Math.abs(o.x - f.x) < PAW_REACH && Math.abs(o.y - f.y) < 112;
+    if (live) {
+      a.hit = new Set();
+      hit(g, f, o!, last ? parts.last : parts.paw, a);
+      g.effect('paw-print', o!.x - f.facing * 6 + side * 8, o!.y - 110 - i * 10, '#c86bd6', last ? .55 : .4, { dir: side, heavy: last });
+    }
+    const cx = live ? o!.x - f.facing * 10 : f.x + f.facing * 86;
+    g.effect('paw-claw', cx, f.y - 110 + side * 10, '#c86bd6', .26, { dir: f.facing * side, n: i, hit: live, heavy: last });
+    g.text(PAW_SYLLABLES[i], cx + f.facing * (side * 14), f.y - 196 - i * 6, '#f3c6ff', .4, 20 + (last ? 8 : 0));
+  }
+  if (a.shots < PAW_HITS) return;
+  const end = pawTime(PAW_HITS - 1) + (a.mode === PAW.failed ? PAW_GAP_TAIL + PAW_FAIL : PAW_GAP_TAIL);
+  if (local >= end) a.t = s.duration;
+}
+SCRIPTS['nyamu-paw'] = Object.assign(SCRIPTS['nyamu-paw'] ?? {}, { update: step_nyamu_paw, noMelee: true, skipCount: true });

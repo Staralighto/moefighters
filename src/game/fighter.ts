@@ -164,6 +164,8 @@ export interface Fighter {
   taunt?: boolean;
   /** 彩虹色: internal cooldown between two blessing procs. */
   rainbowCd: number;
+  /** 麦子越踩越坚强: game time the damage window counts from; every roll starts it over. */
+  wheatFrom: number;
   /** Nono国王: the king common sheet stays up through the last staff swing after the timer. */
   king?: boolean;
   /** Challenge buff: multiplier on this fighter's final damage. 1 is neutral. */
@@ -248,7 +250,7 @@ export function makeFighter(
     knocked: 0, downTime: 0, hitBySuper: false, root: 0, rootHits: 0, rootBreak: 0, rootFx: '', rootLevel: 'move', ban: 0, beatStacks: 0, frenzy: 0,
     jabChain: 0, jabChainClock: 0, braced: 0, braceFx: 0, noGain: 0, muscle: 0, sprint: 0, slow: 0, poise: 0, purge: 0, frail: 0, frailBonus: 0, feast: 0, box: 0,
     dodge: 0, dodgeCd: 0, dodgeRequest: false, dodgeBuffer: 0, blockTap: -1, blockBuffer: 0, blockLeft: 0, parry: 0, parryLock: 0, parryOrbCd: 0, parried: 0,
-    debt: 0, debtDmg: 0, rainbowCd: 0,
+    debt: 0, debtDmg: 0, rainbowCd: 0, wheatFrom: 0,
     attack: null, attackSerial: 0, cooldowns: [0, 0, 0, 0, 0, 0], queue: [],
     jumpRequest: false, jumpBuffer: 0,
     combo: 0, hitCount: 0, walk: 0,

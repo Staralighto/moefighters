@@ -1056,8 +1056,11 @@ header nav .icon-btn, header nav summary { border-radius: 999px; }
 .seg { border-radius: 999px; padding: 4px; }
 .seg button, .seg-thumb { border-radius: 999px; }
 .action-mode button, #difficulty-row button, #challenge-kind-row button { font-family: var(--font-display); font-weight: 700; letter-spacing: .02em; }
-.start { font-family: var(--font-head); font-weight: 900; letter-spacing: .06em; border-radius: 999px; }
-.start span { display: inline-grid; place-items: center; width: 1.5em; height: 1.5em; margin-left: .3em; border-radius: 50%; background: var(--on-accent); color: var(--on-brand); font-size: .8em; }
+.start { font-family: var(--font-head); font-weight: 900; letter-spacing: .06em; }
+/* 胶囊和箭头圆标只属于选人页的开打。结算的「再来一局」也挂 .start 取黄色，
+   套这两条会把整句收进 1.5em 圆里裁掉。 */
+#start { border-radius: 999px; }
+#start > span { display: inline-grid; place-items: center; width: 1.5em; height: 1.5em; margin-left: .3em; border-radius: 50%; background: var(--on-accent); color: var(--on-brand); font-size: .8em; }
 
 /* 名册：干净的圆角卡。卡里一个圆垫在缩略图后，平时是中性色，悬停和选中时才变成角色色；
    未选中的卡不带任何代表色，整片名册只有选中的那几张是彩色的。未选中的圆只留三成底色，远看几乎隐形，主体是角色。 */

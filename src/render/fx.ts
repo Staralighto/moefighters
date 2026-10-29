@@ -544,6 +544,55 @@ function blossomWreath(ctx: CanvasRenderingContext2D, rad: number, n: number, si
   ctx.restore();
 }
 
+/** 双踩地狱 rain, drawn under the note at its own origin. A falling note marks where it will land, firmer as
+ *  it comes down (red for the big last wave), so there is something to walk out of; above it hangs a thin
+ *  streak — a tapered sliver in its colour, a pale core and two short side drips that shimmer — so a wave
+ *  reads as rain, not as balls. Flat fills only, no gradient, no save/restore: alpha is put back at the end. */
+function rainTrail(ctx: CanvasRenderingContext2D, p: Projectile): void {
+  const big = p.radius > 12;
+  const r = p.radius;
+  const left = Math.max(0, FLOOR - p.y);
+  const near = 1 - Math.min(1, left / 480);
+  ctx.globalAlpha = .18 + near * .45;
+  ctx.fillStyle = big ? '#ff4d5e' : p.color;
+  const mr = r * (1.4 + near * .6);
+  ctx.beginPath(); ctx.ellipse(0, left, mr, mr * .28, 0, 0, Math.PI * 2); ctx.fill();
+  const len = p.vy * (big ? .2 : .18);
+  const half = r * (big ? .34 : .55);
+  ctx.globalAlpha = big ? .2 : .26;
+  ctx.fillStyle = big ? '#ff8aa0' : p.color;
+  ctx.beginPath(); ctx.moveTo(-half, -r * .4); ctx.lineTo(half, -r * .4); ctx.lineTo(0, -r * .4 - len); ctx.closePath(); ctx.fill();
+  ctx.globalAlpha = big ? .45 : .35;
+  ctx.strokeStyle = '#fff4fb'; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(0, -r * .5); ctx.lineTo(0, -r * .5 - len * .6); ctx.stroke();
+  ctx.globalAlpha = big ? .18 : .13;
+  ctx.lineWidth = 1;
+  const wob = Math.sin(p.age * 18 + p.x) * 2;
+  ctx.beginPath();
+  ctx.moveTo(-half * .9 + wob, -r - 4); ctx.lineTo(-half * .9 + wob, -r - 4 - len * .35);
+  ctx.moveTo(half * .9 - wob, -r - 10); ctx.lineTo(half * .9 - wob, -r - 10 - len * .3);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+/** 喵姆喵姆: the four toes of a paw print, around the pad. Shared by the claw mark and the stamp. */
+const PAW_TOES = [[-1, -.55], [-.35, -1], [.35, -1], [1, -.55]] as const;
+/** 喵姆喵姆: the two cat ears, x offset and tilt. */
+const CAT_EARS = [[-9, -.35], [9, .25]] as const;
+/** 蹭热度: viewfinder corners as unit signs (x side, top/bottom). */
+const FRAME_CORNERS = [[-1, 0], [1, 0], [-1, 1], [1, 1]] as const;
+
+/** One drumstick centred on the origin, lying along x: a tan shaft, a darker bead at the tip. */
+function drumstick(ctx: CanvasRenderingContext2D, len: number): void {
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#3a2a1c'; ctx.lineWidth = 6;
+  ctx.beginPath(); ctx.moveTo(-len / 2, 0); ctx.lineTo(len / 2, 0); ctx.stroke();
+  ctx.strokeStyle = '#d9b884'; ctx.lineWidth = 3.4;
+  ctx.beginPath(); ctx.moveTo(-len / 2, 0); ctx.lineTo(len / 2, 0); ctx.stroke();
+  ctx.fillStyle = '#8a6a44';
+  ctx.beginPath(); ctx.ellipse(len / 2, 0, 4, 3, 0, 0, Math.PI * 2); ctx.fill();
+}
+
 /** The even-width heart: short blunt tip, full lower arcs — no long tapering point.
     Traced centred at the origin, half-width s. Used by the ult pulse. */
 function heartPath(ctx: CanvasRenderingContext2D, s: number): void {
@@ -1152,14 +1201,6 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       ctx.beginPath(); ctx.arc(-6, 18, r * (.9 + p * .35), -2.55, -.3); ctx.stroke();
       ctx.strokeStyle = '#fff7de'; ctx.lineWidth = 3; ctx.stroke();
       break;
-    case 'arc-kick':
-      // Three-quarter circle: behind, over the head, down into the slam.
-      ctx.translate(e.x - (e.dir ?? 1) * 8, e.y - 36); ctx.scale(e.dir ?? 1, 1);
-      ctx.lineWidth = 7 * (1 - p) + 2;
-      ctx.beginPath(); ctx.arc(6, 8, Math.max(36, r), Math.PI, Math.PI / 2); ctx.stroke();
-      ctx.globalAlpha *= .4; ctx.lineWidth = 4;
-      ctx.beginPath(); ctx.arc(-8, 14, Math.max(28, r * .72), Math.PI * .9, Math.PI * .4); ctx.stroke();
-      break;
     case 'drums': {
       ctx.translate(e.x, e.y); ctx.scale(e.dir ?? 1, 1);
       const im = images?.get(KIT_SRC);
@@ -1173,6 +1214,573 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       else {
         ctx.beginPath(); ctx.arc(48, -40, 28, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(8, -78, 16, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+    // 双踩地狱: the first thing off is her own mask — a white half-mask, purple trim, tossed up and back, spinning.
+    case 'mask-off': {
+      const dir = e.dir ?? 1;
+      const k = p;
+      ctx.translate(e.x - dir * 120 * k, e.y - 110 * Math.sin(Math.min(1, k * 1.3) * Math.PI * .5) + 150 * k * k);
+      ctx.rotate(-dir * k * 7.5);
+      ctx.globalAlpha = Math.min(1, e.life / .25);
+      ctx.scale(dir, 1);
+      const w = 30, h = 13;
+      ctx.beginPath();
+      ctx.moveTo(-w, -h * .2);
+      ctx.bezierCurveTo(-w * .9, -h * 1.5, -w * .25, -h * 1.1, 0, -h * .45);
+      ctx.bezierCurveTo(w * .25, -h * 1.1, w * .9, -h * 1.5, w, -h * .2);
+      ctx.bezierCurveTo(w * .85, h * .9, w * .3, h * 1.05, 0, h * .3);
+      ctx.bezierCurveTo(-w * .3, h * 1.05, -w * .85, h * .9, -w, -h * .2);
+      ctx.closePath();
+      ctx.fillStyle = '#f7f2ff'; ctx.fill();
+      ctx.strokeStyle = '#7a3a8a'; ctx.lineWidth = 2.4; ctx.stroke();
+      // Eye holes, and the moth-orchid swirl over one of them (Amoris).
+      ctx.fillStyle = '#1d1426';
+      ctx.beginPath(); ctx.ellipse(-w * .45, -h * .1, w * .2, h * .32, .15, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(w * .45, -h * .1, w * .2, h * .32, -.15, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#c86bd6'; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(w * .45, -h * .1, w * .32, -2.6, -.4); ctx.stroke();
+      ctx.beginPath(); ctx.arc(w * .62, -h * .55, 4, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
+    // 双踩地狱 rain: a note meets the floor — a flat ring opens on the ground and a few drops jump and fall
+    // back. The big notes splash wider.
+    case 'rain-splash': {
+      const big = !!e.heavy;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = (1 - p) * .85;
+      ctx.save(); ctx.scale(1, .26);
+      ctx.strokeStyle = big ? '#ff8aa0' : e.color; ctx.lineWidth = big ? 5 : 3.5;
+      ctx.beginPath(); ctx.arc(0, 0, r * (1.2 + easeOut(p) * (big ? 3.2 : 2.4)), 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle = '#fff4fb';
+      const drops = big ? 6 : 4;
+      for (let i = 0; i < drops; i++) {
+        const side = (i / (drops - 1)) * 2 - 1;
+        const vx = side * (big ? 70 : 50), vy = -(big ? 150 : 110) * (1 - Math.abs(side) * .35);
+        const t = p * e.max;
+        const x = vx * t, y = vy * t + 520 * t * t;
+        if (y > 2) continue;
+        ctx.beginPath(); ctx.arc(x, y, big ? 2.4 : 1.8, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+    // 麦子越踩越坚强: small on purpose — a hint of a field, not a botanical drawing. A low band of warm light
+    // opens on the floor; a row of tiny ears (a hair-thin stem, three grains and a tip) springs up from the
+    // middle outward, and a gust runs through them from one side to the other like wind over a field.
+    // Then the ears let go of their grains, which drift up as gold motes, and the row sinks away.
+    case 'wheat-rise': {
+      const t = e.max - e.life;
+      const fade = Math.min(1, e.life / .45);
+      ctx.translate(e.x, e.y);
+      // The floor glow: one radial gradient, squashed flat.
+      ctx.save();
+      ctx.scale(1, .18);
+      const glow = ctx.createRadialGradient(0, 0, 4, 0, 0, r * 1.25);
+      glow.addColorStop(0, 'rgba(255,214,110,.55)');
+      glow.addColorStop(1, 'rgba(255,214,110,0)');
+      ctx.globalAlpha = fade * Math.min(1, t / .15);
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(0, 0, r * 1.25, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      const N = 11;
+      const sink = Math.max(0, (t - (e.max - .45)) / .45);
+      ctx.lineCap = 'round';
+      for (let i = 0; i < N; i++) {
+        const u = i / (N - 1) * 2 - 1;
+        const x0 = u * r * .8;
+        const grow = Math.min(1, Math.max(0, (t - Math.abs(u) * .14) / .18));
+        if (grow <= 0) continue;
+        const h = (13 + ((i * 5) % 4) * 3) * easeOut(grow) * (1 - sink * .7);
+        // The gust: a lean that travels across the row.
+        const lean = Math.sin(t * 7 - u * 3.2) * .32 + .08;
+        const tipX = x0 + Math.sin(lean) * h, tipY = -Math.cos(lean) * h;
+        ctx.globalAlpha = fade * (.55 + .45 * grow);
+        ctx.strokeStyle = '#d9b45a'; ctx.lineWidth = 1.1;
+        ctx.beginPath(); ctx.moveTo(x0, 0); ctx.quadraticCurveTo(x0, -h * .55, tipX, tipY); ctx.stroke();
+        // Three grains and a tip along the last few pixels, leaning with the stem.
+        ctx.fillStyle = '#ffe08a';
+        for (let k = 0; k < 3; k++) {
+          const d = 2 + k * 2.6;
+          const gx = tipX - Math.sin(lean) * d, gy = tipY + Math.cos(lean) * d;
+          const side = k % 2 ? 1 : -1;
+          ctx.beginPath(); ctx.ellipse(gx + side * 1.3, gy, 1.3, 2, lean + side * .5, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.beginPath(); ctx.arc(tipX, tipY - 1, 1.1, 0, Math.PI * 2); ctx.fill();
+        // Late on, two grains blow off each ear and rise.
+        if (t > .55) {
+          const q = Math.min(1, (t - .55 - (i % 3) * .05) / .6);
+          if (q > 0) {
+            ctx.fillStyle = '#fff2c4';
+            for (let k = 0; k < 2; k++) {
+              ctx.globalAlpha = fade * (1 - q) * .95;
+              const mx = tipX + (k ? 1 : -1) * 4 * q + Math.sin(q * 6 + i) * 3;
+              ctx.beginPath(); ctx.arc(mx, tipY - q * (40 + k * 26 + (i % 4) * 8), 1.3, 0, Math.PI * 2); ctx.fill();
+            }
+          }
+        }
+      }
+      break;
+    }
+    // 麦子越踩越坚强, held: a soft gold ring at her feet and two motes circling up while the cut lasts.
+    case 'wheat-aura': {
+      const t = e.age ?? 0;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = e.life * .7;
+      ctx.save(); ctx.scale(1, .25);
+      ctx.strokeStyle = e.color; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(0, 0, 34 + Math.sin(t * 6) * 2, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle = '#fff2c4';
+      for (let i = 0; i < 2; i++) {
+        const u = (t * .8 + i * .5) % 1;
+        const a0 = t * 4 + i * Math.PI;
+        ctx.globalAlpha = e.life * (1 - u) * .9;
+        ctx.beginPath(); ctx.arc(Math.cos(a0) * 26, -10 - u * 150, 2.2, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+    // 双踩地狱: two stage beams from the top corners cross on her — 武道馆 again. They sway slowly; when the
+    // big last wave comes (n = 1) they go red.
+    case 'stage-lights': {
+      const t = e.max - e.life;
+      const red = (e.n ?? 0) > 0;
+      ctx.globalAlpha = Math.min(1, t / .25) * Math.min(1, e.life / .3);
+      for (const side of [-1, 1]) {
+        const sway = Math.sin(t * 1.4 + side) * 40;
+        const topX = e.x + side * 330, topW = 14;
+        const footX = e.x + sway * side * .5, footW = 90;
+        const g = ctx.createLinearGradient(topX, 0, footX, e.y);
+        g.addColorStop(0, red ? 'rgba(255,90,110,.42)' : 'rgba(214,150,255,.38)');
+        g.addColorStop(1, red ? 'rgba(255,90,110,0)' : 'rgba(214,150,255,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.moveTo(topX - topW, -10); ctx.lineTo(topX + topW, -10);
+        ctx.lineTo(footX + footW, e.y); ctx.lineTo(footX - footW, e.y);
+        ctx.closePath(); ctx.fill();
+      }
+      break;
+    }
+    // 双踩地狱: every repel pulse is a double-kick — a flat ring rolls out along the floor and fire licks
+    // up under her feet (「双踩脚底冒火」).
+    case 'kick-wave': {
+      ctx.translate(e.x, e.y);
+      ctx.save();
+      ctx.scale(1, .2);
+      for (let i = 0; i < 2; i++) {
+        const k = Math.max(0, p - i * .18) / (1 - i * .18);
+        if (k <= 0) continue;
+        ctx.globalAlpha = (1 - k) * (i ? .45 : .8);
+        ctx.strokeStyle = i ? '#ffd0ef' : e.color; ctx.lineWidth = i ? 6 : 10;
+        ctx.beginPath(); ctx.arc(0, 0, 20 + r * easeOut(k), 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.restore();
+      if (p < .7) {
+        const fade = 1 - p / .7;
+        for (let i = 0; i < 7; i++) {
+          const fx0 = (i - 3) * 15;
+          const hgt = (26 + ((i * 7) % 3) * 9) * (.6 + .4 * Math.sin(p * 20 + i)) * fade;
+          const grad = ctx.createLinearGradient(0, 0, 0, -hgt);
+          grad.addColorStop(0, 'rgba(255,90,58,.9)');
+          grad.addColorStop(.6, 'rgba(255,179,71,.75)');
+          grad.addColorStop(1, 'rgba(255,240,180,0)');
+          ctx.globalAlpha = fade;
+          ctx.fillStyle = grad;
+          ctx.beginPath(); ctx.moveTo(fx0 - 8, 0);
+          ctx.quadraticCurveTo(fx0 - 7, -hgt * .55, fx0 + Math.sin(p * 30 + i) * 4, -hgt);
+          ctx.quadraticCurveTo(fx0 + 7, -hgt * .55, fx0 + 8, 0);
+          ctx.closePath(); ctx.fill();
+        }
+      }
+      break;
+    }
+    // 双踩地狱: the second wave opens on a crash cymbal — a gold disc flashes and throws a ring of short rays.
+    case 'crash-cymbal': {
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = 1 - p;
+      ctx.save(); ctx.scale(1, .32);
+      ctx.fillStyle = '#e0b84a';
+      ctx.beginPath(); ctx.arc(0, 0, 34 * (1 + p * .15), 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#fff3c4'; ctx.lineWidth = 4; ctx.stroke();
+      ctx.restore();
+      ctx.strokeStyle = e.color; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      for (let i = 0; i < 10; i++) {
+        const ang = i * Math.PI / 5;
+        const r0 = 30 + p * r * .6, r1 = r0 + 14 * (1 - p);
+        ctx.beginPath(); ctx.moveTo(Math.cos(ang) * r0, Math.sin(ang) * r0 * .5); ctx.lineTo(Math.cos(ang) * r1, Math.sin(ang) * r1 * .5); ctx.stroke();
+      }
+      break;
+    }
+    // 打鼓打似了: a drumstick spins up out of the hand and drops away.
+    case 'stick-fly': {
+      const dir = e.dir ?? 1;
+      ctx.translate(e.x + dir * 150 * p, e.y - 240 * p + 300 * p * p);
+      ctx.rotate(dir * p * 14);
+      ctx.globalAlpha = Math.min(1, e.life / .2);
+      drumstick(ctx, 46);
+      break;
+    }
+    // 左右开弓: one beat landing — a comic impact star with the drum's own sound in it, 咚 and 哒 in turn
+    // (left hand, right hand). It grows and heats up with the tempo: white, then gold, then red. A beat
+    // that only finds air is a small grey puff.
+    case 'stick-tap': {
+      const n = e.n ?? 0;
+      const heat = Math.min(1, n / 11);
+      const t = e.max - e.life;
+      ctx.translate(e.x, e.y);
+      if (!e.hit) {
+        ctx.globalAlpha = (1 - p) * .6;
+        ctx.strokeStyle = '#d8d0e4'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(0, 0, 6 + p * 12, 0, Math.PI * 2); ctx.stroke();
+        break;
+      }
+      const k = backOut(Math.min(1, t / .06));
+      const R = (20 + heat * 14) * k;
+      ctx.rotate((n % 2 ? -1 : 1) * .2);
+      ctx.globalAlpha = Math.min(1, e.life / .08);
+      const fill = heat < .5 ? '#ffffff' : heat < .85 ? '#ffe28a' : '#ff8a6a';
+      ctx.beginPath();
+      for (let i = 0; i < 16; i++) {
+        const rr = i % 2 ? R * .52 : R * (i % 4 ? .92 : 1.12);
+        const ang = i * Math.PI / 8;
+        if (i) ctx.lineTo(Math.cos(ang) * rr, Math.sin(ang) * rr); else ctx.moveTo(rr, 0);
+      }
+      ctx.closePath();
+      ctx.fillStyle = fill; ctx.fill();
+      ctx.strokeStyle = '#2a1830'; ctx.lineWidth = 2.4; ctx.stroke();
+      ctx.font = `900 ${Math.round(R * .9)}px ${UI_FONT}`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = e.color;
+      ctx.fillText(n % 2 ? '哒' : '咚', 0, 1);
+      break;
+    }
+    // 左右开弓: the swing itself — a short arc from over her shoulder down onto the head, one hand at a time:
+    // purple for one side, pink for the other. Thicker as the tempo climbs.
+    case 'roll-swoosh': {
+      const dir = e.dir ?? 1;
+      const n = e.n ?? 0;
+      const heat = Math.min(1, n / 11);
+      ctx.translate(e.x, e.y);
+      ctx.scale(dir, 1);
+      ctx.globalAlpha = (1 - p) * .8;
+      const tx = e.tx ?? 60, ty = e.ty ?? 40;
+      // A filled crescent: the outer edge bows up and over, the inner edge cuts back a little lower, so the
+      // stroke tapers to a point at both ends. The control point sits above the impact.
+      const cx = tx * .55, cy = Math.min(0, ty) - 46 - heat * 10;
+      const thick = 10 + heat * 8;
+      ctx.fillStyle = n % 2 ? '#ff7ab6' : e.color;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.quadraticCurveTo(cx, cy, tx, ty);
+      ctx.quadraticCurveTo(cx + 6, cy + thick, 0, 0);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(cx, cy, tx, ty); ctx.stroke();
+      break;
+    }
+    // 左右开弓: the metronome over her head. Each beat pops the new number; the last one runs red.
+    case 'stick-bpm': {
+      const t = e.max - e.life;
+      const k = backOut(Math.min(1, t / .07));
+      ctx.translate(e.x, e.y);
+      ctx.scale(k, k);
+      ctx.globalAlpha = Math.min(1, e.life / .08);
+      ctx.font = `900 15px ${UI_FONT}`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const text = `${e.n ?? 120} BPM`;
+      ctx.lineWidth = 4; ctx.strokeStyle = '#1b1424'; ctx.strokeText(text, 0, 0);
+      const bpm = e.n ?? 120;
+      ctx.fillStyle = e.hit ? '#ff6b6b' : bpm >= 200 ? '#ffb15a' : bpm >= 160 ? '#ffe28a' : '#ffffff'; ctx.fillText(text, 0, 0);
+      break;
+    }
+    // 蹭热度: the selfie flash at the tip of the stick.
+    case 'selfie-flash': {
+      ctx.translate(e.x, e.y);
+      const bloom = ctx.createRadialGradient(0, 0, 2, 0, 0, r * (.6 + p * .6));
+      bloom.addColorStop(0, 'rgba(255,255,255,.95)');
+      bloom.addColorStop(.4, 'rgba(255,240,250,.5)');
+      bloom.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.globalAlpha = 1 - p;
+      ctx.fillStyle = bloom;
+      ctx.beginPath(); ctx.arc(0, 0, r * (.6 + p * .6), 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+      for (let i = 0; i < 4; i++) {
+        const ang = i * Math.PI / 2 + .3;
+        ctx.beginPath(); ctx.moveTo(Math.cos(ang) * 6, Math.sin(ang) * 6); ctx.lineTo(Math.cos(ang) * (14 + p * 26), Math.sin(ang) * (14 + p * 26)); ctx.stroke();
+      }
+      break;
+    }
+    // 蹭热度: her live window over her head. The counter rolls up a 万 per 气 she borrowed; with nothing to
+    // borrow it sits on 0 and the window goes grey (「喵梦怎么一点热度都没有」).
+    case 'selfie-live': {
+      // The window opens once the photo has flown up into it (t0). How much she borrowed sets the mood:
+      // under 20万 a plain counter; 20万+ pink with more hearts; 30万+ gold, a bigger number, a 热门 tag and
+      // a burst of rays as the count lands. Nothing borrowed: the window goes grey on 0.
+      const t = e.max - e.life - (e.t0 ?? 0);
+      if (t < 0) break;
+      const n = e.n ?? 0;
+      const tier = !e.hit ? -1 : n >= 30 ? 2 : n >= 20 ? 1 : 0;
+      const roll = Math.min(1, t / .6);
+      const landed = t >= .6;
+      const bump = landed && tier >= 1 ? 1 + Math.max(0, 1 - (t - .6) / .18) * (tier === 2 ? .22 : .12) : 1;
+      const k = backOut(Math.min(1, t / .12)) * bump;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = Math.min(1, e.life / .25);
+      if (tier === 2 && landed && t < 1.05) {
+        // The rays behind the window when a big count lands.
+        const q = (t - .6) / .45;
+        ctx.save();
+        ctx.globalAlpha *= (1 - q) * .8;
+        ctx.strokeStyle = '#ffd36a'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+        for (let i = 0; i < 12; i++) {
+          const ang = i * Math.PI / 6 + .2;
+          const r0 = 42 + q * 18, r1 = r0 + 14 + (i % 2) * 8;
+          ctx.beginPath(); ctx.moveTo(Math.cos(ang) * r0, Math.sin(ang) * r0 * .75); ctx.lineTo(Math.cos(ang) * r1, Math.sin(ang) * r1 * .75); ctx.stroke();
+        }
+        ctx.restore();
+      }
+      ctx.scale(k, k);
+      const dead = tier < 0 && t > .45;
+      const w = 76, h = 46;
+      const edge = dead ? '#8a8494' : tier === 2 ? '#ffd36a' : tier === 1 ? '#ff8fc8' : e.color;
+      ctx.fillStyle = dead ? '#2a2830' : '#1b1424';
+      ctx.strokeStyle = edge; ctx.lineWidth = tier === 2 ? 4 : 3;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(-w / 2, -h / 2, w, h, 9); else ctx.rect(-w / 2, -h / 2, w, h);
+      ctx.fill(); ctx.stroke();
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = dead ? '#77737f' : '#ff4d5e';
+      ctx.beginPath(); ctx.arc(-w / 2 + 9, -h / 2 + 9, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.font = `800 8px ${UI_FONT}`;
+      ctx.fillText('LIVE', -w / 2 + 15, -h / 2 + 9.5);
+      const shown = n > 0 ? Math.round(n * roll) : 0;
+      ctx.textAlign = 'center';
+      ctx.font = `900 ${tier === 2 ? 20 : tier === 1 ? 18 : 17}px ${UI_FONT}`;
+      ctx.fillStyle = dead ? '#9b97a6' : tier === 2 && landed ? '#ffd36a' : tier === 1 && landed ? '#ffd6ec' : '#ffffff';
+      ctx.fillText(shown > 0 ? `${shown}万` : '0', 0, 3);
+      ctx.font = `700 8px ${UI_FONT}`;
+      ctx.fillStyle = dead ? '#77737f' : '#e8c8f0';
+      ctx.fillText('播放', 0, h / 2 - 8);
+      if (tier === 2 && landed) {
+        // 热门: a small red tag on the corner.
+        ctx.save();
+        ctx.translate(w / 2 - 6, -h / 2 - 2);
+        ctx.rotate(.18);
+        ctx.fillStyle = '#ff4d5e';
+        ctx.fillRect(-14, -7, 28, 13);
+        ctx.font = `900 9px ${UI_FONT}`;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('热门', 0, 0);
+        ctx.restore();
+      }
+      if (tier >= 0 && t < 1) {
+        // Little hearts float up off the counter while it rolls: two, four or six by the tier.
+        const count = 2 + tier * 2;
+        ctx.fillStyle = tier === 2 ? '#ffb347' : '#ff6f9e';
+        for (let i = 0; i < count; i++) {
+          const u = (t * 1.6 + i / count) % 1;
+          ctx.save(); ctx.globalAlpha *= (1 - u) * Math.min(1, (1 - t) * 3);
+          ctx.translate(w / 2 - 8 - (i % 3) * 10 - (i > 2 ? 30 : 0), -h / 2 - u * 26);
+          heartPath(ctx, 4 + (i % 2)); ctx.fill();
+          ctx.restore();
+        }
+      }
+      break;
+    }
+    // 喵姆喵姆: paws at her cheeks — a little spray of purple hearts rolls forward to the heart's reach.
+    case 'paw-charm': {
+      const dir = e.dir ?? 1;
+      ctx.translate(e.x, e.y);
+      ctx.scale(dir, 1);
+      for (let i = 0; i < 5; i++) {
+        const u = Math.max(0, Math.min(1, (p - i * .06) / .8));
+        if (u <= 0) continue;
+        const ang = (i - 2) * .22;
+        const d = easeOut(u) * (r - 20);
+        ctx.save();
+        ctx.globalAlpha = (1 - u) * .95;
+        ctx.translate(Math.cos(ang) * d, Math.sin(ang) * d + Math.sin(u * 9 + i) * 4);
+        const sz = 7 + (i % 2) * 3;
+        ctx.fillStyle = i % 2 ? '#ff8fd0' : e.color;
+        heartPath(ctx, sz); ctx.fill();
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.restore();
+      }
+      break;
+    }
+    // 喵姆喵姆: charmed — a purple heart beats over their head for as long as the charm holds.
+    case 'paw-heart': {
+      const t = e.max - e.life;
+      const beat = 1 + Math.max(0, Math.sin(t * 14)) * .14;
+      ctx.translate(e.x, e.y - Math.min(1, t / .15) * 6);
+      ctx.scale(backOut(Math.min(1, t / .12)) * beat, backOut(Math.min(1, t / .12)) * beat);
+      ctx.globalAlpha = Math.min(1, e.life / .2);
+      ctx.fillStyle = e.color; heartPath(ctx, 13); ctx.fill();
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5; ctx.stroke();
+      ctx.fillStyle = '#f6d8ff'; ctx.beginPath(); ctx.arc(-5, -6, 2.6, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    // 喵姆喵姆 on 要乐奈: she gets a cat teaser dangled over her instead — the stick, the string, a bobbing pompom.
+    case 'cat-teaser': {
+      const t = e.max - e.life;
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = Math.min(1, e.life / .2) * Math.min(1, t / .1);
+      const sway = Math.sin(t * 8) * .35;
+      ctx.strokeStyle = '#8a5a3a'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(-34, -26); ctx.lineTo(0, -16); ctx.stroke();
+      const bx = Math.sin(sway) * 22, by = Math.cos(sway) * 22 - 16;
+      ctx.strokeStyle = '#d8d0c0'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(0, -16); ctx.lineTo(bx, by); ctx.stroke();
+      ctx.fillStyle = e.color;
+      for (let i = 0; i < 7; i++) {
+        const ang = i * Math.PI * 2 / 7 + t * 3;
+        ctx.beginPath(); ctx.arc(bx + Math.cos(ang) * 5, by + Math.sin(ang) * 5, 4, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(bx - 2, by - 2, 2, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    // 喵姆喵姆: one paw — three purple claw marks raked across, left and right in turn; the last is twice the size.
+    case 'paw-claw': {
+      const dir = e.dir ?? 1;
+      const big = e.heavy ? 1.9 : 1.25;
+      const draw = Math.min(1, p / .35);
+      ctx.translate(e.x, e.y);
+      ctx.scale(dir * big, big);
+      ctx.rotate(.55);
+      ctx.globalAlpha = p < .35 ? 1 : 1 - (p - .35) / .65;
+      ctx.lineCap = 'round';
+      for (let i = -1; i <= 1; i++) {
+        const y = i * 9;
+        const x0 = -24, x1 = -24 + 48 * draw;
+        ctx.strokeStyle = e.color; ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.moveTo(x0, y - 4); ctx.quadraticCurveTo((x0 + x1) / 2, y + 5, x1, y - 4); ctx.stroke();
+        ctx.strokeStyle = '#fbe9ff'; ctx.lineWidth = 1.8;
+        ctx.beginPath(); ctx.moveTo(x0, y - 4); ctx.quadraticCurveTo((x0 + x1) / 2, y + 5, x1, y - 4); ctx.stroke();
+      }
+      if (e.hit && p < .5) {
+        // A paw print where it landed.
+        ctx.rotate(-.55);
+        ctx.globalAlpha = (1 - p / .5) * .85;
+        ctx.fillStyle = '#ffd6f4';
+        ctx.beginPath(); ctx.ellipse(0, 4, 6, 5, 0, 0, Math.PI * 2); ctx.fill();
+        for (const [tx, ty] of PAW_TOES) { ctx.beginPath(); ctx.arc(tx * 7, -4 + (ty + .55) * 9, 2.4, 0, Math.PI * 2); ctx.fill(); }
+      }
+      break;
+    }
+    // 蹭热度: the viewfinder. The phone is up on the stick (tx, ty from the centre of the frame); thin lines
+    // run from it to the frame's top corners so it reads as the camera looking down at the two of them.
+    // Corner brackets snap in round both bodies, a focus square shrinks onto them, and the REC dot blinks.
+    case 'selfie-frame': {
+      const t = e.max - e.life;
+      const hw = e.radius ?? 80, top = -190, bottom = 6;
+      const k = backOut(Math.min(1, t / .1));
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = Math.min(1, e.life / .06);
+      const px = e.tx ?? 0, py = e.ty ?? -170;
+      ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1.2;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.moveTo(px, py); ctx.lineTo(-hw * k, top * k);
+      ctx.moveTo(px, py); ctx.lineTo(hw * k, top * k);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const w = hw * (1.25 - .25 * k), h0 = top * (1.25 - .25 * k);
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.lineCap = 'square';
+      const L = 18;
+      for (const [side, low] of FRAME_CORNERS) {
+        const x = side * w, y = low ? bottom : h0, sx = -side, sy = low ? -1 : 1;
+        ctx.beginPath(); ctx.moveTo(x + sx * L, y); ctx.lineTo(x, y); ctx.lineTo(x, y + sy * L); ctx.stroke();
+      }
+      const f = Math.max(0, 1 - t / .25);
+      ctx.strokeStyle = e.color; ctx.lineWidth = 2;
+      // The focus square closes onto their faces.
+      const fw = 30 + f * 34;
+      ctx.strokeRect(-fw, -150 - fw * .55, fw * 2, fw * 1.1);
+      if (Math.floor(t * 6) % 2 === 0) {
+        ctx.fillStyle = '#ff4d5e';
+        ctx.beginPath(); ctx.arc(-w + 14, h0 + 16, 4, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+    // 蹭热度: the shot, as a polaroid. It pops out of the frame, tilts, and flies up into the live window over
+    // her head (tx, ty from the start). Inside: two little heads — hers in her colour, theirs in white — and a
+    // heart sticker. With nothing borrowed (hit unset) the photo comes out grey.
+    case 'selfie-photo': {
+      const t = e.max - e.life;
+      const fly = Math.min(1, Math.max(0, (t - .12) / .3));
+      const ease = fly * fly * (3 - 2 * fly);
+      const tx = e.tx ?? 0, ty = e.ty ?? -120;
+      ctx.translate(e.x + tx * ease, e.y + ty * ease - Math.sin(ease * Math.PI) * 30);
+      const pop = backOut(Math.min(1, t / .12));
+      const sc = pop * (1 - ease * .65);
+      ctx.rotate((e.dir ?? 1) * (-.12 + ease * .5));
+      ctx.scale(sc, sc);
+      ctx.globalAlpha = 1 - Math.max(0, (t - .42) / Math.max(.01, e.max - .42));
+      const dead = !e.hit;
+      ctx.fillStyle = '#fbf8f2';
+      ctx.fillRect(-34, -38, 68, 80);
+      ctx.strokeStyle = '#2a1830'; ctx.lineWidth = 2; ctx.strokeRect(-34, -38, 68, 80);
+      ctx.fillStyle = dead ? '#6e6a78' : '#2b2040';
+      ctx.fillRect(-28, -32, 56, 54);
+      ctx.fillStyle = dead ? '#a9a5b2' : e.color;
+      ctx.beginPath(); ctx.arc(-11, -6, 11, 0, Math.PI * 2); ctx.fill();
+      ctx.fillRect(-21, 6, 20, 16);
+      ctx.fillStyle = dead ? '#8e8a98' : '#f2eef8';
+      ctx.beginPath(); ctx.arc(12, -3, 10, 0, Math.PI * 2); ctx.fill();
+      ctx.fillRect(3, 8, 18, 14);
+      if (!dead) {
+        ctx.fillStyle = '#ff6f9e';
+        ctx.save(); ctx.translate(18, -22); heartPath(ctx, 6); ctx.fill(); ctx.restore();
+      }
+      break;
+    }
+    // 喵姆喵姆: for the whole move she wears cat ears and a tail. The script moves the anchor to the head and
+    // the hip of whichever cell is up (ox/oy are the head, tx/ty the hip, both from the fighter origin).
+    case 'cat-ears': {
+      const dir = e.dir ?? 1;
+      // t0 is the move's own clock, written every frame by the script; the life is topped up every frame,
+      // so the ears fade out a beat after the move stops, however it stops.
+      const t = e.t0 ?? 0;
+      ctx.globalAlpha = Math.min(1, t / .08) * Math.min(1, e.life / .06);
+      ctx.translate(e.x, e.y);
+      ctx.scale(dir, 1);
+      ctx.fillStyle = e.color; ctx.strokeStyle = '#2a1830'; ctx.lineWidth = 2;
+      for (const [x, tilt] of CAT_EARS) {
+        ctx.save(); ctx.translate(x, 0); ctx.rotate(tilt + Math.sin(t * 9 + x) * .06);
+        ctx.beginPath(); ctx.moveTo(-8, 2); ctx.lineTo(0, -17); ctx.lineTo(8, 2); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#ffc6e6';
+        ctx.beginPath(); ctx.moveTo(-4, 0); ctx.lineTo(0, -10); ctx.lineTo(4, 0); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = e.color;
+        ctx.restore();
+      }
+      // The tail, from the hip (tx, ty from the head, facing-local), swishing.
+      ctx.translate(e.tx ?? -10, e.ty ?? 70);
+      const sw = Math.sin(t * 7) * .5;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#2a1830'; ctx.lineWidth = 9;
+      ctx.beginPath(); ctx.moveTo(0, 0);
+      ctx.bezierCurveTo(-26, 4, -40, -22 + sw * 10, -30 + sw * 14, -46);
+      ctx.stroke();
+      ctx.strokeStyle = e.color; ctx.lineWidth = 6;
+      ctx.stroke();
+      break;
+    }
+    // 喵姆喵姆: where a paw lands it leaves a big pink paw print — pad and four toes — that pops and fades.
+    // The last one is twice the size.
+    case 'paw-print': {
+      const t = e.max - e.life;
+      const big = e.heavy ? 1.9 : 1;
+      const k = backOut(Math.min(1, t / .08)) * big;
+      ctx.translate(e.x, e.y);
+      ctx.rotate((e.dir ?? 1) * .3);
+      ctx.scale(k, k);
+      ctx.globalAlpha = Math.min(1, e.life / .15) * .9;
+      ctx.fillStyle = '#ffd6f4'; ctx.strokeStyle = e.color; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(0, 5, 11, 9, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      for (const [x, y] of PAW_TOES) {
+        ctx.beginPath(); ctx.ellipse(x * 12, -7 + (y + .55) * 13.3, 4, 5, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       }
       break;
     }
@@ -5996,7 +6604,15 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
       ctx.beginPath(); ctx.arc(r * .3, -r * .15, r * .16, 0, Math.PI * 2); ctx.fill();
       break;
     }
+    // 左右开弓: the stick she lets go of, end over end.
+    case 'stick': {
+      ctx.rotate(p.age * 24 * (Math.sign(p.vx) || 1));
+      drumstick(ctx, 48);
+      break;
+    }
+    case 'rain-note':
     case 'note': {
+      if (p.fx === 'rain-note') rainTrail(ctx, p);
       const s = Math.max(7, p.radius);
       ctx.fillStyle = '#16141f';
       ctx.fillRect(s * .32, -s * 1.4, s * .34, s * 1.55);

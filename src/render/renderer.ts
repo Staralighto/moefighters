@@ -25,7 +25,7 @@ export function portraitBodyScale(padSplit: boolean): number {
 /** Hard 1px rim, yellow for the left team and green for the right. */
 const TEAM_GLOW = SIDE;
 /** Effects painted under every body: 和泉朋花's coffin and her spotlights. */
-const BACK_FX = new Set(['coffin', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door']);
+const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door']);
 /** Screen-space layers that ignore the body zoom: behind every body, and in front of them. */
 const SCREEN_BACK = new Set(['encore-stage', 'family-dim']);
 const SCREEN_FRONT = new Set(['encore-rain', 'encore-crowd', 'encore-call', 'slap-flash']);
@@ -258,6 +258,8 @@ export class Renderer {
           if (m.left <= 0) continue;
           if (m.mark === 'praise') drawEffect(c, { type: 'praise-aura', x: f.x, y: f.y - 182, color: '#ff8fd8', life: 1, max: 1, age: g.age });
           else if (m.mark === 'spotlight') drawEffect(c, { type: 'spot-aura', x: f.x, y: footY, color: '#fff2fb', life: 1, max: 1, age: g.age });
+          // 祐天寺喵梦's hidden 麦子越踩越坚强: a warm gold shimmer while the cut holds.
+          else if (m.mark === 'wheat') drawEffect(c, { type: 'wheat-aura', x: f.x, y: footY, color: '#ffd36a', life: Math.min(1, m.left / .3), max: 1, age: g.age });
           // 滨崎茉幌: the pile she carries over her head, the aftershocks at her feet.
           else if (m.kind === 'burden' && (m.v ?? 0) > 0) drawEffect(c, { type: 'burden', x: f.x, y: f.y - BURDEN_Y, color: f.data.color, life: 1, max: 1, n: m.v, age: g.age });
           else if (m.kind === 'quake') drawEffect(c, { type: 'quake-aura', x: f.x, y: FLOOR, color: f.data.color, life: 1, max: 1, n: m.acc ?? 1, age: g.age });

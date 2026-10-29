@@ -8,7 +8,7 @@ import { BANDS, BAND_BY_ID } from '../src/data/bands.ts';
 import { AIR_SKILLS, skill } from '../src/data/skills.ts';
 import { STAGES } from '../src/data/stages.ts';
 import { FLOOR, COMBO_DECAY, STEP, W, X_MAX, X_MIN } from '../src/game/constants.ts';
-import { BUSHIDO_TAIL, bushidoClip, clipFor, crashRow, drumRow, flameFrame, IAIDO_DECIDE, IAIDO_GAP, IAIDO_RECOVER, riotCell } from '../src/render/clips.ts';
+import { BUSHIDO_TAIL, bushidoClip, clipFor, crashRow, DRUM_SLUMP, drumRow, ROLL, ROLL_BEATS, ROLL_MAX, rollGap, flameFrame, IAIDO_DECIDE, IAIDO_GAP, IAIDO_RECOVER, riotCell } from '../src/render/clips.ts';
 import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
 import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell, shouldGoLite } from '../src/render/fx.ts';
 import { backingScale, portraitBodyScale, teamGlowOn } from '../src/render/renderer.ts';
@@ -103,11 +103,11 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 // step with docs/guard-damage.md when a super's numbers change.
 {
   const breaksAt: Record<string, number> = {
-    nyamu: 9, sakiko: 5, anon: 5, rana: 10, soyo: 3, kokoro: 3, miyako: 5,
+    nyamu: 4, sakiko: 5, anon: 5, rana: 10, soyo: 3, kokoro: 3, miyako: 5,
     eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5,
   };
   const segments: Record<string, number> = {
-    nyamu: 16, sakiko: 8, anon: 6, rana: 22, soyo: 3, kokoro: 3, miyako: 6,
+    nyamu: 4, sakiko: 8, anon: 6, rana: 22, soyo: 3, kokoro: 3, miyako: 6,
     eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7,
   };
   for (const [id, breakAt] of Object.entries(breaksAt)) {
@@ -1120,63 +1120,295 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(w1.attack?.index, 0, '推落 whiff can act again');
 }
 
-// nyamu: spin kick launches, crescent reaches, the super shoves then rains notes
+// nyamu: 左右开弓 drums on a body and throws the stick, 蹭热度 borrows meter, 喵姆喵姆 charms then paws,
+// 双踩地狱 shoves and rains two waves and ends face down on the kit
 {
-  const nyamu = ROSTER.findIndex(c => c.id === 'nyamu');
-  assert.ok(nyamu >= 0, 'nyamu is on the roster');
+  const nyamu = at('nyamu');
   const data = ROSTER[nyamu];
-  assert.equal(data.skills[2].type, 'launch', '回旋踢 launches');
-  assert.ok(data.skills[4].range > 160, '月牙踢 reaches');
-  assert.equal(data.skills[4].fx, 'arc-kick', '月牙踢 arc');
-  assert.equal(data.skills[5].fx, 'drums', '满场 is the kit');
-  assert.equal(data.skills[5].count, 16, '满场 drops sixteen notes');
+  assert.equal(data.trait, 'beat', 'nyamu keeps the drum passive');
+  assert.deepEqual(data.skills.slice(2).map(s => s.fx), ['stick-roll', 'selfie', 'nyamu-paw', 'drums'], 'nyamu U I O L');
+  assert.equal(data.skills[5].count, 32, '双踩地狱 drops four waves of eight');
+  assert.ok(data.skills[4].holdEndure, '喵姆喵姆 holds armour through the cast');
+  assert.equal(data.skills[5].superArmor, true, '双踩地狱 is true super armour');
+  assert.ok(data.skills[3].start <= .12 && (data.skills[3].speed ?? 0) >= 860, '蹭热度 starts and lunges fast');
   const super5 = data.skills[5];
-  assert.ok(drumShotTime(super5, 8) - drumShotTime(super5, 7) > .4, '满场 falls in two waves');
-  assert.ok(drumShotTime(super5, 15) < super5.duration, 'the second wave fits in the super');
+  for (const w of [8, 16, 24]) assert.ok(drumShotTime(super5, w) - drumShotTime(super5, w - 1) > .1, `双踩地狱 wave ${w / 8} starts after a pause`);
+  assert.ok(drumShotTime(super5, 31) < super5.duration - DRUM_SLUMP, 'the last wave is out before she slumps');
+  assert.equal(ROLL_BEATS.length, ROLL_MAX, 'one beat time per stick');
+  for (let i = 1; i < ROLL_MAX; i++) assert.ok(rollGap(i) <= rollGap(i - 1), '左右开弓 only speeds up');
 
-  const g = newGame(nyamu, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
-  p1.energy = p1.energyMax;
-  p2.x = p1.x + 80; p2.facing = -1;
-  const startX = p2.x;
-  g.keyDown('KeyL');
-  run(g, .2);
-  assert.ok(p2.x > startX + 15, `满场 shoves, moved ${p2.x - startX}`);
-  // Sustained repel: drag the foe back mid-super and it gets bounced again.
-  p2.x = p1.x + 60; p2.vx = 0; p2.stun = 0; p2.invuln = 0;
-  const backX = p2.x;
-  run(g, .45);
-  assert.ok(p1.attack, 'the super is still up');
-  assert.ok(p2.x > backX + 15, `满场 keeps pushing, moved ${p2.x - backX}`);
-  let span = 0;
-  for (let i = 0; i < Math.round(1.2 / STEP); i++) {
-    g.step(STEP);
-    const notes = g.projectiles.filter(p => p.vy > 0);
-    if (notes.length >= 2) span = Math.max(span, Math.max(...notes.map(p => p.x)) - Math.min(...notes.map(p => p.x)));
-  }
-  assert.ok(span > 400, `满场 notes span the stage, saw ${span}`);
+  const near = (g: FightGame, gap = 70) => {
+    const [p1, p2] = g.fighters;
+    p2.x = p1.x + gap; p2.facing = -1; p1.facing = 1;
+    return [p1, p2] as const;
+  };
 
-  const beat = newGame(nyamu, at('boulder')); dummy(beat);
-  beat.fighters[0].energy = beat.fighters[0].energyMax;
-  beat.fighters[1].invuln = 5;
-  beat.keyDown('KeyL');
-  let strikes = 0;
-  let prev = -1;
-  let waves = 0;
-  let waveSeen = 0;
-  const dur = data.skills[5].duration;
-  for (let i = 0; i < Math.round(dur / STEP); i++) {
-    beat.step(STEP);
-    const row = beat.fighters[0].attack ? clipFor(beat.fighters[0]).row : prev;
-    if (row === 1 && prev !== 1) strikes++;
-    prev = row;
-    const n = beat.effects.filter(e => e.type === 'drum-wave').length;
-    if (n > waveSeen) waves += n - waveSeen;
-    waveSeen = n;
+  // U tapped: the minimum roll, the first beat latches, then the stick flies and she is free — no slump.
+  {
+    const g = newGame(nyamu, at('boulder')); dummy(g);
+    const [p1, p2] = near(g);
+    g.keyDown('KeyU'); run(g, .05); g.keyUp('KeyU');
+    let stick = false, slumped = false, comboMax = 0;
+    for (let i = 0; i < Math.round(1.6 / STEP); i++) {
+      g.step(STEP);
+      if (p1.attack?.skill.fx === 'stick-roll' && p1.attack.mode === ROLL.throw && p2.knocked > 0) stick = true;
+      if (p1.attack?.skill.fx === 'stick-roll' && p1.attack.mode === ROLL.slump) slumped = true;
+      comboMax = Math.max(comboMax, p1.combo);
+    }
+    assert.ok(stick, '左右开弓 throws the stick on release and it knocks them down');
+    assert.ok(!slumped, 'a tapped roll does not drum her out');
+    assert.ok(p2.data.hp - p2.hp > 74, `左右开弓 tap pays for the risk, lost ${p2.data.hp - p2.hp}`);
+    assert.ok(comboMax <= 3, `the quiet beats stay off the combo, saw ${comboMax}`);
   }
-  assert.equal(strikes, 4, '满场 plays the drum loop four times');
-  assert.equal(waves, 8, 'each hit puts a wave on both sides');
-  assert.equal(drumRow(0, dur), 0, 'drum loop starts raised');
-  assert.equal(drumRow(dur, dur), 2, 'drum loop ends on the return');
+  // U held to the end: twelve beats on a pinned body, no combo escape, the stick, then the slump on the floor cell.
+  {
+    const g = newGame(nyamu, at('boulder')); dummy(g);
+    const [p1, p2] = near(g);
+    g.keyDown('KeyU');
+    let beats = 0, escaped = false, slumpCell = false, maxGap = 0;
+    for (let i = 0; i < Math.round(2.9 / STEP); i++) {
+      g.step(STEP);
+      if (p1.attack?.skill.fx === 'stick-roll') {
+        beats = Math.max(beats, p1.attack.shots);
+        if (p1.attack.mode === ROLL.slump) {
+          const c = clipFor(p1);
+          if (c.sheet === 'common' && c.col === 1 && c.row === 1) slumpCell = true;
+        }
+      }
+      if (p2.invuln > .3) escaped = true;
+      maxGap = Math.max(maxGap, Math.abs(p2.x - p1.x));
+    }
+    g.keyUp('KeyU');
+    assert.equal(beats, ROLL_MAX, '左右开弓 held plays every beat');
+    assert.ok(!escaped, 'the held roll never trips the combo escape');
+    assert.ok(maxGap < 140, `the roll keeps them under the sticks, drifted to ${maxGap}`);
+    assert.ok(slumpCell, '左右开弓 held out lies her down on the floor cell');
+  }
+  // I: a full bar loses a random 10～40 to her and the counter shows exactly that; a short bar caps the take;
+  // an empty one gives nothing and the counter shows 0; next to 睦 it stalls at 8.
+  {
+    const seen = new Set<number>();
+    for (let seed = 1; seed <= 12; seed++) {
+      const g = new FightGame([ROSTER[nyamu], ROSTER[at('boulder')]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(seed) });
+      run(g, 2.3);
+      dummy(g);
+      const [p1, p2] = near(g, 120);
+      p1.energy = 0; p2.energy = 80;
+      g.keyDown('KeyI'); g.keyUp('KeyI');
+      run(g, .9);
+      const live = g.effects.find(e => e.type === 'selfie-live');
+      const n = live?.n ?? -1;
+      assert.ok(live?.hit && n >= 10 && n <= 40, `蹭热度 borrows 10～40, counter ${n}`);
+      assert.ok(p1.energy >= n, `蹭热度 puts it on her bar, has ${p1.energy} for ${n}`);
+      assert.ok(p2.energy <= 80 + 7 + 4 - n, `蹭热度 takes it off theirs, left ${p2.energy} after ${n}`);
+      seen.add(n);
+      if (seed === 1) {
+        assert.ok(g.effects.some(e => e.type === 'selfie-photo' && e.hit), '蹭热度 takes a photo');
+        run(g, 1.2);
+        assert.ok(!p1.attack, '蹭热度 lets go');
+      }
+    }
+    assert.ok(seen.size >= 4, `the take is random, saw ${[...seen].join(' ')}`);
+
+    const short = newGame(nyamu, at('boulder')); dummy(short);
+    const [s1, s2] = near(short, 120);
+    s1.energy = 0; s2.energy = 6;
+    short.keyDown('KeyI'); short.keyUp('KeyI');
+    run(short, .9);
+    const few = short.effects.find(e => e.type === 'selfie-live');
+    assert.ok(few && few.hit && few.n! <= 15, `a short bar caps the take, counter ${few?.n}`);
+
+    const dry = newGame(nyamu, at('boulder')); dummy(dry);
+    const [d1, d2] = near(dry, 120);
+    d1.energy = 0; d2.energy = 2;
+    dry.keyDown('KeyI'); dry.keyUp('KeyI');
+    run(dry, .9);
+    const zero = dry.effects.find(e => e.type === 'selfie-live');
+    assert.ok(zero && zero.n === 0 && !zero.hit, 'an empty bar leaves the counter on 0');
+    assert.ok(d1.energy < 10, `nothing borrowed from an empty bar, has ${d1.energy}`);
+
+    const mu = newGame(nyamu, at('mutsumi')); dummy(mu);
+    const [m1, m2] = near(mu, 120);
+    m1.energy = 0; m2.energy = 90;
+    mu.keyDown('KeyI'); mu.keyUp('KeyI');
+    run(mu, .9);
+    const cap = mu.effects.find(e => e.type === 'selfie-live');
+    assert.ok(cap && cap.n === 8, `next to 睦 the counter stalls at 8万, saw ${cap?.n}`);
+    assert.ok(m1.energy >= 10, '睦 still pays the real take');
+
+    const miss = newGame(nyamu, at('boulder')); dummy(miss);
+    const [w1, w2] = near(miss, 600);
+    miss.keyDown('KeyI'); miss.keyUp('KeyI');
+    run(miss, .6);
+    const empty = miss.effects.find(e => e.type === 'selfie-live');
+    assert.ok(empty && empty.n === 0, 'a photo of nobody shows 0');
+    assert.equal(w2.hp, w2.data.hp, '蹭热度 whiff touches nobody');
+    run(miss, 1);
+    assert.ok(!w1.attack, '蹭热度 whiff ends');
+  }
+  // O: charmed, then four paws on the syllables and a shove; blocked, every paw swipes air; 乐奈 gets the teaser.
+  {
+    const g = newGame(nyamu, at('boulder')); dummy(g);
+    const [p1, p2] = near(g, 110);
+    g.keyDown('KeyO'); g.keyUp('KeyO');
+    const jab = { ...ROSTER[at('boulder')].skills[0], damage: 20 };
+    const seen = new Set<object>();
+    let armoured = false;
+    for (let i = 0; i < Math.round(1.3 / STEP); i++) {
+      g.step(STEP);
+      if (!armoured && p1.attack && p1.attack.t > p1.attack.skill.start) {
+        armoured = true;
+        hit(g, p2, p1, jab, { hit: new Set() });
+        assert.ok(p1.attack, 'a jab does not stop 喵姆喵姆');
+        assert.ok(p1.stun <= 0, 'the jab does not stagger her');
+      }
+      for (const e of g.effects) if (e.type === 'paw-claw' && e.hit) seen.add(e);
+    }
+    assert.ok(armoured, '喵姆喵姆 was struck during the cast');
+    const paws = seen.size;
+    assert.equal(paws, 4, '喵姆喵姆 lands four paws on a charmed body');
+    assert.ok(p2.hp < p2.data.hp - 40, `喵姆喵姆 hurts, hp ${p2.hp}`);
+    assert.ok(Math.abs(p2.x - p1.x) > 150, `the last paw shoves them off, gap ${Math.abs(p2.x - p1.x)}`);
+    assert.ok(!p1.attack, '喵姆喵姆 settles');
+
+    const gb = newGame(nyamu, at('boulder')); const b2 = dummy(gb);
+    const [, ] = near(gb, 110);
+    gb.keyDown('KeyO'); gb.keyUp('KeyO');
+    b2.blocking = true;
+    let landed = 0, swiped = 0;
+    for (let i = 0; i < Math.round(1.3 / STEP); i++) {
+      b2.blocking = true; b2.guard = 100; gb.step(STEP);
+      landed = Math.max(landed, gb.effects.filter(e => e.type === 'paw-claw' && e.hit).length);
+      swiped = Math.max(swiped, gb.effects.filter(e => e.type === 'paw-claw').length);
+    }
+    assert.ok(swiped > 0, 'the stranded paws still swipe');
+    assert.equal(landed, 0, 'a blocked heart leaves all four paws in the air');
+    assert.ok(b2.hp > b2.data.hp - 10, `the stranded paws do no damage, hp ${b2.hp}`);
+
+    const gr = newGame(nyamu, at('rana')); dummy(gr);
+    near(gr, 110);
+    gr.keyDown('KeyO'); gr.keyUp('KeyO');
+    run(gr, .4);
+    assert.ok(gr.effects.some(e => e.type === 'cat-teaser'), '要乐奈 gets the cat teaser');
+    assert.ok(!gr.effects.some(e => e.type === 'paw-heart'), 'and no heart');
+  }
+  // L: shoves, keeps shoving, the mask comes off, the pushes are bass-drum waves;
+  // the drum loop strikes and ends on the slump with the sticks in the air.
+  {
+    const g = newGame(nyamu, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = p1.energyMax;
+    p2.x = p1.x + 80; p2.facing = -1;
+    const startX = p2.x;
+    g.keyDown('KeyL');
+    run(g, .2);
+    assert.ok(p2.x > startX + 15, `双踩地狱 shoves, moved ${p2.x - startX}`);
+    assert.ok(g.effects.some(e => e.type === 'mask-off'), 'the mask comes off first');
+    p2.x = p1.x + 60; p2.vx = 0; p2.stun = 0; p2.invuln = 0;
+    const backX = p2.x;
+    run(g, .45);
+    assert.ok(p1.attack, 'the super is still up');
+    assert.ok(p2.x > backX + 15, `双踩地狱 keeps pushing, moved ${p2.x - backX}`);
+    assert.ok(g.effects.some(e => e.type === 'kick-wave'), 'the pushes are bass-drum waves');
+    const sup = { ...ROSTER[at('boulder')].skills[1], super: true, damage: 30 };
+    hit(g, p2, p1, sup, { hit: new Set() });
+    assert.equal(p1.attack?.skill.fx, 'drums', 'a super does not stop 双踩地狱');
+    assert.ok(p1.stun <= 0, 'the super does not stagger her');
+  }
+  // L rain: four waves; the first three never interrupt, the last knocks down; each wave sits a little
+  // to the side of the last so no one spot stays safe.
+  {
+    const g = newGame(nyamu, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = p1.energyMax;
+    p1.x = 120; p1.facing = 1;
+    p2.x = W - 240; p2.facing = -1;
+    g.keyDown('KeyL');
+    const xs: number[][] = [[], [], [], []];
+    const seenNotes = new Set<object>();
+    let lightStun = 0, bigDown = false, span = 0, splashed = false, deepest = 0;
+    const startHp = p2.hp;
+    for (let i = 0; i < Math.round(4.6 / STEP); i++) {
+      g.step(STEP);
+      for (const q of g.projectiles) {
+        if (q.fx !== 'rain-note' || seenNotes.has(q)) continue;
+        seenNotes.add(q);
+        const big = q.skill.react?.kind === 'knockdown';
+        const wave = big ? 3 : Math.min(2, xs.findIndex((w, k) => k < 3 && w.length < 8));
+        xs[wave].push(q.x);
+      }
+      const notes = g.projectiles.filter(q => q.fx === 'rain-note');
+      for (const q of notes) deepest = Math.max(deepest, q.y);
+      if (g.effects.some(e => e.type === 'rain-splash')) splashed = true;
+      if (notes.length >= 2) span = Math.max(span, Math.max(...notes.map(q => q.x)) - Math.min(...notes.map(q => q.x)));
+      if (p2.knocked > 0) bigDown = true;
+      else if (p2.hp < startHp && !bigDown) lightStun = Math.max(lightStun, p2.stun);
+      p2.x = W - 240; p2.vx = 0;
+    }
+    assert.deepEqual(xs.map(w => w.length), [8, 8, 8, 8], '双踩地狱 rains four waves of eight');
+    assert.ok(span > 600, `each wave spans the stage, saw ${span}`);
+    const first = (w: number[]) => Math.min(...w);
+    assert.ok(new Set(xs.map(w => Math.round(first(w)))).size >= 3, `the waves slide sideways, ${xs.map(w => Math.round(first(w))).join(' / ')}`);
+    assert.ok(lightStun === 0, `the light waves never stun, saw ${lightStun}`);
+    assert.ok(p2.hp < startHp, '双踩地狱 rain lands on a body that stands still');
+    assert.ok(seenNotes.size === 32, `32 notes in all, saw ${seenNotes.size}`);
+    assert.ok([...seenNotes].filter(q => (q as { radius: number }).radius > 12).length === 8, 'the last wave is the big notes');
+    assert.ok(splashed, 'notes splash on the floor');
+    assert.ok(deepest <= FLOOR + 1, `no note sinks through the floor, saw ${deepest}`);
+    assert.ok(bigDown || p2.hp < startHp - 60, 'the big wave knocks down a body it meets');
+  }
+  {
+    const beat = newGame(nyamu, at('boulder')); dummy(beat);
+    beat.fighters[0].energy = beat.fighters[0].energyMax;
+    beat.fighters[1].invuln = 5;
+    beat.keyDown('KeyL');
+    let strikes = 0, prev = -1, slumpSeen = false, flown = 0;
+    const dur = data.skills[5].duration;
+    for (let i = 0; i < Math.round(dur / STEP); i++) {
+      beat.step(STEP);
+      const row = beat.fighters[0].attack ? clipFor(beat.fighters[0]).row : prev;
+      if (row === 1 && prev !== 1) strikes++;
+      if (row === 2) slumpSeen = true;
+      prev = row;
+      flown = Math.max(flown, beat.effects.filter(e => e.type === 'stick-fly').length);
+    }
+    assert.ok(strikes >= 5, `双踩地狱 keeps striking, saw ${strikes}`);
+    assert.ok(slumpSeen, '双踩地狱 ends face down on the kit');
+    assert.equal(flown, 2, 'both sticks fly at the end');
+    assert.equal(drumRow(0, dur), 0, 'drum loop starts raised');
+    assert.equal(drumRow(dur, dur), 2, 'drum loop ends on the slump');
+  }
+}
+
+// nyamu hidden 麦子越踩越坚强: a 10% burst inside the window rolls once (50%); a success heals 3% and cuts damage 40% for 2s.
+{
+  const spec = ROSTER[at('nyamu')].wheat!;
+  assert.ok(spec && spec.chance === .5 && spec.heal === .03 && spec.cut === .4 && spec.time === 2, 'nyamu carries the hidden wheat spec');
+  let rolls = 0, procs = 0;
+  for (let seed = 1; seed <= 60; seed++) {
+    const g = new FightGame([ROSTER[at('boulder')], ROSTER[at('nyamu')]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(seed) });
+    run(g, 2.3);
+    const [a, n] = g.fighters;
+    n.controller = 1;
+    const big = { ...skill(1, 'heavy', 'test'), damage: 60, react: { kind: 'stand' as const, stun: .2 } };
+    hit(g, a, n, big, { hit: new Set() });
+    assert.equal(n.wheatFrom, 0, 'one 6% hit does not roll');
+    const before = n.hp;
+    hit(g, a, n, big, { hit: new Set() });
+    if (n.wheatFrom > 0) rolls++;
+    if (n.mods.some(m => m.mark === 'wheat' && m.left > 0)) {
+      procs++;
+      assert.ok(n.hp > before - 60 + 25, `the proc heals 3%, hp ${n.hp} from ${before}`);
+      assert.ok(g.effects.some(e => e.type === 'wheat-rise'), 'the wheat comes up');
+      const hp = n.hp;
+      hit(g, a, n, { ...big, damage: 50 }, { hit: new Set() });
+      assert.ok(hp - n.hp < 50 * .65, `the cut holds, took ${hp - n.hp}`);
+    }
+    // The window starts over after a roll: one more small hit does not roll again.
+    const from = n.wheatFrom;
+    hit(g, a, n, { ...big, damage: 10 }, { hit: new Set() });
+    assert.equal(n.wheatFrom, from, 'a roll resets the window');
+  }
+  assert.equal(rolls, 60, 'every 10% burst rolls');
+  assert.ok(procs > 15 && procs < 45, `about half the rolls stand her up, saw ${procs}/60`);
 }
 
 // umiri: lobbed milk, six bags, a ripple behind her, a super escape, a back slam
@@ -1938,6 +2170,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.equal(visible, '设置 × 外观 主题 暗色 暗色 亮色 跟随系统 名册 名册显示 直接排开 直接排开 按乐队分组 训练场 无技能冷却 开 开 关 无限大招 开 开 关 音乐 开打换曲 ? 只在随机播放时生效，其他时候不能改。 开 开 关', 'settings dialog keeps control names, plus the fight-shuffle tip (with #set-online-group exempted)');
     const css = readFileSync('src/style.css', 'utf8');
     assert.ok(css.includes('width: min(760px, calc(100% - 2rem))'), 'settings dialog width is reserved, not content-sized');
+    assert.ok(css.includes('#start > span') && !/\.start span \{ display: inline-grid/.test(css), 'the start arrow badge does not restyle the rematch label');
     assert.ok(css.includes('minmax(0, 1fr) min(16em, 46%)'), 'settings dropdowns share one column so their lengths stay aligned');
     assert.ok(css.includes('popover') || html.includes('popover'), 'settings menus are popovers so opening one does not grow the dialog');
     assert.ok(css.includes('inset: unset'), 'popover menus drop the browser centering that flashes mid-screen');

@@ -267,6 +267,10 @@ export interface CharacterData {
   /** 二号资源条 (打气): declared per character, charged by the kernel's hit gates, spent by moves.
    *  Absent means the fighter has no gauge and nothing is drawn or charged. */
   gauge?: GaugeSpec;
+  /** 麦子越踩越坚强 (祐天寺喵梦, hidden): when the hp lost to hits inside `window` seconds reaches `share` of max
+   *  hp, roll `chance` once (the window then starts over). A success heals `heal` of max hp and cuts all
+   *  damage taken by `cut` for `time` seconds. Declared per character so the kernel needs no id branch. */
+  wheat?: { window: number; share: number; chance: number; heal: number; cut: number; time: number };
   /** 彩虹色 (汐见萤): happy moments roll for a small random blessing. Declared per character so
    *  the kernel needs no character-id branch — the roll helper just checks for the spec. */
   rainbow?: {

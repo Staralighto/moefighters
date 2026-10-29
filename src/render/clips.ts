@@ -215,10 +215,72 @@ export function practiceRow(t: number, start: number): number {
   return since < hold ? 1 : 2;
 }
 
-/** Row of the seated drum loop. The three L-column frames play four times across the super. */
+/** 双踩地狱 (nyamu L, front-facing on the stool): the raised sticks (0) and the strike (1) trade on every
+ *  DRUM_BEAT; the last DRUM_SLUMP of the cast is the third cell, face down on the kit (「打鼓打似了」). */
+export const DRUM_BEAT = .16;
+export const DRUM_SLUMP = .5;
 export function drumRow(t: number, duration: number): number {
-  const u = duration > 0 ? Math.min(0.999, Math.max(0, t / duration)) : 0;
-  return Math.floor(u * 12) % 3;
+  if (t >= duration - DRUM_SLUMP) return 2;
+  return Math.floor(Math.max(0, t) / DRUM_BEAT) % 2;
+}
+
+/** 左右开弓 (nyamu U): beat gaps tighten from ROLL_GAP0 to ROLL_GAP1 across ROLL_MAX beats. A tap still
+ *  plays ROLL_MIN; the throw cell holds ROLL_THROW; a roll held to the last beat ends in ROLL_SLUMP on the floor. */
+export const ROLL_MAX = 12;
+export const ROLL_MIN = 3;
+export const ROLL_GAP0 = .2;
+export const ROLL_GAP1 = .09;
+export const ROLL_THROW = .28;
+export const ROLL_SLUMP = .6;
+/** a.mode for 左右开弓. tired is the throw that follows a full roll and goes on into the slump. */
+export const ROLL = { roll: 0, throw: 1, tired: 2, slump: 3 } as const;
+export function rollGap(i: number): number {
+  const k = Math.min(1, Math.max(0, i / (ROLL_MAX - 1)));
+  return ROLL_GAP0 + (ROLL_GAP1 - ROLL_GAP0) * k;
+}
+/** Seconds after the skill's start that beat i lands. */
+export const ROLL_BEATS: readonly number[] = (() => {
+  const out: number[] = [];
+  let t = 0;
+  for (let i = 0; i < ROLL_MAX; i++) { out.push(t); t += rollGap(i); }
+  return out;
+})();
+/** The strike cell shows for the first half of each gap, the raised sticks for the rest. */
+export function rollRow(t: number, start: number, shots: number): number {
+  if (t < start || shots <= 0) return 0;
+  const j = shots - 1;
+  return t - start - ROLL_BEATS[j] < rollGap(j) * .5 ? 1 : 0;
+}
+
+/** 蹭热度 (nyamu I): the lunge window, how long the photo holds them, and the tail. */
+export const SELFIE = { lunge: 0, held: 1, done: 2, whiff: 3 } as const;
+export const SELFIE_LUNGE = .26;
+export const SELFIE_HOLD = .56;
+export const SELFIE_TAIL = .22;
+/** 蹭热度: after the catch, the arm round their shoulder shows this long; then the peace sign for the photo,
+ *  which is taken SELFIE_SNAP after the catch. */
+export const SELFIE_HOOK = .12;
+export const SELFIE_SNAP = .26;
+
+/** 喵姆喵姆 (nyamu O): four paws after the heart, one per syllable. PAW_FAIL is the pose she is left
+ *  holding when nobody was charmed. */
+export const PAW_FIRST = .14;
+export const PAW_GAP = .12;
+export const PAW_HITS = 4;
+export const PAW_FAIL = .25;
+export const PAW = { pose: 0, charmed: 1, failed: 2 } as const;
+/** Seconds after the skill's start that paw i swings. */
+export function pawTime(i: number): number { return PAW_FIRST + i * PAW_GAP; }
+/** Pose until the heart, then each paw shows the swipe (the last one the big swing, cell 2) for half a gap
+ *  and the cheek paws between; after the last, a hit holds the swing and a miss falls back to the pose. */
+export function pawRow(t: number, start: number, mode: number): number {
+  if (t < start) return 0;
+  const local = t - start;
+  if (local < pawTime(0)) return 0;
+  const last = pawTime(PAW_HITS - 1);
+  if (local >= last) return mode === PAW.failed && local >= last + PAW_GAP ? 0 : 2;
+  const i = Math.min(PAW_HITS - 1, Math.floor((local - PAW_FIRST) / PAW_GAP));
+  return local - pawTime(i) < PAW_GAP * .55 ? 1 : 0;
 }
 
 /** 让大家幸福的音乐: the seated piano changes cells on every repel beat — ten beats over the cast. */
@@ -450,6 +512,20 @@ export function clipFor(f: Fighter): Clip {
     if (f.attack.skill.fx === 'flurry' || f.attack.skill.fx === 'mega')
       return at('special', f.attack.index - 2, volleyRow(f.attack.t, f.attack.skill));
     if (f.attack.skill.fx === 'drums') return at('special', f.attack.index - 2, drumRow(f.attack.t, f.attack.skill.duration));
+    // 左右开弓: strike / raised on every beat; the throw is the third cell; a roll held out lies her down.
+    if (f.attack.skill.fx === 'stick-roll') {
+      const a = f.attack, mode = a.mode ?? ROLL.roll;
+      if (mode === ROLL.slump) return loco('down');
+      if (mode === ROLL.throw || mode === ROLL.tired) return at('special', a.index - 2, 2);
+      return at('special', a.index - 2, rollRow(a.t, a.skill.start, a.shots));
+    }
+    // 蹭热度: stick up on the lunge, the arm round their shoulder as she catches them, then the peace sign for the photo.
+    if (f.attack.skill.fx === 'selfie') {
+      const a = f.attack, mode = a.mode ?? SELFIE.lunge;
+      if (mode === SELFIE.lunge) return at('special', a.index - 2, 0);
+      return at('special', a.index - 2, mode === SELFIE.held && a.t < a.tossAt + SELFIE_HOOK ? 1 : 2);
+    }
+    if (f.attack.skill.fx === 'nyamu-paw') return at('special', f.attack.index - 2, pawRow(f.attack.t, f.attack.skill.start, f.attack.mode ?? PAW.pose));
     if (f.attack.skill.fx === 'happymusic') return at('special', f.attack.index - 2, musicRow(f.attack.t, f.attack.skill.duration));
     // 起死开战: the same seated loop — three cells alternate hands over the cast.
     if (f.attack.skill.fx === 'war') return at('special', f.attack.index - 2, musicRow(f.attack.t, f.attack.skill.duration));

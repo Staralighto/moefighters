@@ -108,24 +108,56 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
-    id: 'nyamu', name: '祐天寺喵梦', title: '鼓手 / 恋爱', quote: '我毋畏恋爱。', color: '#C6B4E3',
+    id: 'nyamu', name: '祐天寺喵梦', title: '鼓手 / 喵姆亲', quote: '我毋畏恋爱。', color: '#AA4477',
     bands: ['ave-mujica'],
-    ...stats('rush'),
+    ...stats('beat'),
+    // Hidden: 「我的若麦写作年轻的麦子，麦子被踩只会更加坚强」.
+    wheat: { window: 1.5, share: .1, chance: .5, heal: .03, cut: .4, time: 2 },
     view: {
-      kind: 'sprite', common: '/sprites/nyamu/common.png', special: '/sprites/nyamu/special.png', height: 181,
+      kind: 'sprite', common: '/sprites/nyamu/common.png', special: '/sprites/nyamu/special.png', height: 172, lift: 2,
       extras: ['/sprites/nyamu/kit.png'],
     },
     skills: [
-      skill(0, 'light', '轻点'),
-      skill(1, 'heavy', '横踢'),
-      skill(2, 'launch', '回旋踢', { range: 130, brief: '命中挑空，跳起追打可连段', detail: '命中挑空，跳起追打可连段' }),
-      skill(3, 'sweep', '扫膛腿'),
-      skill(4, 'heavy', '月牙踢', { range: 190, cd: 5, fx: 'arc-kick', brief: '大范围下砸', detail: '大范围下砸' }),
-      skill(5, 'projectile', '满场', {
-        cost: 125, damage: 36, count: 16, interval: .09, size: 36, start: .28, duration: 2.6, life: 2.4, fx: 'drums',
-        // Two waves of eight. The whole first wave is blockable; the break lands on wave two.
-        guardPlan: [4, 5, 7, 9, 12, 15, 19, 24],
-        brief: '持续震开近身；音符分两次铺满全场', detail: '持续震开近身；音符分两次铺满全场',
+      skill(0, 'light', '猫爪'),
+      skill(1, 'heavy', '高跟踢'),
+      // 左右开弓 (combat.ts step_stick_roll): ambidextrous sticks on their head, faster while held; the stick flies
+      // on release. Held to the end she drums herself out (「打鼓打似了」).
+      skill(2, 'light', '左右开弓', {
+        damage: 20, range: 112, start: .14, duration: 3, cd: 5, fx: 'stick-roll', knock: 0, gain: 3, guardDmg: 5,
+        react: { kind: 'pin', stun: .32, holdStill: true },
+        brief: '按住双棒连敲越敲越快，松手鼓棒飞出；按满会力竭',
+        detail: '贴身左右交替连敲，按住越敲越快，至多 12 下；松手掷出鼓棒击倒；敲满 12 下后力竭倒地 0.6 秒',
+      }),
+      // 蹭热度 (combat.ts step_selfie): the selfie-stick lunge and the photo; their 气 is her 热度. A foe with no
+      // meter to borrow leaves the view count at 0 (「怎么一点热度都没有」).
+      skill(3, 'grab', '蹭热度', {
+        damage: 30, range: 74, speed: 860, start: .12, duration: 1.2, cd: 8, fx: 'selfie', knock: 0, gain: 4,
+        react: { kind: 'pin', stun: .65, holdStill: true },
+        brief: '突进合影抓取，随机偷走对方的气；没气就白蹭',
+        detail: '自拍杆突进，抓住对方合影定住 0.56 秒，拍下时随机偷走 10～40 气；对方不足 5 气时一点也偷不到',
+      }),
+      // 喵姆喵姆 (combat.ts step_nyamu_paw): 「扣你几喵姆喵姆～」 — the paws at her cheeks throw a heart; whoever it
+      // charms takes four paws on the four syllables. holdEndure: armour for the cast, grabs and supers still cut it.
+      skill(4, 'light', '喵姆喵姆', {
+        damage: 11, range: 160, start: .3, duration: 1.15, cd: 6, fx: 'nyamu-paw', count: 4, knock: 0, gain: 4,
+        holdEndure: true,
+        react: { kind: 'pin', stun: .3, holdStill: true },
+        finale: { damage: 24, knock: 440, react: { kind: 'stand', stun: .4 } },
+        brief: '霸体卖萌定住身前对手后四连爪，末爪击退；被挡落空',
+        detail: '霸体卖萌放出爱心，命中定住对方 0.75 秒后左右爪连挠四下，末下击退；爱心被挡或落空则四爪全部挥空',
+      }),
+      // 双踩地狱 (combat.ts step_drums / spawnRain): the mask comes off, she takes the stool facing the crowd; the
+      // bass drums keep shoving anyone close. Four waves of note rain, each slid sideways a little: three light
+      // ones that never interrupt, so there is room to move, then big notes that knock down. The last beat
+      // drums her out. superArmor: true super armour for the whole cast.
+      skill(5, 'projectile', '双踩地狱', {
+        cost: 125, damage: 22, count: 32, interval: .05, size: 36, start: .28, duration: 3.2, life: 2.4, fx: 'drums',
+        superArmor: true,
+        finale: { damage: 60, knock: 380, react: { kind: 'knockdown', vy: -300, knocked: .8, stun: .5 } },
+        // One entry per wave: a guard under the rain meets about one note a wave and breaks on the big one.
+        guardPlan: [8, 12, 16, 70],
+        brief: '真霸体坐鼓震开；四波音符雨，末波大音符击倒',
+        detail: '真霸体坐上架子鼓，底鼓持续震开近身的对方；音符雨分四波落满全场，每波位置略有错开；前三波不打断，末波大音符击倒并破防',
       }),
     ],
   },
