@@ -6,6 +6,7 @@ import { FLOOR, H, SIDE, W } from '../game/constants.ts';
 import { unbowedRage, violetHidden } from '../game/combat.ts';
 import { BURDEN_Y, encoreDark, IAIDO_PHASE, iaidoCharge, UNBOWED_MAX, unbowedStacks } from './clips.ts';
 import { drawBanSign, drawCombo, drawEffect, drawMoonlight, drawGauge, drawHoldNote, drawKuji, drawLayerBass, drawParticles, drawProjectile, drawRainbowBack, drawRainbowFront, drawRootFx, drawSister, drawTexts, drawWheel, isLiteFx, UI_FONT, zoomAbout } from './fx.ts';
+import { SAKIKO_BACK, SAKIKO_SCREEN_BACK } from './sakikoFx.ts';
 
 /** Backing-store pixels per CSS pixel. The compositor then blits 1:1.
  *  Phones use the screen ratio too: a CSS pixel is several physical pixels, and a 1× store
@@ -25,12 +26,21 @@ export function portraitBodyScale(padSplit: boolean): number {
 /** Hard 1px rim, yellow for the left team and green for the right. */
 const TEAM_GLOW = SIDE;
 /** Effects painted under every body: 和泉朋花's coffin and her spotlights. */
-const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door']);
+const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK]);
 /** Screen-space layers that ignore the body zoom: behind every body, and in front of them. */
-const SCREEN_BACK = new Set(['encore-stage', 'family-dim']);
+const SCREEN_BACK = new Set(['encore-stage', 'family-dim', ...SAKIKO_SCREEN_BACK]);
 const SCREEN_FRONT = new Set(['encore-rain', 'encore-crowd', 'encore-call', 'slap-flash']);
 /** 安可是主唱的: the eye line on the 175 px body, measured up from the feet. */
 const ENCORE_EYE_Y = 152;
+
+/** 必杀聚焦 curve over the effect's life, 0..1: a fast snap in, a hold, then a smooth ease back out. */
+export function superZoom(p: number): number {
+  if (p <= 0 || p >= 1) return 0;
+  if (p < .14) { const k = p / .14; return 1 - (1 - k) * (1 - k); }
+  if (p < .5) return 1;
+  const k = (p - .5) / .5;
+  return 1 - k * k * (3 - 2 * k);
+}
 
 /** On when one side has two real fighters, or the same character stands on both sides.
  *  2v2 and the 2-on-1 激战 are the first case; a 1v1 mirror match is the second.
@@ -157,6 +167,14 @@ export class Renderer {
     c.save();
     // Screen shake is a picture, not the match: it must not draw from the seeded sim random (online lockstep).
     if (g.shake > 0) c.translate((Math.random() - .5) * g.shake, (Math.random() - .5) * g.shake);
+    // 必杀聚焦: a 'super-zoom' effect pulls the whole picture in on its point, then lets it go.
+    const zoom = g.effects.find(e => e.type === 'super-zoom');
+    if (zoom) {
+      const s = 1 + ((zoom.radius ?? 1.12) - 1) * superZoom(1 - zoom.life / zoom.max);
+      c.translate(zoom.x, zoom.y);
+      c.scale(s, s);
+      c.translate(-zoom.x, -zoom.y);
+    }
     this.drawStage();
 
     const bodyScale = portraitBodyScale(document.body.classList.contains('pad-split'));
@@ -231,6 +249,16 @@ export class Renderer {
         }
         // 安可是主唱的: from the third call through the run her face goes dark — a near-black wash over
         // the whole cell, and two points of light left where the eyes are.
+        // 血月的奏鸣: she stays fully readable, only lit by the scene — a light wash of the moon's red over
+        // the body and a soft red rim. The eye is pulled away by the moon, the staff and the notes, not by hiding her.
+        if (f.attack?.skill.fx === 'blood-note' && f.hp > 0) {
+          const s = f.attack.skill;
+          const lit = Math.min(1, f.attack.t / .25, Math.max(0, s.duration - f.attack.t) / .3);
+          if (lit > 0) {
+            view.draw(c, f, f.x, footY, alpha * lit * (.28 + .12 * Math.sin(g.age * 6)), undefined, '#ff3048');
+            view.draw(c, f, f.x, footY, alpha * lit * .16, '#ff4a5e');
+          }
+        }
         if (f.attack?.skill.fx === 'encore' && encoreDark(f.attack.mode)) {
           view.draw(c, f, f.x, footY, alpha * .82, '#0a0b14');
           drawEffect(c, { type: 'encore-eye', x: f.x + f.facing * 2, y: footY - ENCORE_EYE_Y, color: '#ffffff', life: 1, max: 1, dir: f.facing });

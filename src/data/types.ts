@@ -264,6 +264,11 @@ export interface CharacterData {
   /** Officially written as a genius (bang-dream.com: 冰川日菜「天才少女」, 汐见萤「音楽の天才」).
    *  和泉朋花's 天才♡ condition always holds while one stands on the other team. */
   genius?: boolean;
+  /** A presence the character carries outside her moves (丰川祥子): effect keys the kernel stamps on
+   *  every footfall of the walk (`step`) and on the active frame of every J / K, ground or air (`swing`,
+   *  which replaces the generic slash).
+   *  Data, so the kernel never reads a character id. Keep these quiet: they play all match long. */
+  aura?: { step?: string; swing?: string };
   /** 二号资源条 (打气): declared per character, charged by the kernel's hit gates, spent by moves.
    *  Absent means the fighter has no gauge and nothing is drawn or charged. */
   gauge?: GaugeSpec;

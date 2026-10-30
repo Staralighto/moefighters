@@ -8,10 +8,10 @@ import { BANDS, BAND_BY_ID } from '../src/data/bands.ts';
 import { AIR_SKILLS, skill } from '../src/data/skills.ts';
 import { STAGES } from '../src/data/stages.ts';
 import { FLOOR, COMBO_DECAY, STEP, W, X_MAX, X_MIN } from '../src/game/constants.ts';
-import { BUSHIDO_TAIL, bushidoClip, clipFor, crashRow, DRUM_SLUMP, drumRow, ROLL, ROLL_BEATS, ROLL_MAX, rollGap, flameFrame, IAIDO_DECIDE, IAIDO_GAP, IAIDO_RECOVER, riotCell } from '../src/render/clips.ts';
+import { BUSHIDO_TAIL, bushidoClip, clipFor, crashRow, DRUM_SLUMP, drumRow, ROLL, ROLL_BEATS, ROLL_MAX, rollGap, flameFrame, IAIDO_DECIDE, IAIDO_GAP, IAIDO_RECOVER, riotCell, BLOOD, OBLIVION, TWIN_MOON } from '../src/render/clips.ts';
 import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
 import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell, shouldGoLite } from '../src/render/fx.ts';
-import { backingScale, portraitBodyScale, teamGlowOn } from '../src/render/renderer.ts';
+import { backingScale, portraitBodyScale, superZoom, teamGlowOn } from '../src/render/renderer.ts';
 import { previewFighter, gainEnergy } from '../src/game/fighter.ts';
 import { addMod, atkMul, clearMod, jumpMul, speedMul } from '../src/game/mods.ts';
 import { assetUrl, easeLoad, imageSources, linkRate, liteFight, liteSrc, nextSrc, portraitSrc, SLOW_RATE, stageThumbSrc } from '../src/assets/loader.ts';
@@ -103,11 +103,11 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 // step with docs/guard-damage.md when a super's numbers change.
 {
   const breaksAt: Record<string, number> = {
-    nyamu: 4, sakiko: 5, anon: 5, rana: 10, soyo: 3, kokoro: 3, miyako: 5,
+    nyamu: 4, sakiko: 10, anon: 5, rana: 10, soyo: 3, kokoro: 3, miyako: 5,
     eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5,
   };
   const segments: Record<string, number> = {
-    nyamu: 4, sakiko: 8, anon: 6, rana: 22, soyo: 3, kokoro: 3, miyako: 6,
+    nyamu: 4, sakiko: 16, anon: 6, rana: 22, soyo: 3, kokoro: 3, miyako: 6,
     eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7,
   };
   for (const [id, breakAt] of Object.entries(breaksAt)) {
@@ -961,19 +961,112 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(emberU.col, 0, 'U is column 0');
 }
 
-// sakiko: 轮舞 connects three times; 忘却奏鸣 puts a volley of notes in the air
+// sakiko: 忘却之影 blinks and leaves the 白祥 to blow; 神威 lifts the ground and misses a jumper;
+// 双月轮舞 runs out and back past the start and leaves 脆弱; 血月的奏鸣 fans slow notes under the blood moon
 {
-  const sakiko = ROSTER.findIndex(c => c.id === 'sakiko');
-  assert.ok(sakiko >= 0, 'sakiko is on the roster');
-  const g = newGame(sakiko, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
-  p2.x = p1.x + 70; p2.facing = -1;
-  g.keyDown('KeyI'); run(g, .8);
-  assert.equal(p1.combo, 3, '轮舞 hits three times');
-  p1.energy = p1.energyMax; p2.x = p1.x + 520;
-  g.keyDown('KeyL');
-  let notes = 0;
-  for (let i = 0; i < Math.round(1.1 / STEP); i++) { g.step(STEP); notes = Math.max(notes, g.projectiles.length); }
-  assert.ok(notes >= 6, `忘却奏鸣 fires a volley, saw ${notes}`);
+  const sakiko = at('sakiko');
+  const data = ROSTER[sakiko];
+  assert.equal(data.skills[5].cost, 150, '血月的奏鸣 is a 150 super');
+  {
+    // The presence: footfalls ring on the floor while she walks, and every J / K leaves its moon.
+    const g = newGame(sakiko, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 400;
+    g.keyDown('KeyD'); run(g, .6); g.keyUp('KeyD');
+    assert.ok(g.effects.filter(e => e.type === 'saki-step').length >= 2, 'her walk leaves footfall rings');
+    g.keyDown('KeyJ'); g.keyUp('KeyJ'); run(g, .15);
+    assert.ok(g.effects.some(e => e.type === 'saki-swing' && !e.heavy), 'J leaves her moon');
+    assert.ok(!g.effects.some(e => e.type === 'slash'), 'her moon replaces the generic slash');
+    run(g, .5);
+    g.keyDown('KeyK'); g.keyUp('KeyK'); run(g, .3);
+    assert.ok(g.effects.some(e => e.type === 'saki-swing' && e.heavy), 'K leaves the heavier moon');
+    const plain = newGame(at('boulder'), at('gale')); dummy(plain);
+    plain.keyDown('KeyD'); run(plain, .6);
+    assert.ok(!plain.effects.some(e => e.type === 'saki-step'), 'nobody else carries her aura');
+  }
+  {
+    const g = newGame(sakiko, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    const x0 = p1.x;
+    p2.x = x0 + 90; p2.facing = -1;
+    const hp0 = p2.hp;
+    g.keyDown('KeyU'); g.keyUp('KeyU');
+    run(g, .3);
+    assert.ok(Math.abs(p1.x - x0 - OBLIVION.blink) < 2 || p1.x >= X_MAX - 1, `忘却之影 blinks ahead, moved ${p1.x - x0}`);
+    assert.ok(p2.hp < hp0, '忘却之影 shoves and hurts at the start');
+    const shiro = g.projectiles.find(q => q.fx === 'shiro');
+    assert.ok(shiro && Math.abs(shiro.x - x0) < 1, 'the 白祥 stays where she stood');
+    p2.x = shiro!.x + 60; p2.y = FLOOR; p2.vx = 0; p2.stun = 0; p2.knocked = 0;
+    const hp1 = p2.hp;
+    run(g, OBLIVION.fuse);
+    assert.ok(!g.projectiles.some(q => q.fx === 'shiro'), 'the 白祥 is gone after the fuse');
+    assert.ok(p2.hp < hp1 - 30, `the 白祥 blast lands, ${hp1 - p2.hp}`);
+    assert.ok(g.effects.some(e => e.type === 'saki-shiro-blast'), 'the blast has its picture');
+  }
+  {
+    const g = newGame(sakiko, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 250; p2.facing = -1;
+    const hp0 = p2.hp;
+    g.keyDown('KeyI'); g.keyUp('KeyI');
+    run(g, .55);
+    assert.ok(p2.hp < hp0, '神威 reaches far on the ground');
+    assert.ok(p2.y < FLOOR - 5, '神威 lifts them');
+    const air = newGame(sakiko, at('boulder')); const [a1, a2] = air.fighters; dummy(air);
+    a2.x = a1.x + 150; a2.y = FLOOR - 120; a2.vy = 0;
+    const ahp = a2.hp;
+    air.keyDown('KeyI'); air.keyUp('KeyI');
+    for (let i = 0; i < Math.round(.55 / STEP); i++) { a2.y = FLOOR - 120; a2.vy = 0; air.step(STEP); }
+    assert.equal(a2.hp, ahp, '神威 misses a jumper');
+  }
+  {
+    const g = newGame(sakiko, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 400; p1.facing = 1;
+    p2.x = 520; p2.facing = -1;
+    g.keyDown('KeyO'); g.keyUp('KeyO');
+    let far = p1.x;
+    for (let i = 0; i < Math.round(1.4 / STEP); i++) { g.step(STEP); far = Math.max(far, p1.x); }
+    assert.ok(far >= 400 + TWIN_MOON.out - 5, `双月轮舞 runs out, reached ${far - 400}`);
+    assert.ok(p1.x < 400 - TWIN_MOON.over * .8, `双月轮舞 comes home past the start, ended ${p1.x - 400}`);
+    assert.ok(p2.frail > 0, '双月轮舞 leaves 脆弱');
+    assert.equal(p1.attack, null, '双月轮舞 ends on its own');
+  }
+  {
+    const g = newGame(sakiko, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = p1.energyMax; p2.x = p1.x + 520;
+    g.keyDown('KeyL'); g.keyUp('KeyL');
+    let notes = 0;
+    const climbs = new Set<number>();
+    for (let i = 0; i < Math.round(2.5 / STEP); i++) {
+      g.step(STEP);
+      const live = g.projectiles.filter(q => q.fx === 'blood-note');
+      notes = Math.max(notes, live.length);
+      for (const q of live) if (q.age < STEP * 1.5) climbs.add(Math.round(Math.atan2(-q.vy, Math.abs(q.vx)) * 180 / Math.PI));
+    }
+    assert.ok(notes >= 10, `血月的奏鸣 keeps a slow fan in the air, saw ${notes}`);
+    assert.ok(climbs.size >= 6, `each note climbs at its own angle, saw ${[...climbs].join(',')}`);
+    for (const c of climbs) assert.ok(c >= BLOOD.low - 1 && c <= BLOOD.high + 1, 'the climb stays in the band, ' + c);
+    assert.ok(g.effects.some(e => e.type === 'blood-moon'), 'the blood moon hangs over the stage');
+  }
+  {
+    // The super plays as music: the pedal, sixteen notes in order, the closing chord; and the camera snaps in.
+    const heard: string[] = [];
+    const g = new FightGame([ROSTER[sakiko], ROSTER[at('boulder')]], {
+      mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: { play(k) { heard.push(k); } }, random: rng(7),
+    });
+    run(g, 2.3);
+    const [p1, p2] = g.fighters; dummy(g);
+    p1.energy = p1.energyMax; p2.x = p1.x + 520;
+    heard.length = 0;
+    g.keyDown('KeyL'); g.keyUp('KeyL');
+    run(g, .05);
+    assert.ok(g.effects.some(e => e.type === 'super-zoom'), 'the super snaps the camera in');
+    run(g, 2.6);
+    const notes = heard.filter(k => /^blood-\d+$/.test(k));
+    assert.ok(heard.includes('blood-intro'), 'the organ pedal sounds at the cast');
+    assert.deepEqual(notes, Array.from({ length: 16 }, (_, i) => 'blood-' + i), 'one note per shot, in order');
+    assert.ok(heard.indexOf('blood-end') > heard.indexOf('blood-15'), 'the chord closes the phrase');
+    assert.equal(superZoom(0), 0);
+    assert.equal(superZoom(.3), 1, 'the zoom holds');
+    assert.ok(superZoom(.99) < .01, 'the zoom lets go');
+  }
 }
 
 // mutsumi: three notes, a four-hit grab, and a cucumber that turns around once
@@ -1397,7 +1490,12 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     if (n.mods.some(m => m.mark === 'wheat' && m.left > 0)) {
       procs++;
       assert.ok(n.hp > before - 60 + 25, `the proc heals 3%, hp ${n.hp} from ${before}`);
-      assert.ok(g.effects.some(e => e.type === 'wheat-rise'), 'the wheat comes up');
+      const wheat = g.effects.find(e => e.type === 'wheat-rise');
+      assert.ok(wheat && wheat.follow == null, 'the wheat comes up planted');
+      const planted = wheat!.x;
+      n.x += 120;
+      g.step(STEP);
+      assert.equal(g.effects.find(e => e.type === 'wheat-rise')?.x, planted, 'the wheat stays where it grew');
       const hp = n.hp;
       hit(g, a, n, { ...big, damage: 50 }, { hit: new Set() });
       assert.ok(hp - n.hp < 50 * .65, `the cut holds, took ${hp - n.hp}`);
@@ -2538,8 +2636,8 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(g2.hp < before, 'the light still connects before the block cancel');
   assert.ok(blocks >= 12, `a block tap during the light comes out, frames ${blocks}`);
 
-  const sakiko = ROSTER.findIndex(c => c.id === 'sakiko');
-  const flurry = newGame(sakiko, at('boulder')); const [f1, f2] = flurry.fighters; dummy(flurry);
+  // 噜噜噜 is a three-swing counted melee on I.
+  const flurry = newGame(at('hina'), at('boulder')); const [f1, f2] = flurry.fighters; dummy(flurry);
   f2.x = f1.x + 50; f2.facing = -1;
   flurry.keyDown('KeyI');
   flurry.step(STEP);

@@ -66,7 +66,10 @@ export const MINION_BAND: BandId = 'mygo';
 export const RECORD_TIME = 3.5;
 const ECHO_DMG = .5;
 const ECHO_FADE = .4;
-export type SfxKind = 'light' | 'heavy' | 'hit' | 'block' | 'parry' | 'super' | 'select' | 'jump' | 'ko' | 'cast' | 'key' | 'whistle' | 'slam';
+export type SfxKind = 'light' | 'heavy' | 'hit' | 'block' | 'parry' | 'super' | 'select' | 'jump' | 'ko' | 'cast' | 'key' | 'whistle' | 'slam'
+  /** 血月的奏鸣: the organ pedal under the performance, the i-th note of the phrase, and the closing chord.
+   *  The index rides in the name, so the online echo and its dedup see each note as its own sound. */
+  | 'blood-intro' | `blood-${number}` | 'blood-end';
 
 export interface Effect {
   type: string; x: number; y: number; color: string; life: number; max: number;
@@ -120,6 +123,10 @@ export interface Projectile {
   hue?: number;
   /** Overrides Skill.floor for a shot whose picture is not the skill (抹茶熔岩). */
   floor?: 'pop' | 'stick' | 'drop' | 'splash';
+  /** 忘却之影: the way the 白祥 left behind faces. The shot never moves, so vx cannot say. */
+  face?: 1 | -1;
+  /** 血月的奏鸣: phase of the note's gentle bob, rolled once at birth. */
+  wave?: number;
 }
 
 /** 九字真言: a committed six-hit string. It outlives the circle, so a late or wall hit still pays in full. */
@@ -1176,6 +1183,11 @@ export class FightGame {
       const sprint = speedMul(f);
       f.x += move * f.data.speed * f.moveMul * beatMove * sprint * factor * dt;
       if (move && factor && grounded) f.walk += dt * 12; else f.walk = 0;
+      // Every footfall (two per 0.5s stride, as clips.ts plays the walk) leaves the character's step mark.
+      const step = f.data.aura?.step;
+      if (step && f.walk > dt * 12 && Math.floor(f.walk / 3) !== Math.floor((f.walk - dt * 12) / 3)) {
+        this.effect(step, f.x + f.facing * 10, FLOOR, f.data.color, .55, { dir: f.facing });
+      }
     }
 
     // 梦想即力量！: walking and airborne movement trail the tinted afterimage too — attacks

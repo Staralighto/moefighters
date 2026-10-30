@@ -4,7 +4,7 @@ import { addDebt, addMod, dmgDealtMul, dmgTakenMul, has, incomingMul, lifestealO
 import type { Effect, FightGame, Projectile, SealVolley } from './game.ts';
 import { CONTROLS, FLOOR, GRAVITY, H, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
 import { attackPhase } from './animState.ts';
-import { BUSHIDO_TAIL, clipFor, DRUM_SLUMP, drumRow, PAW, PAW_FAIL, PAW_HITS, pawRow, pawTime, ROLL, ROLL_BEATS, ROLL_MAX, ROLL_MIN, ROLL_SLUMP, ROLL_THROW, rollGap, SELFIE, SELFIE_HOLD, SELFIE_LUNGE, SELFIE_SNAP, SELFIE_TAIL, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS, PRACTICE_HITS, practiceBeat, SKIP_HOP, SKIP_MAX, SKIP_MIN, SKIP_TAIL, MINE_FUSE, ENCORE, ENCORE_FACE, ENCORE_GONE, BURDEN_Y, UNBOWED_STEP, UNBOWED_MAX, PIGGY, PIGGY_DASH, PIGGY_CARRY, PIGGY_TAIL, PIGGY_BACK_X, PIGGY_BACK_Y, HUG, HUG_LUNGE, HUG_FIRST, HUG_GAP, HUG_TAIL, MEAL_GRACE, FAMILY, FAMILY_MEMBERS, FAMILY_LUNGE, FAMILY_FINALE, FAMILY_ZONE_AHEAD, FAMILY_ZONE_R, FAMILY_TAIL, familyLife } from '../render/clips.ts';
+import { BUSHIDO_TAIL, clipFor, DRUM_SLUMP, drumRow, PAW, PAW_FAIL, PAW_HITS, pawRow, pawTime, ROLL, ROLL_BEATS, ROLL_MAX, ROLL_MIN, ROLL_SLUMP, ROLL_THROW, rollGap, SELFIE, SELFIE_HOLD, SELFIE_LUNGE, SELFIE_SNAP, SELFIE_TAIL, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS, PRACTICE_HITS, practiceBeat, SKIP_HOP, SKIP_MAX, SKIP_MIN, SKIP_TAIL, MINE_FUSE, ENCORE, ENCORE_FACE, ENCORE_GONE, BURDEN_Y, UNBOWED_STEP, UNBOWED_MAX, PIGGY, PIGGY_DASH, PIGGY_CARRY, PIGGY_TAIL, PIGGY_BACK_X, PIGGY_BACK_Y, HUG, HUG_LUNGE, HUG_FIRST, HUG_GAP, HUG_TAIL, MEAL_GRACE, FAMILY, FAMILY_MEMBERS, FAMILY_LUNGE, FAMILY_FINALE, FAMILY_ZONE_AHEAD, FAMILY_ZONE_R, FAMILY_TAIL, familyLife, BLOOD, OBLIVION, TWIN_MOON, TWIN_PHASE } from '../render/clips.ts';
 import { SCRIPTS } from './scripts.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
@@ -396,7 +396,7 @@ function wheatRoll(g: FightGame, f: Fighter): void {
   const heal = Math.round(spec.heal * f.data.hp);
   f.hp = Math.min(f.data.hp, f.hp + heal);
   addMod(f, 'incoming', spec.time, { v: 1 - spec.cut, tag: 'wheat', mark: 'wheat' });
-  g.effect('wheat-rise', f.x, FLOOR, '#ffd36a', 1.4, { radius: 64, follow: f.id, ox: 0, oy: FLOOR - f.y });
+  g.effect('wheat-rise', f.x, FLOOR, '#ffd36a', 1.4, { radius: 64 });
   g.text('+' + heal, f.x, f.y - 150, '#9dff9a', .8, 20);
   g.text('麦子越踩越坚强', f.x, f.y - 214, '#ffd36a', 1.2, 18);
 }
@@ -1398,6 +1398,8 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
   } else if (!a.emitted && a.t >= s.start) {
     a.emitted = true;
     const swingFx = f.frenzy > 0 && a.index <= 1 ? f.data.frenzy?.swingFx : undefined;
+    // A character's own flourish on every J / K (aura.swing) replaces the generic slash.
+    const flourish = a.index <= 1 ? f.data.aura?.swing : undefined;
     if (sc?.emit) sc.emit(g, f, a);
     else if (s.onActive) runOps(g, f, s, s.onActive);
     else if (s.type === 'projectile') {
@@ -1406,14 +1408,20 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
     } else if (s.type !== 'dash' && !sc?.noMelee) {
       if (s.type !== 'upper') applyMelee(g, f, a);
       if (sc?.flash) sc.flash(g, f, a);
-      // A form's swing graphic replaces the generic slash, so the two never stack.
-      else if (!swingFx) g.effect(s.fx, f.x + f.facing * 65, f.y - (s.type === 'sweep' ? 22 : 83), f.data.color, .22, { dir: f.facing, radius: s.range * .5 });
+      // A form's swing graphic, or the character's own flourish, replaces the generic slash, so the two never stack.
+      else if (!swingFx && !flourish) g.effect(s.fx, f.x + f.facing * 65, f.y - (s.type === 'sweep' ? 22 : 83), f.data.color, .22, { dir: f.facing, radius: s.range * .5 });
     }
     // 狂化 J / K: a form may stamp a graphic on every swing, hit or whiff (swingFx is data).
     if (swingFx) {
       g.effect(swingFx, f.x + f.facing * s.range * .55, f.y - 105, f.data.frenzy?.tint ?? f.data.color, .33, {
         dir: f.facing, radius: s.range, heavy: a.index === 1, hit: a.hit.size > 0, air: !!s.air,
         follow: f.id, ox: f.facing * s.range * .55, oy: -105,
+      });
+    }
+    // The flourish itself, hit or whiff.
+    if (flourish) {
+      g.effect(flourish, f.x + f.facing * s.range * .55, f.y - (s.air ? 100 : a.index === 1 ? 72 : 104), f.data.color, a.index === 1 ? .32 : .24, {
+        dir: f.facing, heavy: a.index === 1, air: !!s.air, hit: a.hit.size > 0, radius: s.range * .45,
       });
     }
     // 领域: any move that declares one opens it on its active frame. Later fields cover it.
@@ -5092,3 +5100,220 @@ function step_nyamu_paw(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   if (local >= end) a.t = s.duration;
 }
 SCRIPTS['nyamu-paw'] = Object.assign(SCRIPTS['nyamu-paw'] ?? {}, { update: step_nyamu_paw, noMelee: true, skipCount: true });
+
+/* ---- 丰川祥子 ---- */
+/* The pictures live in src/render/sakikoFx.ts; here is only when and where they are stamped. */
+
+const SAKI_GOLD = '#e8c873';
+const SAKI_ICE = '#bcd4ff';
+
+/** 白祥's blast: the same move, scaled up into the knockdown. Cached per skill so the shot never allocates. */
+const shiroOf = new WeakMap<Skill, Skill>();
+function shiroSkill(s: Skill): Skill {
+  let b = shiroOf.get(s);
+  if (!b) {
+    b = { ...s, damage: 60, knock: 420, react: { kind: 'knockdown', vy: -320, knocked: .7 }, shake: 10, hitstop: .1 };
+    shiroOf.set(s, b);
+  }
+  return b;
+}
+
+/** 忘却之影: one shove ring around `x`, everyone in it hit once by the move itself. */
+function oblivionPulse(g: FightGame, f: Fighter, a: Attack, x: number): void {
+  a.hit = new Set();
+  for (const o of g.opponents(f)) {
+    if (Math.abs(o.x - x) < OBLIVION.pulse && Math.abs(o.y - f.y) < 140) hit(g, f, o, a.skill, a, x);
+  }
+  g.effect('saki-moon-ring', x, FLOOR, SAKI_ICE, .55, { radius: OBLIVION.pulse });
+}
+
+/** 忘却之影 (Oblivionis, 「软弱的我已经死了」): she blinks ahead and the gentle 白祥 of the CRYCHIC days
+ *  stays where she stood. Both ends shove; the phantom goes off OBLIVION.fuse later. The pose wears
+ *  `poise` (霸体) for the whole cast. a.mode: 0 the flourish, 1 after the blink. */
+function step_oblivion(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  if ((a.mode ?? 0) !== 0 || a.t < s.start) return;
+  a.mode = 1;
+  const from = f.x;
+  oblivionPulse(g, f, a, from);
+  // The 白祥 stands on her own foot line: same height and the same lift as her sprite.
+  const view = f.data.view.kind === 'sprite' ? f.data.view : undefined;
+  g.projectiles.push({
+    owner: f.id, x: from, y: FLOOR - (view?.lift ?? 0), vx: 0, vy: 0, life: OBLIVION.fuse + .05, age: 0,
+    skill: shiroSkill(s), color: '#cfe0ff', radius: 0, size: view?.height ?? 181,
+    fx: 'shiro', attack: a, hit: new Set(), trail: [], solid: false, face: f.facing,
+  });
+  // Two frozen pale copies of her along the line she cuts — enough to read the blink, no more.
+  const clip = clipFor(f);
+  const to = clamp(from + f.facing * OBLIVION.blink, X_MIN, X_MAX);
+  for (let i = 1; i <= 2; i++) {
+    const u = i / 3;
+    g.effect('ghost', from + (to - from) * u, f.y, f.data.color, .18 + u * .22,
+      { fighter: f.id, alpha: .55 - u * .2, tint: SAKI_ICE, sheet: clip.sheet, col: clip.col, row: clip.row, facing: f.facing });
+  }
+  f.x = to;
+  g.effect('saki-blink', from, f.y - 92, SAKI_ICE, .45, { tx: to - from, dir: f.facing });
+  oblivionPulse(g, f, a, f.x);
+  g.shake = Math.max(g.shake, 4);
+}
+
+/** The 白祥 stands still and unhittable until the fuse, then one blast over a wide disc. */
+function shot_shiro(g: FightGame, p: Projectile): boolean {
+  if (p.returned || p.age < OBLIVION.fuse) return true;
+  p.returned = true;
+  p.life = 0;
+  const owner = g.fighterById(p.owner);
+  if (owner && owner.hp > 0) {
+    for (const o of g.opponents(owner)) {
+      if (Math.hypot(o.x - p.x, o.y - p.y) < OBLIVION.blast) hit(g, owner, o, p.skill, p, p.x);
+    }
+  }
+  g.effect('saki-shiro-blast', p.x, FLOOR, SAKI_ICE, .95, { radius: OBLIVION.blast });
+  g.sparks(p.x, p.y - 90, '#e8eefc', 12, 1.4);
+  g.shake = Math.max(g.shake, 10);
+  g.flash = Math.max(g.flash, .07);
+  return true;
+}
+SCRIPTS['oblivion'] = Object.assign(SCRIPTS['oblivion'] ?? {}, { update: step_oblivion, customDash: true, poise: true });
+SCRIPTS['shiro'] = Object.assign(SCRIPTS['shiro'] ?? {}, { shot: shot_shiro, trail: 0 });
+
+/** 神威 (「我来成为神明」, 怪力少女): light falls on her and a seal gathers under her through the windup;
+ *  one ladylike stomp and the floor all round her heaves. The generic radial stamp does the hit. */
+SCRIPTS['divine'] = Object.assign(SCRIPTS['divine'] ?? {}, {
+  poise: true,
+  // First frame of the move (a.mode unset): the seal and the cylinder of light. Never owns the frame.
+  update(g: FightGame, f: Fighter, a: Attack) {
+    if (a.mode !== undefined) return;
+    a.mode = 0;
+    const s = a.skill;
+    g.effect('saki-octagram', f.x, FLOOR, SAKI_GOLD, s.start + .45, { radius: s.range, t0: s.start });
+    // The cylinder of light round her, in two layers so she stands inside it.
+    for (const type of ['saki-rise', 'saki-rise-front']) {
+      g.effect(type, f.x, FLOOR, SAKI_GOLD, s.start + .2, { radius: 62, follow: f.id, ox: 0, oy: FLOOR - f.y });
+    }
+  },
+  // The force is unseen: no sparks, no flash. The air bends, the floor trembles, and whoever it found
+  // is lifted with a ripple round them (a.hit already holds them — the stamp ran first).
+  flash(g: FightGame, f: Fighter, a: Attack) {
+    g.effect('divine-quake', f.x, FLOOR, f.data.color, .6, { radius: a.skill.range });
+    g.effect('saki-pressure', f.x, f.y - 90, '#000000', .4);
+    for (const id of a.hit) {
+      const o = g.fighterById(id);
+      if (o) g.effect('saki-lift', o.x, o.y - 90, '#ffffff', .4, { follow: o.id, ox: 0, oy: -90 });
+    }
+    g.shake = Math.max(g.shake, 7);
+  },
+});
+
+/** 双月轮舞 (《ふたつの月》): out a fixed run, turn, and back past where she started before the brake.
+ *  The hit list clears at the turn, so the way home can land again. a.anchor is the start, a.liftAt the turn.
+ *  Blue moons out, silver home; an eclipse at the turn and two crossed moons where she stops. */
+function step_twin_moon(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  if (a.t < s.start) return;
+  const mode = a.mode ?? TWIN_PHASE.out;
+  const speed = s.speed ?? 950;
+  if (mode === TWIN_PHASE.brake) {
+    const left = Math.max(0, s.duration - a.t) / TWIN_MOON.brake;
+    f.x = clamp(f.x + f.facing * speed * .35 * left * dt, X_MIN, X_MAX);
+    return;
+  }
+  const moon = mode === TWIN_PHASE.out ? f.data.color : '#dfe6f5';
+  // Never let the clock run out mid-run: the brake owns the last TWIN_MOON.brake seconds.
+  a.t = Math.min(a.t, s.duration - TWIN_MOON.brake - .01);
+  f.x = clamp(f.x + f.facing * speed * dt, X_MIN, X_MAX);
+  // A Set keeps insertion order, so the ids past `before` are exactly the ones this step hit.
+  const before = a.hit.size;
+  applyMelee(g, f, a);
+  if (a.hit.size > before) {
+    let i = 0;
+    for (const id of a.hit) {
+      if (i++ < before) continue;
+      const o = g.fighterById(id);
+      if (o) g.effect('saki-moon-cut', o.x, o.y - 96, moon, .32, { dir: f.facing, radius: 54 });
+    }
+  }
+  if (Math.floor(a.t * 16) !== Math.floor((a.t - dt) * 16)) {
+    g.effect('twin-moon', f.x - f.facing * 30, f.y - 96, moon, .36, { dir: f.facing, radius: 70 });
+  }
+  if (Math.floor(a.t * 14) !== Math.floor((a.t - dt) * 14)) {
+    g.effect('ghost', f.x - f.facing * 22, f.y, f.data.color, .26, { fighter: f.id, alpha: .4, tint: moon });
+  }
+  const wall = f.x <= X_MIN || f.x >= X_MAX;
+  if (mode === TWIN_PHASE.out) {
+    if (Math.abs(f.x - a.anchor) < TWIN_MOON.out && !wall) return;
+    a.mode = TWIN_PHASE.back;
+    a.liftAt = f.x;
+    f.facing = (-f.facing) as 1 | -1;
+    a.hit = new Set();
+    g.effect('saki-eclipse', f.x, f.y - 96, '#ffffff', .6, { radius: 52 });
+    g.shake = Math.max(g.shake, 4);
+    return;
+  }
+  const home = Math.abs(a.liftAt - a.anchor) + TWIN_MOON.over;
+  if (Math.abs(f.x - a.liftAt) < home && !wall) return;
+  a.mode = TWIN_PHASE.brake;
+  a.t = Math.max(a.t, s.duration - TWIN_MOON.brake);
+  g.effect('saki-crossmoon', f.x + f.facing * 20, f.y - 96, '#ffffff', .5, { radius: 62 });
+}
+SCRIPTS['twin-moon'] = Object.assign(SCRIPTS['twin-moon'] ?? {}, { update: step_twin_moon, customDash: true });
+
+/** 血月的奏鸣: the house goes black under a rising blood moon, a red light falls on her and the music
+ *  pours out of her hands as a staff across the stage. Her own super entrance replaces the stock square. */
+function cast_blood(g: FightGame, f: Fighter): void {
+  const s = f.attack?.skill;
+  const dur = s?.duration ?? 2.8;
+  g.effect('blood-moon', W / 2, H / 2, '#e5243b', dur + .4);
+  g.effect('blood-spot', f.x, FLOOR, '#e5243b', dur + .1, { follow: f.id, ox: 0, oy: FLOOR - f.y });
+  g.effect('blood-staff', f.x + f.facing * 34, f.y - 100, '#e5243b', dur - (s?.start ?? .4) + .2,
+    { follow: f.id, ox: f.facing * 34, oy: -100, dir: f.facing });
+  g.flash = Math.max(g.flash, .06);
+  g.shake = Math.max(g.shake, 6);
+  // The classic super cut-in: the camera snaps a little closer on her and eases back out.
+  g.effect('super-zoom', f.x, f.y - 90, '#000000', .75, { radius: 1.14 });
+  g.audio.play('blood-intro', f.id);
+}
+
+/** Slow red notes off the two keyboards, each at its own random climb, so the volley fans out.
+ *  The rolls go through g.random so both ends of an online match draw the same fan. */
+function volley_blood(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  const count = s.count ?? 1;
+  while (a.shots < count && a.t >= s.start + a.shots * (s.interval ?? .13)) {
+    if (a.shots === 0) {
+      repel(g, f, BLOOD.repel, 420, .3);
+      g.effect('saki-moon-ring', f.x, FLOOR, '#ff6a7d', .55, { radius: BLOOD.repel });
+    }
+    const last = a.shots >= count - 1;
+    const prev = a.skill;
+    a.skill = withFinale(s, last);
+    const p = spawnShot(g, f, a, -20 + g.random() * 24, a.shots);
+    a.skill = prev;
+    const ang = (BLOOD.low + g.random() * (BLOOD.high - BLOOD.low)) * Math.PI / 180;
+    const speed = s.speed ?? 300;
+    p.x += f.facing * 24;
+    p.vx = f.facing * Math.cos(ang) * speed;
+    p.vy = -Math.sin(ang) * speed;
+    p.color = '#e5243b';
+    p.wave = g.random() * Math.PI * 2;
+    g.effect('blood-flash', p.x, p.y, '#e5243b', .22);
+    g.audio.play(`blood-${a.shots}`, f.id);
+    a.shots++;
+    if (last) {
+      g.audio.play('blood-end', f.id);
+      g.effect('blood-finale', f.x, FLOOR, '#e5243b', 1, { radius: 520 });
+      g.shake = Math.max(g.shake, 10);
+      g.flash = Math.max(g.flash, .06);
+    }
+  }
+}
+
+/** The bob rides on top of the straight line; touch and landing stay the kernel's. */
+function after_blood(_g: FightGame, p: Projectile, dt: number): boolean {
+  p.y += Math.cos(p.age * BLOOD.bobRate + (p.wave ?? 0)) * BLOOD.bob * dt;
+  return false;
+}
+SCRIPTS['blood-note'] = Object.assign(SCRIPTS['blood-note'] ?? {}, {
+  cast: cast_blood, volley: volley_blood, after: after_blood, trail: 48, noSuperFx: true,
+  pulse(g: FightGame, p: Projectile, target: Fighter) { g.effect('blood-hit', p.x, Math.min(p.y, target.y - 40), '#e5243b', .45); },
+});

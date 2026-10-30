@@ -4,8 +4,9 @@ import type { Fighter } from '../game/fighter.ts';
 import type { FighterView } from './view.ts';
 import { clamp, FLOOR, H, SIDE, W } from '../game/constants.ts';
 import type { ImageCache } from '../assets/loader.ts';
-import { BURDEN_Y, CELL, clipFor, FAMILY_LINGER, FAMILY_MEMBERS, flameFrame, pillarFrame, practiceBeat, practiceStrums, PRACTICE_HITS, RAIKA_CM, RING_BIG, RING_SMALL } from './clips.ts';
+import { BURDEN_Y, CELL, clipFor, FAMILY_LINGER, OBLIVION, FAMILY_MEMBERS, flameFrame, pillarFrame, practiceBeat, practiceStrums, PRACTICE_HITS, RAIKA_CM, RING_BIG, RING_SMALL } from './clips.ts';
 import { watchProp } from './propLayout.ts';
+import { bloodSparkles, drawSakikoFx, drawShiroFloor } from './sakikoFx.ts';
 
 const CUCUMBER_SRC = '/sprites/mutsumi/cucumber.png';
 const NOTE_SRC = '/sprites/mutsumi/note.png';
@@ -48,6 +49,8 @@ const SOYO_NOTE_SRC = '/sprites/soyo/note.png';
 const HEART_SRC = '/sprites/anon/heart.png';
 const STONE_SRC = '/sprites/tomori/stone.png';
 const PLASTER_SRC = '/sprites/tomori/plaster.png';
+/** 忘却之影: the gentle 白祥 she leaves behind, a whole standing figure on one 256 cell. */
+const SHIRO_SRC = '/sprites/sakiko/shiro.png';
 /** 康乃馨盛开之日: the upright coffin, front face to the screen, on a 512×512 square with the flowers
  *  round its foot. COFFIN_SIZE is the square's side on stage; the art's foot sits COFFIN_FOOT of the
  *  way down the square, so that line goes on the floor. Drawn at the picture's own aspect. */
@@ -978,6 +981,8 @@ function drawBurdenItem(ctx: CanvasRenderingContext2D, i: number, color: string)
 }
 
 export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: ImageCache): void {
+  // 丰川祥子 keeps her whole visual language in one module.
+  if (drawSakikoFx(ctx, e, liteFx)) return;
   const p = 1 - e.life / e.max, r = e.radius ?? 50;
   const square = (x: number, y: number, w: number, h: number) => ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
   ctx.save();
@@ -5892,6 +5897,9 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
       }
       break;
     }
+    // 必杀聚焦 is a camera move the renderer reads; it draws nothing of its own.
+    case 'super-zoom':
+      break;
     case 'super':
     default:
       ctx.translate(e.x, e.y); ctx.rotate(p * 1.5);
@@ -5939,6 +5947,77 @@ function mixRgb(a: Rgb, b: Rgb, k: number): Rgb {
 }
 function cssRgba(c: Rgb, a: number): string {
   return `rgba(${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])},${a})`;
+}
+
+/** A quaver: dark outline, the body in `color`, a pale shine on the head. `ink` is the outline. */
+function noteGlyph(ctx: CanvasRenderingContext2D, s: number, color: string, ink = '#16141f', shine = '#f7f1e4'): void {
+  ctx.fillStyle = ink;
+  ctx.fillRect(s * .32, -s * 1.4, s * .34, s * 1.55);
+  ctx.beginPath(); ctx.ellipse(-s * .08, s * .18, s * .78, s * .52, -.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = color;
+  ctx.fillRect(s * .4, -s * 1.28, s * .18, s * 1.38);
+  ctx.beginPath(); ctx.ellipse(-s * .08, s * .18, s * .58, s * .36, -.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = shine;
+  ctx.beginPath(); ctx.ellipse(-s * .2, s * .08, s * .2, s * .12, -.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(s * .56, -s * 1.28);
+  ctx.quadraticCurveTo(s * 1.35, -s * .72, s * .62, -s * .32);
+  ctx.quadraticCurveTo(s * 1.05, -s * .78, s * .56, -s * .96);
+  ctx.fill();
+}
+
+const BLOOD_HEAD: Rgb = [229, 36, 59];
+const BLOOD_TAIL: Rgb = [96, 24, 104];
+/** The ribbon is drawn in this many brightness steps; each step is one stroke. */
+const RIBBON_STEPS = 6;
+/** Per pass (soft wide, thin bright) and step: the colour string and the width. Built once. */
+const RIBBON_INK = [0, 1].map(pass => Array.from({ length: RIBBON_STEPS }, (_, i) => {
+  const k = (i + 1) / RIBBON_STEPS;
+  return { color: cssRgba(mixRgb(BLOOD_TAIL, BLOOD_HEAD, k), (pass === 0 ? .16 : .78) * k), width: (pass === 0 ? 10 : 3.2) * (.25 + .75 * k) };
+}));
+/** 血月的奏鸣: a long thin ribbon along the note's own path, red at the note and fading to dark violet
+ *  at the tail. One soft wide pass under one thin bright pass; lite drops the soft pass. The samples
+ *  brighten monotonically toward the head, so each brightness step is one contiguous run and one
+ *  stroke: 12 strokes a note instead of one per segment, and no colour strings built per frame. */
+function bloodRibbon(ctx: CanvasRenderingContext2D, p: Projectile): void {
+  const pts = p.trail;
+  const n = pts.length;
+  if (n < 2) return;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.globalAlpha = Math.min(1, p.life / .2, p.age / .06);
+  for (let pass = liteFx ? 1 : 0; pass < 2; pass++) {
+    const ink = RIBBON_INK[pass];
+    let step = -1;
+    for (let i = 0; i <= n; i++) {
+      const at = i < n ? pts[i] : p;
+      const next = Math.min(RIBBON_STEPS - 1, Math.floor(i / (n + 1) * RIBBON_STEPS));
+      if (next !== step) {
+        if (step >= 0) { ctx.lineTo(at.x, at.y); ctx.stroke(); }
+        step = next;
+        ctx.strokeStyle = ink[step].color;
+        ctx.lineWidth = ink[step].width;
+        ctx.beginPath();
+        ctx.moveTo(at.x, at.y);
+      } else ctx.lineTo(at.x, at.y);
+    }
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+/** 血月的奏鸣: the bloom under each note. Every note shares one size, so one gradient per context. */
+const NOTE_BLOOM = new WeakMap<CanvasRenderingContext2D, CanvasGradient>();
+function noteBloom(ctx: CanvasRenderingContext2D, R: number): CanvasGradient {
+  let g = NOTE_BLOOM.get(ctx);
+  if (!g) {
+    g = ctx.createRadialGradient(0, 0, 1, 0, 0, R);
+    g.addColorStop(0, 'rgba(255,120,130,.42)');
+    g.addColorStop(1, 'rgba(229,36,59,0)');
+    NOTE_BLOOM.set(ctx, g);
+  }
+  return g;
 }
 
 /** Scratch for the trail. 112 is the largest cap in SCRIPTS (music-note), and one comet draws at a time. */
@@ -6070,6 +6149,7 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   else if (p.fx === 'sob') noteRibbon(ctx, p, '#f4e7b4', '#e8c96a');
   else if (p.fx === 'arrow') noteRibbon(ctx, p, '#1a3a8a', '#7ec8ff');
   else if (p.fx === 'music-note' || p.fx === 'rebirth') noteComet(ctx, p);
+  else if (p.fx === 'blood-note') { bloodRibbon(ctx, p); if (!liteFx) bloodSparkles(ctx, p); }
   else if (p.fx !== 'fuga' && p.fx !== 'smile-ship' && p.fx !== 'whale' && p.fx !== 'butterfly' && p.fx !== 'jewel' && p.fx !== 'shigure' && p.fx !== 'moca-dusk' && p.fx !== 'sprout' && p.fx !== 'clock' && p.fx !== 'iaido' && p.fx !== 'coffin-ring' && p.fx !== 'coffin-ring-big') {
     // 火的故事 skips the stock dots — they read as purple balls; its case draws gold afterimages.
     // 微笑号 is a screen-sized sweep, so the travelling point must not leave a dot trail.
@@ -6610,24 +6690,50 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
       drumstick(ctx, 48);
       break;
     }
+    case 'blood-note': {
+      // 血月的奏鸣: a soft red bloom under the note so it reads on the darkened stage.
+      if (!liteFx) {
+        const R = Math.max(7, p.radius) * 2.4;
+        ctx.fillStyle = noteBloom(ctx, R);
+        ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill();
+      }
+      // Drawn half again the hit size so the note carries the eye; the hit circle stays the data's.
+      ctx.scale(1.5, 1.5);
+      ctx.rotate(Math.sin(p.age * 5 + (p.wave ?? 0)) * .25);
+      noteGlyph(ctx, Math.max(7, p.radius), p.color, '#3a0a14', '#ffe6e8');
+      break;
+    }
+    case 'shiro': {
+      // 忘却之影: the 白祥 stands where she was, faint and lit blue at the rim; it flickers before it goes.
+      const left = OBLIVION.fuse - p.age;
+      const warn = left < OBLIVION.flicker;
+      let alpha = .7 * Math.min(1, p.age / .12);
+      if (warn && Math.floor(p.age * 22) % 2) alpha *= .35;
+      const h = p.size;
+      drawShiroFloor(ctx, p, liteFx);
+      ctx.scale(p.face ?? 1, 1);
+      ctx.globalAlpha = alpha;
+      if (!liteFx && !phoneRaster()) {
+        ctx.shadowColor = '#9fc4ff';
+        ctx.shadowBlur = warn ? 30 : 16;
+      }
+      const im = images?.get(SHIRO_SRC);
+      if (im?.naturalWidth) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = phoneRaster() ? 'low' : 'high';
+        ctx.drawImage(keyed(im), -h / 2, -h, h, h);
+      } else {
+        ctx.fillStyle = '#e8f0ff';
+        ctx.beginPath(); ctx.ellipse(0, -h * .45, h * .16, h * .4, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(0, -h * .86, h * .1, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+      break;
+    }
     case 'rain-note':
     case 'note': {
       if (p.fx === 'rain-note') rainTrail(ctx, p);
-      const s = Math.max(7, p.radius);
-      ctx.fillStyle = '#16141f';
-      ctx.fillRect(s * .32, -s * 1.4, s * .34, s * 1.55);
-      ctx.beginPath(); ctx.ellipse(-s * .08, s * .18, s * .78, s * .52, -.5, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = p.color;
-      ctx.fillRect(s * .4, -s * 1.28, s * .18, s * 1.38);
-      ctx.beginPath(); ctx.ellipse(-s * .08, s * .18, s * .58, s * .36, -.5, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#f7f1e4';
-      ctx.beginPath(); ctx.ellipse(-s * .2, s * .08, s * .2, s * .12, -.5, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.moveTo(s * .56, -s * 1.28);
-      ctx.quadraticCurveTo(s * 1.35, -s * .72, s * .62, -s * .32);
-      ctx.quadraticCurveTo(s * 1.05, -s * .78, s * .56, -s * .96);
-      ctx.fill();
+      noteGlyph(ctx, Math.max(7, p.radius), p.color);
       break;
     }
     // 让大家幸福的音乐: 音符彗星. A lit sphere holds a near-white note; the band behind is

@@ -165,17 +165,40 @@ export const ROSTER: CharacterData[] = [
     id: 'sakiko', name: '丰川祥子', title: '近身 / 奏鸣', quote: '我毋畏遗忘。', color: '#7799CC',
     bands: ['ave-mujica'],
     ...stats('rush'),
-    view: { kind: 'sprite', common: '/sprites/sakiko/common.png', special: '/sprites/sakiko/special.png', height: 181 },
+    // The goddess walks: each footfall rings faintly on the floor, each J / K leaves a thin silver moon.
+    aura: { step: 'saki-step', swing: 'saki-swing' },
+    view: {
+      kind: 'sprite', common: '/sprites/sakiko/common.png', special: '/sprites/sakiko/special.png', height: 165, lift: 2,
+      extras: ['/sprites/sakiko/shiro.png'],
+    },
     skills: [
       skill(0, 'light', '礼掌', { brief: '轻击；命中可接 J / K', detail: '轻击；命中可接 J / K' }),
       skill(1, 'heavy', '拂踢', { range: 132, brief: '重击；击退，轻击后可接', detail: '重击；击退，轻击后可接' }),
-      skill(2, 'dash', '忘却步', { range: 120, brief: '前冲掌击', detail: '前冲掌击' }),
-      skill(3, 'light', '轮舞', { damage: 22, range: 188, start: .08, duration: .64, cd: 3, count: 3, interval: .11, brief: '绕身连打三下', detail: '绕身连打三下' }),
-      skill(4, 'launch', '月牙踢', { range: 126, fx: 'crescent', brief: '命中挑空，跳起追打可连段', detail: '命中挑空，跳起追打可连段' }),
-      skill(5, 'projectile', '忘却奏鸣', {
-        cost: 115, damage: 40, count: 8, interval: .075, speed: 540, size: 40, start: .3, duration: 1.2, life: 2.2, fx: 'note',
-        guardPlan: [8, 12, 18, 26, 38, 52, 68, 86],
-        brief: '连发八枚音符', detail: '连发八枚音符',
+      skill(2, 'dash', '忘却之影', {
+        damage: 24, range: 140, start: .2, duration: .62, cd: 9, knock: 380, fx: 'oblivion',
+        react: { kind: 'stand', stun: .32 },
+        brief: '前闪霸体，起落点震开；原地残影随后爆炸击倒',
+        detail: '向前闪现，释放时霸体；起点和落点各震开周围一次，原地留下残影，1.2 秒后大范围爆炸 60 伤害并击倒',
+      }),
+      skill(3, 'launch', '神威', {
+        damage: 55, range: 300, start: .38, duration: .9, cd: 8, fx: 'divine',
+        hitbox: 'radial', reach: 'ground', hitAll: true, noSparks: true,
+        brief: '跺地震波挑空周围；霸体，跳起可躲',
+        detail: '优雅跺地，以自身为中心的大范围地震波挑空周围对手；全程霸体，只打地面，跳起可躲',
+      }),
+      skill(4, 'dash', '双月轮舞', {
+        damage: 34, range: 110, start: .12, duration: 1.3, cd: 6, speed: 950, knock: 160, fx: 'twin-moon',
+        react: { kind: 'stand', stun: .4 }, frail: 4, frailBonus: .2,
+        brief: '冲刺折返，去回各打一次；打实后脆弱',
+        detail: '向前冲刺后折返，越过出发点再滑一段；去程回程各判定一次，打实后脆弱 4 秒（受伤 +20%）',
+      }),
+      skill(5, 'projectile', '血月的奏鸣', {
+        cost: 150, damage: 28, count: 16, interval: .13, speed: 300, size: 40, start: .4, duration: 2.8, life: 3.6,
+        knock: 120, gain: 2, fx: 'blood-note', holdEndure: true, solid: false,
+        guardPlan: [4, 5, 6, 7, 8, 10, 12, 14, 17, 20, 24, 28, 33, 38, 44, 52],
+        finale: { knock: 380, react: { kind: 'knockdown', vy: -320, knocked: .7 } },
+        brief: '霸体弹奏震开近身；十六枚随机角度音符，末枚击倒',
+        detail: '全场熄灯，原地弹奏 2.4 秒，期间霸体，开场震开近身；向前发射十六枚随机角度的慢速音符，末枚击倒',
       }),
     ],
   },

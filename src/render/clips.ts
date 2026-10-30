@@ -167,6 +167,26 @@ export const FAMILY_LUNGE = .3;
 export const FAMILY_LINGER = .3;
 export const FAMILY_FINALE = 1.58;
 export const FAMILY_TAIL = .55;
+
+/* ---- 丰川祥子 ---- */
+
+/** 忘却之影: pixels of the blink, radius of the shove at each end, then the 白祥 left behind —
+ *  its fuse, the last stretch it flickers, and the blast radius. `land` is how long the landing cell
+ *  holds after the blink. Shared by the script (combat.ts), the cell pick below and the fx. */
+export const OBLIVION = { blink: 300, pulse: 140, fuse: 1.2, flicker: .3, blast: 170, land: .22 } as const;
+/** 双月轮舞: out this far, back past the start by `over`, then a short brake. a.mode walks these phases. */
+export const TWIN_MOON = { out: 360, over: 120, brake: .2 } as const;
+export const TWIN_PHASE = { out: 0, back: 1, brake: 2 } as const;
+/** 血月的奏鸣: launch angle band in degrees (positive climbs), the bob of each note, the opening shove,
+ *  and the tail where the last sweep cell holds. */
+export const BLOOD = { low: -14, high: 22, bob: 40, bobRate: 3.2, repel: 150, tail: .32 } as const;
+
+/** 血月的奏鸣: windup with the hands up, then the press and the lift trade on the note clock; the sweep closes. */
+export function bloodRow(t: number, start: number, interval: number, duration: number): number {
+  if (t < start) return 0;
+  if (t >= duration - BLOOD.tail) return 2;
+  return Math.floor((t - start) / interval) % 2 === 0 ? 1 : 0;
+}
 /** 上吧，My Family！: the strum cell holds this long after the finale. */
 export const FAMILY_STRUM = .18;
 /** 上吧，My Family！: a.mode — lunging, holding while the family comes in, done, the hold lost
@@ -659,6 +679,28 @@ export function clipFor(f: Fighter): Clip {
       const t = f.attack.t, s = f.attack.skill;
       const row = t < ROOFTOP_DIVE ? 0 : t < s.start + ROOFTOP_STOMP ? 1 : 2;
       return at('special', f.attack.index - 2, row);
+    }
+    // 忘却之影: the flourish, the landing crouch held a moment after the blink, then upright.
+    if (f.attack.skill.fx === 'oblivion') {
+      const a = f.attack, s = a.skill;
+      const row = a.t < s.start ? 0 : a.t < s.start + OBLIVION.land ? 1 : 2;
+      return at('special', a.index - 2, row);
+    }
+    // 神威: skirt lifted, the stomp held through the quake, then the curtsey.
+    if (f.attack.skill.fx === 'divine') {
+      const t = f.attack.t, s = f.attack.skill;
+      const row = t < s.start ? 0 : t >= s.duration - .28 ? 2 : 1;
+      return at('special', f.attack.index - 2, row);
+    }
+    // 双月轮舞: the start, the glide both ways (the turn mirrors it), the brake.
+    if (f.attack.skill.fx === 'twin-moon') {
+      const a = f.attack;
+      const row = a.t < a.skill.start ? 0 : (a.mode ?? TWIN_PHASE.out) === TWIN_PHASE.brake ? 2 : 1;
+      return at('special', a.index - 2, row);
+    }
+    if (f.attack.skill.fx === 'blood-note') {
+      const s = f.attack.skill;
+      return at('special', f.attack.index - 2, bloodRow(f.attack.t, s.start, s.interval ?? .13, s.duration));
     }
     // 筑紫四列都要把命中姿势留住：土笔蹲着、闹钟抛完、滚轮一直跑、姐姐叉腰。
     if (f.attack.skill.fx === 'sprout' || f.attack.skill.fx === 'clock' || f.attack.skill.fx === 'wheel' || f.attack.skill.fx === 'sisters'
