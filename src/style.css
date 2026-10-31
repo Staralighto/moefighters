@@ -628,16 +628,72 @@ body.in-battle { overflow-x: hidden; }
 .hud { position: absolute; inset: 10px 14px auto; display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: start; pointer-events: none; }
 .hud-side { display: grid; gap: 8px; }
 .hud-player { display: grid; gap: 3px; }
+/* 1v1 头像贴在血条外侧。2v2 / 激战不挂 .faces，格子维持原样。 */
+.hud.faces .hud-player { grid-template-columns: calc(96px * var(--hud, 1)) minmax(0, 1fr); column-gap: calc(8px * var(--hud, 1)); }
+.hud.faces .hud-player > :not(.hud-avatar) { grid-column: 2; }
+.hud.faces .hud-player.second { grid-template-columns: minmax(0, 1fr) calc(96px * var(--hud, 1)); }
+.hud.faces .hud-player.second > :not(.hud-avatar) { grid-column: 1; }
+/* 头像是一张朝外歪的贴纸，整张显示不裁切；背后垫一张反向歪的斜纹卡，纹路跟页面装饰条纹同一语言。
+   挨打抖一下（hud.ts），残血描边转红闪烁，K.O. 褪色歪倒。 */
+.hud.faces .hud-player { --side: var(--p1); --side-ink: var(--p1-ink); --tilt: -1; }
+.hud.faces .hud-player.second { --side: var(--p2); --side-ink: var(--p2-ink); --tilt: 1; }
+.hud-avatar, .hud.faces .hud-player:has(> .hud-avatar)::before { width: calc(96px * var(--hud, 1)); height: calc(96px * var(--hud, 1)); grid-row: 1 / -1; grid-column: 1; align-self: center; border-radius: calc(8px * var(--hud, 1)); }
+.hud.faces .hud-player.second .hud-avatar, .hud.faces .hud-player.second:has(> .hud-avatar)::before { grid-column: 2; }
+/* 票根：照片后面夹着今晚的 live 门票，下沿探出撕票线和票面字，两侧咬出半圆缺口。 */
+.hud.faces .hud-player:has(> .hud-avatar)::before { content: "ADMIT ONE · 1P"; display: flex; align-items: flex-end; justify-content: center; box-sizing: border-box; padding-bottom: calc(4px * var(--hud, 1));
+  width: calc(108px * var(--hud, 1)); justify-self: center; rotate: calc(var(--tilt) * -4deg); translate: calc(var(--tilt) * 4px) calc(22px * var(--hud, 1));
+  font: 800 calc(8px * var(--hud, 1)) / 1 var(--font-display); letter-spacing: .08em; color: var(--on-accent); white-space: nowrap;
+  background: repeating-linear-gradient(90deg, var(--on-accent) 0 3px, transparent 3px 6px) 0 calc(100% - 14px * var(--hud, 1)) / 100% 1px no-repeat, var(--side);
+  mask: radial-gradient(circle calc(5px * var(--hud, 1)) at 0 calc(100% - 14px * var(--hud, 1)), transparent 97%, black), radial-gradient(circle calc(5px * var(--hud, 1)) at 100% calc(100% - 14px * var(--hud, 1)), transparent 97%, black); mask-composite: intersect;
+  transition: opacity .4s; }
+.hud.faces .hud-player.second:has(> .hud-avatar)::before { content: "ADMIT ONE · 2P"; }
+.hud-avatar { position: relative; object-fit: cover; rotate: calc(var(--tilt) * 3deg);
+  --ring: var(--side-ink);
+  background: linear-gradient(color-mix(in srgb, var(--side) 45%, var(--panel)), var(--panel) 70%);
+  box-shadow: 0 0 0 2px var(--ring), 0 0 12px color-mix(in srgb, var(--ring) 40%, transparent), 0 4px 0 2px var(--shade-strong);
+  transition: rotate .5s cubic-bezier(.34, 1.7, .5, 1), translate .5s ease, filter .5s ease; }
+.hud-avatar[data-state="low"] { --ring: var(--danger-ink); }
+.hud-avatar[data-state="ko"] { --ring: var(--line); rotate: calc(var(--tilt) * 12deg); translate: 0 4px; filter: grayscale(1) brightness(.6); }
+.hud.faces .hud-player:has(> .hud-avatar[data-state="ko"])::before { opacity: .3; }
+@media (prefers-reduced-motion: no-preference) {
+  .hud-avatar[data-state="low"] { animation: avatar-low 1s ease-in-out infinite; }
+}
+@keyframes avatar-low { 50% { box-shadow: 0 0 0 2px var(--ring), 0 0 18px 2px color-mix(in srgb, var(--ring) 70%, transparent), 0 4px 0 2px var(--shade-strong); } }
 .hud-player.sub .health { height: 10px; }
 .hud-player.second.sub > div:first-child { justify-content: flex-end; }
 .hud-player > div:first-child { display: flex; justify-content: space-between; font-weight: 800; letter-spacing: .04em; text-shadow: 0 1px 0 #000; }
 .hud-player.second { text-align: right; }
-.health, .energy { height: 14px; background: #0c0b12cc; border: 1px solid #ffffff33; border-radius: 4px; overflow: hidden; }
-.energy { height: 6px; }
-.health span, .energy span { display: block; height: 100%; width: 100%; background: linear-gradient(#fff6c4, var(--p1)); transition: width .08s linear; }
+.health, .energy { position: relative; height: 14px; background: #0c0b12cc; border: 1px solid #ffffff33; border-radius: 4px; }
+.health span, .energy span { display: block; height: 100%; width: 100%; border-radius: 3px; background: linear-gradient(#fff6c4, var(--p1)); transition: width .08s linear; }
 .hud-player.second .health span, .hud-player.second .energy span { margin-left: auto; }
 .hud-player.second .health span { background: linear-gradient(#eaffc8, var(--p2)); }
+/* 防御是贴在血条下沿的银条，宽度由 hud.ts 写 --guard（0–1），快破防时转红。 */
+.health { margin-bottom: calc(5px * var(--hud, 1)); }
+.health::after { content: ""; position: absolute; left: -1px; top: calc(100% + 2px * var(--hud, 1)); width: calc(var(--guard, 1) * (100% + 2px)); height: calc(3px * var(--hud, 1)); border-radius: 2px; background: var(--text); box-shadow: 0 1px 0 #000; transition: width .15s, background-color .15s; }
+.hud-player.second .health::after { left: auto; right: -1px; }
+.health.guard-low::after { background: var(--danger); }
+/* 能量（气）恒为青色，四格刻度；攒满 = 大招可放：流光 + MAX。 */
+.energy { height: calc(8px * var(--hud, 1)); width: 72%; }
+.hud-player.second .energy { justify-self: end; }
+.energy span { background: linear-gradient(color-mix(in srgb, var(--cyan) 40%, var(--text-strong)), var(--cyan)); }
+.energy::before { content: ""; position: absolute; inset: 0; z-index: 1; border-radius: inherit; background: repeating-linear-gradient(90deg, transparent 0 calc(25% - 1px), var(--shade-strong) calc(25% - 1px) 25%); }
+.energy.full { box-shadow: 0 0 10px color-mix(in srgb, var(--cyan) 70%, transparent); }
+.energy.full span { background: linear-gradient(100deg, transparent 35%, color-mix(in srgb, var(--text-strong) 85%, transparent) 50%, transparent 65%) 0 0 / 300% 100% no-repeat, linear-gradient(color-mix(in srgb, var(--cyan) 40%, var(--text-strong)), var(--cyan)); }
+.energy.full::after { content: "MAX"; position: absolute; left: calc(100% + 6px * var(--hud, 1)); top: 50%; translate: 0 -50%; font: 800 calc(10px * var(--hud, 1)) / 1 var(--font-display); letter-spacing: .1em; color: var(--cyan-ink); text-shadow: 0 1px 0 #000, 0 0 6px var(--cyan); }
+.hud-player.second .energy.full::after { left: auto; right: calc(100% + 6px * var(--hud, 1)); }
+@media (prefers-reduced-motion: no-preference) {
+  .energy.full span { animation: meter-shine 1.4s linear infinite; }
+}
+@keyframes meter-shine { from { background-position: 0 0, 0 0; } to { background-position: 100% 0, 0 0; } }
 .hud-player small { color: var(--text); font-size: 11px; text-shadow: 0 1px 0 #000; }
+.hud-player small:empty { display: none; }
+/* 头像高过信息栈：上下各一行 1fr 吃掉余量，信息栈与头像、计时牌同一条中线。 */
+.hud.faces { align-items: center; }
+.hud.faces .hud-player { grid-template-rows: 1fr repeat(4, auto) 1fr; }
+.hud.faces .hud-player > div:first-child { grid-row: 2; }
+.hud.faces .hud-player > .health { grid-row: 3; }
+.hud.faces .hud-player > small { grid-row: 4; }
+.hud.faces .hud-player > .energy { grid-row: 5; }
 /* 2v2: the two fighters on a side share one row, and the energy bars under them do too. */
 .hud.team .hud-side { grid-template-columns: 1fr 1fr; }
 .hud.team .hud-side:last-child { direction: rtl; }
@@ -749,7 +805,6 @@ body.in-battle { overflow-x: hidden; }
 #battle-skills .skill.super .charge i { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: var(--p1); display: block; }
 #battle-skills .skill.super.ready { border-color: var(--p1-ink); box-shadow: 0 0 12px rgba(253, 233, 121, 0.4); animation: ult-pulse 2s ease-in-out infinite; }
 @keyframes ult-pulse { 0%, 100% { box-shadow: 0 0 8px rgba(253, 233, 121, 0.25); } 50% { box-shadow: 0 0 16px rgba(253, 233, 121, 0.55); } }
-.energy.full { box-shadow: 0 0 8px var(--cyan); }
 #battle-skills-bar { display: flex; justify-content: flex-end; margin-top: 8px; }
 #skill-tier { font-size: 13px; padding: .3em .7em; }
 
@@ -870,7 +925,7 @@ body.touch .battle-top #fullscreen { display: none; }
   body.touch.in-battle .hud-player.sub .health { height: calc(10px * var(--hud, 1)); }
   body.touch.in-battle .hud.team .hud-player.sub .health,
   body.touch.in-battle .hud.challenge .hud-player.sub .health { height: calc(14px * var(--hud, 1)); }
-  body.touch.in-battle .energy { height: calc(6px * var(--hud, 1)); }
+  body.touch.in-battle .energy { height: calc(8px * var(--hud, 1)); }
   body.touch.in-battle .hud-player small { font-size: calc(11px * var(--hud, 1)); }
   body.touch.in-battle .timer { min-width: calc(88px * var(--hud, 1)); }
   body.touch.in-battle .timer small { font-size: calc(11px * var(--hud, 1)); }
@@ -893,7 +948,7 @@ body.pad-split .health { height: calc(14px * var(--hud, 1)); }
 body.pad-split .hud-player.sub .health { height: calc(10px * var(--hud, 1)); }
 body.pad-split .hud.team .hud-player.sub .health,
 body.pad-split .hud.challenge .hud-player.sub .health { height: calc(14px * var(--hud, 1)); }
-body.pad-split .energy { height: calc(6px * var(--hud, 1)); }
+body.pad-split .energy { height: calc(8px * var(--hud, 1)); }
 body.pad-split .hud-player small { font-size: calc(11px * var(--hud, 1)); }
 body.pad-split .timer { min-width: calc(88px * var(--hud, 1)); }
 body.pad-split .timer small { font-size: calc(11px * var(--hud, 1)); }
@@ -934,7 +989,7 @@ body.touch.turned.in-battle .health { height: calc(14px * var(--hud, 1)); }
 body.touch.turned.in-battle .hud-player.sub .health { height: calc(10px * var(--hud, 1)); }
 body.touch.turned.in-battle .hud.team .hud-player.sub .health,
 body.touch.turned.in-battle .hud.challenge .hud-player.sub .health { height: calc(14px * var(--hud, 1)); }
-body.touch.turned.in-battle .energy { height: calc(6px * var(--hud, 1)); }
+body.touch.turned.in-battle .energy { height: calc(8px * var(--hud, 1)); }
 body.touch.turned.in-battle .hud-player small { font-size: calc(11px * var(--hud, 1)); }
 body.touch.turned.in-battle .timer { min-width: calc(88px * var(--hud, 1)); }
 body.touch.turned.in-battle .timer small { font-size: calc(11px * var(--hud, 1)); }
@@ -955,11 +1010,15 @@ body.wide.in-battle .battle-top { display: none; }
 body.wide.in-battle .hud { inset: calc(10px * var(--hud, 1)) calc(14px * var(--hud, 1)) auto; gap: calc(14px * var(--hud, 1)); }
 body.wide.in-battle .hud-side { gap: calc(8px * var(--hud, 1)); }
 body.wide.in-battle .hud-player { gap: calc(3px * var(--hud, 1)); font-size: calc(15px * var(--hud, 1)); }
+body.touch.in-battle .hud.faces .hud-player,
+body.pad-split .hud.faces .hud-player,
+body.touch.turned.in-battle .hud.faces .hud-player,
+body.wide.in-battle .hud.faces .hud-player { column-gap: calc(8px * var(--hud, 1)); }
 body.wide.in-battle .health { height: calc(14px * var(--hud, 1)); }
 body.wide.in-battle .hud-player.sub .health { height: calc(10px * var(--hud, 1)); }
 body.wide.in-battle .hud.team .hud-player.sub .health,
 body.wide.in-battle .hud.challenge .hud-player.sub .health { height: calc(14px * var(--hud, 1)); }
-body.wide.in-battle .energy { height: calc(6px * var(--hud, 1)); }
+body.wide.in-battle .energy { height: calc(8px * var(--hud, 1)); }
 body.wide.in-battle .hud-player small { font-size: calc(11px * var(--hud, 1)); }
 body.wide.in-battle .timer { min-width: calc(88px * var(--hud, 1)); }
 body.wide.in-battle .timer small { font-size: calc(11px * var(--hud, 1)); }

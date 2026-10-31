@@ -15,6 +15,7 @@
 | 触碰 | 先读 | 附带测试 |
 |---|---|---|
 | 新角色、精灵表、图生图提示词 | `docs/new-character-sop.md` | `npm run check` |
+| 角色头像、血条旁头像 | `docs/avatar-sop.md` | 无 |
 | 招式、受击、buff、弹道 | `docs/public/moves.md` | `npm run check` |
 | 安全排查、密钥泄露、准备公开仓库 | `docs/SECURITY_AUDIT.md` | 文档内扫描命令 + `npm run check` |
 | 构建或上传 Bilibili Toy 包 | `docs/toy-release.md` | 文档内的路径核对 + `npm run check` |

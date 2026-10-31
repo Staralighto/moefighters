@@ -39,7 +39,7 @@ def main():
             for f in fns:
                 p = os.path.join(dp, f)
                 rel = os.path.relpath(p, root).replace("\\", "/")
-                if f.endswith(".png") and (rel.startswith("sprites/") or rel.startswith("stages/")) and os.path.exists(p[:-4] + ".webp"):
+                if f.endswith(".png") and rel.startswith(("sprites/", "stages/", "avatars/")) and os.path.exists(p[:-4] + ".webp"):
                     dropped += 1
                     continue
                 if rel.startswith("bgm/") and rel.endswith(".m4a"):
@@ -59,7 +59,7 @@ def main():
         names = set(z.namelist())
     if "index.html" not in names or any(name.startswith(("/", "dist/")) for name in names):
         raise SystemExit("zip layout")
-    if any(name.endswith(".png") and name[:-4] + ".webp" in names and (name.startswith("sprites/") or name.startswith("stages/")) for name in names):
+    if any(name.endswith(".png") and name[:-4] + ".webp" in names and name.startswith(("sprites/", "stages/", "avatars/")) for name in names):
         raise SystemExit("png with webp still packed")
     size = os.path.getsize(out)
     if size >= cap:

@@ -1,9 +1,10 @@
 import type { CharacterData } from '../data/types.ts';
 import type { FightGame } from '../game/game.ts';
 import type { Fighter } from '../game/fighter.ts';
+import { assetUrl, assignFirst } from '../assets/loader.ts';
 import { guideIndex, skillHTML } from './select.ts';
 import { applyTouchIcons } from './touchIcons.ts';
-import { CONTROLS, SIDE } from '../game/constants.ts';
+import { CONTROLS } from '../game/constants.ts';
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
 const elCache = new Map<string, HTMLElement>();
@@ -18,6 +19,19 @@ const $m = (id: string): HTMLElement => {
 function setText(el: HTMLElement, text: string): void {
   if (el.textContent !== text) el.textContent = text;
 }
+
+const motionQuery = typeof matchMedia === 'undefined' ? null : matchMedia('(prefers-reduced-motion: reduce)');
+const reduceMotion = (): boolean => !!motionQuery?.matches;
+/** One flinch per avatar. A new hit restarts it; blood ticking every HUD frame must not stack filters. */
+const hitAnims = new WeakMap<HTMLElement, Animation>();
+/** Avatar flinch on any HP drop. Uses `translate` so the CSS tilt (`rotate`) stays put. */
+const AVATAR_HIT: Keyframe[] = [
+  { translate: '0 0', filter: 'brightness(1.7)' },
+  { translate: '-3px 1px', filter: 'brightness(1.35)' },
+  { translate: '3px -1px', filter: 'brightness(1.1)' },
+  { translate: '-1px 0', filter: 'brightness(1)' },
+  { translate: '0 0', filter: 'brightness(1)' },
+];
 
 let hudEl: HTMLElement | null = null;
 let touchKeys: HTMLElement[] | null = null;
@@ -59,6 +73,15 @@ export function updateHUD(g: FightGame): void {
   hudEl ??= document.querySelector<HTMLElement>('.hud');
   hudEl?.classList.toggle('team', team);
   hudEl?.classList.toggle('challenge', pair);
+  // 一边一个人时才留头像。2v2 和无尽激战的半条血条放不下 96px。
+  const faces = !team && !pair;
+  hudEl?.classList.toggle('faces', faces);
+  if (!faces) {
+    for (const id of ['hud-avatar1', 'hud-avatar2']) {
+      const avatar = $m(id) as HTMLImageElement;
+      if (!avatar.hidden) avatar.hidden = true;
+    }
+  }
   $('hud-ally').hidden = !team;
   $('hud-enemy2').hidden = !(team || pair);
   const bars: { f: Fighter; n: number; score: boolean }[] = team
@@ -85,17 +108,37 @@ export function updateHUD(g: FightGame): void {
           ];
   for (const { f, n, score } of bars) {
     setText($m('hud-name' + n), f.data.name);
+    if (faces && (n === 1 || n === 2)) {
+      const avatar = $m('hud-avatar' + n) as HTMLImageElement;
+      if (avatar.hidden) avatar.hidden = false;
+      const logical = `/avatars/${f.data.id}.png`;
+      const src = assetUrl(logical);
+      const swapped = avatar.dataset.src !== src;
+      // Production tries the near-lossless WebP, then this PNG. A missing file lands on the gray placeholder.
+      if (swapped) { avatar.dataset.src = src; assignFirst(avatar, [logical, '/avatars/placeholder.png']); }
+      const state = f.hp <= 0 ? 'ko' : f.hp <= f.data.hp / 4 ? 'low' : '';
+      if ((avatar.dataset.state ?? '') !== state) avatar.dataset.state = state;
+      const hpStr = String(f.hp);
+      // A fresh face has no previous life to compare. Swapping characters must not flinch.
+      if (!swapped && f.hp > 0 && avatar.dataset.hp !== undefined && f.hp < Number(avatar.dataset.hp) && !reduceMotion()) {
+        const prev = hitAnims.get(avatar);
+        if (prev && prev.playState === 'running') prev.currentTime = 0;
+        else hitAnims.set(avatar, avatar.animate(AVATAR_HIT, 280));
+      }
+      if (swapped || avatar.dataset.hp !== hpStr) avatar.dataset.hp = hpStr;
+    }
     const hp = $m('hp' + n);
     const hpPct = (f.hp / f.data.hp * 100) + '%';
     if (hp.style.width !== hpPct) hp.style.width = hpPct;
-    // The bar already shows health; raw numbers only matter in training. Guard has no bar, so it stays.
-    const guard = `防御 ${Math.ceil(f.guard)}%`;
-    setText($m('health' + n), f.hp <= 0 ? 'K.O.' : g.mode === 'training' ? `${Math.ceil(f.hp)} / ${f.data.hp}  ·  ${guard}` : guard);
+    // Health and guard both have bars; raw numbers only matter in training.
+    const hpBox = hp.parentElement!;
+    const guard = String(Math.max(0, Math.min(1, f.guard / 100)));
+    if (hpBox.style.getPropertyValue('--guard') !== guard) hpBox.style.setProperty('--guard', guard);
+    if (hpBox.classList.contains('guard-low') !== f.guard < 30) hpBox.classList.toggle('guard-low', f.guard < 30);
+    setText($m('health' + n), f.hp <= 0 ? 'K.O.' : g.mode === 'training' ? `${Math.ceil(f.hp)} / ${f.data.hp}  ·  防御 ${Math.ceil(f.guard)}%` : '');
     const mp = $m('mp' + n);
     const mpPct = f.energy / f.energyMax * 100 + '%';
     if (mp.style.width !== mpPct) mp.style.width = mpPct;
-    const mpBg = f.energy >= f.energyMax ? SIDE[f.team] : '#76e7ff';
-    if (mp.style.background !== mpBg) mp.style.background = mpBg;
     const full = f.energy >= f.energyMax;
     const barBox = mp.parentElement;
     if (barBox && barBox.classList.contains('full') !== full) barBox.classList.toggle('full', full);

@@ -11,7 +11,7 @@ const STAGE_Q = 80;
 const IDLE = 256;
 /** Slow-link stand-in: half size, lossy. Soft, but a fight can start on it; the near-lossless sheet replaces it. */
 const LITE_Q = 70;
-const DIRS = ['sprites', 'stages', 'icons'];
+const DIRS = ['sprites', 'stages', 'icons', 'avatars'];
 
 function pngs(dir: string): string[] {
   const out: string[] = [];
