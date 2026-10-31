@@ -128,7 +128,7 @@ const SUMMIT_VX = 2800;
 const SUMMIT_VY = -520;
 /** 漆黑呐喊: the unsealed buff clock, the damage it adds, and the price when it burns out. */
 export const SHOUT_TIME = 8;
-export const SHOUT_BONUS = .5;
+export const SHOUT_BONUS = 1.2;
 export const SHOUT_PRICE = .1;
 /** 奇独点: the well spawns this far ahead and drags bodies toward its centre. Airborne bodies feel a fraction of it. */
 const BLACKHOLE_DIST = 320;
@@ -145,7 +145,7 @@ const BEAT_MAX = 8;
 /** 吉他激奏: ten waves while the key stays down; each one reaches further, hits harder, shoves harder. */
 const RIFF_WAVES = 10;
 const RIFF_R0 = 144, RIFF_R1 = 240;
-const RIFF_D0 = 12, RIFF_D1 = 22;
+const RIFF_D0 = 24, RIFF_D1 = 44;
 const RIFF_K0 = 240, RIFF_K1 = 380;
 /** 吉他激奏: the tap cools from 2s; every extra wave adds its share of the rest, so a full
  *  10-wave channel sits at 7s from cast — about 2.5s left once the strum plays out. */
@@ -1933,6 +1933,9 @@ function step_violet(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   const s = a.skill;
   if (!a.emitted && a.t >= s.start) {
     a.emitted = true;
+    // Cast invuln is a flat 0.5s from frame 0, but the body stays gone until start + VIOLET_WARP.
+    // Stamp the remainder once; both clocks then decay by the same dt, so the tail stays closed.
+    f.invuln = Math.max(f.invuln, s.start + VIOLET_WARP - a.t);
     violetBurst(g, f, s);
   }
   if (a.emitted && a.shots === 0 && a.t >= s.start + VIOLET_WARP) {
@@ -4624,6 +4627,18 @@ SCRIPTS['ripple'] = Object.assign(SCRIPTS['ripple'] ?? {}, { flash(g: FightGame,
 SCRIPTS['huh'] = Object.assign(SCRIPTS['huh'] ?? {}, { flash(g: FightGame, f: Fighter, a: Attack) { g.effect('huh', f.x, FLOOR, f.data.color, .5, { radius: a.skill.range }); } });
 SCRIPTS['tsun'] = Object.assign(SCRIPTS['tsun'] ?? {}, { flash(g: FightGame, f: Fighter, a: Attack) { g.effect('tsun', f.x, FLOOR, f.data.color, .5, { radius: a.skill.range }); } });
 SCRIPTS['howl'] = Object.assign(SCRIPTS['howl'] ?? {}, { flash(g: FightGame, f: Fighter, a: Attack) { g.effect('howl', f.x, f.y - 80, f.data.color, .4, { radius: a.skill.range }); } });
+// 像以前一样: onActive arms the brace, which skips the generic swing. The damage shares the
+// breakout ring, so the shove and the hit land on the same bodies.
+SCRIPTS['as-usual'] = {
+  emit(g: FightGame, f: Fighter, a: Attack) {
+    const s = a.skill;
+    if (s.onActive) runOps(g, f, s, s.onActive);
+    const prev = a.skill;
+    a.skill = { ...s, hitbox: 'radial', range: ESCAPE_RANGE, hitAll: true };
+    applyMelee(g, f, a);
+    a.skill = prev;
+  },
+};
 SCRIPTS['yokan'] = Object.assign(SCRIPTS['yokan'] ?? {}, { flash(g: FightGame, f: Fighter, a: Attack) { g.effect('yokan', f.x + f.facing * 70, FLOOR, f.data.color, .28, { dir: f.facing, radius: 80 }); } });
 SCRIPTS['rib'] = Object.assign(SCRIPTS['rib'] ?? {}, { flash(g: FightGame, f: Fighter, a: Attack) { g.effect('slash', f.x + f.facing * 65, f.y - 83, f.data.color, .22, { dir: f.facing, radius: a.skill.range * .5 }); } });
 SCRIPTS['burnout'] = Object.assign(SCRIPTS['burnout'] ?? {}, { flash(g: FightGame, f: Fighter, a: Attack) {
@@ -5263,6 +5278,13 @@ SCRIPTS['twin-moon'] = Object.assign(SCRIPTS['twin-moon'] ?? {}, { update: step_
 function cast_blood(g: FightGame, f: Fighter): void {
   const s = f.attack?.skill;
   const dur = s?.duration ?? 2.8;
+  // Notes outlive the pose. Lock gains until the last one expires, so a hit, a block
+  // or the rush bonus cannot feed the bar while any note is still in the air.
+  if (s) {
+    const count = s.count ?? 1;
+    const flight = s.start + Math.max(0, count - 1) * (s.interval ?? 0) + (s.life ?? 0);
+    addMod(f, 'noGain', flight, { max: true });
+  }
   g.effect('blood-moon', W / 2, H / 2, '#e5243b', dur + .4);
   g.effect('blood-spot', f.x, FLOOR, '#e5243b', dur + .1, { follow: f.id, ox: 0, oy: FLOOR - f.y });
   g.effect('blood-staff', f.x + f.facing * 34, f.y - 100, '#e5243b', dur - (s?.start ?? .4) + .2,

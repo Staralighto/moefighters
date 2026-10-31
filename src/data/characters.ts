@@ -45,7 +45,7 @@ export const ROSTER: CharacterData[] = [
         brief: '远程音波；血越少枚数越多（1～4）', detail: '远程音波；血越少枚数越多（1～4）',
       }),
       skill(4, 'grab', '别走'),
-      skill(5, 'grab', '推落', { fx: 'shove', hitbox: 'front', speed: 700, duration: 2.2, brief: '前冲抓取并甩飞', detail: '前冲抓取并甩飞' }),
+      skill(5, 'grab', '推落', { cost: 150, damage: 175, fx: 'shove', hitbox: 'front', speed: 700, duration: 2.2, brief: '前冲抓取并甩飞', detail: '前冲抓取并甩飞' }),
     ],
   },
   {
@@ -194,11 +194,11 @@ export const ROSTER: CharacterData[] = [
       }),
       skill(5, 'projectile', '血月的奏鸣', {
         cost: 150, damage: 28, count: 16, interval: .13, speed: 300, size: 40, start: .4, duration: 2.8, life: 3.6,
-        knock: 120, gain: 2, fx: 'blood-note', holdEndure: true, solid: false,
+        knock: 120, gain: 0, fx: 'blood-note', holdEndure: true, solid: false,
         guardPlan: [4, 5, 6, 7, 8, 10, 12, 14, 17, 20, 24, 28, 33, 38, 44, 52],
         finale: { knock: 380, react: { kind: 'knockdown', vy: -320, knocked: .7 } },
-        brief: '霸体弹奏震开近身；十六枚随机角度音符，末枚击倒',
-        detail: '全场熄灯，原地弹奏 2.4 秒，期间霸体，开场震开近身；向前发射十六枚随机角度的慢速音符，末枚击倒',
+        brief: '弹奏霸体震开不回气；十六枚随机角度，末枚击倒',
+        detail: '全场熄灯，原地弹奏 2.4 秒，期间霸体，开场震开近身；向前发射十六枚随机角度的慢速音符，末枚击倒，音符消失前无法获得气',
       }),
     ],
   },
@@ -284,7 +284,7 @@ export const ROSTER: CharacterData[] = [
       skill(0, 'light', '轻挠'),
       skill(1, 'heavy', '横踢'),
       skill(2, 'light', '吉他激奏', {
-        damage: 12, count: 10, interval: .42, range: 240, start: .35, duration: 4.6, cd: 2, knock: 240, fx: 'riff',
+        damage: 24, count: 10, interval: .42, range: 240, start: .35, duration: 4.6, cd: 2, knock: 240, fx: 'riff',
         hitbox: 'disc',
         brief: '环形音波，跳不掉；按住连弹，点按省冷却', detail: '以自身为中心的环形音波，跳不掉；按住一直弹，越弹越广也越疼；点按更省冷却',
       }),
@@ -292,7 +292,7 @@ export const ROSTER: CharacterData[] = [
         damage: 0, range: 192, start: .1, duration: .34, cd: 2.4, invuln: .1, fx: 'wind',
         brief: '原地消失重现；穿过一切', detail: '原地消失重现；穿过一切',
       }),
-      skill(4, 'launch', '高踢腿', { damage: 24, range: 180, cd: 4.5 }),
+      skill(4, 'launch', '高踢腿', { damage: 48, range: 180, cd: 4.5 }),
       skill(5, 'projectile', '抹茶芭菲', {
         cost: 130, damage: 14, count: 22, interval: .28, start: .45, duration: .85, life: 6.5, size: 56, knock: 90, fx: 'parfait',
         // After the tenth blob the bar is gone; the tail is capped so a late re-block cannot be
@@ -422,7 +422,8 @@ export const ROSTER: CharacterData[] = [
     id: 'nonoka', name: '宫永野乃花', title: '吉他 / 国王', quote: '对半分！', color: '#FFBBCC',
     bands: ['yumemita'],
     ...stats('rush'),
-    frenzy: { rate: 1, rangeMul: 1.65, cdMul: 2, damageMul: 1.55, chain: false, air: true, lock: true, time: 7, tint: '#ffd0dc' },
+    // damageMul 2.1 is +110%: the old +55% boost, doubled.
+    frenzy: { rate: 1, rangeMul: 1.65, cdMul: 2, damageMul: 2.1, chain: false, air: true, lock: true, time: 7, tint: '#ffd0dc' },
     view: {
       kind: 'sprite', common: '/sprites/nonoka/common.png', special: '/sprites/nonoka/special.png', height: 181,
       king: '/sprites/nonoka/king.png',
@@ -516,8 +517,8 @@ export const ROSTER: CharacterData[] = [
       skill(1, 'heavy', '横踢'),
       skill(2, 'heavy', '巨羊羹砸击', {
         damage: 20, range: 186, start: .24, duration: .58, cd: .7, knock: 120, fx: 'yokan', reach: 'ground',
-        frail: 2, frailBonus: .2,
-        brief: '掏出羊羹下砸；打实后脆弱，跳起可躲', detail: '从背后掏出羊羹下砸；打实后脆弱 2 秒（受伤 +20%），跳起可躲',
+        frail: 2, frailBonus: .2, holdEndure: true,
+        brief: '霸体掏出羊羹下砸；打实后脆弱，跳起可躲', detail: '释放时霸体，从背后掏出羊羹下砸；打实后脆弱 2 秒（受伤 +20%），跳起可躲',
       }),
       skill(3, 'heavy', '秋叶原马拉松', {
         damage: 0, range: 0, start: .28, duration: .65, cd: 9, fx: 'marathon',
@@ -529,9 +530,9 @@ export const ROSTER: CharacterData[] = [
         brief: '摆出架势；被打断则失效，完成后移速提高且霸体', detail: '摆出架势；被打断则失效，完成后 4.5 秒内移速提高且霸体',
       }),
       skill(4, 'heavy', '满月嚎叫', {
-        damage: 70, range: 87, start: .4, duration: .72, cd: 7, knock: 580, fx: 'howl',
+        damage: 70, range: 180, start: .4, duration: .72, cd: 7, knock: 580, fx: 'howl',
         hitbox: 'disc', superArmor: true,
-        brief: '贴身音波，强击退；真霸体，跳到最高可出圈', detail: '贴身圆形音波，强击退；放出时真霸体，跳到最高可出圈',
+        brief: '大范围音波，强击退；真霸体', detail: '大范围圆形音波，强击退；放出时真霸体',
       }),
       skill(5, 'projectile', '九字真言', {
         cost: 110,
@@ -559,7 +560,7 @@ export const ROSTER: CharacterData[] = [
       skill(0, 'light', '轻点'),
       skill(1, 'heavy', '横踢'),
       skill(2, 'light', '韵律直觉', {
-        damage: 18, count: 6, interval: .42, range: 130, start: .22, duration: 2.75, cd: 3, knock: 460, gain: 4, fx: 'groove',
+        damage: 36, count: 6, interval: .42, range: 130, start: .22, duration: 2.75, cd: 3, knock: 460, gain: 4, fx: 'groove',
         hitbox: 'disc',
         brief: '点按击退；按住推开并射出追踪音符，起跳可躲', detail: '点按一圈击退；按住持续推开，并从第二拍起射出慢速追踪音符，起跳可躲',
       }),
@@ -705,11 +706,12 @@ export const ROSTER: CharacterData[] = [
         cost: 115, damage: 0, range: 0, start: .55, duration: 1.1, fx: 'black-shout',
         onActive: [
           { op: 'mod', kind: 'shout', time: 8 },
+          { op: 'mod', kind: 'poise', time: 8 },
           { op: 'mod', kind: 'noGain', time: 8 },
           { op: 'fx', life: .8, radius: 130, flash: .3, announce: { color: '#8fd8ff', life: .9, size: 19, y: -240 } },
         ],
-        brief: '解除封印：攻击力大幅提升且禁回气，结束后反噬自伤',
-        detail: '8 秒内攻击力提高 50% 且无法获得气；结束时固定受到 10% 最大生命值的反噬伤害，可以致死',
+        brief: '解除封印：攻击提升、霸体、禁回气，结束反噬',
+        detail: '8 秒内攻击力提高 120% 且霸体，无法获得气；结束时固定受到 10% 最大生命值的反噬伤害，可以致死',
       }),
     ],
   },
@@ -936,7 +938,8 @@ export const ROSTER: CharacterData[] = [
     bands: ['afterglow'],
     ...stats('rush'),
     // 宣战布告: the frenzy clock drives the aggressive sheet swap; no king flag, so U I O L stay open.
-    frenzy: { rate: 1.4, rangeMul: 1.15, cdMul: .6, damageMul: 1.25, chain: false, time: 8, tint: '#EE0022' },
+    // cdMul .2: normals' cooldown drops to 20% (an 80% cut). Was .6, a drop to 60%.
+    frenzy: { rate: 1.4, rangeMul: 1.15, cdMul: .2, damageMul: 1.25, chain: false, time: 8, tint: '#EE0022' },
     view: {
       kind: 'sprite', common: '/sprites/mitake/common.png', special: '/sprites/mitake/special.png', height: 181,
       frenzy: '/sprites/mitake/frenzy.png',
@@ -953,20 +956,20 @@ export const ROSTER: CharacterData[] = [
         detail: '掷出花枝，命中后 4 秒移动降至 60%、跳跃高度约降至 56% 并击退；可格挡或跳过',
       }),
       skill(3, 'sweep', '不良主唱', {
-        damage: 58, range: 170, start: .45, duration: .9, cd: 6.5, fx: 'guitar-smash', hitstop: .09,
+        damage: 58, range: 170, start: .45, duration: .9, cd: 4.5, fx: 'guitar-smash', hitstop: .09,
         hitbox: 'radial', hitAll: true, reach: 'ground', knock: 480,
         brief: '抡吉他砸地，身周击倒；打不到空中',
         detail: '吉他从上砸向身周地面，范围内全部击倒；打不到空中的对手',
       }),
       skill(4, 'endure', '像以前一样', {
-        damage: 0, range: 250, start: .26, duration: .85, cd: 8, breakout: true, fx: 'as-usual',
+        damage: 45, range: 250, start: .26, duration: .85, cd: 8, breakout: true, fx: 'as-usual',
         holdEndure: true,
         onActive: [
           { op: 'fx', life: .55, radius: 250, dir: true },
           { op: 'mod', kind: 'brace', time: 5 },
         ],
-        brief: '无伤害震开并解控；随后霸体',
-        detail: '无伤害震开并解控；随后 5 秒霸体，受伤降低 33%',
+        brief: '震开并解控；随后霸体',
+        detail: '震开并解控；随后 5 秒霸体，受伤降低 33%',
       }),
       skill(5, 'endure', '宣战布告', {
         cost: 115, damage: 0, range: 200, start: .5, duration: 1.0, fx: 'declaration',
@@ -977,7 +980,7 @@ export const ROSTER: CharacterData[] = [
           { op: 'repel', push: 420 },
         ],
         brief: '挑染亮起并震开，普攻变强变快；无法获得气',
-        detail: '挑染亮起并震开；8 秒内普攻加快至 1.4 倍、伤害 +25%、范围 +15%、冷却降至 60%，期间无法获得气',
+        detail: '挑染亮起并震开；8 秒内普攻加快至 1.4 倍、伤害 +25%、范围 +15%、冷却降至 20%，期间无法获得气',
       }),
     ],
   },
@@ -992,26 +995,27 @@ export const ROSTER: CharacterData[] = [
       skill(1, 'heavy', '横踢'),
       skill(2, 'projectile', '半速', {
         ...mocaSlow,
-        damage: 16, speed: 174, size: 78, life: 2.5, start: .34, duration: .72, cd: 4.5, knock: 50, fx: 'moca-bubble',
-        brief: '慢气泡打实减速，拖慢 J / K；可格挡或跳过',
-        detail: '横躺气泡慢速平飞，打实后减速 5 秒，移动降至 50%、跳跃高度约降至 42%，J / K 攻速降至 70%、冷却延长至约 143%；可格挡或跳过',
+        damage: 32, speed: 174, size: 78, life: 2.5, start: .34, duration: .72, cd: 4.5, knock: 50, fx: 'moca-bubble',
+        holdEndure: true,
+        brief: '霸体慢气泡打实减速；可挡可跳，拖慢 J / K',
+        detail: '出手时霸体。横躺气泡慢速平飞，打实后减速 5 秒，移动降至 50%、跳跃高度约降至 42%，J / K 攻速降至 70%、冷却延长至约 143%；可格挡或跳过',
       }),
       skill(3, 'projectile', '扣一点', {
-        damage: 18, speed: 226, size: 36, life: .75, start: .3, duration: .7, cd: 6, knock: 0, fx: 'moca-die',
-        root: 1.5, rootBreak: 0, rootPin: true,
-        brief: '贴地骰子命中定身；可格挡或跳过',
-        detail: '贴地骰子短距离滚出，命中定身 1.5 秒，不受击解除；可格挡或跳过',
+        damage: 48, speed: 226, size: 36, life: .75, start: .3, duration: .7, cd: 6, knock: 0, fx: 'moca-die',
+        root: 1.5, rootBreak: 0, rootPin: true, holdEndure: true,
+        brief: '霸体，贴地骰子命中定身；可格挡或跳过',
+        detail: '出手时霸体。贴地骰子短距离滚出，命中定身 1.5 秒，不受击解除；可格挡或跳过',
       }),
       skill(4, 'grab', '捉弄', {
-        damage: 16, count: 2, interval: .28, range: 150, start: .24, duration: 1.1, cd: 7, knock: 0, fx: 'slash',
-        hitbox: 'front',
+        damage: 40, count: 2, interval: .28, range: 150, start: .24, duration: 1.1, cd: 7, knock: 0, fx: 'slash',
+        hitbox: 'front', holdEndure: true,
         react: { kind: 'stand', stun: .3 },
         ...mocaSlow,
-        brief: '近身连戳两下；打实减速，拖慢 J / K',
-        detail: '近身连戳两下，打实后减速 5 秒，移动降至 50%、跳跃高度约降至 42%，J / K 攻速降至 70%、冷却延长至约 143%',
+        brief: '霸体近身连戳两下；打实减速，拖慢 J / K',
+        detail: '出手时霸体。近身连戳两下，打实后减速 5 秒，移动降至 50%、跳跃高度约降至 42%，J / K 攻速降至 70%、冷却延长至约 143%',
       }),
       skill(5, 'projectile', '小摩卡要上了', {
-        damage: 36, count: 1, speed: 243, size: 140, life: 3.2, start: .4, duration: .9, knock: 40, fx: 'moca-dusk',
+        damage: 108, count: 1, speed: 243, size: 140, life: 3.2, start: .4, duration: .9, knock: 40, fx: 'moca-dusk',
         contact: 'pass', solid: false,
         react: { kind: 'stand', stun: .2 },
         ...mocaSlow, slowOnBlock: true, slowBonus: 100, noBlockSlow: true,
@@ -1324,11 +1328,11 @@ export const ROSTER: CharacterData[] = [
           { op: 'mod', kind: 'undying', time: 9.25 },
           // True super armour (the frenzy brace) without the damage cut: only grabs and control stagger her.
           { op: 'mod', kind: 'brace', time: 9.25, v: 1 },
-          { op: 'mod', kind: 'relapse', time: 9.25, v: 300 },
+          { op: 'mod', kind: 'relapse', time: 9.25, v: 200 },
           { op: 'fx', type: 'howl-ring', life: .5, radius: 220, y: -120, announce: { color: '#BFD8FF', life: 1, size: 19, y: -240 } },
         ],
         brief: '嚎叫震开后狼化：J / K、吸血不倒；结束反噬',
-        detail: '月光下嚎叫约 1 秒，持续震开周围；随后变身狼人 8 秒：只剩 J / K，三下 J 后扑咬「枣到你了」；移速提高，吸血 20%，真霸体，生命不低于 1；结束反噬 30% 最大生命，可致死；无法获得气',
+        detail: '月光下嚎叫约 1 秒，持续震开周围；随后变身狼人 8 秒：只剩 J / K，三下 J 后扑咬「枣到你了」；移速提高，吸血 20%，真霸体，生命不低于 1；结束反噬 20% 最大生命，可致死；无法获得气',
       }),
     ],
   },
@@ -1366,7 +1370,7 @@ export const ROSTER: CharacterData[] = [
       // The rings' clocks live in clips.ts (RING_SMALL / RING_BIG). `damage` is the big ring; each
       // small ring chips RING_CHIP (combat.ts). The coffin holds until 3.0s.
       skill(5, 'endure', '康乃馨盛开之日', {
-        damage: 180, range: 460, start: .15, duration: 3.5, fx: 'coffin', noBlock: true, control: true,
+        cost: 150, damage: 105, range: 460, start: .15, duration: 3.5, fx: 'coffin', noBlock: true, control: true,
         knock: 380, react: { kind: 'knockdown', vy: -320, knocked: .9 },
         brief: '入棺无敌；对手身边落七小圈一大圈，大圈可闪避',
         detail: '躲进自己的棺材，期间无敌；对手所在处接连落下七个小粉圈和一个大粉圈，各自收缩到最小后炸开；小圈伤害低、不打断对手，大圈打中即击倒；无法格挡，跑出圈外或抓准时机闪避可躲',
@@ -1385,7 +1389,7 @@ export const ROSTER: CharacterData[] = [
       skill(1, 'heavy', '茉幌骑士', { range: 140 }),
       // 打水漂 (combat.ts step_skip): the hop count is rolled; the run ends on contact and the die face decides the strike.
       skill(2, 'dash', '打水漂', {
-        damage: 30, speed: 760, range: 100, start: .12, duration: 1.17, cd: 6, fx: 'skip', reach: 'ground',
+        damage: 60, speed: 760, range: 100, start: .12, duration: 1.17, cd: 4, fx: 'skip', reach: 'ground',
         knock: 100, react: { kind: 'stand', stun: .3 },
         brief: '贴地连跳碰到即结算；奇数速冷却偶数双倍，五击倒',
         detail: '贴地随机连跳 3～5 下，骰子随跳数加点；碰到对手或跳完即出手结算：奇数冷却降为 1 秒，偶数伤害翻倍，5 点额外击倒；打空不结算冷却；跳起可躲',
@@ -1423,8 +1427,9 @@ export const ROSTER: CharacterData[] = [
       // 精准踩雷 (combat.ts step_landmine): the pat is the grab; the mine under their feet is the real hit.
       skill(2, 'grab', '精准踩雷', {
         damage: 45, range: 110, start: .2, duration: .9, cd: 7, fx: 'landmine', hitbox: 'front', knock: 120,
-        brief: '拍肩抓取后脚下地雷炸开挑空；引爆对方增益追加伤害',
-        detail: '前冲拍肩抓取，0.35 秒后对方脚下地雷炸开挑空，可追打；对方每有一个增益状态就引爆清除并追加 15 伤害，至多 3 个；挂账、不死和变身不受影响',
+        holdEndure: true,
+        brief: '霸体拍肩抓取，脚下地雷挑空；引爆增益追加伤害',
+        detail: '释放时霸体。前冲拍肩抓取，0.35 秒后对方脚下地雷炸开挑空，可追打；对方每有一个增益状态就引爆清除并追加 15 伤害，至多 3 个；挂账、不死和变身不受影响',
       }),
       skill(3, 'endure', '绝不退场', {
         damage: 0, range: 0, start: .2, duration: .6, cd: 14, breakout: true, holdEndure: true, fx: 'slap',
@@ -1481,7 +1486,7 @@ export const ROSTER: CharacterData[] = [
       }),
       // 上吧，My Family！ (combat.ts step_family): the grab, four family silhouettes in turn, her own strum last.
       skill(5, 'grab', '上吧，My Family！', {
-        damage: 26, count: 6, range: 70, speed: 520, start: .35, duration: 2.8, fx: 'my-family', knock: 0, gain: 2,
+        cost: 140, damage: 26, count: 6, range: 70, speed: 520, start: .35, duration: 2.8, fx: 'my-family', knock: 0, gain: 2,
         finale: { damage: 110, knock: 380, react: { kind: 'knockdown', vy: -240, knocked: .9 } },
         brief: '前冲抓人，家人轮流连打；没抓到就打身前一片',
         detail: '前冲抓取，家人剪影轮流打五段，末段扫弦 110 伤害并击倒；没抓到则在身前一片区域照样连打，每段 18、末段 50，可格挡',

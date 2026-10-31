@@ -1063,6 +1063,10 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(heard.includes('blood-intro'), 'the organ pedal sounds at the cast');
     assert.deepEqual(notes, Array.from({ length: 16 }, (_, i) => 'blood-' + i), 'one note per shot, in order');
     assert.ok(heard.indexOf('blood-end') > heard.indexOf('blood-15'), 'the chord closes the phrase');
+    assert.ok(p1.noGain > 2, 'notes lock energy until they are gone');
+    const locked = p1.energy;
+    hit(g, p1, p2, p1.data.skills[5], { hit: new Set() });
+    assert.equal(p1.energy, locked, 'a note hit grants no energy');
     assert.equal(superZoom(0), 0);
     assert.equal(superZoom(.3), 1, 'the zoom holds');
     assert.ok(superZoom(.99) < .01, 'the zoom lets go');
@@ -1174,8 +1178,10 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
   assert.equal(h2.hp, hopHp, '爬行 misses a jump near the apex');
 
+  assert.equal(ROSTER[uika].skills[5].cost, 150, '推落 costs 150');
+  assert.equal(ROSTER[uika].skills[5].damage, 175, '推落 deals 175');
   const shove = newGame(uika, at('boulder')); const [s1, s2] = shove.fighters; dummy(shove);
-  s1.energy = 100;
+  s1.energy = s1.energyMax;
   s2.x = s1.x + 180; s2.facing = 1;
   const startX = s2.x;
   const startHp = s2.hp;
@@ -1201,7 +1207,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(Math.abs(peak - thrown) < 1, `推落 throws hard, saw ${peak}`);
 
   const whiff = newGame(uika, at('boulder')); const [w1] = whiff.fighters; dummy(whiff);
-  w1.energy = 100;
+  w1.energy = w1.energyMax;
   whiff.fighters[1].x = w1.x + 900;
   whiff.keyDown('KeyL');
   run(whiff, .5);
@@ -3005,7 +3011,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 }
 
 // miyako: the yokan is a grounded poke, the marathon buffs only if the pose finishes,
-// the howl is a short disc, the seal pierces and seals block plus the back-dodge
+// the howl is a wide disc, the seal pierces and seals block plus the back-dodge
 {
   const miyako = ROSTER.findIndex(c => c.id === 'miyako');
   assert.ok(miyako >= 0, 'miyako is on the roster');
@@ -3016,7 +3022,8 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(data.skills[2].range, 186, 'the yokan reaches');
   assert.equal(data.skills[3].fx, 'marathon', 'I is the marathon');
   assert.equal(data.skills[4].fx, 'howl', 'O is the howl');
-  assert.equal(data.skills[4].range, 87, 'the howl radius is a tenth of the playable stage');
+  assert.equal(data.skills[4].range, 180, 'the howl radius covers a wide disc');
+  assert.equal(data.skills[2].holdEndure, true, 'the yokan is armoured on cast');
   assert.equal(data.skills[5].fx, 'seal', 'the super is the seal');
   assert.equal(data.skills[5].count, 1, 'one circle, not the stock three-shot super');
   assert.equal(data.skills[5].speed, 366, 'focus brings the circle to about 421');
@@ -3123,7 +3130,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
   {
     const g = newGame(miyako, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
-    p2.x = p1.x + 130; p2.facing = -1;
+    p2.x = p1.x + 250; p2.facing = -1;
     const hp = p2.hp;
     g.keyDown('KeyO'); run(g, .6);
     assert.equal(p2.hp, hp, 'the howl misses past its radius');
@@ -3452,7 +3459,8 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     p1.cooldowns[0] = 0;
     assert.equal(g.attack(p1, 0), true, 'the staff jab comes out');
     assert.equal(p1.attack!.skill.range, Math.round(98 * 1.65), 'staff reach');
-    assert.equal(p1.attack!.skill.damage, Math.round(26 * 1.55), 'staff damage');
+    assert.equal(data.frenzy?.damageMul, 2.1, 'the king damage boost is doubled');
+    assert.equal(p1.attack!.skill.damage, Math.round(26 * 2.1), 'staff damage');
     assert.ok(p1.cooldowns[0] > .4 && p1.cooldowns[0] < .55, `staff light cooldown is doubled, got ${p1.cooldowns[0]}`);
     assert.equal(clipFor(p1).sheet, 'common', 'the king swing stays on the common grid');
     run(g, .12);
@@ -3464,7 +3472,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.equal(g.attack(p1, 0), true, 'the air staff comes out');
     assert.equal(p1.attack!.skill.air, true, 'the air jab is the shared air normal');
     assert.equal(p1.attack!.skill.range, Math.round(100 * 1.65), 'air staff reach');
-    assert.equal(p1.attack!.skill.damage, Math.round(24 * 1.55), 'air staff damage');
+    assert.equal(p1.attack!.skill.damage, Math.round(24 * 2.1), 'air staff damage');
     p1.attack = null;
     p1.y = FLOOR;
     p1.vy = 0;
@@ -3644,6 +3652,19 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const g = newGame(viola, at('boulder')); const [p1] = g.fighters; dummy(g);
     g.keyDown('KeyI'); run(g, .4);
     assert.ok(violetHidden(p1), 'she is gone mid-warp');
+  }
+  // The flat cast timer used to run out before the warp did, so the tail was hittable.
+  {
+    const g = newGame(viola, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 40; p2.facing = -1;
+    g.keyDown('KeyI');
+    run(g, .6);
+    assert.ok(violetHidden(p1), 'she is still hidden late in the warp');
+    assert.ok(p1.invuln > 0, 'the late warp is still invulnerable');
+    const hp = p1.hp;
+    assert.equal(hit(g, p2, p1, p2.data.skills[0], { hit: new Set() }), false, 'a jab does not land during the warp');
+    assert.equal(p1.hp, hp, 'the late warp takes no damage');
+    assert.equal(p1.attack?.skill.fx, 'violet', 'the warp is not cancelled');
   }
   // O: cast, walk, jab — the echo replays the walk and the jab, and nothing can touch it
   {
@@ -4262,7 +4283,8 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     assert.ok(p1.noGain > 6, `the seal locks gains for the window, left ${p1.noGain}`);
     const hp2 = p2.hp;
     hit(g, p1, p2, p1.data.skills[0], { hit: new Set() });
-    assert.equal(hp2 - p2.hp, Math.round(26 * 1.5), `the shout boosts the jab, dealt ${hp2 - p2.hp}`);
+    assert.ok(Math.abs(hp2 - p2.hp - 26 * 2.2) < .05, `the shout boosts the jab, dealt ${hp2 - p2.hp}`);
+    assert.ok(p1.poise > 6, `the shout keeps her armoured, left ${p1.poise}`);
     const hp1 = p1.hp;
     run(g, 8);
     assert.equal(p1.shout, 0, 'the seal snaps shut');
@@ -4343,15 +4365,16 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     behind.keyDown('KeyI'); run(behind, .6);
     assert.ok(hp2 - q2.hp > 0, 'the smash reaches behind her too');
   }
-  // O: no damage, a shove, and a brace armed for the window
+  // O: the shove ring deals damage, the brace arms, and the ring effect uses the skill fx
   {
     const g = newGame(mitake, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 80; p2.facing = -1;
     const hp = p2.hp;
     g.keyDown('KeyO'); run(g, .4);
-    assert.equal(p2.hp, hp, '像以前一样 deals no damage');
+    assert.ok(hp - p2.hp > 30, `像以前一样 deals damage on the shove, dealt ${hp - p2.hp}`);
     assert.ok(Math.abs(p2.x - p1.x) > 120, `像以前一样 shoves the ring, gap ${Math.abs(p2.x - p1.x)}`);
     assert.ok(p1.braced > 4, `the brace is armed, left ${p1.braced}`);
+    assert.ok(g.effects.some(e => e.type === 'as-usual'), 'the ring effect plays');
   }
   // L: the form boosts the jab, locks gains, and swaps the common sheet without a king lock
   {
@@ -4480,7 +4503,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     g.keyDown('KeyL');
     run(g, 1.4);
     const dealt = hp - p2.hp;
-    assert.ok(dealt > 30 && dealt < 50, `a fresh slow takes only the wave, dealt ${dealt}`);
+    assert.ok(dealt > 90 && dealt < 120, `a fresh slow takes only the wave, dealt ${dealt}`);
   }
   {
     const g = newGame(moca, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
@@ -4491,7 +4514,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     g.keyDown('KeyL');
     run(g, 1.4);
     const dealt = hp - p2.hp;
-    assert.ok(dealt > 120 && dealt < 150, `an existing slow takes the extra chunk, dealt ${dealt}`);
+    assert.ok(dealt > 180 && dealt < 220, `an existing slow takes the extra chunk, dealt ${dealt}`);
   }
   {
     const g = newGame(moca, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
@@ -4506,7 +4529,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     g.keyDown('KeyL');
     run(g, 1.4);
     const dealt = hp - p2.hp;
-    assert.ok(dealt > 120 && dealt < 150, `a slowed block does not stop the wave, dealt ${dealt}`);
+    assert.ok(dealt > 180 && dealt < 220, `a slowed block does not stop the wave, dealt ${dealt}`);
     assert.equal(p2.guard, guard, 'a slowed block does not spend guard');
   }
 }
@@ -6591,7 +6614,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     assert.equal(p1.hp, 1, 'a lethal hit stops at 1 hp while undying holds');
     p1.hp = 400;
     run(g, 9);
-    assert.equal(p1.hp, 100, 'the relapse takes 300 once undying ends');
+    assert.equal(p1.hp, 200, 'the relapse takes 200 once undying ends');
     p1.hp = 200;
     p1.mods.length = 0;
     hit(g, p2, p1, { ...ROSTER[at('boulder')].skills[0], damage: 500 }, { hit: new Set() });
@@ -6716,7 +6739,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   // then the big ring's burst knocks down whoever is still inside; running clear or a timed dodge gets out
   {
     const g = newGame(ho, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
-    p1.x = 300; p2.x = 520; p1.facing = 1; p1.energy = 100;
+    p1.x = 300; p2.x = 520; p1.facing = 1; p1.energy = p1.energyMax;
     g.keyDown('KeyL'); g.step(STEP); g.keyUp('KeyL'); run(g, .6);
     assert.ok(violetHidden(p1) && p1.invuln > 0, 'she is inside the coffin, untouchable');
     let staggered = false;
@@ -6726,13 +6749,13 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     assert.ok(!staggered, 'the small rings never stagger');
     run(g, .5);
     const lost = p2.data.hp - p2.hp - chip;
-    assert.ok(lost > 150 && lost < 200 && p2.knocked > 0, 'the big ring hits once and knocks down: ' + lost);
+    assert.ok(lost > 90 && lost < 120 && p2.knocked > 0, 'the big ring hits once and knocks down: ' + lost);
     run(g, .6);
     assert.ok(!violetHidden(p1), 'she steps out again');
   }
   {
     const g = newGame(ho, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
-    p1.x = 300; p2.x = 450; p1.facing = 1; p1.energy = 100;
+    p1.x = 300; p2.x = 450; p1.facing = 1; p1.energy = p1.energyMax;
     g.keyDown('KeyL'); g.step(STEP); g.keyUp('KeyL'); run(g, 2.1);
     p2.x = 450 + 290;
     run(g, 1.6);
@@ -6740,7 +6763,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   }
   {
     const g = newGame(ho, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
-    p1.x = 300; p2.x = 520; p1.facing = 1; p1.energy = 100;
+    p1.x = 300; p2.x = 520; p1.facing = 1; p1.energy = p1.energyMax;
     g.keyDown('KeyL'); g.step(STEP); g.keyUp('KeyL'); run(g, 2.8);
     p2.invuln = .2;
     run(g, 1);
@@ -6772,23 +6795,23 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   };
   {
     const one = skim(200);
-    assert.ok(one.lost > 25 && one.lost < 35 && !one.down, 'one: the base strike, lost ' + one.lost);
+    assert.ok(one.lost > 50 && one.lost < 70 && !one.down, 'one: the base strike, lost ' + one.lost);
     assert.ok(one.cd <= 1, 'odd: the cooldown drops to a second, left ' + one.cd);
     assert.equal(one.g.totalHits[one.p1.id], 1, 'one strike per run');
     const two = skim(330);
-    assert.ok(two.lost > 55 && two.lost < 65, 'even: double damage, lost ' + two.lost);
-    assert.ok(two.stood > 0 && !two.down && two.cd > 4, 'even: they stay standing and the cooldown is the full one');
+    assert.ok(two.lost > 100 && two.lost < 130, 'even: double damage, lost ' + two.lost);
+    assert.ok(two.stood > 0 && !two.down && two.cd > 2, 'even: they stay standing and the cooldown is the full one');
     const three = skim(450);
-    assert.ok(three.lost > 25 && three.lost < 35 && three.cd <= 1, 'three is odd too');
+    assert.ok(three.lost > 50 && three.lost < 70 && three.cd <= 1, 'three is odd too');
     const four = skim(580);
-    assert.ok(four.lost > 55 && four.lost < 65 && four.cd > 4, 'four doubles');
+    assert.ok(four.lost > 100 && four.lost < 130 && four.cd > 2, 'four doubles');
     const five = skim(700);
-    assert.ok(five.down && five.lost > 25 && five.cd <= 1, 'five knocks down and is odd: lost ' + five.lost);
+    assert.ok(five.down && five.lost > 50 && five.cd <= 1, 'five knocks down and is odd: lost ' + five.lost);
   }
   {
     // A roll of three that never reaches them: the strike whiffs and the cooldown stays.
     const miss = skim(900, 0);
-    assert.ok(miss.lost === 0 && miss.cd > 4 && miss.p1.attack === null, 'a whiffed run leaves the cooldown alone');
+    assert.ok(miss.lost === 0 && miss.cd > 2 && miss.p1.attack === null, 'a whiffed run leaves the cooldown alone');
   }
   {
     // A blocked odd strike still counts as touching them.
@@ -7081,7 +7104,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     assert.equal(FAMILY_MEMBERS.reduce((n, m) => n + m.strikes.length, 0) + 1, data.skills[5].count, 'the count is every family strike plus her strum');
     assert.ok(FAMILY_MEMBERS.every(m => familyLife(m) > m.enter), 'a member stays on after she strikes');
     const g = newGame(rk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
-    p1.x = 300; p2.x = 360; p1.facing = 1; p1.energy = 100;
+    p1.x = 300; p2.x = 360; p1.facing = 1; p1.energy = p1.energyMax;
     assert.ok(g.attack(p1, 5), 'the family comes out');
     run(g, 1.2);
     assert.ok(Math.abs(p2.x - p1.x - 56) < 2 && p2.y >= FLOOR - 1, 'they are held in front of her');
@@ -7096,7 +7119,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   {
     // Nobody in reach: the family still come and pound the ground ahead of where she stopped.
     const g = newGame(rk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
-    p1.x = 100; p2.x = 800; p1.facing = 1; p1.energy = 100;
+    p1.x = 100; p2.x = 800; p1.facing = 1; p1.energy = p1.energyMax;
     g.attack(p1, 5);
     run(g, 1);
     assert.equal(g.effects.filter(e => e.type === 'family-member').length, 4, 'a missed grab still calls the family');
@@ -7107,7 +7130,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     // A foe standing in the zone eats the lighter blows, and a guard catches them.
     const zone = (guard: boolean) => {
       const g = newGame(rk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
-      p1.x = 100; p2.x = 390; p1.facing = 1; p2.facing = -1; p1.energy = 100;
+      p1.x = 100; p2.x = 390; p1.facing = 1; p2.facing = -1; p1.energy = p1.energyMax;
       g.attack(p1, 5);
       for (let i = 0; i < Math.round(3 / STEP); i++) { p2.x = 390; if (guard) { p2.blocking = true; p2.guard = 100; } g.step(STEP); }
       return { lost: p2.data.hp - p2.hp, held: p1.attack, hits: g.totalHits[p1.id] };
