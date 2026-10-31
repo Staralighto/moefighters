@@ -41,3 +41,11 @@ export function battleFrame(viewW: number, viewH: number): BattleFrame {
 export function pictureHud(pictureW: number): number {
   return pictureW > 0 ? pictureW / W * 1.2 : 1;
 }
+
+/** Stage baseline of the HIT line. `clearPx` is how far below the canvas top the HUD chrome
+ *  reaches, in CSS pixels. 205 is the resting spot; a cropped sky pulls that spot up under
+ *  the portraits, and then the line moves down so the 45px face sits fully below the chrome. */
+export function comboAnchor(clearPx: number, scale: number): number {
+  if (!(scale > 0)) return 205;
+  return Math.max(205, clearPx / scale + 45);
+}

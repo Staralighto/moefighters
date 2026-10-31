@@ -3,6 +3,7 @@ import type { FightGame } from '../game/game.ts';
 import type { FighterView } from './view.ts';
 import { stageThumbSrc, type ImageCache } from '../assets/loader.ts';
 import { FLOOR, H, SIDE, W } from '../game/constants.ts';
+import { comboAnchor } from '../ui/battleFrame.ts';
 import { unbowedRage, violetHidden } from '../game/combat.ts';
 import { BURDEN_Y, encoreDark, IAIDO_PHASE, iaidoCharge, UNBOWED_MAX, unbowedStacks } from './clips.ts';
 import { drawBanSign, drawCombo, drawEffect, drawMoonlight, drawGauge, drawHoldNote, drawKuji, drawLayerBass, drawParticles, drawProjectile, drawRainbowBack, drawRainbowFront, drawRootFx, drawSister, drawTexts, drawWheel, isLiteFx, UI_FONT, zoomAbout } from './fx.ts';
@@ -127,6 +128,10 @@ export class Renderer {
   /** World → raster scale: the backing store is device sized, the world stays 960×540. */
   private sx = 1;
   private sy = 1;
+  /** Cached HIT baseline. The chrome does not move during a round, so fighting frames skip the layout read. */
+  private comboY = 205;
+  private comboStamp = '';
+  private comboHud: HTMLElement | null | undefined;
 
   constructor(canvas: HTMLCanvasElement, views: Map<string, FighterView>, stage: StageData, images: ImageCache) {
     // The stage covers every pixel, so the page never needs to blend through the bitmap.
@@ -138,6 +143,28 @@ export class Renderer {
     this.stage = stage;
     this.images = images;
     this.resize();
+  }
+
+  /** Stage baseline whose 45px HIT face clears the HUD, including the ticket under a portrait.
+   *  Layout is read only when the canvas box, `--hud`, or the HUD mode actually changes. */
+  private comboBaseline(): number {
+    const canvas = this.canvas;
+    const hud = this.comboHud === undefined
+      ? (this.comboHud = canvas.parentElement?.querySelector<HTMLElement>('.hud') ?? null)
+      : this.comboHud;
+    const stamp = `${canvas.clientHeight}|${canvas.style.top}|${canvas.style.height}|${canvas.parentElement?.parentElement?.style.getPropertyValue('--hud') ?? ''}|${hud?.className ?? ''}`;
+    if (stamp === this.comboStamp) return this.comboY;
+    this.comboStamp = stamp;
+    const scale = canvas.clientHeight / H;
+    if (!hud || !(scale > 0)) return this.comboY = 205;
+    let bottom = hud.offsetTop + hud.offsetHeight;
+    const avatar = hud.querySelector<HTMLElement>('.hud-avatar:not([hidden])');
+    const host = avatar?.offsetParent as HTMLElement | null;
+    if (avatar && host) {
+      // The ticket hangs 22/96 of the face below the photo and does not grow the HUD box.
+      bottom = Math.max(bottom, host.offsetTop + avatar.offsetTop + avatar.offsetHeight * (1 + 22 / 96));
+    }
+    return this.comboY = comboAnchor(bottom - canvas.offsetTop + 8, scale);
   }
 
   /** Size the backing store to the on-screen box × devicePixelRatio, so the compositor blits
@@ -341,12 +368,13 @@ export class Renderer {
     drawParticles(c, g.particles, bodyScale);
     drawTexts(c, g.texts, bodyScale);
     drawKuji(c, g, bodyScale);
-    drawCombo(c, g);
     if (g.mode === 'training') {
       c.textAlign = 'center'; c.font = `14px ${UI_FONT}`; c.fillStyle = '#ddd9ee';
       c.fillText('训练模式 · 无限能量 · 停手后对手恢复', W / 2, 520);
     }
     c.restore();
+    // After the shake and the super zoom, so the line stays under the portraits instead of sliding into them.
+    drawCombo(c, g, this.comboBaseline());
 
     if (g.flash > 0) { c.fillStyle = `rgba(255,248,221,${g.flash * 2.3})`; c.fillRect(0, 0, W, H); }
     // 此即世界: the stage goes dark, two spotlights pin her — the cone leaves her lit, not veiled.

@@ -24,7 +24,7 @@ import { EchoBook, HOST_LEAD_MS, applyClaimHit, coastHost, guestFrame, netAudio,
 import { stateFor } from '../src/game/animState.ts';
 import { decodeFrame, relayAddressCount, relaysCovered, sealCandidates, turnHosts, turnUrlHost } from '../src/net/rtc.ts';
 import { swipeEdgeBlock, swipeEdgeHit, swipeEdgeSlide, swipeGuardPop, swipeGuardWanted, toyScriptWanted } from '../src/ui/swipeBack.ts';
-import { battleFrame, pictureHud } from '../src/ui/battleFrame.ts';
+import { battleFrame, comboAnchor, pictureHud } from '../src/ui/battleFrame.ts';
 import { TOUCH_LAYOUT } from '../src/ui/touchLayout.data.ts';
 import { DEFAULT_ULT_ICON, ultIcon } from '../src/ui/touchIcons.ts';
 import { assignSlotWho, guideIndex, skillHTML, stageCover } from '../src/ui/select.ts';
@@ -2249,6 +2249,11 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(tablet.floorY - centered < 768 * 0.18, 'tablet floor is not much lower than centered');
   assert.ok(Math.abs(ratio - tablet.floorY) <= 768 * 0.04 + 1e-6, 'tablet floor never rises past 4% off the desktop ratio');
   assert.equal(tablet.hud, 1, 'a tall tablet does not shrink the HUD');
+  assert.equal(comboAnchor(128, 1), 205, 'desktop chrome already sits above the resting HIT line');
+  const cropped = comboAnchor(212, 844 / 960);
+  assert.ok(cropped > 205, 'a cropped phone sky pushes the HIT line down');
+  assert.ok((cropped - 45) * (844 / 960) >= 212 - 1e-6, 'the HIT face ends below the HUD chrome');
+  assert.equal(comboAnchor(10, 0), 205, 'an unmeasured canvas keeps the resting line');
   assert.equal(pictureHud(960), 1.2, 'a desktop-wide picture sits 1.2× above the base HUD');
   assert.equal(pictureHud(480), 0.6, 'a half-width portrait picture keeps that 1.2× on the smaller share');
   // The landscape keys are placed by CSS: attack in the bottom-right, three skills in a row to its left,
@@ -2361,8 +2366,17 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(!line.includes('(pointer:') && !line.includes('(hover:'), 'css owns layout only; capability queries go through body classes');
     if (line.includes('100dvh')) assert.ok(line.includes('100vh'), 'dvh needs a same-line vh fallback: ' + raw.trim());
     if (line.includes('cqw')) assert.ok(line.includes('vmin') || /(\d|\.)vw\b/.test(line), 'cqw needs a same-line vmin/vw fallback: ' + raw.trim());
+    // A bare `width: 20cqw` is a valid 0px when the container size is 0, and it replaces the vmin line.
+    if (line.includes('cqw') && /(?:^|[^\w-])(?:width|height|max-width|max-height|--ring)\s*:/.test(line)) {
+      assert.ok(line.includes('max('), 'cqw size must be max() with the fallback so a 0 query size cannot collapse it: ' + raw.trim());
+    }
   }
   assert.ok(!cssText.includes('body.wide .touchpad .tp-stick') && cssText.includes('body.wide:not(.touch) .touchpad .tp-stick'), 'wide mode must scope control stripping to :not(.touch)');
+  assert.ok(cssText.includes('.touchpad.in-tower { display: block; }'), 'landscape controls show from .in-tower, not only the orientation media query');
+  assert.ok(cssText.includes('--face: 64px'), 'phone portraits shrink below the desktop 96');
+  assert.ok(/body\.touch\.in-battle \.arena \{[^}]*\btop:/.test(cssText), 'fullscreen arena keeps longhand offsets so a missing inset shorthand cannot collapse it');
+  assert.ok(/\.hud \{[^}]*\btop:/.test(cssText), 'the HUD keeps longhand offsets so a missing inset shorthand cannot drop it below the picture');
+  assert.ok(/\.end-overlay \{[^}]*\btop:/.test(cssText), 'the result card keeps longhand offsets so a missing inset shorthand cannot drop it below the picture');
   assert.ok(cssText.includes('body.touch.turned.in-battle') && cssText.includes('rotate(90deg)'), 'portrait phones turn the battle instead of waiting for the app to rotate');
   assert.ok(html.includes('class="arena-view"'), 'portrait splits the picture off the pad');
   assert.ok(!html.includes('rotate-hint'), 'portrait plays on the split pad instead of a turn-the-phone cover');
