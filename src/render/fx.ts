@@ -7,6 +7,7 @@ import type { ImageCache } from '../assets/loader.ts';
 import { BURDEN_Y, CELL, clipFor, FAMILY_LINGER, OBLIVION, FAMILY_MEMBERS, flameFrame, pillarFrame, practiceBeat, practiceStrums, PRACTICE_HITS, RAIKA_CM, RING_BIG, RING_SMALL } from './clips.ts';
 import { watchProp } from './propLayout.ts';
 import { bloodSparkles, drawSakikoFx, drawShiroFloor } from './sakikoFx.ts';
+import { drawMikuFx } from './mikuFx.ts';
 
 const CUCUMBER_SRC = '/sprites/mutsumi/cucumber.png';
 const NOTE_SRC = '/sprites/mutsumi/note.png';
@@ -983,6 +984,8 @@ function drawBurdenItem(ctx: CanvasRenderingContext2D, i: number, color: string)
 export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: ImageCache): void {
   // 丰川祥子 keeps her whole visual language in one module.
   if (drawSakikoFx(ctx, e, liteFx)) return;
+  // 马桥心玖 keeps hers in one module too.
+  if (drawMikuFx(ctx, e, liteFx)) return;
   const p = 1 - e.life / e.max, r = e.radius ?? 50;
   const square = (x: number, y: number, w: number, h: number) => ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
   ctx.save();

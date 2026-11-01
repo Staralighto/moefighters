@@ -4,7 +4,7 @@ import { addDebt, addMod, dmgDealtMul, dmgTakenMul, has, incomingMul, lifestealO
 import type { Effect, FightGame, Projectile, SealVolley } from './game.ts';
 import { CONTROLS, FLOOR, GRAVITY, H, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
 import { attackPhase } from './animState.ts';
-import { BUSHIDO_TAIL, clipFor, DRUM_SLUMP, drumRow, PAW, PAW_FAIL, PAW_HITS, pawRow, pawTime, ROLL, ROLL_BEATS, ROLL_MAX, ROLL_MIN, ROLL_SLUMP, ROLL_THROW, rollGap, SELFIE, SELFIE_HOLD, SELFIE_LUNGE, SELFIE_SNAP, SELFIE_TAIL, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS, PRACTICE_HITS, practiceBeat, SKIP_HOP, SKIP_MAX, SKIP_MIN, SKIP_TAIL, MINE_FUSE, ENCORE, ENCORE_FACE, ENCORE_GONE, BURDEN_Y, UNBOWED_STEP, UNBOWED_MAX, PIGGY, PIGGY_DASH, PIGGY_CARRY, PIGGY_TAIL, PIGGY_BACK_X, PIGGY_BACK_Y, HUG, HUG_LUNGE, HUG_FIRST, HUG_GAP, HUG_TAIL, MEAL_GRACE, FAMILY, FAMILY_MEMBERS, FAMILY_LUNGE, FAMILY_FINALE, FAMILY_ZONE_AHEAD, FAMILY_ZONE_R, FAMILY_TAIL, familyLife, BLOOD, OBLIVION, TWIN_MOON, TWIN_PHASE } from '../render/clips.ts';
+import { BUSHIDO_TAIL, clipFor, DRUM_SLUMP, drumRow, PAW, PAW_FAIL, PAW_HITS, pawRow, pawTime, ROLL, ROLL_BEATS, ROLL_MAX, ROLL_MIN, ROLL_SLUMP, ROLL_THROW, rollGap, SELFIE, SELFIE_HOLD, SELFIE_LUNGE, SELFIE_SNAP, SELFIE_TAIL, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS, PRACTICE_HITS, practiceBeat, SKIP_HOP, SKIP_MAX, SKIP_MIN, SKIP_TAIL, MINE_FUSE, ENCORE, ENCORE_FACE, ENCORE_GONE, BURDEN_Y, UNBOWED_STEP, UNBOWED_MAX, PIGGY, PIGGY_DASH, PIGGY_CARRY, PIGGY_TAIL, PIGGY_BACK_X, PIGGY_BACK_Y, HUG, HUG_LUNGE, HUG_FIRST, HUG_GAP, HUG_TAIL, MEAL_GRACE, FAMILY, FAMILY_MEMBERS, FAMILY_LUNGE, FAMILY_FINALE, FAMILY_ZONE_AHEAD, FAMILY_ZONE_R, FAMILY_TAIL, familyLife, BLOOD, OBLIVION, TWIN_MOON, TWIN_PHASE, PUFF, PUFF_BLINK, PUFF_ARRIVE, PUFF_REACH, PUFF_STOP, PUFF_HOP, PUFF_BEAT, PUFF_CUT, PUFF_TAIL, EAR, EAR_DECIDE, EAR_PALM_HITS, EAR_PALM_GAP, EAR_PALM, EAR_KNEE, EAR_TAIL, EAR_GLINT, MIKU_EYE, PLAY, PLAY_DASH, PLAY_PASS, PLAY_THROUGH, PLAY_SLASHES, PLAY_BYE, PLAY_THOUGHT, PLAY_EAR_AT, PLAY_EAR_HOLD, PLAY_FIGURES, PLAY_CURTAIN } from '../render/clips.ts';
 import { SCRIPTS } from './scripts.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
@@ -408,6 +408,20 @@ export function recentDamage(g: FightGame, f: Fighter): number {
   return sum;
 }
 
+/** The keys of the four specials (U I O L), whose clean hits can upgrade a curse declared with upBy. */
+const SPECIAL_HIT_KEYS = new Set(['U', 'I', 'O', 'L']);
+/** 珍稀动物认证: one of her specials lands on a body wearing her base tag — it becomes the upgrade, fresh
+ *  clock. Data-driven: the spec is whichever of the attacker's moves declares `curse.upBy`. */
+function upgradeOwnCurse(defender: Fighter, attacker: Fighter): void {
+  const c = attacker.data.skills.find(s => s.curse?.upBy === 'specials')?.curse;
+  if (!c?.up) return;
+  const from = c.own ? attacker.id : undefined;
+  const base = defender.mods.find(m => m.kind === c.kind && m.tag === 'curse:' + (c.mark ?? '') && m.left > 0 && m.from === from);
+  if (!base) return;
+  base.left = 0;
+  addMod(defender, c.kind, c.time, { v: c.kind === 'dmgDealt' ? c.up.v - 1 : c.up.v, tag: 'curse:' + c.up.mark, mark: c.up.mark, from });
+}
+
 export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: Skill, source: HitSource, originX = attacker.x): boolean {
   // friendly is the one blast that reads everyone on the field (火的故事).
   const blast = !!skill.friendly;
@@ -449,14 +463,12 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   // Super armour: an endure move in wind-up eats one strike. 恐湖 and 哈？ keep it through the hit. Grabs and supers still go through.
   const armour = defender.attack;
   // 好痛……♡: a melee swing that finds her lying in the act springs the trap — no damage, no flinch,
-  // the script takes the swing over. A shot catches her for real: the act is dropped and it lands.
+  // the script takes the swing over. A counter may return false to let this hit land (the tap already
+  // left the act). A shot catches her for real: the act is dropped and it lands.
   const feint = armour && armour.t < armour.skill.start && (armour.mode ?? 0) === 0 ? SCRIPTS[armour.skill.fx]?.counter : undefined;
   if (feint && g.isEnemy(attacker, defender) && !isGrab && !skill.super && !blocked && !cuts(source, defender)) {
     if (skill.type === 'projectile') armour!.endure = 0;
-    else {
-      feint(g, defender, attacker, armour!);
-      return false;
-    }
+    else if (feint(g, defender, attacker, armour!) !== false) return false;
   }
   // 一肩扛下: each live charge eats one whole hit — no damage, no flinch. Grabs and supers go
   // through. The last charge to break drops her where she stands (the voice that gave out).
@@ -495,7 +507,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     && ((has(defender, 'brace') && defender.frenzy > 0) || howling);
   let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .95 : 1)
     * dmgTakenMul(defender, { grab: isGrab, superHit: !!skill.super, superBrace, fallback: BRACED_DAMAGE })
-    * incomingMul(defender)
+    * incomingMul(defender, attacker.id)
     * (defender.ban > 0 ? BAN_DAMAGE : 1) * attacker.baseDmgMul * attacker.dmgMul * dmgDealtMul(attacker)
     * (defender.frail > 0 ? 1 + defender.frailBonus : 1);
   // 堕天: below half health the attacker swings harder; 这是最后通牒: a defender under a quarter takes more.
@@ -743,9 +755,19 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     // 飘了 / 主角: the clean hit lays a mod on the defender. Data only; the mark picks the graphic.
     if (skill.curse) {
       const c = skill.curse;
-      const fresh = !defender.mods.some(m => m.kind === c.kind && m.tag === 'curse:' + (c.mark ?? '') && m.left > 0);
-      addMod(defender, c.kind, c.time, { v: c.kind === 'dmgDealt' ? c.v - 1 : c.v, tag: 'curse:' + (c.mark ?? ''), mark: c.mark });
+      const from = c.own ? attacker.id : undefined;
+      const live = (mark: string | undefined) => defender.mods.find(m => m.kind === c.kind && m.tag === 'curse:' + (mark ?? '') && m.left > 0 && m.from === from);
+      // 珍稀动物认证: a second clean hit while the tag is up turns it into the upgrade (and the upgrade only refreshes).
+      const base = live(c.mark);
+      const step = c.up && (base || live(c.up.mark)) ? c.up : undefined;
+      const mark = step ? step.mark : c.mark;
+      const v = step ? step.v : c.v;
+      if (step && base) base.left = 0;
+      const fresh = !step && !base;
+      addMod(defender, c.kind, c.time, { v: c.kind === 'dmgDealt' ? v - 1 : v, tag: 'curse:' + (mark ?? ''), mark, from });
       if (fresh && c.text) g.text(c.text, defender.x, defender.y - 212, attacker.data.color, .8, 20);
+    } else if (!skill.air && SPECIAL_HIT_KEYS.has(skill.key)) {
+      upgradeOwnCurse(defender, attacker);
     }
   } else {
     crit = attacker.critChance > 0 && g.random() < attacker.critChance;
@@ -4605,6 +4627,424 @@ function step_family(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   a.t = Math.max(a.t, s.duration - FAMILY_TAIL);
 }
 SCRIPTS['my-family'] = Object.assign(SCRIPTS['my-family'] ?? {}, { update: step_family, noMelee: true, skipCount: true });
+
+/* ---- 马桥心玖 ---- */
+
+/* Her visual language is 表 / 里 — the polite surface (pastel, soft, sparkling) and what is under it (ink,
+   cold, sharp). The moves are plain on purpose; the turn of the face is carried by fx: the smile's glow
+   splits along the cut, the stamp lands like an official seal, the manga gloom lines drop when she is
+   caught out, and in the super a life-size crayon playhouse is drawn round them and taken apart. */
+
+/** 好啦好啦: she says it once a round, on the first jab that lands. Display only. */
+const haiSaid = new WeakSet<Fighter>();
+SCRIPTS['hai-hai'] = Object.assign(SCRIPTS['hai-hai'] ?? {}, {
+  flash(g: FightGame, f: Fighter, a: Attack) {
+    g.effect('slash', f.x + f.facing * 65, f.y - 83, f.data.color, .22, { dir: f.facing, radius: a.skill.range * .5 });
+    if (a.hit.size && !haiSaid.has(f)) {
+      haiSaid.add(f);
+      g.text('好啦好啦。', f.x, f.y - 200, f.data.color, .8, 16);
+    }
+  },
+});
+
+/** 先敲门！ (视角 2: 「都说了进门先敲门啊！」): the push kick, and two small knocks where it lands. */
+SCRIPTS['knock-knock'] = Object.assign(SCRIPTS['knock-knock'] ?? {}, {
+  flash(g: FightGame, f: Fighter, a: Attack) {
+    g.effect('slash', f.x + f.facing * 65, f.y - 70, f.data.color, .22, { dir: f.facing, radius: a.skill.range * .5 });
+    if (a.hit.size) g.effect('knock-knock', f.x + f.facing * a.skill.range * .78, f.y - 96, '#ffffff', .42, { dir: f.facing });
+  },
+});
+
+/** The thought bubble rides this high over her feet, the smile's glow this high (round her head). */
+const MIKU_BUBBLE_Y = 240;
+const MIKU_HEAD_Y = 150;
+/** Every effect of hers that follows her, cut short at once (the smile ends the moment she turns). */
+function dropFx(g: FightGame, f: Fighter, type: string): void {
+  for (const e of g.effects) if (e.type === type && e.follow === f.id) e.life = 0;
+}
+function mikuBubble(g: FightGame, f: Fighter, n: number, life: number): void {
+  g.effect('miku-bubble', f.x, f.y - MIKU_BUBBLE_Y, f.data.color, life, { follow: f.id, ox: 0, oy: -MIKU_BUBBLE_Y, n, dir: f.facing });
+}
+
+/** 表面烤得很漂亮: the pat chips this much guard; a guarded pat leaves her standing there this long. */
+const PUFF_PAT_GUARD = 5;
+const PUFF_BLOCKED = .35;
+/** a.burst flags: the smile is up; she has vanished; she has landed. */
+const PUFF_SMILE = 1;
+const PUFF_GONE = 2;
+const PUFF_LANDED = 4;
+const puffParts = new WeakMap<Skill, { pat: Skill; cut: Skill }>();
+function puffOf(s: Skill): { pat: Skill; cut: Skill } {
+  let p = puffParts.get(s);
+  if (!p) {
+    p = {
+      pat: { ...s, finale: undefined, guardDmg: PUFF_PAT_GUARD, knock: 30, react: { kind: 'stand', stun: .3 } },
+      cut: { ...s, ...s.finale, finale: undefined },
+    };
+    puffParts.set(s, p);
+  }
+  return p;
+}
+/** 表面烤得很漂亮 (视角 2: 「表面明明烤出了很漂亮的颜色，切开一看才发现里面还是生的」): the smile she shows
+ *  everyone, then what is underneath. She leans in with the polite smile in a shoujo-manga glow, comes
+ *  apart into pastel sparkles and is suddenly right in front of them, still smiling, and pats them with the
+ *  back of her hand; if the pat lands clean, a beat later the glow is cut in two along with them — the top
+ *  half slides away, a cold glint crosses her eye. A guarded pat and she takes the hand back — no cut.
+ *  a.mode walks PUFF; a.anchor is where she lands, a.tossAt the pat, a.liftAt the cut. */
+function step_puff(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  const mode = a.mode ?? PUFF.glide;
+  if (!(a.burst & PUFF_SMILE)) {
+    a.burst |= PUFF_SMILE;
+    g.effect('puff-smile', f.x, f.y - MIKU_HEAD_Y, '#e9f8ff', s.start + PUFF_BLINK + PUFF_ARRIVE + PUFF_BEAT + .1, { follow: f.id, ox: 0, oy: -MIKU_HEAD_Y, dir: f.facing });
+  }
+  if (a.t < s.start) return;
+  if (mode === PUFF.glide) {
+    if (!(a.burst & PUFF_GONE)) {
+      // She comes apart into sparkles; where she will be is decided now.
+      a.burst |= PUFF_GONE;
+      const o = foeAhead(g, f, PUFF_REACH);
+      const near = o && Math.abs(o.y - f.y) < 112 ? o : undefined;
+      a.anchor = clamp(near ? near.x - f.facing * PUFF_STOP : f.x + f.facing * PUFF_HOP, X_MIN, X_MAX);
+      if (near && (a.anchor - f.x) * f.facing < 0) a.anchor = f.x;
+      g.effect('puff-poof', f.x, f.y - 92, '#e9f8ff', .35, { dir: f.facing });
+    }
+    if (a.t < s.start + PUFF_BLINK) return;
+    if (!(a.burst & PUFF_LANDED)) {
+      a.burst |= PUFF_LANDED;
+      f.x = a.anchor;
+      g.effect('puff-poof', f.x, f.y - 92, '#e9f8ff', .4, { dir: f.facing, heavy: true });
+    }
+    if (a.t < s.start + PUFF_BLINK + PUFF_ARRIVE) return;
+    const o = foeAhead(g, f, s.range);
+    if (o && Math.abs(o.y - f.y) < 112 && o.invuln <= 0) {
+      const before = g.totalHits[f.id];
+      a.hit = new Set();
+      hit(g, f, o, puffOf(s).pat, a);
+      if (g.totalHits[f.id] > before) {
+        a.mode = PUFF.beat;
+        a.hold = o.id;
+        a.tossAt = a.t;
+        g.effect('puff-pat', o.x - f.facing * 16, o.y - 120, '#ffffff', .32, { dir: f.facing });
+        return;
+      }
+      if (a.hit.has(o.id)) {
+        // Guarded: the smile stays, the hand comes back, and nothing follows.
+        a.mode = PUFF.done;
+        a.t = s.duration;
+        f.stun = Math.max(f.stun, PUFF_BLOCKED);
+        return;
+      }
+    }
+    a.mode = PUFF.done;
+    a.t = Math.max(a.t, s.duration - PUFF_TAIL);
+    return;
+  }
+  if (mode !== PUFF.beat || a.liftAt > 0 || a.t < a.tossAt + PUFF_BEAT) return;
+  a.liftAt = a.t;
+  const o = g.fighterById(a.hold);
+  a.hit = new Set();
+  if (o && o.hp > 0 && Math.abs(o.x - f.x) < s.range + 40) hit(g, f, o, puffOf(s).cut, a);
+  // The turn: the glow splits, the eye goes cold, the cut runs through them, the inner voice.
+  dropFx(g, f, 'puff-smile');
+  g.effect('puff-split', f.x, f.y - MIKU_HEAD_Y, '#e9f8ff', .55, { dir: f.facing });
+  g.effect('cold-glint', f.x + f.facing * MIKU_EYE.x, f.y - MIKU_EYE.y, '#e8fbff', .34, { follow: f.id, ox: f.facing * MIKU_EYE.x, oy: -MIKU_EYE.y, dir: f.facing });
+  const cx = o ? o.x - f.facing * 6 : f.x + f.facing * 80;
+  g.effect('puff-cut', cx, f.y - 118, '#ffffff', .5, { dir: f.facing, radius: 84, hit: a.hit.size > 0 });
+  mikuBubble(g, f, 0, .9);
+  g.hitstop = Math.max(g.hitstop, .05);
+  a.hold = -1;
+  a.t = Math.max(a.t, s.duration - PUFF_CUT - PUFF_TAIL);
+}
+SCRIPTS['puff-cut'] = Object.assign(SCRIPTS['puff-cut'] ?? {}, {
+  update: step_puff, customDash: true, noMelee: true, poise: true,
+  // Out of sight between the two sparkle bursts.
+  hideWhile: (a: Attack) => (a.mode ?? PUFF.glide) === PUFF.glide && a.t >= a.skill.start && a.t < a.skill.start + PUFF_BLINK,
+});
+
+/** 珍稀动物认证: the tag itself is the skill's curse (data); the chop brings a seal down on them like an
+ *  official certificate — red 珍稀 the first time, gold 神兽 once it has been upgraded. */
+SCRIPTS['rare-tag'] = Object.assign(SCRIPTS['rare-tag'] ?? {}, {
+  flash(g: FightGame, f: Fighter, a: Attack) {
+    g.effect('tag-chop', f.x + f.facing * 62, f.y - 108, f.data.color, .26, { dir: f.facing, radius: 54 });
+    for (const id of a.hit) {
+      const o = g.fighterById(id);
+      if (!o) continue;
+      const beast = o.mods.some(m => m.kind === 'incoming' && m.mark === 'beast' && m.left > 0 && m.from === f.id);
+      g.effect('rare-stamp', o.x, o.y - 104, beast ? '#e8b64a' : '#d8343a', .6, { follow: o.id, ox: 0, oy: -104, n: beast ? 1 : 0, dir: f.facing });
+    }
+  },
+});
+
+/** 才没有在撒谎: the two blows of the counter, and how long she is untouchable after she steps in.
+ *  a.burst: EAR_HELD once the ear-touch is locked, EAR_FAR on the tap. */
+const EAR_PALM_DMG = 60;
+const EAR_KNEE_DMG = 64;
+/** Freeze on each counter hit, longer on the knee, so the two blows read apart from a normal swing. */
+const EAR_PALM_STOP = .08;
+const EAR_KNEE_STOP = .12;
+const EAR_STEP = 62;
+const EAR_INVULN = .25;
+const EAR_HELD = 1;
+const EAR_FAR = 2;
+/** Recovery left after the fourth palm, so a tap does not stand through the counter's clock. */
+const EAR_PUSH_TAIL = .22;
+const earParts = new WeakMap<Skill, { palm: Skill; knee: Skill }>();
+function earOf(s: Skill): { palm: Skill; knee: Skill } {
+  let p = earParts.get(s);
+  if (!p) {
+    p = {
+      palm: { ...s, damage: EAR_PALM_DMG, knock: 40, hitstop: EAR_PALM_STOP, react: { kind: 'stand', stun: .35 } },
+      knee: { ...s, damage: EAR_KNEE_DMG, knock: 300, hitstop: EAR_KNEE_STOP, react: { kind: 'knockdown', vy: -240, knocked: .8 } },
+    };
+    earParts.set(s, p);
+  }
+  return p;
+}
+function earGlint(g: FightGame, f: Fighter, life: number): void {
+  g.effect('earlobe-glint', f.x + f.facing * EAR_GLINT.x, f.y - EAR_GLINT.y, '#ffffff', life, {
+    follow: f.id, ox: f.facing * EAR_GLINT.x, oy: -EAR_GLINT.y, dir: f.facing,
+  });
+}
+/** The tap reaches forty percent past the ear-touch palm. The skill keeps the shorter range. */
+function earReach(s: Skill, far: boolean): number {
+  return far ? Math.round(s.range * 1.4) : s.range;
+}
+/** Leave the ear-touch. far is the tap. Closing start drops the one-hit endure: the palms are the move. */
+function beginPalm(a: Attack, s: Skill, far: boolean): void {
+  a.mode = EAR.palm;
+  a.tossAt = a.t;
+  a.shots = 0;
+  a.hit = new Set();
+  if (far) a.burst |= EAR_FAR;
+  if (a.t < s.start) a.skill = { ...s, start: a.t };
+}
+function stepPalms(g: FightGame, f: Fighter, a: Attack, s: Skill): void {
+  const far = (a.burst & EAR_FAR) !== 0;
+  const range = earReach(s, far);
+  while (a.shots < EAR_PALM_HITS && a.t >= a.tossAt + a.shots * EAR_PALM_GAP) {
+    const last = a.shots === EAR_PALM_HITS - 1;
+    const prev = a.skill;
+    a.skill = {
+      ...s, range, finale: undefined, count: undefined,
+      knock: last ? s.knock : 0,
+      react: last ? s.react : { kind: 'stand', stun: .2 },
+    };
+    a.hit = new Set();
+    applyMelee(g, f, a);
+    a.skill = prev;
+    const i = a.shots;
+    g.effect('palm-burst', f.x + f.facing * (58 + i * 22), f.y - (128 - i * 8), f.data.color, .32, {
+      dir: f.facing, radius: (far ? 34 : 28) + (last ? 6 : 0), hit: a.hit.size > 0, n: i,
+    });
+    a.shots++;
+  }
+  if (a.shots >= EAR_PALM_HITS && a.t < s.duration - EAR_PUSH_TAIL) a.t = s.duration - EAR_PUSH_TAIL;
+}
+/** 才没有在撒谎 (萌百: 撒谎的时候会下意识摸耳垂; 第 20 话「你刚才在摸耳垂哦～？」): a tap is four palms,
+ *  farther than the old push. Holding past EAR_DECIDE locks the ear-touch: a melee swing in the window
+ *  is the counter (palm then knee, each with its own hitstop). The hold lasts until s.start and then
+ *  the short palms are forced — it does not wait any longer. ponytail: CPU never holds a key, so it
+ *  always takes the tap. a.mode walks EAR; a.tossAt is the catch, or the first palm. */
+function step_earlobe(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  if (!a.emitted) {
+    a.emitted = true;
+    g.text(s.name, f.x, f.y - 190, f.data.color, .65, 17);
+  }
+  if ((a.mode ?? EAR.act) === EAR.act) {
+    if (!(a.burst & EAR_HELD)) {
+      if (!attackHeld(g, f)) beginPalm(a, s, true);
+      else if (a.t >= EAR_DECIDE) {
+        a.burst |= EAR_HELD;
+        const left = Math.max(.05, s.start - a.t);
+        earGlint(g, f, left);
+        g.effect('innocent-aura', f.x, f.y - MIKU_HEAD_Y, '#ffe3f1', left + .05, { follow: f.id, ox: 0, oy: -MIKU_HEAD_Y, dir: f.facing });
+      }
+    }
+    if ((a.mode ?? EAR.act) === EAR.act) {
+      if (a.t < s.start) return;
+      beginPalm(a, s, false);
+    }
+  }
+  if (a.mode === EAR.palm) {
+    stepPalms(g, f, a, s);
+    return;
+  }
+  const o = g.fighterById(a.hold);
+  const parts = earOf(s);
+  const strike = (skill: Skill, type: string, y: number, r: number) => {
+    a.hit = new Set();
+    if (o && o.hp > 0 && Math.abs(o.x - f.x) < s.range + 30) hit(g, f, o, skill, a);
+    g.effect(type, f.x + f.facing * 70, f.y - y, f.data.color, .36, { dir: f.facing, radius: r, hit: a.hit.size > 0 });
+  };
+  if (a.shots === 0 && a.t >= a.tossAt + EAR_PALM) { a.shots = 1; strike(parts.palm, 'palm-burst', 124, 46); }
+  if (a.shots === 1 && a.t >= a.tossAt + EAR_KNEE) { a.shots = 2; strike(parts.knee, 'knee-star', 76, 34); g.shake = Math.max(g.shake, 6); }
+}
+function counter_earlobe(g: FightGame, f: Fighter, attacker: Fighter, a: Attack): void | false {
+  const s = a.skill;
+  // A tap is already the palms. Refuse so this swing lands, and leave the act so the next one does too.
+  if (!(a.burst & EAR_HELD) && !attackHeld(g, f)) {
+    beginPalm(a, s, true);
+    return false;
+  }
+  a.mode = EAR.caught;
+  a.hold = attacker.id;
+  a.shots = 0;
+  a.t = Math.max(a.t, s.duration - EAR_TAIL);
+  a.tossAt = a.t;
+  dropFx(g, f, 'earlobe-glint');
+  dropFx(g, f, 'innocent-aura');
+  f.facing = (Math.sign(attacker.x - f.x) || f.facing) as 1 | -1;
+  f.x = clamp(attacker.x - f.facing * EAR_STEP, X_MIN, X_MAX);
+  f.vx = 0;
+  f.invuln = Math.max(f.invuln, EAR_INVULN);
+  g.text('哈啊？！', f.x, f.y - 218, '#bff4ff', .75, 24);
+  g.effect('caught-shock', f.x, FLOOR, f.data.color, .45, { follow: f.id, ox: 0, oy: FLOOR - f.y, dir: f.facing });
+  g.hitstop = Math.max(g.hitstop, .06);
+}
+SCRIPTS['earlobe'] = Object.assign(SCRIPTS['earlobe'] ?? {}, {
+  update: step_earlobe, counter: counter_earlobe, noMelee: true, skipCount: true,
+});
+
+/** 过家家到此为止: each late slash, and how long the cut holds them where they stand. */
+const PLAY_SLASH_DMG = 28;
+const PLAY_HOLD = 1.8;
+/** a.burst flags on the goodbye: the second thought is out. */
+const PLAY_THOUGHT_OUT = 1;
+/** Where the house stood (their x at the cut): the goodbye knocks them away, the scraps come back here. */
+const playHouseX = new WeakMap<Attack, number>();
+/** Where the crayon figures' chests are, for the slash that tears each. */
+const PLAY_FIGURE_CHEST = 62;
+const playParts = new WeakMap<Skill, { cut: Skill; slash: Skill; last: Skill }>();
+function playOf(s: Skill): { cut: Skill; slash: Skill; last: Skill } {
+  let p = playParts.get(s);
+  if (!p) {
+    p = {
+      cut: { ...s, finale: undefined, knock: 0, react: { kind: 'pin', stun: PLAY_HOLD, holdStill: true } },
+      slash: { ...s, finale: undefined, damage: PLAY_SLASH_DMG, knock: 0, react: { kind: 'pin', stun: 1, holdStill: true } },
+      last: { ...s, ...s.finale, finale: undefined },
+    };
+    playParts.set(s, p);
+  }
+  return p;
+}
+/** 过家家到此为止 (第 15 话): 「一直以来，多谢大家照顾了♪」 — the bow; then one cut that runs straight through them
+ *  and out the other side, and she stops there with her back to them, head bowed. Behind her the stage goes
+ *  grey and a crayon playhouse draws itself round them, life size: a crooked house, and the four of them
+ *  holding hands with them in the middle — the family she was playing at. The late slashes tear the figures
+ *  out one by one; at 「再见」 the house splits down the middle, the two halves fall over like stage flats and
+ *  blow away as scraps, and they go down. If they are still standing, a few scraps drift back and she
+ *  touches her earlobe — the goodbye was the lie (第 19 话). A dash that meets nobody still bows, stops and
+ *  says goodbye, for nothing. a.mode walks PLAY; a.tossAt is the cut, a.anchor where it started, a.liftAt
+ *  the goodbye. The house is one effect on its own clock from the cut (mikuFx.ts reads the same schedule). */
+function step_playhouse(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  const mode = a.mode ?? PLAY.bow;
+  if (mode === PLAY.bow) {
+    if (!a.emitted) {
+      a.emitted = true;
+      // The polite smile one last time: the same glow as 表面烤得很漂亮, and a note over the bow.
+      g.effect('puff-smile', f.x, f.y - MIKU_HEAD_Y + 26, '#e9f8ff', s.start + .05, { follow: f.id, ox: f.facing * 16, oy: -MIKU_HEAD_Y + 26, dir: f.facing });
+      g.effect('bow-note', f.x, f.y - 196, f.data.color, s.start, { follow: f.id, ox: 0, oy: -196 });
+      g.text('一直以来，多谢大家照顾了♪', f.x, f.y - 228, f.data.color, 1, 15);
+    }
+    f.vx = 0;
+    if (a.t >= s.start) a.mode = PLAY.dash;
+    return;
+  }
+  if (mode === PLAY.dash) {
+    f.x = clamp(f.x + f.facing * (s.speed ?? 900) * dt, X_MIN, X_MAX);
+    const bucket = Math.floor(a.t * 30);
+    if (bucket % 3 === 0 && bucket !== Math.floor((a.t - dt) * 30)) g.effect('ghost', f.x - f.facing * 18, f.y, f.data.color, .2, { fighter: f.id, alpha: .3 });
+    const o = foeAhead(g, f, s.range);
+    if (o && Math.abs(o.y - f.y) < 170 && o.invuln <= 0) {
+      const before = g.totalHits[f.id];
+      a.hit = new Set();
+      hit(g, f, o, playOf(s).cut, a);
+      if (g.totalHits[f.id] > before) {
+        a.mode = PLAY.away;
+        a.hold = o.id;
+        a.tossAt = a.t;
+        a.anchor = f.x;
+        o.attack = null;
+        retainEscape(o, true);
+        g.hitstop = Math.max(g.hitstop, .1);
+        g.flash = Math.max(g.flash, .1);
+        g.effect('play-cut', o.x + f.facing * 40, o.y - 104, '#ffffff', .6, { dir: f.facing, radius: 150 });
+        g.effect('play-cold', W / 2, H / 2, '#9fb8d8', PLAY_BYE + PLAY_EAR_AT + PLAY_EAR_HOLD + .25);
+        g.effect('playhouse', o.x, FLOOR, '#fffaf0', PLAY_BYE + 1.25, { dir: f.facing });
+        g.effect('play-lights', o.x, FLOOR, '#ffe7b0', PLAY_BYE + .12, { dir: f.facing });
+        playHouseX.set(a, o.x);
+        return;
+      }
+    }
+    if (a.t >= s.start + PLAY_DASH || f.x <= X_MIN || f.x >= X_MAX) {
+      a.mode = PLAY.away;
+      a.hold = -1;
+      a.tossAt = a.t;
+      a.anchor = f.x;
+    }
+    return;
+  }
+  const o = a.hold >= 0 ? g.fighterById(a.hold) : undefined;
+  const standing = !!o && o.hp > 0;
+  f.vx = 0;
+  if (mode === PLAY.away) {
+    const lt = a.t - a.tossAt;
+    if (o && lt < PLAY_THROUGH) {
+      // The cut carries her through them and out past the wall; then she stops and stays.
+      const pass = clamp(o.x + f.facing * PLAY_PASS, X_MIN, X_MAX);
+      const k = Math.min(1, lt / PLAY_THROUGH);
+      f.x = a.anchor + (pass - a.anchor) * (1 - (1 - k) * (1 - k));
+    }
+    if (o && standing) {
+      o.vx = 0;
+      o.vy = 0;
+      o.knocked = 0;
+      o.stun = Math.max(o.stun, .3);
+      const parts = playOf(s);
+      while (a.shots < PLAY_SLASHES.length && lt >= PLAY_SLASHES[a.shots]) {
+        const fig = PLAY_FIGURES.find(m => m.tear === a.shots);
+        a.hit = new Set();
+        hit(g, f, o, parts.slash, a);
+        if (fig) g.effect('play-slash', o.x + f.facing * fig.x, FLOOR - PLAY_FIGURE_CHEST, '#ffffff', .4, { n: a.shots, dir: f.facing, radius: 46 });
+        a.shots++;
+      }
+    }
+    if (lt < PLAY_BYE) return;
+    a.mode = PLAY.bye;
+    a.liftAt = a.t;
+    mikuBubble(g, f, 3, .9);
+    if (o && standing) {
+      a.hit = new Set();
+      hit(g, f, o, playOf(s).last, a);
+      g.effect('play-slash', o.x, FLOOR - 118, '#ffffff', .38, { n: 3, dir: f.facing, radius: 150, heavy: true });
+      g.shake = Math.max(g.shake, 12);
+    }
+    // The curtain call: wherever the house stood, the curtains close on it — and she is outside them.
+    // Spawned after the slash so the curtain closes over it.
+    if (o) g.effect('play-curtain', playHouseX.get(a) ?? o.x, FLOOR, '#b3122e', PLAY_CURTAIN.gone, { dir: f.facing });
+    return;
+  }
+  if (mode !== PLAY.bye) return;
+  const bt = a.t - a.liftAt;
+  if (bt >= PLAY_THOUGHT && !(a.burst & PLAY_THOUGHT_OUT)) {
+    a.burst |= PLAY_THOUGHT_OUT;
+    mikuBubble(g, f, 2, PLAY_EAR_AT + PLAY_EAR_HOLD - PLAY_THOUGHT);
+  }
+  if (bt < PLAY_EAR_AT) return;
+  if (o && standing) {
+    // They are still standing: a few scraps drift back together, and her finger goes to her earlobe.
+    a.mode = PLAY.ear;
+    earGlint(g, f, PLAY_EAR_HOLD);
+    g.effect('playhouse-mend', playHouseX.get(a) ?? o.x, FLOOR, '#fffaf0', PLAY_EAR_HOLD + .35, { dir: f.facing });
+    a.t = Math.max(a.t, s.duration - PLAY_EAR_HOLD);
+  } else {
+    a.t = s.duration;
+  }
+}
+SCRIPTS['playhouse'] = Object.assign(SCRIPTS['playhouse'] ?? {}, { update: step_playhouse, noMelee: true, skipCount: true, noSuperFx: true });
 
 SCRIPTS['milk'] = Object.assign(SCRIPTS['milk'] ?? {}, { spawn: 'milk' });
 SCRIPTS['bag'] = Object.assign(SCRIPTS['bag'] ?? {}, { spawn: 'bag' });

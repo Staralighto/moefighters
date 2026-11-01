@@ -66,7 +66,8 @@ export interface MoveScript {
   hideWhile?: (a: Attack) => boolean;
   /** 好痛……♡: a melee hit that finds her still in the act. The kernel drops the hit and hands it
    *  here; shots, grabs and supers never reach it. `a` is her own attack. */
-  counter?: (g: FightGame, f: Fighter, attacker: Fighter, a: Attack) => void;
+  /** Return false to let the hit land. Anything else eats it and the script takes the swing. */
+  counter?: (g: FightGame, f: Fighter, attacker: Fighter, a: Attack) => void | false;
   /** Outbound half passes through bodies, then the shot turns around. */
   boomerang?: boolean;
   /** Vertical overlap against the chest. Unset keeps the stock 72. */

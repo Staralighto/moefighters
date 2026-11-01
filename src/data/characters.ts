@@ -1494,6 +1494,48 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'miku', name: '马桥心玖', title: '吉他 / 腹黑', quote: '把我带回有你们在的那个家……！！', color: '#22CCFF',
+    bands: ['ikka-dumb-rock'],
+    ...stats('rush'),
+    view: { kind: 'sprite', common: '/sprites/miku/common.png', special: '/sprites/miku/special.png', height: 176, lift: 11, specialScale: .95 },
+    // 纯输出: no breakout, no heal. U holds poise for the pose. Every move smiles first and does the damage after.
+    skills: [
+      // 好啦好啦 (视角 2: 「好啦好啦，所有人都去客厅——」): said once a round, on the first jab that lands.
+      skill(0, 'light', '好啦好啦', { fx: 'hai-hai' }),
+      // 先敲门！ (视角 2: 「都说了进门先敲门啊！」): a push kick with two small knocks where it lands.
+      skill(1, 'heavy', '先敲门！', { range: 128, knock: 260, fx: 'knock-knock' }),
+      // 表面烤得很漂亮 (combat.ts step_puff): the smiling glide and the pat; a beat later the cut.
+      skill(2, 'dash', '表面烤得很漂亮', {
+        damage: 8, speed: 780, range: 84, start: .1, duration: .82, cd: 4, fx: 'puff-cut', noSparks: true,
+        finale: { damage: 46, knock: 160, react: { kind: 'stand', stun: .4 } },
+        brief: '霸体闪现轻拍翻脸横切，可接连段；被挡收手',
+        detail: '释放时霸体。化作星光闪现到前方对手面前先轻拍 8 伤害，0.12 秒后翻脸横切 46 伤害并硬直 0.4 秒，可接连段；轻拍被挡则不出第二刀并硬直 0.35 秒；前方没人则闪现一小段',
+      }),
+      // 珍稀动物认证: the tag is the curse — only her own hits collect on it; a second hit upgrades it.
+      skill(3, 'heavy', '珍稀动物认证', {
+        damage: 30, range: 197, start: .16, duration: .5, cd: 7, fx: 'rare-tag', knock: 140, noSparks: true,
+        curse: { kind: 'incoming', time: 12, v: 1.12, mark: 'rare', own: true, up: { v: 1.25, mark: 'beast' }, upBy: 'specials' },
+        brief: '劈击挂珍稀动物标牌，受她伤害提高；技能再中升级',
+        detail: '命中挂珍稀动物标牌 12 秒，期间受心玖伤害 +12%；标牌在时被心玖的 U、I、O、L 任一技能命中则升级为奇葩神兽，加成 +25% 并重新计时 12 秒，只升一级；只对心玖自己的伤害生效',
+      }),
+      // 才没有在撒谎 (combat.ts step_earlobe / counter_earlobe): tap is the far four palms.
+      // Holding past the decide locks the ear-touch; a whiff still pushes, at this range. damage × count = 80.
+      skill(4, 'endure', '才没有在撒谎', {
+        damage: 20, count: 4, range: 118, start: 1.8, duration: 2.45, cd: 6, fx: 'earlobe', knock: 280, noSparks: true,
+        react: { kind: 'stand', stun: .3 },
+        brief: '点按远距四连推掌；长按反击否则也推',
+        detail: '点按四连推掌，比长按推掌远四成，每下 20 伤害，末下击退。长按摸耳垂，前摇 1.8 秒内被近身攻击则不受伤，反击掌底 60 加膝撞 64 伤害并击倒；到点没挨打则同样四连推掌。飞行道具、抓投和必杀照常命中',
+      }),
+      // 过家家到此为止 (combat.ts step_playhouse): the bow, the cut through them, the walk away, 再见.
+      skill(5, 'grab', '过家家到此为止', {
+        cost: 120, damage: 40, range: 84, speed: 900, start: .5, duration: 3.65, fx: 'playhouse', knock: 0, gain: 2, noSparks: true,
+        finale: { damage: 90, knock: 360, react: { kind: 'knockdown', vy: -220, knocked: .9 } },
+        brief: '鞠躬后穿身横斩背对对手，斩痕迟到爆开后击倒',
+        detail: '鞠躬 0.5 秒后前冲横斩穿过对手并定住；她背对对手站定，斩痕三次爆开各 28 伤害，说再见时末下 90 伤害击倒；不能格挡，没斩到则无伤害',
+      }),
+    ],
+  },
+  {
     id: 'viola', name: '薇欧拉', title: '队长 / 恶德', quote: '火种燃尽之后会怎么样呢？', color: '#8E5AC8',
     ...stats('armor'),
     view: {

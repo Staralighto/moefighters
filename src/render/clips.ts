@@ -201,6 +201,87 @@ export function familyLife(m: FamilyMember): number {
   return m.enter + (m.strikes[m.strikes.length - 1] - m.strikes[0]) + FAMILY_LINGER;
 }
 
+/* ---- 马桥心玖 ---- */
+
+/** 表面烤得很漂亮: a.mode — the sparkle blink, the beat between the pat and the cut, done.
+ *  She leans in with the polite smile, dissolves into pastel sparkles and reappears PUFF_STOP in front of
+ *  the nearest foe within PUFF_REACH (or PUFF_HOP ahead with nobody there). PUFF_BLINK is how long she is
+ *  out of sight; the pat comes PUFF_ARRIVE after she lands. `beat` the gap from the pat to the cut,
+ *  `cut` how long the cut cell holds, `tail` the settle. */
+export const PUFF = { glide: 0, beat: 1, done: 2 } as const;
+export const PUFF_BLINK = .1;
+export const PUFF_ARRIVE = .04;
+export const PUFF_REACH = 250;
+export const PUFF_STOP = 58;
+export const PUFF_HOP = 160;
+export const PUFF_BEAT = .12;
+export const PUFF_CUT = .18;
+export const PUFF_TAIL = .26;
+
+/** 珍稀动物认证: how long the tag hangs over them, and how high above the feet. */
+export const RARE_TIME = 12;
+export const RARE_Y = 214;
+
+/** 才没有在撒谎: a.mode — the ear-touch, caught out, or the four palms.
+ *  A release before EAR_DECIDE is the far tap; still holding, the window locks in.
+ *  After a catch the palm lands EAR_PALM later, the knee EAR_KNEE later; the strike cell holds EAR_HOLD past the knee.
+ *  The push is EAR_PALM_HITS palms, EAR_PALM_GAP apart; the strike cell holds EAR_SOLO past the last one. */
+export const EAR = { act: 0, caught: 1, palm: 2 } as const;
+export const EAR_DECIDE = .14;
+export const EAR_PALM_HITS = 4;
+export const EAR_PALM_GAP = .1;
+export const EAR_PALM = .08;
+export const EAR_KNEE = .22;
+export const EAR_HOLD = .12;
+/** From the catch to the end of the move. */
+export const EAR_TAIL = .55;
+/** The lone palm, when nobody swung: the strike cell holds this long after the active frame. */
+export const EAR_SOLO = .15;
+/** Where the glint sits on her earlobe, from the feet (side view facing right). It only shows on special
+ *  cells: measured on the O wind-up cell (finger on the ear at cell 116, 52), mapped onto her 176 px body,
+ *  shrunk ×0.95 about the foot line (specialScale) and lifted 11 px. Move with view.height / lift / specialScale. */
+export const EAR_GLINT = { x: -8, y: 145 } as const;
+/** Her eye line on the special cells, from the feet, and how far ahead of her centre it sits. */
+export const MIKU_EYE = { x: 12, y: 151 } as const;
+
+/** 过家家到此为止: a.mode walks the cast — the bow, the cut that runs through them, the stillness after
+ *  (she stands outside the house with her back to them; she does not walk), the goodbye, and (only if
+ *  they are still standing) the touch of the earlobe. */
+export const PLAY = { bow: 0, dash: 1, away: 2, bye: 3, ear: 4 } as const;
+/** The dash looks for a body this long after the bow. */
+export const PLAY_DASH = .22;
+/** The cut carries her this far past them — out past the wall of the crayon house — over PLAY_THROUGH. */
+export const PLAY_PASS = 182;
+export const PLAY_THROUGH = .12;
+/** The cut cell holds this long after the catch; then she stands, head bowed, her back to them. */
+export const PLAY_CUT_HOLD = .2;
+/** After the cut: the house draws itself round them, then three late slashes, then the goodbye. */
+export const PLAY_DRAW = .5;
+export const PLAY_SLASHES: readonly number[] = [.72, .97, 1.22];
+export const PLAY_BYE = 1.5;
+/** After the goodbye: the second thought, the touch of the earlobe (or the end if they are down). */
+export const PLAY_THOUGHT = .15;
+export const PLAY_EAR_AT = .9;
+export const PLAY_EAR_HOLD = .5;
+/** 再见 is the curtain call: the curtains close over the stage, hold with 完 written on them, then fly
+ *  up and away. Seconds after the goodbye. `half` is the half-width of the stage they close over —
+ *  inside where she stands, so she is left outside the curtain. */
+export const PLAY_CURTAIN = { close: .22, hold: .62, gone: .9, half: 160, top: 300 } as const;
+/** The crayon house round the one she cut: half-width, wall height and roof peak over the floor. */
+export const PLAY_HOUSE = { w: 124, wall: 150, roof: 240 } as const;
+/** The four crayon figures holding hands across the house with them in the middle. `x` is the offset
+ *  from the centre, positive toward the side she leaves by; `tear` is the slash that tears each
+ *  (3 is the goodbye). 蕾叶 holds their hand and goes last, with the house: the word Family was hers.
+ *  Colours are the official ones. */
+export const PLAY_FIGURES: readonly { name: string; color: string; x: number; tear: number; cm: number; hair: 'twin' | 'long' | 'bangs' | 'bow' }[] = [
+  { name: '千樱梨', color: '#FF55AA', x: -98, tear: 0, cm: 154, hair: 'twin' },
+  { name: '蕾叶', color: '#FF7700', x: -56, tear: 3, cm: 162, hair: 'long' },
+  { name: '蓬咲', color: '#448888', x: 56, tear: 1, cm: 168, hair: 'bangs' },
+  { name: '宁月', color: '#9999FF', x: 98, tear: 2, cm: 143, hair: 'bow' },
+];
+/** A 162 cm crayon figure stands this tall; the others scale by their official height. */
+export const PLAY_FIGURE_H = 104;
+
 /** ……来练习吧: seven strums. The gap shrinks evenly from the first to the last, the way the
  *  bridge of Odd Dice speeds up beat by beat. Never under 0.09s (docs/public/moves.md 削防). */
 export const PRACTICE_HITS = 7;
@@ -648,6 +729,27 @@ export function clipFor(f: Fighter): Clip {
       if (mode === ENCORE.dash) return at('special', a.index - 2, 1 + (Math.floor(a.t * 12) % 2));
       if (mode === ENCORE.back || mode === ENCORE.gone) return loco(RUN_FRAMES[Math.floor(a.t * 8) % 4]);
       return at('special', a.index - 2, 0);
+    }
+    // 表面烤得很漂亮: the smiling glide holds the first cell through the pat; the cut, then the settle.
+    if (f.attack.skill.fx === 'puff-cut') {
+      const a = f.attack, mode = a.mode ?? PUFF.glide;
+      if (mode === PUFF.glide || (mode === PUFF.beat && a.liftAt <= 0)) return at('special', a.index - 2, 0);
+      return at('special', a.index - 2, a.liftAt > 0 && a.t < a.liftAt + PUFF_CUT ? 1 : 2);
+    }
+    // 才没有在撒谎: the finger on the earlobe; the palms (the knee replays the strike cell); the settle.
+    if (f.attack.skill.fx === 'earlobe') {
+      const a = f.attack, s = a.skill, mode = a.mode ?? EAR.act;
+      if (mode === EAR.caught) return at('special', a.index - 2, a.t < a.tossAt + EAR_KNEE + EAR_HOLD ? 1 : 2);
+      if (mode === EAR.palm) return at('special', a.index - 2, a.t < a.tossAt + (EAR_PALM_HITS - 1) * EAR_PALM_GAP + EAR_SOLO ? 1 : 2);
+      return at('special', a.index - 2, a.t < s.start ? 0 : 2);
+    }
+    // 过家家到此为止: the bow, the cut, then she stands with her back to them, head bowed, through the
+    // goodbye; the finger on the earlobe is borrowed from her O column.
+    if (f.attack.skill.fx === 'playhouse') {
+      const a = f.attack, mode = a.mode ?? PLAY.bow;
+      if (mode === PLAY.away) return at('special', a.index - 2, a.t < a.tossAt + PLAY_CUT_HOLD ? 1 : 2);
+      if (mode === PLAY.ear) return at('special', 2, 0);
+      return at('special', a.index - 2, mode === PLAY.bow ? 0 : mode === PLAY.dash ? 1 : 2);
     }
     // 我背你！: the dash, then the run with them on her back trades the two carry cells.
     if (f.attack.skill.fx === 'piggyback') {

@@ -1,7 +1,7 @@
 /* Headless rule check: runs the fixed-step engine without DOM or canvas. `npm run check`. */
 import { FightGame } from '../src/game/game.ts';
 import { BUSHIDO_CREEP, BUSHIDO_LUNGE, BUSHIDO_SPAN, VEIL_NORMAL, VEIL_SHOT, clockRings, drumShotTime, hit, holdNoteSpan, outshines, violetHidden, withGuard } from '../src/game/combat.ts';
-import { vowBeatTime, VOW_BEATS, PRACTICE_GAP1, PRACTICE_HITS, practiceBeat, practiceGap, practiceRow, practiceStrums, FAMILY_MEMBERS, familyLife } from '../src/render/clips.ts';
+import { vowBeatTime, VOW_BEATS, PRACTICE_GAP1, PRACTICE_HITS, practiceBeat, practiceGap, practiceRow, practiceStrums, FAMILY_MEMBERS, familyLife, PUFF_STOP, PLAY, PLAY_BYE, PLAY_DRAW, PLAY_FIGURES, PLAY_HOUSE, PLAY_PASS, PLAY_SLASHES, RARE_TIME, EAR } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
 import { PLAYABLE, ROSTER, bandMembers, guestsFor } from '../src/data/characters.ts';
 import { BANDS, BAND_BY_ID } from '../src/data/bands.ts';
@@ -13,7 +13,7 @@ import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
 import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell, shouldGoLite } from '../src/render/fx.ts';
 import { backingScale, portraitBodyScale, superZoom, teamGlowOn } from '../src/render/renderer.ts';
 import { previewFighter, gainEnergy } from '../src/game/fighter.ts';
-import { addMod, atkMul, clearMod, jumpMul, speedMul } from '../src/game/mods.ts';
+import { addMod, atkMul, clearMod, incomingMul, jumpMul, speedMul } from '../src/game/mods.ts';
 import { assetUrl, easeLoad, imageSources, linkRate, liteFight, liteSrc, nextSrc, portraitSrc, SLOW_RATE, stageThumbSrc } from '../src/assets/loader.ts';
 import { acceptBlank, isTouchJump, matchStickTouch, stickFingerGone, thumbBandTop, touchRelease, turnedStickDelta } from '../src/game/input.ts';
 import { BIT_ATK, BIT_LEFT, BIT_SOFT, NET_BUILD, InputClock, RemotePad, TAP_SLOTS, applyRemoteBits, cleanCode, packBits, readEvents, readPad, tapSlot, type PadEvent } from '../src/net/proto.ts';
@@ -126,7 +126,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(opening < 40, `${id}: the opening stays under a chipped bar, ${opening}`);
     assert.equal(withGuard(s, breakAt + 99).guardDmg, plan![plan!.length - 1], id + ': a late segment repeats the last entry');
   }
-  for (const id of ['uika', 'mutsumi', 'umiri', 'taki', 'layer', 'sayo', 'houka', 'mahoro', 'raika']) {
+  for (const id of ['uika', 'mutsumi', 'umiri', 'taki', 'layer', 'sayo', 'houka', 'mahoro', 'raika', 'miku']) {
     const s = ROSTER[at(id)].skills[5];
     assert.ok(!s.guardPlan && !s.guardDmg, id + ': the unblockable super carries no guard value');
   }
@@ -7140,6 +7140,200 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     assert.ok(open.lost > 40 && open.lost < 120, 'lighter than the caught version: ' + open.lost);
     const guarded = zone(true);
     assert.ok(guarded.lost < open.lost / 2, 'a guard catches the zone: ' + guarded.lost);
+  }
+}
+
+// miku: 纯输出 — no breakout, no heal. U pats, then cuts a beat later (a guarded pat takes no cut). I hangs a
+// tag only her own hits collect on, and a second hit upgrades it. O taps into four far palms; holding
+// keeps the ear-touch counter, and a window nobody swings through still pushes at the short range.
+// L bows, cuts through them, walks away while three late slashes land, says goodbye on the knockdown;
+// still standing, she touches her earlobe.
+{
+  const mk = at('miku');
+  const data = ROSTER[mk];
+  assert.deepEqual(data.bands, ['ikka-dumb-rock'], 'miku stands with 一家Dumb Rock!');
+  assert.equal(data.title, '吉他 / 腹黑', 'miku wears the two-faced title');
+  assert.equal(data.quote, '把我带回有你们在的那个家……！！', 'miku says the line from the stage');
+  assert.equal(data.trait, 'rush', 'miku takes the rush trait');
+  assert.equal(data.skills[2].cd, 4, 'U returns in 4 seconds');
+  assert.equal(data.skills[3].range, 197, 'I reaches seventy percent farther');
+  assert.equal(data.skills[4].cd, 6, 'O returns in 6 seconds');
+  assert.equal(data.skills[5].cost, 120, 'L costs 120');
+  assert.ok(!data.skills.some(s => s.breakout), 'all offence: no breakout');
+  assert.equal(data.skills[3].curse?.time, RARE_TIME, 'the tag lasts as long as the sign is drawn');
+  assert.deepEqual(PLAY_FIGURES.map(m => m.tear).sort(), [0, 1, 2, 3], 'each figure on the drawing tears once');
+  assert.equal(PLAY_FIGURES.find(m => m.tear === PLAY_SLASHES.length)?.name, '蕾叶', '蕾叶 goes last, with the house');
+  assert.ok(PLAY_SLASHES.every(t => t > PLAY_DRAW && t < PLAY_BYE), 'the house is drawn before the first slash, and every slash lands before the goodbye');
+  assert.ok(PLAY_FIGURES.every(m => Math.abs(m.x) + 20 < PLAY_HOUSE.w && PLAY_PASS > PLAY_HOUSE.w + 30), 'the figures stand inside the house; she stops outside it');
+  // U: pat then cut
+  {
+    const g = newGame(mk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 260; p2.x = 460; p1.facing = 1; p2.facing = -1;
+    assert.ok(g.attack(p1, 2), 'the blink comes out');
+    run(g, .15);
+    assert.ok(violetHidden(p1), 'out of sight between the two sparkle bursts');
+    run(g, .06);
+    assert.ok(Math.abs(p2.x - p1.x - PUFF_STOP) < 2, 'and right in front of them: ' + (p2.x - p1.x));
+    run(g, 1);
+    const lost = p2.data.hp - p2.hp;
+    assert.equal(g.totalHits[p1.id], 2, 'the pat and the cut');
+    assert.ok(lost > 44 && lost < 54, 'the cut carries the damage: ' + lost);
+    assert.ok(g.effects.some(e => e.type === 'miku-bubble') || p1.attack === null, 'the thought bubble comes with the cut');
+  }
+  {
+    const g = newGame(mk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 400; p2.facing = -1;
+    g.attack(p1, 2);
+    run(g, .05);
+    const hp = p1.hp;
+    hit(g, p2, p1, p2.data.skills[0], { hit: new Set() });
+    assert.equal(p1.attack?.skill.fx, 'puff-cut', 'a jab does not drop the blink');
+    assert.equal(p1.stun, 0, 'the jab does not flinch her');
+    assert.ok(hp - p1.hp > 15, 'the jab still hurts: ' + (hp - p1.hp));
+    hit(g, p2, p1, { ...p2.data.skills[0], type: 'grab' }, { hit: new Set() });
+    assert.equal(p1.attack, null, 'a grab still drops the blink');
+  }
+  {
+    const g = newGame(mk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 420; p1.facing = 1; p2.facing = -1;
+    g.attack(p1, 2);
+    let stunned = false;
+    for (let i = 0; i < Math.round(.6 / STEP); i++) { p2.blocking = true; g.step(STEP); if (p1.stun > 0 && !p1.attack) stunned = true; }
+    assert.ok(p2.data.hp - p2.hp < 3, 'a guarded pat: chip only, no cut');
+    assert.ok(stunned, 'and she is left standing there');
+  }
+  // I: only her own hits collect, and the second hit upgrades the tag
+  {
+    const g = newGame(mk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    const tag = data.skills[3];
+    hit(g, p1, p2, tag, { hit: new Set() });
+    assert.ok(Math.abs(incomingMul(p2, p1.id) - 1.12) < 1e-9, 'the tag raises what she deals');
+    assert.equal(incomingMul(p2, p2.id + 99), 1, 'and nobody else collects on it');
+    run(g, .6);
+    hit(g, p1, p2, tag, { hit: new Set() });
+    assert.ok(Math.abs(incomingMul(p2, p1.id) - 1.25) < 1e-9, 'a second hit makes it 奇葩神兽');
+    assert.deepEqual(p2.mods.filter(m => m.left > 0 && m.kind === 'incoming').map(m => m.mark), ['beast'], 'one tag at a time');
+    run(g, .6);
+    hit(g, p1, p2, tag, { hit: new Set() });
+    assert.ok(Math.abs(incomingMul(p2, p1.id) - 1.25) < 1e-9, 'the upgrade only refreshes');
+  }
+  {
+    // Any of her specials upgrades a live tag. The tag outlasts I, so a second I can be the upgrade too.
+    const g = newGame(mk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    hit(g, p1, p2, data.skills[3], { hit: new Set() });
+    hit(g, p1, p2, data.skills[0], { hit: new Set() });
+    assert.ok(Math.abs(incomingMul(p2, p1.id) - 1.12) < 1e-9, 'a jab does not upgrade it');
+    run(g, .6);
+    hit(g, p1, p2, data.skills[4], { hit: new Set() });
+    assert.ok(Math.abs(incomingMul(p2, p1.id) - 1.25) < 1e-9, 'O upgrades it');
+    const beast = p2.mods.find(m => m.left > 0 && m.mark === 'beast');
+    assert.ok(beast && Math.abs(beast.left - RARE_TIME) < .05, 'with a fresh clock: ' + beast?.left);
+    const g2 = newGame(mk, at('boulder')); const [q1, q2] = g2.fighters; dummy(g2);
+    hit(g2, q1, q2, data.skills[4], { hit: new Set() });
+    assert.equal(incomingMul(q2, q1.id), 1, 'no tag, nothing to upgrade');
+  }
+  // O: a tap is four far palms. Holding keeps the counter; a window with no swing still pushes, shorter.
+  assert.equal(data.skills[4].count, 4, 'the palm is four hits');
+  assert.equal(data.skills[4].damage, 20, 'each palm is 20');
+  assert.equal(data.skills[4].start, 1.8, 'the counter window is 1.8 seconds');
+  assert.ok(data.skills[4].duration > data.skills[4].start + .3, 'the cast outlasts the window and the four palms');
+  assert.equal(Math.round(data.skills[4].range * 1.4), 165, 'a tap reaches forty percent farther');
+  {
+    const g = newGame(mk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 380; p1.facing = 1; p2.facing = -1;
+    assert.ok(g.attack(p1, 4), 'the act comes out');
+    g.keyDown('KeyO');
+    run(g, .15);
+    const hp = p1.hp;
+    g.attack(p2, 0);
+    let freeze = 0;
+    for (let i = 0; i < Math.round(1 / STEP); i++) { g.step(STEP); if (g.hitstop > freeze) freeze = g.hitstop; }
+    g.keyUp('KeyO');
+    assert.equal(p1.hp, hp, 'the swing that caught her out does nothing');
+    const lost = p2.data.hp - p2.hp;
+    assert.ok(lost > 104 && lost < 122, 'the palm and the knee, doubled: ' + lost);
+    assert.ok(freeze >= .12, 'a counter hit freezes the frame: ' + freeze);
+    assert.ok(p2.knocked > 0 || p2.downTime > 0 || p2.y < FLOOR, 'the knee knocks down');
+  }
+  {
+    const g = newGame(mk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 460; p1.facing = 1; p2.facing = -1;
+    g.attack(p1, 4);
+    const seen = new Set<number>();
+    for (let i = 0; i < Math.round(1 / STEP); i++) {
+      g.step(STEP);
+      for (const e of g.effects) if (e.type === 'palm-burst' && e.n != null) seen.add(e.n);
+    }
+    assert.deepEqual([...seen].sort((a, b) => a - b), [0, 1, 2, 3], 'a tap stamps four palm bursts');
+    const lost = p2.data.hp - p2.hp;
+    assert.equal(g.totalHits[p1.id], 4, 'four palms');
+    assert.ok(lost > 60 && lost < 74, 'the far tap is four hits of 20: ' + lost);
+  }
+  {
+    const g = newGame(mk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 460; p1.facing = 1; p2.facing = -1;
+    g.attack(p1, 4);
+    g.keyDown('KeyO');
+    run(g, 2.5);
+    g.keyUp('KeyO');
+    assert.equal(g.totalHits[p1.id], 0, 'holding pushes at the old range and misses this far: ' + (p2.data.hp - p2.hp));
+  }
+  {
+    const g = newGame(mk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 400; p1.facing = 1; p2.facing = -1;
+    g.attack(p1, 4);
+    g.keyDown('KeyO');
+    run(g, 1.2);
+    assert.equal(g.totalHits[p1.id], 0, 'holding through 1.2s has not pushed yet');
+    run(g, 1.3);
+    g.keyUp('KeyO');
+    assert.equal(g.totalHits[p1.id], 4, 'at 1.8s the short palm is forced');
+    const lost = p2.data.hp - p2.hp;
+    assert.ok(lost > 60 && lost < 74, 'and it is the same four hits of 20: ' + lost);
+  }
+  {
+    const g = newGame(mk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 380; p1.facing = 1; p2.facing = -1;
+    g.attack(p1, 4);
+    run(g, .08);
+    const hp = p1.hp;
+    hit(g, p2, p1, p2.data.skills[0], { hit: new Set() });
+    assert.ok(p1.hp < hp, 'a tap does not catch the swing');
+    assert.ok(p1.attack?.mode !== EAR.caught, 'and it does not become the counter');
+  }
+  // L: the bow, the cut through them, three late slashes, the goodbye; still standing, the earlobe
+  {
+    const g = newGame(mk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 420; p1.facing = 1; p2.facing = -1; p1.energy = p1.energyMax;
+    assert.ok(g.attack(p1, 5), 'the bow comes out');
+    run(g, .45);
+    assert.equal(p1.attack?.mode ?? PLAY.bow, PLAY.bow, 'she is still bowing');
+    run(g, .4);
+    assert.ok(p1.x > p2.x, 'the cut carried her through them');
+    assert.ok(g.effects.some(e => e.type === 'playhouse') && g.effects.some(e => e.type === 'play-cold'), 'the drawing and the cold stage come with the cut');
+    assert.ok(p1.x - p2.x > 150, 'out past the wall of the house: ' + (p1.x - p2.x));
+    const x0 = p1.x;
+    run(g, PLAY_BYE + .2);
+    assert.ok(Math.abs(p1.x - x0) < 1, 'and she stays there, her back to them: ' + (p1.x - x0));
+    assert.equal(p1.facing, 1, 'facing away from them');
+    const lost = p2.data.hp - p2.hp;
+    assert.equal(g.totalHits[p1.id], 2 + PLAY_SLASHES.length, 'the cut, three slashes and the goodbye');
+    assert.ok(lost > 145 && lost < 185, 'it adds up to a super, combo decay included: ' + lost);
+    assert.ok(p2.knocked > 0 || p2.downTime > 0 || p2.y < FLOOR, 'the goodbye knocks down');
+    assert.ok(g.effects.some(e => e.type === 'play-curtain'), 'the goodbye brings the curtain down');
+    run(g, .95);
+    assert.ok(g.effects.some(e => e.type === 'playhouse-mend') && g.effects.some(e => e.type === 'earlobe-glint'), 'still standing: the scraps drift back and she touches her earlobe');
+    run(g, .5);
+    assert.ok(p1.attack === null, 'and it ends');
+  }
+  {
+    const g = newGame(mk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 100; p2.x = 800; p1.facing = 1; p1.energy = p1.energyMax;
+    g.attack(p1, 5);
+    run(g, 3.4);
+    assert.equal(p2.hp, p2.data.hp, 'nobody in reach: the goodbye is for nothing');
+    assert.ok(!g.effects.some(e => e.type === 'playhouse'), 'and there is no drawing to tear');
+    assert.ok(p1.attack === null, 'and it ends');
   }
 }
 

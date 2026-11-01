@@ -5,9 +5,10 @@ import { stageThumbSrc, type ImageCache } from '../assets/loader.ts';
 import { FLOOR, H, SIDE, W } from '../game/constants.ts';
 import { comboAnchor } from '../ui/battleFrame.ts';
 import { unbowedRage, violetHidden } from '../game/combat.ts';
-import { BURDEN_Y, encoreDark, IAIDO_PHASE, iaidoCharge, UNBOWED_MAX, unbowedStacks } from './clips.ts';
+import { BURDEN_Y, encoreDark, IAIDO_PHASE, iaidoCharge, RARE_TIME, RARE_Y, UNBOWED_MAX, unbowedStacks } from './clips.ts';
 import { drawBanSign, drawCombo, drawEffect, drawMoonlight, drawGauge, drawHoldNote, drawKuji, drawLayerBass, drawParticles, drawProjectile, drawRainbowBack, drawRainbowFront, drawRootFx, drawSister, drawTexts, drawWheel, isLiteFx, UI_FONT, zoomAbout } from './fx.ts';
 import { SAKIKO_BACK, SAKIKO_SCREEN_BACK } from './sakikoFx.ts';
+import { MIKU_BACK, MIKU_SCREEN_BACK } from './mikuFx.ts';
 
 /** Backing-store pixels per CSS pixel. The compositor then blits 1:1.
  *  Phones use the screen ratio too: a CSS pixel is several physical pixels, and a 1× store
@@ -27,9 +28,9 @@ export function portraitBodyScale(padSplit: boolean): number {
 /** Hard 1px rim, yellow for the left team and green for the right. */
 const TEAM_GLOW = SIDE;
 /** Effects painted under every body: 和泉朋花's coffin and her spotlights. */
-const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK]);
+const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK, ...MIKU_BACK]);
 /** Screen-space layers that ignore the body zoom: behind every body, and in front of them. */
-const SCREEN_BACK = new Set(['encore-stage', 'family-dim', ...SAKIKO_SCREEN_BACK]);
+const SCREEN_BACK = new Set(['encore-stage', 'family-dim', ...SAKIKO_SCREEN_BACK, ...MIKU_SCREEN_BACK]);
 const SCREEN_FRONT = new Set(['encore-rain', 'encore-crowd', 'encore-call', 'slap-flash']);
 /** 安可是主唱的: the eye line on the 175 px body, measured up from the feet. */
 const ENCORE_EYE_Y = 152;
@@ -313,6 +314,8 @@ export class Renderer {
           if (m.left <= 0) continue;
           if (m.mark === 'praise') drawEffect(c, { type: 'praise-aura', x: f.x, y: f.y - 182, color: '#ff8fd8', life: 1, max: 1, age: g.age });
           else if (m.mark === 'spotlight') drawEffect(c, { type: 'spot-aura', x: f.x, y: footY, color: '#fff2fb', life: 1, max: 1, age: g.age });
+          // 马桥心玖's 珍稀动物认证: the tag over their head; the upgrade flips it over to 奇葩神兽.
+          else if (m.mark === 'rare' || m.mark === 'beast') drawEffect(c, { type: 'rare-tag', x: f.x, y: f.y - RARE_Y, color: '#22CCFF', life: m.left, max: RARE_TIME, n: m.mark === 'beast' ? 1 : 0, age: RARE_TIME - m.left });
           // 祐天寺喵梦's hidden 麦子越踩越坚强: a warm gold shimmer while the cut holds.
           else if (m.mark === 'wheat') drawEffect(c, { type: 'wheat-aura', x: f.x, y: footY, color: '#ffd36a', life: Math.min(1, m.left / .3), max: 1, age: g.age });
           // 滨崎茉幌: the pile she carries over her head, the aftershocks at her feet.

@@ -168,7 +168,17 @@ export interface Skill {
   /** A debuff laid on the defender by a clean hit (和泉朋花: 飘了 cuts their damage, 主角 raises what
    *  they take). `v` is the multiplier on the defender: .75 deals a quarter less, 1.2 takes a fifth more. `mark`
    *  picks the status graphic; `text` pops once when the mod is fresh. */
-  curse?: { kind: 'dmgDealt' | 'incoming'; time: number; v: number; mark?: string; text?: string };
+  curse?: {
+    kind: 'dmgDealt' | 'incoming'; time: number; v: number; mark?: string; text?: string;
+    /** 珍稀动物认证: an 'incoming' curse that only the attacker who laid it collects on. */
+    own?: boolean;
+    /** 珍稀动物认证: a clean hit while this curse (or its upgrade) is live from the same attacker lays
+     *  the upgrade instead — one step only; the upgrade then just refreshes. */
+    up?: { v: number; mark: string };
+    /** 珍稀动物认证: 'specials' — a clean hit from any of the owner's U I O L, not only this move, upgrades a
+     *  live tag (other moves only upgrade; re-applying and refreshing stay with this move). */
+    upBy?: 'specials';
+  };
 }
 
 /** One continuous effect a domain projects while it is the newest live field. */

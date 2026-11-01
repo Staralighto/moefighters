@@ -33,6 +33,8 @@ export interface Mod {
   pulse?: (g: FightGame, f: Fighter) => void;
   /** Runs once each time the owner takes a clean hit that costs hp (绝不退场's stacks). */
   hurt?: (g: FightGame, f: Fighter) => void;
+  /** 珍稀动物认证: an 'incoming' mod with an owner only multiplies hits from that fighter id. */
+  from?: number;
 }
 
 export function addMod(f: Fighter, kind: ModKind, time: number, opt: Partial<Mod> & { max?: boolean } = {}): Mod {
@@ -53,6 +55,7 @@ export function addMod(f: Fighter, kind: ModKind, time: number, opt: Partial<Mod
   if (opt.pulse) m.pulse = opt.pulse;
   if (opt.pulseEvery) m.pulseEvery = opt.pulseEvery;
   if (opt.hurt) m.hurt = opt.hurt;
+  if (opt.from != null) m.from = opt.from;
   project(f);
   return m;
 }
@@ -95,10 +98,15 @@ export function dmgTakenMul(f: Fighter, opt: { grab: boolean; superHit: boolean;
   return m;
 }
 
-/** Incoming-damage multiplier that ignores the grab/super gate. Each live mod multiplies. */
-export function incomingMul(f: Fighter): number {
+/** Incoming-damage multiplier that ignores the grab/super gate. Each live mod multiplies.
+ *  A mod with an owner (`from`) only counts for hits from that fighter (珍稀动物认证). */
+export function incomingMul(f: Fighter, from?: number): number {
   let m = 1;
-  for (const mod of f.mods) if (mod.kind === 'incoming' && mod.left > 0) m *= mod.v ?? 1;
+  for (const mod of f.mods) {
+    if (mod.kind !== 'incoming' || mod.left <= 0) continue;
+    if (mod.from != null && mod.from !== from) continue;
+    m *= mod.v ?? 1;
+  }
   return m;
 }
 
