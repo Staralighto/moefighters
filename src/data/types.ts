@@ -14,6 +14,34 @@ export type RootLevel = 'move' | 'freeze';
  *  Unset kind falls through to the type default (launch floats, grab/super/upper/sweep knock down). */
 export type ReactKind = 'none' | 'stand' | 'pin' | 'float' | 'knockdown' | 'launch';
 
+/** 异常: the four reusable status kinds. The kernel reads only the kind — damage, pace, lock and the
+ *  count a super collects on. What it looks like is the mark, and only the render layer reads that.
+ *  chill rides the shared 减速 mod and freeze the 禁足-tier 定身, so 冻僵 and 冻住 are the same clocks
+ *  as every other slow and lock; burn and confuse are mods of their own. */
+export type StatusKind = 'burn' | 'chill' | 'freeze' | 'confuse';
+
+/** One status a clean hit lays. Parameters are read by kind; anything a kind does not use is ignored. */
+export interface StatusApply {
+  kind: StatusKind;
+  /** Seconds. A live status of the same kind is refreshed, never stacked. */
+  time: number;
+  /** Visual key in src/render/statusMarks.ts. Unset uses the kind's default (DEFAULT_MARK). */
+  mark?: string;
+  /** burn: damage per tick, and seconds between ticks (default .5). */
+  dmg?: number;
+  tick?: number;
+  /** chill: walk, jump launch and attack-speed multipliers (default .6 / .75 / .75). */
+  move?: number;
+  jump?: number;
+  atk?: number;
+  /** An upgrade: lands only while the target already carries this kind. When any upgrade in the list
+   *  lands, the plain entries of the same list are skipped (一人一半: already 冻僵 → 冻住 instead). */
+  ifHas?: StatusKind;
+  /** A guard does not stop it, only shortens it: on a (non-perfect) block it lands for time × onBlock.
+   *  Unset: a block stops it. Upgrades never land on a block. A perfect block always stops it. */
+  onBlock?: number;
+}
+
 export interface HitReact {
   kind?: ReactKind;
   stun?: number;
@@ -113,6 +141,20 @@ export interface Skill {
   slowMark?: string;
   /** Flat extra damage on a clean hit when the target is already 减速. This hit's own slow does not qualify. */
   slowBonus?: number;
+  /** 异常: statuses a clean hit lays, in order. Braced, poised and enduring bodies shrug them off,
+   *  the same gate as 减速 and 定身. */
+  status?: StatusApply[];
+  /** 异常: statuses laid on whoever swings into this move's counter window (社交派对的微笑). Read by the
+   *  move's script, which owns the counter. */
+  counterStatus?: StatusApply[];
+  /** 异常引爆: the super snapshots how many status kinds the target carries when it connects, and the
+   *  finale deals `per` more for each. Read by the move's script through statusCount(). */
+  statusBonus?: { per: number };
+  /** 异常延长: before this move lays its own statuses, every status the target already carries runs this much
+   *  longer (1 = +100%, its remaining time doubled). Read by the move's script (社交派对的微笑). */
+  statusExtend?: number;
+  /** A status tick (烧焦): never springs a counter, never eats a 一肩扛下 charge. */
+  dot?: boolean;
   /** Clean-hit pose. Stun-only (no kind) just overrides hitstun. */
   react?: HitReact;
   /** Screen shake on a clean hit. Block and juggle keep their own numbers. */

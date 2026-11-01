@@ -9,7 +9,12 @@ export type ModKind =
   /** 一肩扛下: v is the charges left; each eats one whole hit (combat.ts hit()). */
   | 'burden'
   /** 一肩扛下, carried through: acc is the aftershocks the next clean hit adds. */
-  | 'quake';
+  | 'quake'
+  /** 异常·烧焦: v is the damage per tick, every the seconds between ticks, acc the countdown to the next,
+   *  from the fighter who lit it. combat.ts tickStatus lands each tick through hit(). */
+  | 'burn'
+  /** 异常·混乱: left and right swap on the stick (game.ts reads moveSign). */
+  | 'confuse';
 
 /**
  * One running buff.
@@ -35,6 +40,8 @@ export interface Mod {
   hurt?: (g: FightGame, f: Fighter) => void;
   /** 珍稀动物认证: an 'incoming' mod with an owner only multiplies hits from that fighter id. */
   from?: number;
+  /** 烧焦: seconds between two ticks. */
+  every?: number;
 }
 
 export function addMod(f: Fighter, kind: ModKind, time: number, opt: Partial<Mod> & { max?: boolean } = {}): Mod {
@@ -56,6 +63,7 @@ export function addMod(f: Fighter, kind: ModKind, time: number, opt: Partial<Mod
   if (opt.pulseEvery) m.pulseEvery = opt.pulseEvery;
   if (opt.hurt) m.hurt = opt.hurt;
   if (opt.from != null) m.from = opt.from;
+  if (opt.every != null) m.every = opt.every;
   project(f);
   return m;
 }
@@ -115,6 +123,12 @@ export function reflectAmount(f: Fighter): number {
   let n = 0;
   for (const mod of f.mods) if (mod.kind === 'reflect' && mod.left > 0) n += mod.v ?? 0;
   return n;
+}
+
+/** 混乱: -1 while left and right are swapped. A 禁足 holds the body still, so the swap waits it out. */
+export function moveSign(f: Fighter): 1 | -1 {
+  if (f.root > 0 && f.rootLevel === 'freeze') return 1;
+  return has(f, 'confuse') ? -1 : 1;
 }
 
 /** Walk multiplier. 1 when nothing changes the pace. Sprint speeds up, 减速 slows down. */

@@ -8,6 +8,8 @@ import { BURDEN_Y, CELL, clipFor, FAMILY_LINGER, OBLIVION, FAMILY_MEMBERS, flame
 import { watchProp } from './propLayout.ts';
 import { bloodSparkles, drawSakikoFx, drawShiroFloor } from './sakikoFx.ts';
 import { drawMikuFx } from './mikuFx.ts';
+import { drawStatusEffect } from './statusMarks.ts';
+import { drawShizukuFx, drawShizukuShot } from './shizukuFx.ts';
 
 const CUCUMBER_SRC = '/sprites/mutsumi/cucumber.png';
 const NOTE_SRC = '/sprites/mutsumi/note.png';
@@ -986,6 +988,10 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
   if (drawSakikoFx(ctx, e, liteFx)) return;
   // 马桥心玖 keeps hers in one module too.
   if (drawMikuFx(ctx, e, liteFx)) return;
+  // 异常: `<mark>@apply` / `<mark>@expire`, drawn by the status table.
+  if (drawStatusEffect(ctx, e)) return;
+  // 四宫宁月's accidents keep their own module too.
+  if (drawShizukuFx(ctx, e, images, liteFx)) return;
   const p = 1 - e.life / e.max, r = e.radius ?? 50;
   const square = (x: number, y: number, w: number, h: number) => ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
   ctx.save();
@@ -6145,6 +6151,7 @@ function noteComet(ctx: CanvasRenderingContext2D, p: Projectile): void {
 export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, images?: ImageCache): void {
   // 抹茶芭菲: the standing parfait is drawn by its effect, never as a shot.
   if (p.fx === 'parfait') return;
+  if (drawShizukuShot(ctx, p, images, liteFx)) return;
   ctx.save();
   // 火的故事: the arrow art rides ten pixels above its flight band so the flame head reads on the body.
   if (p.fx === 'fuga') ctx.translate(0, -10);

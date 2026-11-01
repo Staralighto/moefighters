@@ -9,6 +9,8 @@ import { BURDEN_Y, encoreDark, IAIDO_PHASE, iaidoCharge, RARE_TIME, RARE_Y, UNBO
 import { drawBanSign, drawCombo, drawEffect, drawMoonlight, drawGauge, drawHoldNote, drawKuji, drawLayerBass, drawParticles, drawProjectile, drawRainbowBack, drawRainbowFront, drawRootFx, drawSister, drawTexts, drawWheel, isLiteFx, UI_FONT, zoomAbout } from './fx.ts';
 import { SAKIKO_BACK, SAKIKO_SCREEN_BACK } from './sakikoFx.ts';
 import { MIKU_BACK, MIKU_SCREEN_BACK } from './mikuFx.ts';
+import { drawStatusAuras, statusBodyOf } from './statusMarks.ts';
+import { SHIZUKU_BACK } from './shizukuFx.ts';
 
 /** Backing-store pixels per CSS pixel. The compositor then blits 1:1.
  *  Phones use the screen ratio too: a CSS pixel is several physical pixels, and a 1× store
@@ -28,7 +30,7 @@ export function portraitBodyScale(padSplit: boolean): number {
 /** Hard 1px rim, yellow for the left team and green for the right. */
 const TEAM_GLOW = SIDE;
 /** Effects painted under every body: 和泉朋花's coffin and her spotlights. */
-const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK, ...MIKU_BACK]);
+const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK, ...MIKU_BACK, ...SHIZUKU_BACK]);
 /** Screen-space layers that ignore the body zoom: behind every body, and in front of them. */
 const SCREEN_BACK = new Set(['encore-stage', 'family-dim', ...SAKIKO_SCREEN_BACK, ...MIKU_SCREEN_BACK]);
 const SCREEN_FRONT = new Set(['encore-rain', 'encore-crowd', 'encore-call', 'slap-flash']);
@@ -267,7 +269,33 @@ export class Renderer {
       const footY = f.hp <= 0 ? FLOOR : f.y;
       zoomAbout(c, bodyScale, f.x, footY, () => {
         if (f.attack?.skill.fx === 'wheel') drawWheel(c, f, this.images);
-        view.draw(c, f, f.x, footY, alpha, undefined, outline);
+        // 异常 that change the body (冻住's ice sculpture): its outline takes the rim's place, then washes of the
+        // sprite's own silhouette and a light band clipped to it. All of it is the view's cached tint / rim.
+        const look = f.hp > 0 ? statusBodyOf(f) : undefined;
+        view.draw(c, f, f.x, footY, alpha, undefined, look?.outline ?? outline);
+        if (look) {
+          for (const w of look.washes) {
+            c.save();
+            c.globalCompositeOperation = w.mode ?? 'source-over';
+            view.draw(c, f, f.x, footY, alpha * w.alpha, w.tint);
+            c.restore();
+          }
+          if (look.shine) {
+            // A slanted band rises across the body once every `every` seconds, clipped to a strip; the
+            // sprite's tint draws only where the body is, so the band reads as light on ice.
+            const s = look.shine;
+            const k = (g.age % s.every) / s.every;
+            const h = 200, y = footY - k * (h + 60) + 30;
+            c.save();
+            c.beginPath();
+            c.moveTo(f.x - 80, y + 40); c.lineTo(f.x + 80, y - 40); c.lineTo(f.x + 80, y - 40 - s.width); c.lineTo(f.x - 80, y + 40 - s.width);
+            c.closePath();
+            c.clip();
+            c.globalCompositeOperation = 'lighter';
+            view.draw(c, f, f.x, footY, alpha * s.alpha * Math.sin(k * Math.PI), s.tint);
+            c.restore();
+          }
+        }
         // 绝不退场: one lookup feeds the cheek, the aura and, at full stacks, a red rim pulsing round her
         // own silhouette (the sprite's hard rim, not a shape).
         const rage = f.hp > 0 ? unbowedRage(f) : undefined;
@@ -293,13 +321,16 @@ export class Renderer {
         }
         drawLayerBass(c, f, this.images, alpha);
         if (f.blocking) drawEffect(c, { type: 'shield', x: f.x + f.facing * 28, y: f.y - 80, color: '#a6eeff', life: .14, max: .22, radius: 58 });
-        if (f.root > 0 && f.hp > 0) drawRootFx(c, f, g.age);
+        // 异常: every status wears its mark's drawing (statusMarks.ts). A slow or a root whose mark is not in
+        // that table keeps the older look below.
+        const marked = f.hp > 0 ? drawStatusAuras(c, f, g.age) : { slow: false, root: false };
+        if (f.root > 0 && f.hp > 0 && !marked.root) drawRootFx(c, f, g.age);
         // 剑道三连: the stance charges — a wide ring collapses into her as the meter fills.
         if (f.attack?.skill.fx === 'iaido' && (f.attack.mode ?? IAIDO_PHASE.pending) === IAIDO_PHASE.stance) {
           const q = iaidoCharge(f.attack.t);
           drawEffect(c, { type: 'charge-ring', x: f.x, y: f.y - 88, color: '#d9c6ff', life: 1 - q, max: 1, radius: 100, age: f.attack.t });
         }
-        if (f.slow > 0 && f.hp > 0) {
+        if (f.slow > 0 && f.hp > 0 && !marked.slow) {
           const bubble = f.mods.some(m => m.kind === 'slow' && m.left > 0 && m.mark === 'bubble');
           drawEffect(c, bubble
             ? { type: 'slow-bubble', x: f.x, y: f.y - 150, color: f.data.color, life: 1, max: 1, radius: 18, age: g.age }

@@ -41,6 +41,18 @@
 
 作曲的持续伤害走 `hit()`，并且 `react.kind` 为 `none`：有伤害，没有硬直、连段、顿帧。不要为了「看起来像打中」把这三样加回去。
 
+## 异常（烧焦 / 冻僵 / 冻住 / 混乱）
+
+机制按 kind，样子按 mark，两边互不知道对方。
+
+- 招式写 `Skill.status: StatusApply[]`，干净命中按顺序结算，和减速、定身同一道门（霸体、绊创膏、马拉松挡掉）。`ifHas` 是升级条：目标已有该 kind 才生效，生效时同表的普通条跳过（一人一半：已冻僵改冻住）。
+- kind 落到现成的钟上：`chill` 就是共享的 `slow` mod，`freeze` 就是禁足档定身，`burn` 是带 `every` 的 mod，每跳经 `hit()` 结算（`dot: true`：不进反击门、不吃一肩扛下），`confuse` 是 mod，`game.ts` 读 `moveSign` 在摇杆处统一对调左右（人、CPU、联机客机同一处）。
+- `onBlock`：被格挡（非完美格挡）时按 `time × onBlock` 挂上，升级条永远不在格挡时生效；不写就是挡住即不挂。完美格挡一律不挂。
+- `hasStatus` / `statusCount` / `statusMask` 按 kind 认：任何人的减速都算冻僵，任何禁足都算冻住。
+- 样子在 `src/render/statusMarks.ts` 的 `STATUS_MARKS`：`aura` 每帧画在身上，`apply` / `expire` 是内核发出的 `<mark>@apply` / `<mark>@expire` 一次性特效。不写 `mark` 用 `DEFAULT_MARK`。别的角色要同一异常换个样子：同 kind、写自己的 mark、在表里加一条画法，内核零改动。
+- 冻住的样子跟施加方走（`Fighter.rootMark`），不再按挨打方的 `data.rootFx`；没有 mark 的定身照旧。
+- 旧的减速样子（泡泡、落瓣）没进表，照旧画。
+
 ## 削防（格挡伤害）
 
 防御条 100。按住格挡不回，松手每秒回 15。`guard <= 0` 破防：硬直 0.9 秒，1.2 秒内不能再挡。

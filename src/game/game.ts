@@ -6,7 +6,8 @@ import { bandMembers, ROSTER_BY_ID } from '../data/characters.ts';
 import type { BandId } from '../data/bands.ts';
 import { advanceAnim } from './animState.ts';
 import { easeSealSwells, effectSettled, ESCAPE_INVULN, rainbowRoll, stepProjectiles, updateAttack } from './combat.ts';
-import { addMod, atkMul, clearMod, has, jumpMul, regenPerSec, speedMul, tickMods } from './mods.ts';
+import { addMod, atkMul, clearMod, has, jumpMul, moveSign, regenPerSec, speedMul, tickMods } from './mods.ts';
+import { settleRootMark, tickStatus } from './status.ts';
 import { SCRIPTS } from './scripts.ts';
 import { stepAI } from './ai.ts';
 import { beginDomain as openDomain, stepDomains, type Domain } from './domains.ts';
@@ -1048,6 +1049,7 @@ export class FightGame {
     if (parryWas > 0 && f.parry === 0) f.parryLock = PARRY_WHIFF_LOCK;
     // 彩虹色: a finished 4-hit string is a happy moment — the window just closed on a live combo.
     if (comboWas > 0 && f.comboTime === 0 && f.combo >= 4) rainbowRoll(this, f);
+    tickStatus(this, f, dt);
     tickMods(this, f, dt);
     if (recWas > 0 && f.recLeft === 0) this.startEchoPlayback(f);
     if (f.hp <= 0) { this.retire(f); this.fall(f, dt); return; }
@@ -1063,6 +1065,7 @@ export class FightGame {
       f.vx = 0;
       if (f.rootLevel === 'freeze') f.vy = 0;
     }
+    settleRootMark(this, f);
     // 我要拉黑他: frozen solid — knockback from follow-up hits never moves the body.
     if (f.ban > 0) f.vx = 0;
     if (f.knocked > 0 && f.y >= FLOOR - .1 && f.vy >= 0) { f.knocked = Math.max(0, f.knocked - dt); f.downTime += dt; }
@@ -1075,9 +1078,11 @@ export class FightGame {
 
     const grounded = f.y >= FLOOR - .1;
     if (f.blockTap >= 0) f.blockTap += dt;
-    const move = human
+    // 混乱: one swap at the stick covers humans, the CPU and the online guest (its keys land here too).
+    // Facing follows the swapped walk, and the back-step dodge runs off facing, so both turn with it.
+    const move = (human
       ? (c && this.keys.has(c.right) ? 1 : 0) - (c && this.keys.has(c.left) ? 1 : 0)
-      : this.mode !== 'training' || f.echo || f.minion ? f.ai.move : 0;
+      : this.mode !== 'training' || f.echo || f.minion ? f.ai.move : 0) * moveSign(f) || 0;
     // 录音: the tape records the stick, not the body — changes only, so the echo reads a clean script.
     if (f.recLeft > 0 && move !== f.recMove) {
       f.recTape.push({ t: RECORD_TIME - f.recLeft, kind: 'move', v: move });

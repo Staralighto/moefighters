@@ -1,7 +1,7 @@
 /* Headless rule check: runs the fixed-step engine without DOM or canvas. `npm run check`. */
 import { FightGame } from '../src/game/game.ts';
 import { BUSHIDO_CREEP, BUSHIDO_LUNGE, BUSHIDO_SPAN, VEIL_NORMAL, VEIL_SHOT, clockRings, drumShotTime, hit, holdNoteSpan, outshines, violetHidden, withGuard } from '../src/game/combat.ts';
-import { vowBeatTime, VOW_BEATS, PRACTICE_GAP1, PRACTICE_HITS, practiceBeat, practiceGap, practiceRow, practiceStrums, FAMILY_MEMBERS, familyLife, PUFF_STOP, PLAY, PLAY_BYE, PLAY_DRAW, PLAY_FIGURES, PLAY_HOUSE, PLAY_PASS, PLAY_SLASHES, RARE_TIME, EAR } from '../src/render/clips.ts';
+import { vowBeatTime, VOW_BEATS, PRACTICE_GAP1, PRACTICE_HITS, practiceBeat, practiceGap, practiceRow, practiceStrums, FAMILY_MEMBERS, familyLife, PUFF_STOP, PLAY, PLAY_BYE, PLAY_DRAW, PLAY_FIGURES, PLAY_HOUSE, PLAY_PASS, PLAY_SLASHES, RARE_TIME, EAR, WIDE, WIDE_DROPS, WIDE_POP } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
 import { PLAYABLE, ROSTER, bandMembers, guestsFor } from '../src/data/characters.ts';
 import { BANDS, BAND_BY_ID } from '../src/data/bands.ts';
@@ -13,7 +13,10 @@ import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
 import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell, shouldGoLite } from '../src/render/fx.ts';
 import { backingScale, portraitBodyScale, superZoom, teamGlowOn } from '../src/render/renderer.ts';
 import { previewFighter, gainEnergy } from '../src/game/fighter.ts';
-import { addMod, atkMul, clearMod, incomingMul, jumpMul, speedMul } from '../src/game/mods.ts';
+import { addMod, atkMul, clearMod, incomingMul, jumpMul, moveSign, speedMul } from '../src/game/mods.ts';
+import { DEFAULT_MARK, hasStatus, statusCount, statusMask } from '../src/game/status.ts';
+import { STATUS_MARKS, drawStatusAuras, drawStatusEffect } from '../src/render/statusMarks.ts';
+import { drawShizukuFx, drawShizukuShot } from '../src/render/shizukuFx.ts';
 import { assetUrl, easeLoad, imageSources, linkRate, liteFight, liteSrc, nextSrc, portraitSrc, SLOW_RATE, stageThumbSrc } from '../src/assets/loader.ts';
 import { acceptBlank, isTouchJump, matchStickTouch, stickFingerGone, thumbBandTop, touchRelease, turnedStickDelta } from '../src/game/input.ts';
 import { BIT_ATK, BIT_LEFT, BIT_SOFT, NET_BUILD, InputClock, RemotePad, TAP_SLOTS, applyRemoteBits, cleanCode, packBits, readEvents, readPad, tapSlot, type PadEvent } from '../src/net/proto.ts';
@@ -126,7 +129,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(opening < 40, `${id}: the opening stays under a chipped bar, ${opening}`);
     assert.equal(withGuard(s, breakAt + 99).guardDmg, plan![plan!.length - 1], id + ': a late segment repeats the last entry');
   }
-  for (const id of ['uika', 'mutsumi', 'umiri', 'taki', 'layer', 'sayo', 'houka', 'mahoro', 'raika', 'miku']) {
+  for (const id of ['uika', 'mutsumi', 'umiri', 'taki', 'layer', 'sayo', 'houka', 'mahoro', 'raika', 'miku', 'shizuku']) {
     const s = ROSTER[at(id)].skills[5];
     assert.ok(!s.guardPlan && !s.guardDmg, id + ': the unblockable super carries no guard value');
   }
@@ -7334,6 +7337,294 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     assert.equal(p2.hp, p2.data.hp, 'nobody in reach: the goodbye is for nothing');
     assert.ok(!g.effects.some(e => e.type === 'playhouse'), 'and there is no drawing to tear');
     assert.ok(p1.attack === null, 'and it ends');
+  }
+}
+
+// 异常 (src/game/status.ts): the kernel reads the kind, never the mark. Burn ticks through a guard, chill is the
+// shared slow, an upgrade lands only on a body that already carries its kind and replaces the plain entry, the
+// freeze wears its mark and plays its expire once, confusion swaps the stick and waits out a freeze.
+{
+  for (const mark of Object.values(DEFAULT_MARK)) assert.ok(!!STATUS_MARKS[mark], 'default mark ' + mark + ' has a drawer');
+  const base = ROSTER[at('gale')].skills[0];
+  const burn = (mark?: string) => ({ ...base, damage: 0, react: { kind: 'none' as const, stun: 0 }, status: [{ kind: 'burn' as const, time: 4, dmg: 6, tick: .5, mark }] });
+  const burnLoss = (mark?: string, guard = false) => {
+    const g = newGame(at('gale'), at('gale')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 420; p1.facing = 1; p2.facing = -1;
+    hit(g, p1, p2, { ...burn(mark), react: undefined, damage: 1 }, { hit: new Set() });
+    const hp0 = p2.hp;
+    const m = p2.mods.find(x => x.kind === 'burn' && x.left > 0);
+    for (let i = 0; i < Math.round(4.3 / STEP); i++) { if (guard) { p2.blocking = true; p2.facing = -1; } g.step(STEP); }
+    return { lost: hp0 - p2.hp, mark: m?.mark, live: hasStatus(p2, 'burn') };
+  };
+  const plain = burnLoss();
+  assert.ok(plain.lost > 42 && plain.lost < 54, 'eight ticks of 6: ' + plain.lost);
+  assert.equal(plain.mark, 'burn', 'an unnamed burn wears the default mark');
+  assert.ok(!plain.live, 'and it runs out');
+  const custom = burnLoss('ghost-fire');
+  assert.equal(custom.mark, 'ghost-fire', 'a move may name its own look');
+  assert.equal(custom.lost, plain.lost, 'and the look changes nothing it does');
+  const guarded = burnLoss(undefined, true);
+  assert.equal(guarded.lost, plain.lost, 'a guard does not catch the burn');
+  {
+    // Upgrades: a plain hit chills; a second hit on a chilled body freezes instead, in its mark, then breaks once.
+    const g = newGame(at('gale'), at('gale')); const [p1, p2] = g.fighters; dummy(g);
+    const pop = { ...base, status: [{ kind: 'freeze' as const, time: 1, ifHas: 'chill' as const }, { kind: 'chill' as const, time: 4, move: .6, jump: .75, atk: .75 }] };
+    hit(g, p1, p2, pop, { hit: new Set() });
+    assert.ok(hasStatus(p2, 'chill') && !hasStatus(p2, 'freeze'), 'the first hit chills');
+    assert.ok(Math.abs(speedMul(p2) - .6) < 1e-9 && Math.abs(atkMul(p2) - .75) < 1e-9 && Math.abs(jumpMul(p2) - .75) < 1e-9, 'chill is the shared slow');
+    assert.equal(p2.mods.find(m => m.kind === 'slow')?.mark, 'frost', 'wearing frost');
+    run(g, .5);
+    const left = p2.slow;
+    hit(g, p1, p2, pop, { hit: new Set() });
+    assert.ok(hasStatus(p2, 'freeze') && p2.rootLevel === 'freeze', 'the second hit freezes');
+    assert.equal(p2.rootMark, 'ice-block', 'in the ice block');
+    assert.ok(Math.abs(p2.slow - left) < .02, 'and the plain chill was skipped, not refreshed');
+    assert.equal(statusCount(p2), 2, 'chilled and frozen are two kinds');
+    assert.equal(statusMask(p2), 2 | 4, 'the mask names them');
+    let expired = 0;
+    for (let i = 0; i < Math.round(1.3 / STEP); i++) { g.step(STEP); expired += g.effects.filter(e => e.type === 'ice-block@expire' && e.life === e.max).length; }
+    assert.equal(p2.root, 0, 'the freeze lifts on its clock');
+    assert.equal(p2.rootMark, '', 'and forgets its mark');
+    assert.equal(expired, 1, 'the ice breaks once');
+  }
+  {
+    // Confusion swaps the stick for a human, and a freeze holds the body still instead.
+    const g = newGame(at('gale'), at('gale')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 200; p2.x = 600; p2.facing = -1;
+    hit(g, p1, p2, { ...base, knock: 0, status: [{ kind: 'confuse', time: 3 }] }, { hit: new Set() });
+    run(g, .4);
+    assert.equal(moveSign(p2), -1, 'confused: the stick is swapped');
+    const x0 = p2.x;
+    g.keyDown('ArrowRight');
+    run(g, .6);
+    g.keyUp('ArrowRight');
+    assert.ok(p2.x < x0 - 40, 'holding right walks left: ' + (p2.x - x0));
+    assert.equal(p2.facing, -1, 'and faces the way it walks');
+    p2.root = 1; p2.rootLevel = 'freeze';
+    assert.equal(moveSign(p2), 1, 'a freeze holds the swap off');
+    p2.root = 0; p2.rootLevel = 'move';
+    run(g, 2.2);
+    assert.equal(moveSign(p2), 1, 'and it wears off');
+  }
+}
+
+// shizuku: 状态异常. U lights them (烧焦), I chills them and freezes a chilled body while she eats her half,
+// O's party smile leaves whoever swings at it 混乱 and never strikes back, L drops three appliances that lay
+// burn / chill / confuse and pays 20 on the finale for every kind they carried when she caught them.
+{
+  const sz = at('shizuku');
+  const data = ROSTER[sz];
+  assert.deepEqual(data.bands, ['ikka-dumb-rock'], 'shizuku stands with 一家Dumb Rock!');
+  assert.ok(at('shizuku') === at('miku') + 1, 'right after 心玖 on the roster');
+  assert.equal(data.title, '键盘 / 公主', 'shizuku wears the princess title');
+  assert.equal(data.quote, '往后余生，还请对四宫宁月多加关照。', 'shizuku says the line she joined with');
+  assert.equal(data.trait, 'focus', 'shizuku takes the focus trait');
+  assert.equal(data.view.kind === 'sprite' ? data.view.extras?.length : 0, 5, 'foil, popsicle and three appliances preload');
+  assert.ok(!data.skills.some(s => s.breakout), 'no breakout');
+  // U: the foil lights them
+  {
+    const g = newGame(sz, at('gale')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 260; p2.x = 520; p1.facing = 1; p2.facing = -1;
+    assert.ok(g.attack(p1, 2), 'the foil comes out');
+    run(g, .9);
+    assert.ok(hasStatus(p2, 'burn'), 'it lights them');
+    run(g, 4.2);
+    const lost = p2.data.hp - p2.hp;
+    assert.ok(lost > 58 && lost < 72, 'the foil and eight ticks of soot: ' + lost);
+  }
+  {
+    const g = newGame(sz, at('gale')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 260; p2.x = 520; p1.facing = 1; p2.facing = -1;
+    g.keyDown('ArrowDown');
+    run(g, .1);
+    g.attack(p1, 2);
+    run(g, 1);
+    g.keyUp('ArrowDown');
+    const burnt = p2.mods.find(m => m.kind === 'burn' && m.left > 0);
+    assert.ok(burnt && burnt.left > 1 && burnt.left <= 2, 'a guarded foil still lights them, for half as long: ' + burnt?.left);
+  }
+  // I: the half she throws chills, a second freezes; the half she keeps heals her
+  {
+    const g = newGame(sz, at('gale')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 260; p2.x = 480; p1.facing = 1; p2.facing = -1;
+    p1.hp = 900;
+    assert.ok(g.attack(p1, 3), 'the ice pop comes out');
+    run(g, .4);
+    assert.equal(p1.hp, 930, 'she eats her half');
+    run(g, .8);
+    assert.ok(hasStatus(p2, 'chill') && !hasStatus(p2, 'freeze'), 'the half they get chills them');
+    p1.cooldowns[3] = 0;
+    g.attack(p1, 3);
+    run(g, 1);
+    assert.ok(hasStatus(p2, 'freeze'), 'a second half freezes a chilled body');
+  }
+  {
+    // A guard shortens the chill and never lets the freeze through; a perfect block stops both.
+    const g = newGame(sz, at('gale')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 260; p2.x = 480; p1.facing = 1; p2.facing = -1;
+    const pop = data.skills[3];
+    p2.blocking = true;
+    hit(g, p1, p2, pop, { hit: new Set() });
+    assert.ok(p2.slow > 1.9 && p2.slow <= 2, 'a guarded half chills for half as long: ' + p2.slow);
+    hit(g, p1, p2, pop, { hit: new Set() });
+    assert.ok(!hasStatus(p2, 'freeze'), 'a guard never lets the freeze through');
+    const g2 = newGame(sz, at('gale')); const [q1, q2] = g2.fighters; dummy(g2);
+    q1.x = 260; q2.x = 480; q1.facing = 1; q2.facing = -1;
+    q2.blocking = true; q2.parry = .1;
+    hit(g2, q1, q2, pop, { hit: new Set() });
+    assert.ok(!hasStatus(q2, 'chill'), 'a perfect block stops it');
+  }
+  {
+    const g = newGame(sz, at('gale')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 200; p2.x = 900; p1.facing = 1;
+    g.attack(p1, 3);
+    let lowest = 0;
+    for (let i = 0; i < Math.round(1.6 / STEP); i++) { g.step(STEP); for (const p of g.projectiles) if (p.fx === 'popsicle') lowest = Math.max(lowest, p.y); }
+    assert.ok(lowest > p1.y - 85 + 20, 'the half sinks as it flies: ' + lowest);
+    assert.ok(!g.projectiles.some(p => p.fx === 'popsicle'), 'and drops on the floor short of a far target');
+  }
+  // O: the smile
+  {
+    const g = newGame(sz, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 390; p1.facing = 1; p2.facing = -1;
+    assert.ok(g.attack(p1, 4), 'the smile comes out');
+    run(g, .15);
+    const hp = p1.hp, hp2 = p2.hp;
+    g.attack(p2, 0);
+    run(g, 1);
+    assert.equal(p1.hp, hp, 'the swing into the smile does nothing to her');
+    assert.equal(p2.hp, hp2, 'and she does not strike back');
+    const m = p2.mods.find(x => x.kind === 'confuse' && x.left > 0);
+    assert.ok(m && m.left > 2.2, 'whoever swung is confused for long: ' + m?.left);
+  }
+  {
+    const g = newGame(sz, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 380; p1.facing = 1; p2.facing = -1;
+    g.attack(p1, 4);
+    run(g, .7);
+    const m = p2.mods.find(x => x.kind === 'confuse' && x.left > 0);
+    assert.ok(m && m.left > 1 && m.left <= 1.5, 'nobody swung: the curtsy confuses them for a moment: ' + m?.left);
+    assert.equal(p2.hp, p2.data.hp, 'with no damage');
+    assert.ok(p2.x > 380, 'and pushes them');
+  }
+  {
+    // The smile also stretches every status they already carry by its remaining time (×2), then confuses.
+    const g = newGame(sz, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 380; p1.facing = 1; p2.facing = -1;
+    addMod(p2, 'burn', 3, { v: 0, every: 99, acc: 99, from: p1.id, mark: 'burn' });
+    addMod(p2, 'slow', 3, { v: .6, jump: .75, atk: .75, mark: 'frost' });
+    g.attack(p1, 4);
+    run(g, .45);
+    const before = p2.mods.find(m => m.kind === 'burn')!.left;
+    run(g, .1);
+    const burn = p2.mods.find(m => m.kind === 'burn' && m.left > 0)!;
+    assert.ok(burn.left > before * 1.8, 'the burn runs twice as long: ' + before + ' → ' + burn.left);
+    assert.ok(Math.abs(p2.slow - p2.mods.find(m => m.kind === 'slow')!.left) < 1e-9 && p2.slow > 4, 'so does the chill, and f.slow follows: ' + p2.slow);
+    assert.ok(hasStatus(p2, 'confuse'), 'and the curtsy still confuses');
+  }
+  // L: three accidents, and the burst pays for what they carried before she caught them
+  const superLoss = (pre: boolean) => {
+    const g = newGame(sz, at('gale')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 420; p1.facing = 1; p2.facing = -1; p1.energy = p1.energyMax;
+    if (pre) {
+      // Chilled and confused going in. (A burn going in would also tick, which muddies the comparison.)
+      addMod(p2, 'slow', 9, { v: .6, jump: .75, atk: .75, mark: 'frost' });
+      addMod(p2, 'confuse', 9, { mark: 'dizzy-q' });
+    }
+    assert.ok(g.attack(p1, 5), 'the prayer comes out');
+    run(g, .35);
+    assert.equal(p1.attack?.mode ?? WIDE.pray, WIDE.pray, 'still praying');
+    const hp0 = p2.hp;
+    const seen = new Set<number>();
+    let mask = -1;
+    for (let i = 0; i < Math.round(3 / STEP); i++) {
+      g.step(STEP);
+      for (const e of g.effects) {
+        if (e.type === 'wide-appliance' && e.n != null) seen.add(e.n);
+        if (e.type === 'wide-pop') mask = e.n ?? 0;
+      }
+    }
+    return { g, p1, p2, lost: hp0 - p2.hp, seen, mask };
+  };
+  {
+    const r = superLoss(false);
+    assert.deepEqual([...r.seen].sort(), [0, 1, 2], 'microwave, fridge, washer');
+    assert.equal(r.g.totalHits[r.p1.id], 4, 'three accidents and the burst');
+    assert.equal(r.mask, 0, 'nothing carried, no stars');
+    assert.ok(r.lost > 90 && r.lost < 130, 'a bare super: ' + r.lost);
+    assert.ok(hasStatus(r.p2, 'burn') && hasStatus(r.p2, 'chill') && hasStatus(r.p2, 'confuse'), 'and it leaves all three on them');
+    assert.ok(r.p1.attack === null, 'and it ends');
+    const pre = superLoss(true);
+    assert.equal(pre.mask, 2 | 8, 'chilled and confused going in: two stars');
+    assert.ok(pre.lost - r.lost > 15 && pre.lost - r.lost < 42, 'twenty a kind, after combo decay: ' + (pre.lost - r.lost));
+    assert.ok(WIDE_DROPS[2] + .3 < WIDE_POP, 'the washer goes off before the burst');
+  }
+  {
+    // Nobody caught: the kitchen still goes off ahead of her; far away, nobody is touched.
+    const g = newGame(sz, at('gale')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 100; p2.x = 800; p1.facing = 1; p1.energy = p1.energyMax;
+    g.attack(p1, 5);
+    const seen = new Set<number>();
+    for (let i = 0; i < Math.round(3.2 / STEP); i++) { g.step(STEP); for (const e of g.effects) if (e.type === 'wide-appliance' && e.n != null) seen.add(e.n); }
+    assert.equal(p2.hp, p2.data.hp, 'nobody in reach: nothing happens to anyone');
+    assert.deepEqual([...seen].sort(), [0, 1, 2], 'but the three appliances still go off');
+    assert.ok(p1.attack === null, 'and it ends');
+  }
+  {
+    // ...and whoever walks into it takes the accidents and the burst, staggered but not pinned.
+    const g = newGame(sz, at('gale')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 100; p2.x = 800; p1.facing = 1; p1.energy = p1.energyMax;
+    g.attack(p1, 5);
+    let zone = -1;
+    for (let i = 0; i < Math.round(3.2 / STEP); i++) {
+      g.step(STEP);
+      const z = g.effects.find(e => e.type === 'wide-zone');
+      if (z && zone < 0) { zone = z.x; p2.x = z.x + 30; p2.vx = 0; }
+    }
+    assert.ok(zone > 0, 'the open kitchen marks its floor');
+    assert.equal(g.totalHits[p1.id], 4, 'three accidents and the burst reach someone who walked in');
+    assert.ok(p2.data.hp - p2.hp > 80, 'for real damage: ' + (p2.data.hp - p2.hp));
+    assert.ok(hasStatus(p2, 'burn') && hasStatus(p2, 'chill') && hasStatus(p2, 'confuse'), 'and the three statuses');
+  }
+}
+
+// fx sweep: every 四宫宁月 effect and every status mark drawn over its whole life on a stand-in canvas that
+// throws where a real one does (a negative arc / ellipse radius). One throw in a draw stops the render loop —
+// the foil's fire once froze the match after U.
+{
+  const bad = (what: string, v: number) => { if (!(v >= 0)) throw Error(`FAIL: ${what} got a negative radius ${v}`); };
+  const ctx = new Proxy({ globalAlpha: 1, fillStyle: '#fff', strokeStyle: '#fff', lineWidth: 1, globalCompositeOperation: 'source-over' } as Record<string, unknown>, {
+    get(o, key: string) {
+      if (key in o) return o[key];
+      if (key === 'arc') return (_x: number, _y: number, r: number) => bad('arc', r);
+      if (key === 'ellipse') return (_x: number, _y: number, rx: number, ry: number) => { bad('ellipse', rx); bad('ellipse', ry); };
+      if (key === 'roundRect') return (_x: number, _y: number, w: number, h: number, r: number) => { bad('roundRect', w); bad('roundRect', h); bad('roundRect', r); };
+      return () => {};
+    },
+    set(o, key: string, v) { o[key] = v; return true; },
+  }) as unknown as CanvasRenderingContext2D;
+  const types: [string, number, Partial<{ n: number; t0: number; tx: number; radius: number }>][] = [
+    ['bow-push', .4, {}], ['foil-pop', .42, { radius: 40 }], ['popsicle-bite', .5, {}], ['popsicle-hit', .4, { radius: 38 }],
+    ['smile-glint', .5, {}], ['smile-flash', .5, {}], ['curtsy-ring', .4, { radius: 66 }], ['wide-eyes', .62, {}],
+    ['wide-fizzle', .6, {}], ['wide-zone', 2.05, { radius: 110 }], ['wide-appliance', 1, { n: 0 }], ['wide-appliance', 1, { n: 1 }], ['wide-appliance', 1, { n: 2 }],
+    ['wide-sparks', .5, { tx: -96 }], ['wide-cold', .5, { tx: -96 }], ['wide-bubbles', .5, { tx: -96 }],
+    ['wide-foam', .9, { t0: .3 }], ['wide-pop', .7, { n: 15, radius: 90 }],
+    ['burn@apply', .6, {}], ['frost@apply', .6, {}], ['ice-block@apply', .6, {}], ['ice-block@expire', .7, {}], ['dizzy-q@apply', .6, {}],
+  ];
+  for (const [type, life, extra] of types) {
+    for (let i = 0; i <= 40; i++) {
+      const e = { type, x: 400, y: FLOOR, color: '#9999FF', life: life * (1 - i / 40), max: life, dir: -1, ...extra };
+      if (type.includes('@')) assert.ok(drawStatusEffect(ctx, e), type + ' is a status one-shot');
+      else assert.ok(drawShizukuFx(ctx, e, undefined, i % 2 === 1), type + ' is drawn by shizukuFx');
+    }
+  }
+  const body = { x: 400, y: FLOOR, data: ROSTER[at('shizuku')], root: 1, rootMark: 'ice-block', mods: [
+    { kind: 'burn', left: 2, mark: 'burn' }, { kind: 'slow', left: 2, mark: 'frost' }, { kind: 'confuse', left: 2, mark: 'dizzy-q' },
+  ] } as unknown as Parameters<typeof drawStatusAuras>[1];
+  for (let i = 0; i < 60; i++) assert.deepEqual(drawStatusAuras(ctx, body, i * .05), { slow: true, root: true }, 'every default mark draws its aura');
+  for (const fx of ['foil-spark', 'popsicle']) for (let i = 0; i < 30; i++) {
+    const p = { fx, x: 400, y: 300, vx: 500, vy: i * 10, age: i * .03, trail: [] } as unknown as Parameters<typeof drawShizukuShot>[1];
+    assert.ok(drawShizukuShot(ctx, p, undefined, false), fx + ' is drawn by shizukuFx');
   }
 }
 

@@ -1,11 +1,12 @@
 import type { HitReact, Op, Skill } from '../data/types.ts';
 import { gainEnergy, gainGauge, type Attack, type Fighter } from './fighter.ts';
-import { addDebt, addMod, dmgDealtMul, dmgTakenMul, has, incomingMul, lifestealOf, reflectAmount, type Mod } from './mods.ts';
+import { addDebt, addMod, dmgDealtMul, dmgTakenMul, has, incomingMul, lifestealOf, moveSign, reflectAmount, type Mod } from './mods.ts';
 import type { Effect, FightGame, Projectile, SealVolley } from './game.ts';
 import { CONTROLS, FLOOR, GRAVITY, H, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
 import { attackPhase } from './animState.ts';
-import { BUSHIDO_TAIL, clipFor, DRUM_SLUMP, drumRow, PAW, PAW_FAIL, PAW_HITS, pawRow, pawTime, ROLL, ROLL_BEATS, ROLL_MAX, ROLL_MIN, ROLL_SLUMP, ROLL_THROW, rollGap, SELFIE, SELFIE_HOLD, SELFIE_LUNGE, SELFIE_SNAP, SELFIE_TAIL, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS, PRACTICE_HITS, practiceBeat, SKIP_HOP, SKIP_MAX, SKIP_MIN, SKIP_TAIL, MINE_FUSE, ENCORE, ENCORE_FACE, ENCORE_GONE, BURDEN_Y, UNBOWED_STEP, UNBOWED_MAX, PIGGY, PIGGY_DASH, PIGGY_CARRY, PIGGY_TAIL, PIGGY_BACK_X, PIGGY_BACK_Y, HUG, HUG_LUNGE, HUG_FIRST, HUG_GAP, HUG_TAIL, MEAL_GRACE, FAMILY, FAMILY_MEMBERS, FAMILY_LUNGE, FAMILY_FINALE, FAMILY_ZONE_AHEAD, FAMILY_ZONE_R, FAMILY_TAIL, familyLife, BLOOD, OBLIVION, TWIN_MOON, TWIN_PHASE, PUFF, PUFF_BLINK, PUFF_ARRIVE, PUFF_REACH, PUFF_STOP, PUFF_HOP, PUFF_BEAT, PUFF_CUT, PUFF_TAIL, EAR, EAR_DECIDE, EAR_PALM_HITS, EAR_PALM_GAP, EAR_PALM, EAR_KNEE, EAR_TAIL, EAR_GLINT, MIKU_EYE, PLAY, PLAY_DASH, PLAY_PASS, PLAY_THROUGH, PLAY_SLASHES, PLAY_BYE, PLAY_THOUGHT, PLAY_EAR_AT, PLAY_EAR_HOLD, PLAY_FIGURES, PLAY_CURTAIN } from '../render/clips.ts';
+import { BUSHIDO_TAIL, clipFor, DRUM_SLUMP, drumRow, PAW, PAW_FAIL, PAW_HITS, pawRow, pawTime, ROLL, ROLL_BEATS, ROLL_MAX, ROLL_MIN, ROLL_SLUMP, ROLL_THROW, rollGap, SELFIE, SELFIE_HOLD, SELFIE_LUNGE, SELFIE_SNAP, SELFIE_TAIL, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS, PRACTICE_HITS, practiceBeat, SKIP_HOP, SKIP_MAX, SKIP_MIN, SKIP_TAIL, MINE_FUSE, ENCORE, ENCORE_FACE, ENCORE_GONE, BURDEN_Y, UNBOWED_STEP, UNBOWED_MAX, PIGGY, PIGGY_DASH, PIGGY_CARRY, PIGGY_TAIL, PIGGY_BACK_X, PIGGY_BACK_Y, HUG, HUG_LUNGE, HUG_FIRST, HUG_GAP, HUG_TAIL, MEAL_GRACE, FAMILY, FAMILY_MEMBERS, FAMILY_LUNGE, FAMILY_FINALE, FAMILY_ZONE_AHEAD, FAMILY_ZONE_R, FAMILY_TAIL, familyLife, BLOOD, OBLIVION, TWIN_MOON, TWIN_PHASE, PUFF, PUFF_BLINK, PUFF_ARRIVE, PUFF_REACH, PUFF_STOP, PUFF_HOP, PUFF_BEAT, PUFF_CUT, PUFF_TAIL, EAR, EAR_DECIDE, EAR_PALM_HITS, EAR_PALM_GAP, EAR_PALM, EAR_KNEE, EAR_TAIL, EAR_GLINT, MIKU_EYE, PLAY, PLAY_DASH, PLAY_PASS, PLAY_THROUGH, PLAY_SLASHES, PLAY_BYE, PLAY_THOUGHT, PLAY_EAR_AT, PLAY_EAR_HOLD, PLAY_FIGURES, PLAY_CURTAIN, WIDE, WIDE_DASH, WIDE_DROPS, WIDE_BLAST, WIDE_POP, WIDE_TAIL, WIDE_APPLIANCE_LIFE, WIDE_SLOT, WIDE_ZONE_AHEAD, WIDE_ZONE_R } from '../render/clips.ts';
 import { SCRIPTS } from './scripts.ts';
+import { applyStatus, applyStatusBlocked, extendStatus, statusMask } from './status.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
 
@@ -272,7 +273,8 @@ function heldDir(g: FightGame, f: Fighter): number {
   if (f.controller === null) return 0;
   const c = CONTROLS[f.controller];
   if (!c) return 0;
-  return (g.keys.has(c.right) ? 1 : 0) - (g.keys.has(c.left) ? 1 : 0);
+  // 混乱 swaps the stick here too, so a mid-flight steer goes the wrong way as well.
+  return ((g.keys.has(c.right) ? 1 : 0) - (g.keys.has(c.left) ? 1 : 0)) * moveSign(f);
 }
 
 function syncGuitar(g: FightGame, f: Fighter, a: Attack): void {
@@ -466,13 +468,13 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   // the script takes the swing over. A counter may return false to let this hit land (the tap already
   // left the act). A shot catches her for real: the act is dropped and it lands.
   const feint = armour && armour.t < armour.skill.start && (armour.mode ?? 0) === 0 ? SCRIPTS[armour.skill.fx]?.counter : undefined;
-  if (feint && g.isEnemy(attacker, defender) && !isGrab && !skill.super && !blocked && !cuts(source, defender)) {
+  if (feint && g.isEnemy(attacker, defender) && !isGrab && !skill.super && !skill.dot && !blocked && !cuts(source, defender)) {
     if (skill.type === 'projectile') armour!.endure = 0;
     else if (feint(g, defender, attacker, armour!) !== false) return false;
   }
   // 一肩扛下: each live charge eats one whole hit — no damage, no flinch. Grabs and supers go
   // through. The last charge to break drops her where she stands (the voice that gave out).
-  if (!blocked && !isGrab && !skill.super && !cuts(source, defender) && g.isEnemy(attacker, defender)) {
+  if (!blocked && !isGrab && !skill.super && !skill.dot && !cuts(source, defender) && g.isEnemy(attacker, defender)) {
     const load = defender.mods.find(m => m.kind === 'burden' && m.left > 0 && (m.v ?? 0) > 0);
     if (load) {
       load.v = (load.v ?? 1) - 1;
@@ -577,6 +579,8 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       g.effect('shield', defender.x - dir * 30, defender.y - 78, '#8df0ff', .22, { radius: 65 });
       // 蝶变: the slow sticks through a block. 花道·缠 leaves the flag unset.
       if (skill.slowOnBlock) applySlow(defender, skill);
+      // 异常 a guard only shortens (StatusApply.onBlock). A perfect block never reaches this branch.
+      applyStatusBlocked(g, attacker, defender, skill);
       g.audio.play('block', attacker.id);
       g.text('格挡', defender.x, defender.y - 170, '#91eaff', .35, 16);
     }
@@ -665,7 +669,13 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       // 花道·缠: a soft control that rides the same clean-hit gate as the root — braced and
       // poised bodies never reach this branch, so they shrug it off too.
       applySlow(defender, skill);
-      if (skill.root && !wasRooted) {
+      // 异常: data on the skill, the same clean-hit gate as 减速 and 定身. A freeze holds the body
+      // still and takes the place of the hit's own pose.
+      const froze = applyStatus(g, attacker, defender, skill);
+      if (froze) {
+        defender.stun = hitStun(.25);
+        holdStill = true;
+      } else if (skill.root && !wasRooted) {
         // 定身: the parameterized control. root seconds and the tier come from the skill,
         // rootBreak clean hits shake it off early (default 2, 0 holds to the clock),
         // rootPin freezes the body in place.
@@ -674,6 +684,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
         defender.rootBreak = skill.rootBreak ?? 2;
         defender.rootHits = 0;
         defender.rootFx = skill.fx;
+        defender.rootMark = '';
         defender.dodge = 0;
         defender.stun = hitStun(.25);
         if (skill.rootPin) {
@@ -5778,4 +5789,274 @@ function after_blood(_g: FightGame, p: Projectile, dt: number): boolean {
 SCRIPTS['blood-note'] = Object.assign(SCRIPTS['blood-note'] ?? {}, {
   cast: cast_blood, volley: volley_blood, after: after_blood, trail: 48, noSuperFx: true,
   pulse(g: FightGame, p: Projectile, target: Fighter) { g.effect('blood-hit', p.x, Math.min(p.y, target.y - 40), '#e5243b', .45); },
+});
+
+
+/* ---- 四宫宁月 (一家Dumb Rock!, Key.) — 状态异常. Every move is a household accident in her hands, and each
+   accident lays a different status (烧焦 / 冻僵 → 冻住 / 混乱); the super lets all three happen at once and pays
+   out on the statuses they already carried. The statuses themselves are data (Skill.status) and their looks
+   are marks (src/render/statusMarks.ts); these scripts only stage the accidents. ---- */
+
+/** 锡纸加热实验: the crumpled foil crackles as it flies; where it lands, a small fire pops. */
+SCRIPTS['foil-spark'] = Object.assign(SCRIPTS['foil-spark'] ?? {}, {
+  trail: 5,
+  pulse(g: FightGame, p: Projectile, target: Fighter) {
+    g.effect('foil-pop', p.x, Math.min(p.y, target.y - 60), '#ff9a3c', .42, { radius: 40 });
+  },
+});
+
+/** 一人一半: she bites her half the moment she throws; the other half sinks a little as it flies. */
+const POPSICLE_HEAL = 30;
+const POPSICLE_SINK = 190;
+/** Her face and mouth, as shares of the drawn body height (150 for her), so the glint, the stars and the
+ *  bite stay on her face if the height is retuned. */
+const shizukuFaceY = (f: Fighter) => (f.data.view.kind === 'sprite' ? f.data.view.height : 181) * .88;
+const shizukuMouthY = (f: Fighter) => (f.data.view.kind === 'sprite' ? f.data.view.height : 181) * .83;
+SCRIPTS['popsicle'] = Object.assign(SCRIPTS['popsicle'] ?? {}, {
+  trail: 6,
+  emit(g: FightGame, f: Fighter, a: Attack) {
+    spawnShot(g, f, a);
+    const before = f.hp;
+    f.hp = Math.min(f.data.hp, f.hp + POPSICLE_HEAL);
+    if (f.hp > before) g.text('+' + Math.round(f.hp - before), f.x, f.y - 160, '#9dff9a', .7, 18);
+    const my = shizukuMouthY(f);
+    g.effect('popsicle-bite', f.x + f.facing * 14, f.y - my, '#e9f6ff', .5, { follow: f.id, ox: f.facing * 14, oy: -my, dir: f.facing });
+  },
+  shot(_g: FightGame, p: Projectile, dt: number) {
+    p.vy += POPSICLE_SINK * dt;
+    return false;
+  },
+  after(g: FightGame, p: Projectile) {
+    if (p.y >= FLOOR - 4) {
+      p.life = 0;
+      g.effect('popsicle-hit', p.x, FLOOR - 10, '#d9f1ff', .35, { radius: 26 });
+      return true;
+    }
+    return false;
+  },
+  pulse(g: FightGame, p: Projectile, target: Fighter) {
+    g.effect('popsicle-hit', p.x, Math.min(p.y, target.y - 60), '#d9f1ff', .4, { radius: 38 });
+  },
+});
+
+/** 社交派对的微笑 (第 12 话: 「遇到不好回答的问题，妈妈就教我摆出这个表情」). She stands with the party smile.
+ *  A melee swing into it does nothing to her: whoever swung is left 混乱 for long (Skill.counterStatus) and she
+ *  keeps smiling — no strike back. Nobody swings: at the end of the window she curtsies, and the small flat
+ *  push at her feet leaves anyone close 混乱 for a moment (Skill.status), with no damage. a.mode 1 is caught. */
+const SMILE_TAIL = .3;
+const SMILE_INVULN = .25;
+function step_smile(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  if (!a.emitted) {
+    a.emitted = true;
+    g.text(s.name, f.x, f.y - 190, f.data.color, .65, 17);
+    const fy = shizukuFaceY(f);
+    g.effect('smile-glint', f.x + f.facing * 10, f.y - fy, '#ffffff', s.start, { follow: f.id, ox: f.facing * 10, oy: -fy, dir: f.facing });
+  }
+  if ((a.mode ?? 0) !== 0 || a.shots > 0 || a.t < s.start) return;
+  a.shots = 1;
+  g.effect('curtsy-ring', f.x + f.facing * s.range * .5, FLOOR, f.data.color, .4, { dir: f.facing, radius: s.range * .6 });
+  for (const o of g.opponents(f)) {
+    if (o.hp <= 0 || o.invuln > 0 || o.echo) continue;
+    const gap = (o.x - f.x) * f.facing;
+    if (gap < -20 || gap > s.range || Math.abs(o.y - f.y) > 110) continue;
+    o.vx = f.facing * (s.knock ?? 220);
+    const guarded = o.blocking && o.facing === -f.facing && o.guard > 0;
+    if (guarded) {
+      g.effect('shield', o.x - f.facing * 30, o.y - 78, '#8df0ff', .22, { radius: 65 });
+      g.text('格挡', o.x, o.y - 170, '#91eaff', .35, 16);
+      continue;
+    }
+    extendStatus(g, f, o, s.statusExtend ?? 0);
+    applyStatus(g, f, o, s);
+  }
+}
+function counter_smile(g: FightGame, f: Fighter, attacker: Fighter, a: Attack): void {
+  const s = a.skill;
+  a.mode = 1;
+  a.hold = attacker.id;
+  a.t = Math.max(a.t, s.duration - SMILE_TAIL);
+  dropFx(g, f, 'smile-glint');
+  f.invuln = Math.max(f.invuln, SMILE_INVULN);
+  extendStatus(g, f, attacker, s.statusExtend ?? 0);
+  applyStatus(g, f, attacker, s, s.counterStatus);
+  const fy = shizukuFaceY(f);
+  g.effect('smile-flash', f.x + f.facing * 10, f.y - fy, '#ffffff', .5, { follow: f.id, ox: f.facing * 10, oy: -fy, dir: f.facing });
+  g.hitstop = Math.max(g.hitstop, .05);
+}
+SCRIPTS['princess-smile'] = Object.assign(SCRIPTS['princess-smile'] ?? {}, {
+  update: step_smile, counter: counter_smile, noMelee: true,
+});
+
+/** 世界如此广阔 (「世界真是广阔啊」, and B 站: 「家团最危险、最不稳定、最容易爆炸的成员」). Hands together, stars in her
+ *  eyes; a short dash to find someone. Then three accidents go off beside them, one at a time, while she stares:
+ *  the microwave (烧焦), the fridge (冻僵), the washing machine (混乱) — each segment lays the status of the same
+ *  index in Skill.status. The suds from the washer burst and throw them: the finale pays statusBonus.per for every
+ *  status kind they carried when she caught them, so the accidents she just caused never count.
+ *  A dash that catches nobody sets the kitchen off anyway, WIDE_ZONE_AHEAD in front of where it stopped: nobody is
+ *  pinned, and each blast and the burst reach whoever stands within WIDE_ZONE_R then; each target's bonus reads
+ *  what they carried the first time the kitchen reached them. a.mode walks WIDE; a.liftAt is when the dash
+ *  started (anchor stays a world x — it used to hold that timestamp); a.tossAt is the catch or the dash's end;
+ *  a.anchor is where the kitchen stands; a.hold is the caught body, or -1 for the open kitchen. */
+const bits = (m: number) => { let n = 0; for (; m; m &= m - 1) n++; return n; };
+interface WideRun {
+  /** Which way the appliances stand, ±1. */
+  side: number;
+  /** Status mask at the catch. The open kitchen stores per-body masks in seen instead. */
+  mask: number;
+  seen: Map<number, number> | null;
+}
+const wideRun = new WeakMap<Attack, WideRun>();
+function placeWide(a: Attack, x: number, facing: number, mask = 0): void {
+  const room = facing > 0 ? X_MAX - x : x - X_MIN;
+  wideRun.set(a, { side: room >= WIDE_SLOT + 40 ? facing : -facing, mask, seen: null });
+}
+/** ponytail: one scratch list for the open kitchen. hit() does not re-enter step_wideWorld.
+ *  Ceiling is a handful of bodies; a second kitchen in the same call would need its own list. */
+const wideHits: Fighter[] = [];
+function fillWide(g: FightGame, f: Fighter, a: Attack, run: WideRun): void {
+  let seen = run.seen;
+  if (!seen) run.seen = seen = new Map();
+  wideHits.length = 0;
+  for (const o of g.opponents(f)) {
+    if (o.hp <= 0 || o.echo || o.invuln > 0) continue;
+    if (Math.abs(o.x - a.anchor) > WIDE_ZONE_R || Math.abs(o.y - FLOOR) > 170) continue;
+    if (!seen.has(o.id)) seen.set(o.id, statusMask(o));
+    wideHits.push(o);
+  }
+}
+/** Per segment: the caught version pins them for the next accident; the open kitchen only staggers, so
+ *  whoever walked in can still walk back out between blasts. finale.damage is written per target;
+ *  hit() reads it before returning. */
+const wideParts = new WeakMap<Skill, { held: Skill[]; open: Skill[]; finale: Skill }>();
+function wideKit(s: Skill): { held: Skill[]; open: Skill[]; finale: Skill } {
+  let parts = wideParts.get(s);
+  if (!parts) {
+    const cut = (react: Skill['react']) => [0, 1, 2].map(k => ({
+      ...s, finale: undefined, knock: 0, status: s.status?.[k] ? [s.status[k]] : undefined, react,
+    }) as Skill);
+    parts = {
+      held: cut({ kind: 'pin', stun: .7, holdStill: true }),
+      open: cut({ kind: 'stand', stun: .3 }),
+      finale: { ...s, ...s.finale, finale: undefined, status: undefined, damage: s.finale?.damage ?? s.damage },
+    };
+    wideParts.set(s, parts);
+  }
+  return parts;
+}
+function step_wideWorld(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  const mode = a.mode ?? WIDE.pray;
+  if (mode === WIDE.pray) {
+    if (!a.emitted) {
+      a.emitted = true;
+      const fy = shizukuFaceY(f);
+      g.effect('wide-eyes', f.x + f.facing * 8, f.y - fy, '#fff3a8', s.start + WIDE_DASH, { follow: f.id, ox: f.facing * 8, oy: -fy, dir: f.facing });
+    }
+    f.vx = 0;
+    if (a.t >= s.start) { a.mode = WIDE.dash; a.liftAt = a.t; }
+    return;
+  }
+  if (mode === WIDE.dash) {
+    f.x = clamp(f.x + f.facing * (s.speed ?? 820) * dt, X_MIN, X_MAX);
+    const o = foeAhead(g, f, s.range);
+    if (o && Math.abs(o.y - f.y) < 170 && o.invuln <= 0) {
+      a.mode = WIDE.held;
+      a.hold = o.id;
+      a.tossAt = a.t;
+      a.anchor = o.x;
+      // The bonus reads what they carried before any of her accidents.
+      placeWide(a, o.x, f.facing, statusMask(o));
+      o.attack = null;
+      o.vx = 0;
+      o.vy = 0;
+      o.knocked = 0;
+      o.stun = Math.max(o.stun, .4);
+      retainEscape(o, true);
+      g.hitstop = Math.max(g.hitstop, .06);
+      return;
+    }
+    if (a.t >= a.liftAt + WIDE_DASH || f.x <= X_MIN || f.x >= X_MAX) {
+      // Nobody caught: the kitchen goes off in front of her anyway, for whoever walks into it.
+      a.mode = WIDE.held;
+      a.hold = -1;
+      a.tossAt = a.t;
+      a.anchor = clamp(f.x + f.facing * WIDE_ZONE_AHEAD, X_MIN, X_MAX);
+      placeWide(a, a.anchor, f.facing);
+      g.effect('wide-zone', a.anchor, FLOOR, f.data.color, WIDE_POP + .2, { radius: WIDE_ZONE_R });
+    }
+    return;
+  }
+  if (mode !== WIDE.held) return;
+  f.vx = 0;
+  const open = a.hold < 0;
+  const o = open ? undefined : g.fighterById(a.hold);
+  const lt = a.t - a.tossAt;
+  const run = wideRun.get(a);
+  const side = run?.side ?? f.facing;
+  if (!open && (!o || o.hp <= 0)) {
+    a.mode = WIDE.tail;
+    a.t = Math.max(a.t, s.duration - WIDE_TAIL);
+    return;
+  }
+  if (o) {
+    // Pinned where she caught them, facing her, while the kitchen goes off round them.
+    // This runs before the finale, so the launch's velocity is not wiped on the same frame.
+    o.x = a.anchor;
+    o.vx = 0;
+    if (o.y >= FLOOR - .5) o.vy = 0;
+    o.knocked = 0;
+    o.stun = Math.max(o.stun, .3);
+    o.attack = null;
+  }
+  const kit = wideKit(s);
+  const slot = clamp(a.anchor + side * WIDE_SLOT, X_MIN - 40, X_MAX + 40);
+  while (a.shots < WIDE_DROPS.length * 2) {
+    const i = a.shots >> 1;
+    const blast = (a.shots & 1) === 1;
+    const at = WIDE_DROPS[i] + (blast ? WIDE_BLAST : 0);
+    if (lt < at) break;
+    if (!blast) {
+      g.effect('wide-appliance', slot, FLOOR, f.data.color, WIDE_APPLIANCE_LIFE, { n: i, dir: -side });
+      if (i === 2) g.effect('wide-foam', a.anchor, FLOOR, '#ffffff', WIDE_POP - WIDE_DROPS[2] + .1, { dir: -side, t0: WIDE_BLAST });
+    } else {
+      const skill = (open ? kit.open : kit.held)[i];
+      if (o) { a.hit.clear(); hit(g, f, o, skill, a); }
+      else if (run) {
+        fillWide(g, f, a, run);
+        for (let n = 0; n < wideHits.length; n++) { a.hit.clear(); hit(g, f, wideHits[n], skill, a); }
+      }
+      g.effect(i === 0 ? 'wide-sparks' : i === 1 ? 'wide-cold' : 'wide-bubbles', slot, FLOOR, f.data.color, .5, { dir: -side, tx: a.anchor - slot });
+      g.shake = Math.max(g.shake, 5);
+    }
+    a.shots++;
+  }
+  if (lt < WIDE_POP) return;
+  const per = s.statusBonus?.per ?? 0;
+  const base = s.finale?.damage ?? s.damage;
+  let shown = 0;
+  if (o) {
+    shown = run?.mask ?? 0;
+    kit.finale.damage = base + per * bits(shown);
+    a.hit.clear();
+    hit(g, f, o, kit.finale, a);
+  } else if (run) {
+    fillWide(g, f, a, run);
+    for (let n = 0; n < wideHits.length; n++) {
+      const t = wideHits[n];
+      const mask = run.seen?.get(t.id) ?? 0;
+      shown |= mask;
+      kit.finale.damage = base + per * bits(mask);
+      a.hit.clear();
+      hit(g, f, t, kit.finale, a);
+    }
+  }
+  g.effect('wide-pop', a.anchor, FLOOR - 70, '#ffffff', .7, { n: shown, radius: 90 });
+  g.shake = Math.max(g.shake, 12);
+  g.flash = Math.max(g.flash, .08);
+  a.mode = WIDE.tail;
+  a.t = Math.max(a.t, s.duration - WIDE_TAIL);
+}
+SCRIPTS['wide-world'] = Object.assign(SCRIPTS['wide-world'] ?? {}, {
+  update: step_wideWorld, noMelee: true, skipCount: true, poise: true,
 });

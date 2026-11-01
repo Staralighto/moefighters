@@ -1536,6 +1536,63 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'shizuku', name: '四宫宁月', title: '键盘 / 公主', quote: '往后余生，还请对四宫宁月多加关照。', color: '#9999FF',
+    bands: ['ikka-dumb-rock'],
+    ...stats('focus'),
+    view: {
+      kind: 'sprite', common: '/sprites/shizuku/common.png', special: '/sprites/shizuku/special.png', height: 150, lift: 5,
+      extras: ['/sprites/shizuku/foil.png', '/sprites/shizuku/popsicle.png', '/sprites/shizuku/microwave.png', '/sprites/shizuku/fridge.png', '/sprites/shizuku/washer.png'],
+    },
+    // 状态异常: 「家团最危险、最不稳定、最容易爆炸的成员」(B 站). Every special is a household accident and lays a
+    // different status (src/game/status.ts); the super pays out on the ones they already carry.
+    skills: [
+      // 实在抱歉 (第 6 话醒来第一句: 「承蒙各位如此费心照顾，实在抱歉」).
+      skill(0, 'light', '实在抱歉'),
+      // 请多关照 (第 7 话: 「往后余生，还请对四宫宁月多加关照」): polite, and stronger than she looks.
+      skill(1, 'heavy', '请多关照', { fx: 'bow-push' }),
+      // 锡纸加热实验 (萌百: 锡纸放进微波炉差点点着房子): the foil crackles in flight and lights them.
+      skill(2, 'projectile', '锡纸加热实验', {
+        damage: 18, speed: 520, size: 40, life: .9, start: .22, duration: .55, cd: 5, knock: 60, fx: 'foil-spark', noSparks: true,
+        status: [{ kind: 'burn', time: 4, dmg: 6, tick: .5, onBlock: .5 }],
+        brief: '锡纸团命中烧焦持续掉血；被挡也烧焦但较短',
+        detail: '弹出锡纸团，命中 18 伤害并烧焦 4 秒，每 0.5 秒 6 伤害，烧焦掉血格挡挡不住；再中刷新时间不叠加；被挡也烧焦 2 秒；完美格挡则不烧焦',
+      }),
+      // 一人一半 (第 15、20 话的棒棒冰): she throws half and eats half. Already 冻僵 → 冻住 instead.
+      skill(3, 'projectile', '一人一半', {
+        damage: 22, speed: 380, size: 48, life: 1.1, start: .3, duration: .7, cd: 6, knock: 40, fx: 'popsicle', noSparks: true,
+        status: [
+          { kind: 'freeze', time: 2, ifHas: 'chill' },
+          { kind: 'chill', time: 4, move: .6, jump: .75, atk: .75, onBlock: .5 },
+        ],
+        brief: '扔棒棒冰冻僵再中冻住并回血；被挡也短冻僵',
+        detail: '掰开棒棒冰扔出一半，略微下坠；命中 22 伤害并冻僵 4 秒，移速、跳跃、攻速变慢；对手已冻僵时改为冻住 2 秒，期间完全无法行动；被挡也冻僵 2 秒但不会冻住；完美格挡则无效；出手即吃掉另一半回 30 生命',
+      }),
+      // 社交派对的微笑 (第 12 话的公主假笑; combat.ts step_smile / counter_smile): no damage, only 混乱.
+      skill(4, 'endure', '社交派对的微笑', {
+        damage: 0, range: 110, start: .5, duration: .85, cd: 12, fx: 'princess-smile', knock: 220,
+        status: [{ kind: 'confuse', time: 1.5 }],
+        counterStatus: [{ kind: 'confuse', time: 3.5 }],
+        statusExtend: 1,
+        brief: '假笑接招不受伤或屈膝推开都混乱；已有异常延长一倍',
+        detail: '公主假笑站定 0.5 秒，期间被近身攻击则不受伤，攻击者身上已有的异常剩余时间延长一倍并混乱 3.5 秒，她不还手；没人攻击则屈膝礼推开身前近身对手，同样把其已有异常延长一倍并混乱 1.5 秒，无伤害；混乱时左右方向颠倒；飞行道具、抓投和必杀照常命中',
+      }),
+      // 世界如此广阔 (combat.ts step_wideWorld): the three accidents lay the three statuses in this order;
+      // the finale counts the kinds they carried when she caught them.
+      skill(5, 'grab', '世界如此广阔', {
+        damage: 25, range: 100, speed: 820, start: .4, duration: 3, fx: 'wide-world', knock: 0, noSparks: true,
+        status: [
+          { kind: 'burn', time: 4, dmg: 6, tick: .5 },
+          { kind: 'chill', time: 4, move: .6, jump: .75, atk: .75 },
+          { kind: 'confuse', time: 3 },
+        ],
+        statusBonus: { per: 20 },
+        finale: { damage: 50, knock: 340, react: { kind: 'launch', vy: -520, knocked: .9 } },
+        brief: '前方家电接连出事挂三种异常；按先前异常数加伤',
+        detail: '合十后短冲，抓到对手则定住；没抓到则在冲刺尽头前方展开，走进范围的人同样会被波及；依次出现微波炉、冰箱、洗衣机，各 25 伤害并挂烧焦 4 秒、冻僵 4 秒、混乱 3 秒；最后泡沫炸开击飞 50 伤害，对手在抓住或第一次被波及时身上每有一种异常再加 20；不能格挡',
+      }),
+    ],
+  },
+  {
     id: 'viola', name: '薇欧拉', title: '队长 / 恶德', quote: '火种燃尽之后会怎么样呢？', color: '#8E5AC8',
     ...stats('armor'),
     view: {

@@ -247,6 +247,31 @@ export const MIKU_EYE = { x: 12, y: 151 } as const;
 /** 过家家到此为止: a.mode walks the cast — the bow, the cut that runs through them, the stillness after
  *  (she stands outside the house with her back to them; she does not walk), the goodbye, and (only if
  *  they are still standing) the touch of the earlobe. */
+/** 世界如此广阔 (四宫宁月 L): pray with stars in her eyes, a short dash to find them, the three accidents
+ *  while she stares (arms wide), then she stands in the suds. combat.ts step_wideWorld walks a.mode. */
+export const WIDE = { pray: 0, dash: 1, held: 2, tail: 3 } as const;
+/** The dash looks for a body this long after the prayer. */
+export const WIDE_DASH = .22;
+/** After the catch: when each appliance lands, and when its accident goes off (the hit). */
+export const WIDE_DROPS = [.05, .55, 1.05] as const;
+export const WIDE_BLAST = .3;
+/** After the catch: the suds burst and throw them (the finale), then she stands for the tail. */
+export const WIDE_POP = 1.85;
+export const WIDE_TAIL = .5;
+/** One appliance on screen: drop, rumble, blast, then it breaks apart into pieces. */
+export const WIDE_APPLIANCE_LIFE = 1;
+/** Which appliance goes where: the stand-in drawings and the PNGs share these (shizukuFx.ts). */
+export const WIDE_APPLIANCES = [
+  { src: '/sprites/shizuku/microwave.png', h: 115, w: 100 },
+  { src: '/sprites/shizuku/fridge.png', h: 200, w: 110 },
+  { src: '/sprites/shizuku/washer.png', h: 130, w: 100 },
+] as const;
+/** How far behind them (on the far side from her, or the near side against a wall) the appliances stand. */
+export const WIDE_SLOT = 96;
+/** A dash that catches nobody still sets the kitchen off: centred this far ahead of where the dash stopped,
+ *  and every blast (and the burst) reaches anyone within this radius of that centre. */
+export const WIDE_ZONE_AHEAD = 110;
+export const WIDE_ZONE_R = 110;
 export const PLAY = { bow: 0, dash: 1, away: 2, bye: 3, ear: 4 } as const;
 /** The dash looks for a body this long after the bow. */
 export const PLAY_DASH = .22;
@@ -742,6 +767,11 @@ export function clipFor(f: Fighter): Clip {
       if (mode === EAR.caught) return at('special', a.index - 2, a.t < a.tossAt + EAR_KNEE + EAR_HOLD ? 1 : 2);
       if (mode === EAR.palm) return at('special', a.index - 2, a.t < a.tossAt + (EAR_PALM_HITS - 1) * EAR_PALM_GAP + EAR_SOLO ? 1 : 2);
       return at('special', a.index - 2, a.t < s.start ? 0 : 2);
+    }
+    // 世界如此广阔: hands together through the prayer and the dash; arms wide while it all goes off.
+    if (f.attack.skill.fx === 'wide-world') {
+      const a = f.attack, mode = a.mode ?? WIDE.pray;
+      return at('special', a.index - 2, mode === WIDE.held ? 1 : mode === WIDE.tail ? 2 : 0);
     }
     // 过家家到此为止: the bow, the cut, then she stands with her back to them, head bowed, through the
     // goodbye; the finger on the earlobe is borrowed from her O column.
