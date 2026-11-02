@@ -1,5 +1,5 @@
 import type { CharacterData, RootLevel, Skill } from '../data/types.ts';
-import type { Mod } from './mods.ts';
+import { cheerThief, type Mod } from './mods.ts';
 import { COMBO_DECAY, COMBO_ESCAPE, FLOOR, clamp } from './constants.ts';
 
 export type AnimState =
@@ -273,8 +273,22 @@ export function makeFighter(
 
 /** Every energy gain funnels through here so card multipliers apply once; drains stay raw.
  *  禁回: while the lock holds the fighter cannot gain energy at all. */
-export function gainEnergy(f: Fighter, amount: number): void {
-  if (f.mods.some(m => m.kind === 'noGain' && m.left > 0)) return;
+export function gainEnergy(f: Fighter, amount: number, stolen = false): void {
+  // One pass over the (short) mod list, every step: 禁回 stops it, 独占欢呼 (千樱梨登场) sends it to the thief
+  // (with the thief's own multiplier). Stolen energy is never stolen again: two 千樱梨 who took each other's
+  // cheers would otherwise hand the same point back and forth forever (a stack overflow in the mirror match).
+  let cheer: Mod | undefined;
+  for (const m of f.mods) {
+    if (m.left <= 0) continue;
+    if (m.kind === 'noGain') return;
+    if (m.kind === 'cheer') cheer = m;
+  }
+  const thief = cheer && amount > 0 && !stolen ? cheerThief.get(cheer) : undefined;
+  if (thief && thief !== f && thief.hp > 0) {
+    cheer!.acc = (cheer!.acc ?? 0) + amount;
+    gainEnergy(thief, amount, true);
+    return;
+  }
   f.energy = clamp(f.energy + amount * f.energyMul, 0, f.energyMax);
 }
 

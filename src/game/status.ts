@@ -1,4 +1,4 @@
-/* 异常: the four reusable statuses — 烧焦 burn, 冻僵 chill, 冻住 freeze, 混乱 confuse.
+/* 异常: the five reusable statuses — 烧焦 burn, 冻僵 chill, 冻住 freeze, 混乱 confuse, 跟班 follow.
    Mechanics are keyed by kind and live here; the look is keyed by mark and lives in
    src/render/statusMarks.ts. A move picks the kind and may name a mark; a second character who wants
    the same status in a different look writes the same kind with its own mark and registers one drawer.
@@ -8,12 +8,12 @@
 import type { Skill, StatusApply, StatusKind } from '../data/types.ts';
 import type { Fighter } from './fighter.ts';
 import type { FightGame } from './game.ts';
-import { addMod, has } from './mods.ts';
+import { addMod, clearMod, has } from './mods.ts';
 import { hit } from './combat.ts';
 
 /** The look a status wears when the move names none. Neutral on purpose: anyone may lay these. */
 export const DEFAULT_MARK: Readonly<Record<StatusKind, string>> = {
-  burn: 'burn', chill: 'frost', freeze: 'ice-block', confuse: 'dizzy-q',
+  burn: 'burn', chill: 'frost', freeze: 'ice-block', confuse: 'dizzy-q', follow: 'follow-flag',
 };
 
 /** The word that pops once when a status is fresh. Same names as the glossary (index.html 术语). */
@@ -22,11 +22,17 @@ export const STATUS_WORD: Readonly<Record<StatusKind, { text: string; color: str
   chill: { text: '冻僵', color: '#bfe6ff' },
   freeze: { text: '冻住!', color: '#e8f8ff' },
   confuse: { text: '混乱', color: '#cbb8ff' },
+  follow: { text: '跟班', color: '#ffb3d6' },
 };
 
 export const BURN_TICK = .5;
+/** 跟班: the last 部下 number each recruiter handed out, per match. */
+const recruits = new WeakMap<FightGame, Map<number, number>>();
 const BURN_DMG = 6;
 const CHILL = { move: .6, jump: .75, atk: .75 };
+/** 跟班: seconds before the same body can follow again, and how long the 部下 badge outlasts it. */
+export const FOLLOW_IMMUNE = 4;
+export const FOLLOW_BADGE = 6;
 
 /** Whether the body carries this kind right now. chill is any live 减速 and freeze any 禁足-tier 定身,
  *  whoever laid them: the kinds name the clocks, not the character. */
@@ -36,12 +42,13 @@ export function hasStatus(f: Fighter, kind: StatusKind): boolean {
     case 'chill': return f.slow > 0;
     case 'freeze': return f.root > 0 && f.rootLevel === 'freeze';
     case 'confuse': return has(f, 'confuse');
+    case 'follow': return has(f, 'follow');
   }
 }
 
-const KINDS: readonly StatusKind[] = ['burn', 'chill', 'freeze', 'confuse'];
+const KINDS: readonly StatusKind[] = ['burn', 'chill', 'freeze', 'confuse', 'follow'];
 
-/** The kinds this body carries as bits, in KINDS order (burn 1, chill 2, freeze 4, confuse 8). */
+/** The kinds this body carries as bits, in KINDS order (burn 1, chill 2, freeze 4, confuse 8, follow 16). */
 export function statusMask(f: Fighter): number {
   let m = 0;
   KINDS.forEach((k, i) => { if (hasStatus(f, k)) m |= 1 << i; });
@@ -58,6 +65,8 @@ export function statusCount(f: Fighter): number {
 /** Lay one status. The caller has already passed the clean-hit gate. Returns true when it was a freeze. */
 export function layStatus(g: FightGame, attacker: Fighter, defender: Fighter, st: StatusApply, source = '', word = 0): boolean {
   const mark = st.mark ?? DEFAULT_MARK[st.kind];
+  // 跟班 does not refresh and has a cooldown of its own: a body that just walked behind someone shrugs it off.
+  if (st.kind === 'follow' && (has(defender, 'follow') || has(defender, 'followCd') || defender === attacker)) return false;
   const fresh = !hasStatus(defender, st.kind);
   switch (st.kind) {
     case 'burn': {
@@ -85,6 +94,21 @@ export function layStatus(g: FightGame, attacker: Fighter, defender: Fighter, st
     case 'confuse':
       addMod(defender, 'confuse', st.time, { mark, max: true });
       break;
+    case 'follow': {
+      // The 部下 number counts up across the match for whoever recruits (the league had three before).
+      const n = (recruits.get(g)?.get(attacker.id) ?? 3) + 1;
+      if (!recruits.has(g)) recruits.set(g, new Map());
+      recruits.get(g)!.set(attacker.id, n);
+      addMod(defender, 'follow', st.time, { from: attacker.id, mark, v: n, onExpire: (game, who) => followGone(game, who, mark) });
+      addMod(defender, 'followCd', st.time + (st.immune ?? FOLLOW_IMMUNE), { max: true });
+      const badge = st.badge ?? FOLLOW_BADGE;
+      if (badge > 0) addMod(defender, 'recruit', st.time + badge, { from: attacker.id, mark: 'recruit-badge', v: n });
+      defender.attack = null;
+      defender.blocking = false;
+      defender.dodge = 0;
+      defender.queue = [];
+      break;
+    }
   }
   if (fresh) {
     g.effect(mark + '@apply', defender.x, defender.y, attacker.data.color, .6, { follow: defender.id, ox: 0, oy: 0 });
@@ -184,4 +208,28 @@ export function settleRootMark(g: FightGame, f: Fighter): void {
   if (!f.rootMark || f.root > 0) return;
   g.effect(f.rootMark + '@expire', f.x, f.y, '#ffffff', .7, { follow: f.id, ox: 0, oy: 0 });
   f.rootMark = '';
+}
+
+/** 跟班: the fighter this body is walking behind, while the status holds and the leader is still up. */
+export function followLeader(g: FightGame, f: Fighter): Fighter | undefined {
+  const m = f.mods.find(x => x.kind === 'follow' && x.left > 0);
+  if (!m || m.from == null) return undefined;
+  const o = g.fighterById(m.from);
+  return o && o.hp > 0 ? o : undefined;
+}
+
+/** 部下: carries the badge (or is following right now) for this recruiter. */
+export function isRecruit(f: Fighter, by: number): boolean {
+  return f.mods.some(m => (m.kind === 'recruit' || m.kind === 'follow') && m.left > 0 && m.from === by);
+}
+
+function followGone(g: FightGame, f: Fighter, mark: string): void {
+  g.effect(mark + '@expire', f.x, f.y, '#ffffff', .6, { follow: f.id, ox: 0, oy: 0 });
+}
+/** 跟班 ends early (knocked down, a breakout, the leader gone): the same pop as running out. */
+export function endFollow(g: FightGame, f: Fighter): void {
+  const m = f.mods.find(x => x.kind === 'follow' && x.left > 0);
+  if (!m) return;
+  clearMod(f, 'follow');
+  followGone(g, f, m.mark ?? DEFAULT_MARK.follow);
 }

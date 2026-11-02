@@ -48,6 +48,8 @@ export interface MoveScript {
   noMelee?: boolean;
   /** Dash travel is the script's, not the stock line. */
   customDash?: boolean;
+  /** While `attack.mode` is one of these, the script places `attack.hold`. 跟班 must not walk that body off the spot. */
+  placesHold?: readonly number[];
   /** One mid-dash facing change. */
   flip?: boolean;
   /** The cast draws its own entrance, so the stock super square stays off (狼王来了). */

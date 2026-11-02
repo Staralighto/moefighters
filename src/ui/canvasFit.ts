@@ -9,9 +9,9 @@
  * Call every frame: a scale change (move a window to another monitor, browser zoom) is
  * picked up on the next draw. Returns null while the box is hidden or not laid out.
  *
- * The box is the layout box (clientWidth/Height), not the painted rect: the select stage's 3D
- * tilt and the hover / pop scales on ancestors must not resize the backing store every frame,
- * which would also rebake every sprite cell at a new raster size.
+ * The box is the layout box (clientWidth/Height), not the painted rect: hover and pop scales
+ * on ancestors must not resize the backing store every frame, which would also rebake every
+ * sprite cell at a new raster size.
  */
 export function fitCanvas(canvas: HTMLCanvasElement, designW: number, designH: number): number | null {
   const bw = canvas.clientWidth, bh = canvas.clientHeight;

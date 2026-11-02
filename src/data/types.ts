@@ -17,8 +17,9 @@ export type ReactKind = 'none' | 'stand' | 'pin' | 'float' | 'knockdown' | 'laun
 /** 异常: the four reusable status kinds. The kernel reads only the kind — damage, pace, lock and the
  *  count a super collects on. What it looks like is the mark, and only the render layer reads that.
  *  chill rides the shared 减速 mod and freeze the 禁足-tier 定身, so 冻僵 and 冻住 are the same clocks
- *  as every other slow and lock; burn and confuse are mods of their own. */
-export type StatusKind = 'burn' | 'chill' | 'freeze' | 'confuse';
+ *  as every other slow and lock; burn and confuse are mods of their own. follow (跟班) is a mod too: the
+ *  body loses its controls and walks behind whoever laid it (game.ts stepFollow). */
+export type StatusKind = 'burn' | 'chill' | 'freeze' | 'confuse' | 'follow';
 
 /** One status a clean hit lays. Parameters are read by kind; anything a kind does not use is ignored. */
 export interface StatusApply {
@@ -40,6 +41,10 @@ export interface StatusApply {
   /** A guard does not stop it, only shortens it: on a (non-perfect) block it lands for time × onBlock.
    *  Unset: a block stops it. Upgrades never land on a block. A perfect block always stops it. */
   onBlock?: number;
+  /** follow: seconds after it ends before the same body can be made a follower again (default 4), and how
+   *  long the 部下 badge it leaves stays on after it (default 6; 0 leaves none). */
+  immune?: number;
+  badge?: number;
 }
 
 export interface HitReact {

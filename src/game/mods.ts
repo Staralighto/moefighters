@@ -14,7 +14,16 @@ export type ModKind =
    *  from the fighter who lit it. combat.ts tickStatus lands each tick through hit(). */
   | 'burn'
   /** 异常·混乱: left and right swap on the stick (game.ts reads moveSign). */
-  | 'confuse';
+  | 'confuse'
+  /** 异常·跟班: no controls; the body walks behind `from` (game.ts stepFollow). v is the 部下 number. */
+  | 'follow'
+  /** 跟班 just ended: the body cannot be made a follower again while this holds. */
+  | 'followCd'
+  /** 部下 badge: left by 跟班, read by the layer's super (千樱梨联盟集合). No effect of its own. */
+  | 'recruit'
+  /** 独占欢呼 (千樱梨登场): every bit of energy this body would gain goes to `thief` instead. acc collects
+   *  what was taken since the last pulse, for the graphic. */
+  | 'cheer';
 
 /**
  * One running buff.
@@ -44,7 +53,11 @@ export interface Mod {
   every?: number;
 }
 
-export function addMod(f: Fighter, kind: ModKind, time: number, opt: Partial<Mod> & { max?: boolean } = {}): Mod {
+/** 独占欢呼: who a 'cheer' mod's energy goes to. Kept off the mod itself so the wire never walks into a
+ *  whole Fighter; host-side only (the guest never gains energy itself). */
+export const cheerThief = new WeakMap<Mod, Fighter>();
+
+export function addMod(f: Fighter, kind: ModKind, time: number, opt: Partial<Mod> & { max?: boolean; thief?: Fighter } = {}): Mod {
   const tag = opt.tag ?? '';
   let m = f.mods.find(x => x.kind === kind && (x.tag ?? '') === tag);
   if (!m) {
@@ -64,6 +77,7 @@ export function addMod(f: Fighter, kind: ModKind, time: number, opt: Partial<Mod
   if (opt.hurt) m.hurt = opt.hurt;
   if (opt.from != null) m.from = opt.from;
   if (opt.every != null) m.every = opt.every;
+  if (opt.thief) cheerThief.set(m, opt.thief);
   project(f);
   return m;
 }

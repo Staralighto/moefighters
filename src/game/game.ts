@@ -7,7 +7,7 @@ import type { BandId } from '../data/bands.ts';
 import { advanceAnim } from './animState.ts';
 import { easeSealSwells, effectSettled, ESCAPE_INVULN, rainbowRoll, stepProjectiles, updateAttack } from './combat.ts';
 import { addMod, atkMul, clearMod, has, jumpMul, moveSign, regenPerSec, speedMul, tickMods } from './mods.ts';
-import { settleRootMark, tickStatus } from './status.ts';
+import { endFollow, followLeader, settleRootMark, tickStatus } from './status.ts';
 import { SCRIPTS } from './scripts.ts';
 import { stepAI } from './ai.ts';
 import { beginDomain as openDomain, stepDomains, type Domain } from './domains.ts';
@@ -36,6 +36,10 @@ const CHALLENGE_SPAWN = [
   { x: 840, facing: -1 as const, team: 1, controller: null },
 ];
 
+/** 跟班: how far behind the leader the follower trots, how fast, and the little hop when she jumps. */
+const FOLLOW_GAP = 60;
+const FOLLOW_PACE = 620;
+const FOLLOW_HOP = 480;
 /** Block key released faster than this becomes a back-dodge instead of a block. */
 export const DODGE_TAP = .12;
 /** A tapped block keeps guarding at least this long after the finger lifts. */
@@ -225,6 +229,8 @@ export class FightGame {
   texts: FloatingText[] = [];
   wins = [0, 0];
   round = 1;
+  /** Who landed the round's first clean hit (-1 until someone does). 千·樱·梨！ reads it for 「第一个！」. */
+  firstHitBy = -1;
   time = 60;
   age = 0;
   phase: Phase = 'intro';
@@ -360,6 +366,7 @@ export class FightGame {
     this.particles = [];
     this.texts = [];
     this.time = 60;
+    this.firstHitBy = -1;
     this.phase = 'intro';
     this.phaseTime = 2.25;
     this.hitstop = 0;
@@ -482,6 +489,8 @@ export class FightGame {
     const breakout = !!f.data.skills[index]?.breakout;
     const escape = breakout && this.suppressed(f);
     if (!escape && (f.ban > 0 || f.stun > 0 || f.knocked > 0)) return false;
+    // 跟班: no moves of their own while they walk behind someone; a breakout still cuts out.
+    if (!escape && has(f, 'follow')) return false;
     if (index >= 2 && this.airborne(f) && !escape) return false;
     if (!escape && f.root > 0) {
       // 'move' pins only the dash; the freeze tier pins everything.
@@ -547,6 +556,7 @@ export class FightGame {
       };
     }
     if (escaping) {
+      endFollow(this, f);
       f.stun = 0;
       f.knocked = 0;
       f.downTime = 0;
@@ -1080,7 +1090,9 @@ export class FightGame {
     if (f.blockTap >= 0) f.blockTap += dt;
     // 混乱: one swap at the stick covers humans, the CPU and the online guest (its keys land here too).
     // Facing follows the swapped walk, and the back-step dodge runs off facing, so both turn with it.
-    const move = (human
+    // 跟班: the stick, the guard, the dodge and the jump are all theirs to lose; stepFollow walks the body.
+    const following = has(f, 'follow');
+    const move = following ? 0 : (human
       ? (c && this.keys.has(c.right) ? 1 : 0) - (c && this.keys.has(c.left) ? 1 : 0)
       : this.mode !== 'training' || f.echo || f.minion ? f.ai.move : 0) * moveSign(f) || 0;
     // 录音: the tape records the stick, not the body — changes only, so the echo reads a clean script.
@@ -1088,7 +1100,7 @@ export class FightGame {
       f.recTape.push({ t: RECORD_TIME - f.recLeft, kind: 'move', v: move });
       f.recMove = move;
     }
-    const blockHeld = human ? !!c && this.keys.has(c.block) : (this.mode !== 'training' || f.minion) && f.ai.block > 0;
+    const blockHeld = !following && (human ? !!c && this.keys.has(c.block) : (this.mode !== 'training' || f.minion) && f.ai.block > 0);
 
     if (f.dodgeRequest) { f.dodgeBuffer = INPUT_BUFFER; f.dodgeRequest = false; }
     // Humans can cut recovery into a block or a dodge once the move has already hit. CPU stays committed.
@@ -1110,7 +1122,7 @@ export class FightGame {
     let free = !f.attack && f.stun <= 0 && !f.knocked && f.dodge <= 0;
     if (f.purge > 0) { f.dodgeBuffer = 0; f.dodgeRequest = false; f.blockBuffer = 0; f.blockLeft = 0; }
     if (f.dodgeBuffer > 0) {
-      if (grounded && free && f.dodgeCd <= 0 && f.root <= 0 && f.ban <= 0 && f.purge <= 0) { f.dodgeBuffer = 0; this.startDodge(f); free = false; }
+      if (grounded && free && f.dodgeCd <= 0 && f.root <= 0 && f.ban <= 0 && f.purge <= 0 && !following) { f.dodgeBuffer = 0; this.startDodge(f); free = false; }
       else if (grounded && !inputLocked(f)) f.dodgeBuffer = Math.max(0, f.dodgeBuffer - dt);
     }
 
@@ -1136,7 +1148,7 @@ export class FightGame {
 
     if (f.jumpRequest) { f.jumpBuffer = INPUT_BUFFER; f.jumpRequest = false; }
     const jumpHeld = human && !!c && c.jump.some(code => this.keys.has(code));
-    const canHop = grounded && f.stun <= 0 && f.knocked <= 0 && f.dodge <= 0 && !f.blocking && f.root <= 0 && f.ban <= 0;
+    const canHop = grounded && f.stun <= 0 && f.knocked <= 0 && f.dodge <= 0 && !f.blocking && f.root <= 0 && f.ban <= 0 && !following;
     // 跳取消: a skill can name the second a jump press drops the move and hops. No cooldown refund —
     // the cast was paid. The cancel binds to that one attack instance, so a move queued on the same
     // frame is not eaten by the buffered hop. Jabs keep their own convert path below.
@@ -1217,6 +1229,7 @@ export class FightGame {
       if (f.attack?.skill.air) f.attack = null;
     }
     f.x = clamp(f.x, X_MIN, X_MAX);
+    if (following) this.stepFollow(f, dt);
     // 完美格挡: the swing that got perfect-blocked stops here and the body staggers, like a hit without the damage.
     if (f.parried > 0) { f.stun = Math.max(f.stun, f.parried); f.attack = null; f.parried = 0; }
     updateAttack(this, f, dt);
@@ -1224,6 +1237,25 @@ export class FightGame {
     // After the cast and any channel that just lengthened a cooldown, so the same step cannot leave a skill on the clock.
     if (this.trainOn('noCd')) { f.cooldowns[2] = 0; f.cooldowns[3] = 0; f.cooldowns[4] = 0; }
     if (this.trainOn('infiniteUlt')) f.energy = f.energyMax;
+  }
+
+  /** 跟班: the body trots after its leader and stays FOLLOW_GAP behind her back, turns when she turns and hops
+   *  when she jumps. Being knocked down shakes it off. Knockback still lands; the trot pulls them back.
+   *  A move that is placing this body (千樱梨联盟集合's pull and drums) owns x until that phase ends —
+   *  the trot would walk them straight back off the spot, and who steps first would decide which write won. */
+  private stepFollow(f: Fighter, dt: number): void {
+    const o = followLeader(this, f);
+    if (!o || f.knocked > 0) { endFollow(this, f); return; }
+    const a = o.attack;
+    if (a && a.hold === f.id && SCRIPTS[a.skill.fx]?.placesHold?.includes(a.mode ?? -1)) return;
+    const tx = clamp(o.x - o.facing * FOLLOW_GAP, X_MIN, X_MAX);
+    const gap = tx - f.x;
+    const step = Math.sign(gap) * Math.min(Math.abs(gap), FOLLOW_PACE * dt);
+    f.x = clamp(f.x + step, X_MIN, X_MAX);
+    const grounded = f.y >= FLOOR - .1;
+    if (Math.abs(step) > .4 && grounded && f.stun <= 0) f.walk += dt * 12;
+    if (f.stun <= 0) f.facing = o.facing;
+    if (o.vy < -300 && o.y >= FLOOR - 40 && grounded && f.stun <= 0) f.vy = -FOLLOW_HOP;
   }
 
   /** Training-only. Missing prefs stay on; other modes never read them. */

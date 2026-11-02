@@ -41,7 +41,7 @@
 
 作曲的持续伤害走 `hit()`，并且 `react.kind` 为 `none`：有伤害，没有硬直、连段、顿帧。不要为了「看起来像打中」把这三样加回去。
 
-## 异常（烧焦 / 冻僵 / 冻住 / 混乱）
+## 异常（烧焦 / 冻僵 / 冻住 / 混乱 / 跟班）
 
 机制按 kind，样子按 mark，两边互不知道对方。
 
@@ -52,6 +52,7 @@
 - 样子在 `src/render/statusMarks.ts` 的 `STATUS_MARKS`：`aura` 每帧画在身上，`apply` / `expire` 是内核发出的 `<mark>@apply` / `<mark>@expire` 一次性特效。不写 `mark` 用 `DEFAULT_MARK`。别的角色要同一异常换个样子：同 kind、写自己的 mark、在表里加一条画法，内核零改动。
 - 冻住的样子跟施加方走（`Fighter.rootMark`），不再按挨打方的 `data.rootFx`；没有 mark 的定身照旧。
 - 旧的减速样子（泡泡、落瓣）没进表，照旧画。
+- `follow`（跟班）是 mod，`from` 是领头人：`game.ts` 的 `stepFollow` 把身体放到领头人身后 60 像素小跑跟随、跟着转身和起跳，期间摇杆、格挡、闪避、跳跃和出招全部无效（突破技照常能用，用了就结束）。被击倒、领头人倒下即提前结束（`endFollow`）。不刷新；结束后 `immune` 秒（默认 4）内挂不上，并留 `badge` 秒（默认 6）的 `recruit` 部下徽章 mod，供施加方的招式读（`isRecruit`）。
 
 ## 削防（格挡伤害）
 

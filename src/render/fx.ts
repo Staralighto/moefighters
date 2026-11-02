@@ -8,6 +8,7 @@ import { BURDEN_Y, CELL, clipFor, FAMILY_LINGER, OBLIVION, FAMILY_MEMBERS, flame
 import { watchProp } from './propLayout.ts';
 import { bloodSparkles, drawSakikoFx, drawShiroFloor } from './sakikoFx.ts';
 import { drawMikuFx } from './mikuFx.ts';
+import { drawChieriFx } from './chieriFx.ts';
 import { drawStatusEffect } from './statusMarks.ts';
 import { drawShizukuFx, drawShizukuShot } from './shizukuFx.ts';
 
@@ -988,6 +989,8 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
   if (drawSakikoFx(ctx, e, liteFx)) return;
   // 马桥心玖 keeps hers in one module too.
   if (drawMikuFx(ctx, e, liteFx)) return;
+  // 梅里千樱梨 too.
+  if (drawChieriFx(ctx, e, liteFx)) return;
   // 异常: `<mark>@apply` / `<mark>@expire`, drawn by the status table.
   if (drawStatusEffect(ctx, e)) return;
   // 四宫宁月's accidents keep their own module too.

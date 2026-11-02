@@ -1,12 +1,12 @@
 import type { HitReact, Op, Skill } from '../data/types.ts';
 import { gainEnergy, gainGauge, type Attack, type Fighter } from './fighter.ts';
-import { addDebt, addMod, dmgDealtMul, dmgTakenMul, has, incomingMul, lifestealOf, moveSign, reflectAmount, type Mod } from './mods.ts';
+import { addDebt, addMod, cheerThief, clearMod, dmgDealtMul, dmgTakenMul, has, incomingMul, lifestealOf, moveSign, reflectAmount, type Mod } from './mods.ts';
 import type { Effect, FightGame, Projectile, SealVolley } from './game.ts';
 import { CONTROLS, FLOOR, GRAVITY, H, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
 import { attackPhase } from './animState.ts';
-import { BUSHIDO_TAIL, clipFor, DRUM_SLUMP, drumRow, PAW, PAW_FAIL, PAW_HITS, pawRow, pawTime, ROLL, ROLL_BEATS, ROLL_MAX, ROLL_MIN, ROLL_SLUMP, ROLL_THROW, rollGap, SELFIE, SELFIE_HOLD, SELFIE_LUNGE, SELFIE_SNAP, SELFIE_TAIL, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS, PRACTICE_HITS, practiceBeat, SKIP_HOP, SKIP_MAX, SKIP_MIN, SKIP_TAIL, MINE_FUSE, ENCORE, ENCORE_FACE, ENCORE_GONE, BURDEN_Y, UNBOWED_STEP, UNBOWED_MAX, PIGGY, PIGGY_DASH, PIGGY_CARRY, PIGGY_TAIL, PIGGY_BACK_X, PIGGY_BACK_Y, HUG, HUG_LUNGE, HUG_FIRST, HUG_GAP, HUG_TAIL, MEAL_GRACE, FAMILY, FAMILY_MEMBERS, FAMILY_LUNGE, FAMILY_FINALE, FAMILY_ZONE_AHEAD, FAMILY_ZONE_R, FAMILY_TAIL, familyLife, BLOOD, OBLIVION, TWIN_MOON, TWIN_PHASE, PUFF, PUFF_BLINK, PUFF_ARRIVE, PUFF_REACH, PUFF_STOP, PUFF_HOP, PUFF_BEAT, PUFF_CUT, PUFF_TAIL, EAR, EAR_DECIDE, EAR_PALM_HITS, EAR_PALM_GAP, EAR_PALM, EAR_KNEE, EAR_TAIL, EAR_GLINT, MIKU_EYE, PLAY, PLAY_DASH, PLAY_PASS, PLAY_THROUGH, PLAY_SLASHES, PLAY_BYE, PLAY_THOUGHT, PLAY_EAR_AT, PLAY_EAR_HOLD, PLAY_FIGURES, PLAY_CURTAIN, WIDE, WIDE_DASH, WIDE_DROPS, WIDE_BLAST, WIDE_POP, WIDE_TAIL, WIDE_APPLIANCE_LIFE, WIDE_SLOT, WIDE_ZONE_AHEAD, WIDE_ZONE_R } from '../render/clips.ts';
+import { BUSHIDO_TAIL, clipFor, DRUM_SLUMP, drumRow, PAW, PAW_FAIL, PAW_HITS, pawRow, pawTime, ROLL, ROLL_BEATS, ROLL_MAX, ROLL_MIN, ROLL_SLUMP, ROLL_THROW, rollGap, SELFIE, SELFIE_HOLD, SELFIE_LUNGE, SELFIE_SNAP, SELFIE_TAIL, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS, PRACTICE_HITS, practiceBeat, SKIP_HOP, SKIP_MAX, SKIP_MIN, SKIP_TAIL, MINE_FUSE, ENCORE, ENCORE_FACE, ENCORE_GONE, BURDEN_Y, UNBOWED_STEP, UNBOWED_MAX, PIGGY, PIGGY_DASH, PIGGY_CARRY, PIGGY_TAIL, PIGGY_BACK_X, PIGGY_BACK_Y, HUG, HUG_LUNGE, HUG_FIRST, HUG_GAP, HUG_TAIL, MEAL_GRACE, FAMILY, FAMILY_MEMBERS, FAMILY_LUNGE, FAMILY_FINALE, FAMILY_ZONE_AHEAD, FAMILY_ZONE_R, FAMILY_TAIL, familyLife, BLOOD, OBLIVION, TWIN_MOON, TWIN_PHASE, PUFF, PUFF_BLINK, PUFF_ARRIVE, PUFF_REACH, PUFF_STOP, PUFF_HOP, PUFF_BEAT, PUFF_CUT, PUFF_TAIL, EAR, EAR_DECIDE, EAR_PALM_HITS, EAR_PALM_GAP, EAR_PALM, EAR_KNEE, EAR_TAIL, EAR_GLINT, MIKU_EYE, PLAY, PLAY_DASH, PLAY_PASS, PLAY_THROUGH, PLAY_SLASHES, PLAY_BYE, PLAY_THOUGHT, PLAY_EAR_AT, PLAY_EAR_HOLD, PLAY_FIGURES, PLAY_CURTAIN, WIDE, WIDE_DASH, WIDE_DROPS, WIDE_BLAST, WIDE_POP, WIDE_TAIL, WIDE_APPLIANCE_LIFE, WIDE_SLOT, WIDE_ZONE_AHEAD, WIDE_ZONE_R, ENTRANCE, ENTRANCE_VY, ENTRANCE_REACH, ENTRANCE_HOP, ENTRANCE_TAIL, ENTRANCE_CHEER, CHERRY_MAX, CHERRY_R0, CHERRY_R_STEP, CHERRY_HOLD_MAX, CHERRY_TAIL, CHIERI_BUN, ASSEMBLE, ASSEMBLE_PULL, ASSEMBLE_BEAT, ASSEMBLE_FINALE, ASSEMBLE_STOP, ASSEMBLE_TAIL, ASSEMBLE_WHIFF, LEAGUE_BOARD_Y } from '../render/clips.ts';
 import { SCRIPTS } from './scripts.ts';
-import { applyStatus, applyStatusBlocked, extendStatus, statusMask } from './status.ts';
+import { applyStatus, applyStatusBlocked, extendStatus, isRecruit, statusMask } from './status.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
 
@@ -527,6 +527,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       attacker.comboTime = 1.3 + attacker.comboTimeBonus;
       attacker.hitCount++;
       g.totalHits[attacker.id]++;
+      if (g.firstHitBy < 0) g.firstHitBy = attacker.id;
       g.maxCombo[attacker.id] = Math.max(g.maxCombo[attacker.id], attacker.combo);
       damage *= Math.max(.4, 1 - (attacker.combo - 1) * attacker.comboDecay);
     }
@@ -607,6 +608,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     attacker.comboTime = 1.3 + attacker.comboTimeBonus;
     attacker.hitCount++;
     g.totalHits[attacker.id]++;
+    if (g.firstHitBy < 0) g.firstHitBy = attacker.id;
     g.maxCombo[attacker.id] = Math.max(g.maxCombo[attacker.id], attacker.combo);
     // 彩虹色: the tenth clean hit of a string always pays, sharing the same cooldown.
     if (attacker.combo === 10) rainbowRoll(g, attacker, true);
@@ -5056,6 +5058,358 @@ function step_playhouse(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   }
 }
 SCRIPTS['playhouse'] = Object.assign(SCRIPTS['playhouse'] ?? {}, { update: step_playhouse, noMelee: true, skipCount: true, noSuperFx: true });
+
+/* ---- 梅里千樱梨 ---- */
+
+/* 出风头: everything she does wants the whole room looking at her — the name she makes you say one syllable
+   at a time, the cymbal on her entrance and the cheers she takes, the 部下 trotting behind her, the tantrum
+   that goes off like a cherry bomb, and the league she calls in from anywhere. The look is in chieriFx.ts. */
+
+/** 第一个！ (视角 4: 春哥和秋姐总是第一; 第 5 话「第一个字母绝对不让！」): the round's first clean hit is hers. */
+const FIRST_GAIN = 10;
+const firstSaid = new WeakMap<FightGame, number>();
+function chieriFirst(g: FightGame, f: Fighter): void {
+  if (g.firstHitBy !== f.id || firstSaid.get(g) === g.round) return;
+  firstSaid.set(g, g.round);
+  gainEnergy(f, FIRST_GAIN);
+  g.effect('chieri-first', f.x, f.y - 222, '#ffd34d', 1.1, { follow: f.id, ox: 0, oy: -222 });
+}
+
+/** 千·樱·梨！: one syllable a landed jab, 千 → 樱 → 梨; a pause longer than this starts the name over. */
+const NAME_RESET = 1.2;
+const nameChain = new WeakMap<Fighter, { i: number; at: number }>();
+SCRIPTS['chieri-name'] = Object.assign(SCRIPTS['chieri-name'] ?? {}, {
+  flash(g: FightGame, f: Fighter, a: Attack) {
+    g.effect('slash', f.x + f.facing * 65, f.y - 83, f.data.color, .22, { dir: f.facing, radius: a.skill.range * .5 });
+    if (!a.hit.size) return;
+    const last = nameChain.get(f);
+    const i = last && g.age - last.at < NAME_RESET ? (last.i + 1) % 3 : 0;
+    nameChain.set(f, { i, at: g.age });
+    const o = g.fighterById([...a.hit][0]);
+    g.effect('chieri-syllable', o ? o.x : f.x + f.facing * 80, f.y - 178, f.data.color, .7, { n: i, dir: f.facing });
+    chieriFirst(g, f);
+  },
+});
+
+/** 惊叹号 (萌百题头: 「什么……！！」): the heavy lands a giant「！！」 and the voice rolls on past it. */
+SCRIPTS['chieri-bang'] = Object.assign(SCRIPTS['chieri-bang'] ?? {}, {
+  flash(g: FightGame, f: Fighter, a: Attack) {
+    g.effect('slash', f.x + f.facing * 65, f.y - 70, f.data.color, .22, { dir: f.facing, radius: a.skill.range * .5 });
+    if (!a.hit.size) return;
+    g.effect('chieri-bang', f.x + f.facing * a.skill.range * .8, f.y - 120, f.data.color, .5, { dir: f.facing });
+    chieriFirst(g, f);
+  },
+});
+
+/** 独占欢呼: every pulse turns what was taken since the last into notes flying from them into her light. */
+const CHEER_PULSE = 5;
+function cheerPulse(g: FightGame, who: Fighter): void {
+  const m = who.mods.find(x => x.kind === 'cheer' && x.left > 0);
+  const thief = m && cheerThief.get(m);
+  if (!m || !thief || (m.acc ?? 0) < 1) return;
+  const n = Math.min(5, Math.ceil((m.acc ?? 0) / 3));
+  m.acc = 0;
+  g.effect('cheer-steal', who.x, who.y - 120, thief.data.color, .6, { tx: thief.x - who.x, ty: (thief.y - 150) - (who.y - 120), n });
+}
+const entranceTo = new WeakMap<Attack, number>();
+/** 千樱梨登场 (第 2 话: 「锵——！！千樱梨联盟头号人物·梅里千樱梨登场！！」「舞台灯光千樱梨要一个人独占！」;
+ *  第 10 话: 「沐浴在最热烈欢呼中的必须是千樱梨！」): a crouch, a high leap onto the nearest foe ahead, and
+ *  the landing — a quake both ways on the floor, a cymbal over her head, and a spotlight that follows her.
+ *  For ENTRANCE_CHEER seconds every foe's energy gain is hers (fighter.ts gainEnergy, the 'cheer' mod);
+ *  nothing they do to her ends it. a.mode walks ENTRANCE; a.anchor is the take-off, a.tossAt the leap,
+ *  a.liftAt the landing. */
+function step_entrance(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  const mode = a.mode ?? ENTRANCE.crouch;
+  if (mode === ENTRANCE.crouch) {
+    f.vx = 0;
+    if (a.t < s.start) return;
+    const o = foeAhead(g, f, ENTRANCE_REACH);
+    entranceTo.set(a, clamp(o ? o.x : f.x + f.facing * ENTRANCE_HOP, X_MIN, X_MAX));
+    a.anchor = f.x;
+    a.tossAt = a.t;
+    a.mode = ENTRANCE.air;
+    f.vy = -ENTRANCE_VY;
+    g.effect('entrance-dust', f.x, FLOOR, f.data.color, .45, { dir: f.facing });
+    return;
+  }
+  if (mode === ENTRANCE.air) {
+    const lt = a.t - a.tossAt;
+    const flight = 2 * ENTRANCE_VY / GRAVITY;
+    const to = entranceTo.get(a) ?? f.x;
+    f.x = a.anchor + (to - a.anchor) * Math.min(1, lt / flight);
+    f.vx = 0;
+    // Hold the clock while she is still up there, so a long hitstop cannot end the move in the air.
+    if (a.t > s.duration - ENTRANCE_TAIL) a.t = s.duration - ENTRANCE_TAIL;
+    if (lt < flight * .5 || f.y < FLOOR - .5) return;
+    a.mode = ENTRANCE.land;
+    a.liftAt = a.t;
+    a.hit = new Set();
+    g.shake = Math.max(g.shake, 7);
+    const quake = g.effect('entrance-quake', f.x, FLOOR, f.data.color, .5, { radius: s.range });
+    g.effect('entrance-cymbal', f.x, f.y - 212, '#ffd34d', .75, { follow: f.id, ox: 0, oy: -212, dir: f.facing });
+    g.effect('chieri-spot', f.x, FLOOR, '#ffe4f1', ENTRANCE_CHEER, { follow: f.id, ox: 0, oy: 0 });
+    // One pass: the quake only reaches a body on the floor in range; the cheers go to every living foe.
+    for (const o of g.fighters) {
+      if (!g.isEnemy(f, o) || o.hp <= 0 || o.echo) continue;
+      if (Math.abs(o.x - f.x) < s.range && o.y >= FLOOR - 30) hit(g, f, o, s, a);
+      addMod(o, 'cheer', ENTRANCE_CHEER, { thief: f, acc: 0, pulseEvery: CHEER_PULSE, pulse: cheerPulse });
+    }
+    quake.hit = a.hit.size > 0;
+    if (a.hit.size) chieriFirst(g, f);
+  }
+}
+SCRIPTS['chieri-entrance'] = Object.assign(SCRIPTS['chieri-entrance'] ?? {}, {
+  update: step_entrance, customDash: true, noMelee: true, poise: true,
+});
+
+/** 千樱梨收编令: the grab is plain data (its status is 跟班); this is the handshake and the flag. */
+SCRIPTS['chieri-recruit'] = Object.assign(SCRIPTS['chieri-recruit'] ?? {}, {
+  flash(g: FightGame, f: Fighter, a: Attack) {
+    g.effect('recruit-shake', f.x + f.facing * 58, f.y - 104, f.data.color, .45, { dir: f.facing, hit: a.hit.size > 0 });
+    for (const id of a.hit) {
+      const o = g.fighterById(id);
+      if (!o || !isRecruit(o, f.id)) continue;
+      const m = o.mods.find(x => x.kind === 'follow' && x.left > 0);
+      g.effect('recruit-join', o.x, o.y - 196, f.data.color, .8, { follow: o.id, ox: 0, oy: -196, n: m?.v ?? 4 });
+    }
+    if (a.hit.size) chieriFirst(g, f);
+  },
+});
+
+/** 千樱梨樱桃炸弹: a.shots counts the stacks; the fuse effect reads them live off this map. */
+const CHERRY_FUSED = 1;
+const CHERRY_BOOMED = 2;
+const CHERRY_EAGER = 4;
+const cherryFuse = new WeakMap<Attack, Effect>();
+/** The half-damage mod for this cast. Held onto so a long press does not search the mod list every step. */
+const cherryArmour = new WeakMap<Attack, Mod>();
+/** Seconds held past the fuse so far; and the eager-to-go-off graphic while she holds. */
+const cherryHeld = new WeakMap<Attack, number>();
+const cherryEager = new WeakMap<Attack, Effect>();
+/** The blast at each stack, built once per skill. Four objects, shared by every cast. */
+const cherryBlasts = new WeakMap<Skill, Skill[]>();
+function cherryBlast(s: Skill, n: number): Skill {
+  let list = cherryBlasts.get(s);
+  if (!list) cherryBlasts.set(s, list = []);
+  let b = list[n];
+  if (!b) {
+    const top = s.finale?.damage ?? s.damage * 2;
+    b = n >= CHERRY_MAX
+      ? { ...s, ...s.finale, finale: undefined, noBlock: true }
+      : { ...s, finale: undefined, noBlock: true, damage: Math.round(s.damage + (top - s.damage) * n / CHERRY_MAX), knock: (s.knock ?? 0) + n * 30 };
+    list[n] = b;
+  }
+  return b;
+}
+/** 千樱梨樱桃炸弹 (樱桃炸弹; her name's 樱 is Cherry and her twin buns are the pair): when nobody looks at
+ *  her she goes off. Through the fuse (the skill's start) she stamps and shakes, poised, taking half damage;
+ *  her body flushes cherry red from the feet up and the buns swell into two cherries on one burning stem.
+ *  Every clean hit that costs her health adds a stack (至多 CHERRY_MAX) and the cherries swell again. Then
+ *  she blows up round herself: the radius and the damage grow with the stacks, and at full stacks it knocks
+ *  them down. 「千樱梨绝不答应！！」 */
+function step_cherry(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  if (!(a.burst & CHERRY_FUSED)) {
+    a.burst |= CHERRY_FUSED;
+    a.shots = 0;
+    cherryArmour.set(a, addMod(f, 'dmgTaken', s.start + .02, {
+      tag: 'cherry', v: .5,
+      hurt: (game, who) => {
+        if (who.attack !== a || a.t >= s.start || a.shots >= CHERRY_MAX) return;
+        a.shots++;
+        game.effect('cherry-swell', who.x, who.y, '#ff3b5c', .35, { follow: who.id, ox: 0, oy: 0, dir: who.facing, n: a.shots });
+      },
+    }));
+    cherryFuse.set(a, g.effect('cherry-fuse', f.x, f.y, '#ff3b5c', s.start + .04, { follow: f.id, ox: 0, oy: 0, dir: f.facing, n: 0 }));
+  }
+  f.vx = 0;
+  const fuse = cherryFuse.get(a);
+  if (fuse) fuse.n = a.shots;
+  if (a.t < s.start || (a.burst & CHERRY_BOOMED)) return;
+  // 长按: the cherries are ripe but she holds on — the clock stays pinned under the start (the fuse cell, the
+  // half damage and the stacks all carry on) until the key comes up or CHERRY_HOLD_MAX since the cast.
+  const held = cherryHeld.get(a) ?? 0;
+  if (attackHeld(g, f) && s.start + held < CHERRY_HOLD_MAX) {
+    const step = a.t - (s.start - 1e-4);
+    cherryHeld.set(a, held + step);
+    a.t = s.start - 1e-4;
+    const armour = cherryArmour.get(a);
+    if (armour) armour.left = Math.max(armour.left, .05);
+    // Keep the cherries up on their own clock: still counting, never running out, and marked as held.
+    if (fuse) { fuse.life = .05; fuse.max = s.start + held + step + .05; fuse.heavy = true; }
+    if (!(a.burst & CHERRY_EAGER)) {
+      a.burst |= CHERRY_EAGER;
+      cherryEager.set(a, g.effect('cherry-eager', f.x, f.y, '#ff3b5c', CHERRY_HOLD_MAX - s.start + .1, { follow: f.id, ox: 0, oy: 0, dir: f.facing, n: a.shots }));
+    }
+    const eager = cherryEager.get(a);
+    if (eager) eager.n = a.shots;
+    return;
+  }
+  a.burst |= CHERRY_BOOMED;
+  // Held all the way to the cap: one bonus stack for the patience, still never past CHERRY_MAX (1→2, 3→3).
+  if (s.start + held >= CHERRY_HOLD_MAX - 1e-3) {
+    a.shots = Math.min(CHERRY_MAX, a.shots + 1);
+    g.effect('cherry-swell', f.x, f.y, '#ff3b5c', .35, { follow: f.id, ox: 0, oy: 0, dir: f.facing, n: a.shots });
+  }
+  a.liftAt = Math.max(a.t, s.start);
+  a.t = a.liftAt;
+  const eager = cherryEager.get(a);
+  if (eager) eager.life = 0;
+  if (fuse) fuse.life = 0;
+  clearMod(f, 'dmgTaken', 'cherry');
+  const n = Math.min(a.shots, CHERRY_MAX);
+  const r = CHERRY_R0 + n * CHERRY_R_STEP;
+  // A guard does not stop it: she goes off round herself, front and back alike.
+  const blast = cherryBlast(s, n);
+  const cy = f.y - 90;
+  a.hit = new Set();
+  for (const o of g.fighters) {
+    if (!g.isEnemy(f, o) || o.hp <= 0 || o.echo) continue;
+    const dx = o.x - f.x, dy = (o.y - 90) - cy;
+    if (dx * dx + dy * dy < r * r) hit(g, f, o, blast, a);
+  }
+  g.shake = Math.max(g.shake, 8 + n * 3);
+  g.flash = Math.max(g.flash, .05 + n * .02);
+  g.hitstop = Math.max(g.hitstop, .04 + n * .015);
+  g.effect('cherry-boom', f.x, cy, '#ff3b5c', .9, { radius: r, n, dir: f.facing });
+  g.effect('cherry-shout', f.x, f.y - 236, f.data.color, .9, { n });
+  g.effect('cherry-smoke', f.x + f.facing * CHIERI_BUN.x, f.y - CHIERI_BUN.y, '#cfc6d6', .8, { follow: f.id, ox: f.facing * CHIERI_BUN.x, oy: -CHIERI_BUN.y });
+  if (a.hit.size) chieriFirst(g, f);
+  // The settle after the blast is the same length however long she held.
+  a.t = Math.max(a.t, s.duration - CHERRY_TAIL);
+}
+SCRIPTS['cherry-bomb'] = Object.assign(SCRIPTS['cherry-bomb'] ?? {}, {
+  update: step_cherry, noMelee: true, poise: true,
+});
+
+/** 千樱梨联盟集合: the chance a dodging or invulnerable foe slips the call. */
+const ASSEMBLE_SLIP = .5;
+/** 千樱梨联盟集合: a 部下 takes this much more from the whole super. */
+const ASSEMBLE_RECRUIT_MUL = 1.15;
+/** a.burst: the call is out; the hauled body was a 部下 when the call connected. */
+const ASSEMBLE_CALLED = 1;
+const ASSEMBLE_RECRUITED = 2;
+/** The board and the crowd read the same n: beats landed so far, or -1 for a call nobody answered. */
+const leagueBoard = new WeakMap<Attack, Effect[]>();
+function setBoard(a: Attack, n: number): void { for (const e of leagueBoard.get(a) ?? []) e.n = n; }
+/** Drum and cymbal, plain and at the 部下 rate. Built once per skill so a super does not allocate on the hits. */
+const assembleParts = new WeakMap<Skill, { beat: Skill; last: Skill; beatR: Skill; lastR: Skill }>();
+function assembleOf(s: Skill): { beat: Skill; last: Skill; beatR: Skill; lastR: Skill } {
+  let p = assembleParts.get(s);
+  if (!p) {
+    const beat: Skill = { ...s, finale: undefined, count: undefined, knock: 0, react: { kind: 'pin', stun: .5, holdStill: true } };
+    const last: Skill = { ...s, ...s.finale, finale: undefined, count: undefined };
+    const up = (skill: Skill): Skill => ({ ...skill, damage: Math.round(skill.damage * ASSEMBLE_RECRUIT_MUL) });
+    p = { beat, last, beatR: up(beat), lastR: up(last) };
+    assembleParts.set(s, p);
+  }
+  return p;
+}
+/** 千樱梨联盟集合 (第 20 话家规: 「千樱梨联盟一旦发出集结令，无论何时何地都必须全员到齐！」; 第 3 话「总有一天
+ *  要召集一亿个部下」; 第 19 话「大家准备！跟上千樱梨的节奏！」): hands round her mouth, the call sweeps the
+ *  screen and the nearest foe is hauled in from wherever they are. A foe who is invulnerable or mid-dodge
+ *  is not — unless they are her 部下 (跟班 now, or the badge), who must come. Five drum heads, a breath,
+ *  the cymbal. Along the bottom a crowd of penlights rises and the board over the stage counts the league
+ *  from 3 to 100,000,000; a call nobody answers leaves it at 3 and the crowd falls over — cardboard.
+ *  a.mode walks ASSEMBLE; a.tossAt starts each phase, a.anchor is where they were hauled from. */
+function step_assemble(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  const mode = a.mode ?? ASSEMBLE.call;
+  f.vx = 0;
+  if (mode === ASSEMBLE.call) {
+    if (!(a.burst & ASSEMBLE_CALLED)) {
+      a.burst |= ASSEMBLE_CALLED;
+      g.effect('assemble-call', f.x + f.facing * 30, f.y - 140, f.data.color, s.start + .35, { follow: f.id, ox: f.facing * 30, oy: -140, dir: f.facing });
+      g.text('千樱梨联盟，集合——！！', f.x, f.y - 232, f.data.color, 1, 18);
+      leagueBoard.set(a, [
+        g.effect('league-crowd', W / 2, H, f.data.color, s.duration + .5, { n: 0 }),
+        // The board rides over her head, in the world: wherever the screen is cropped or the HUD sits, it is
+        // as visible as she is.
+        g.effect('league-count', f.x, f.y - LEAGUE_BOARD_Y, f.data.color, s.duration + .7, { n: 0, follow: f.id, ox: 0, oy: -LEAGUE_BOARD_Y }),
+      ]);
+    }
+    if (a.t < s.start) return;
+    const o = g.nearestEnemyTo(f, f.x);
+    const recruit = !!o && isRecruit(o, f.id);
+    // A foe who is mid-dodge or invulnerable slips the call half the time; a 部下 never does.
+    // The rate is fixed here: a badge that runs out between drum hits does not change the rest of the super.
+    const slipped = !!o && !recruit && (o.invuln > 0 || o.dodge > 0) && g.random() < ASSEMBLE_SLIP;
+    if (recruit) a.burst |= ASSEMBLE_RECRUITED;
+    if (!o || slipped) {
+      a.mode = ASSEMBLE.whiff;
+      a.tossAt = a.t;
+      setBoard(a, -1);
+      return;
+    }
+    o.invuln = 0;
+    o.dodge = 0;
+    a.mode = ASSEMBLE.pull;
+    a.hold = o.id;
+    a.tossAt = a.t;
+    a.anchor = o.x;
+    a.shots = 0;
+    o.attack = null;
+    o.blocking = false;
+    o.dodge = 0;
+    o.vx = 0;
+    o.stun = Math.max(o.stun, 1);
+    retainEscape(o, true);
+    g.effect('assemble-rope', f.x, f.y - 120, f.data.color, ASSEMBLE_PULL + .12, { tx: o.x - f.x, ty: (o.y - 110) - (f.y - 120), dir: f.facing });
+    return;
+  }
+  if (mode === ASSEMBLE.whiff) {
+    if (a.t - a.tossAt >= ASSEMBLE_WHIFF) a.t = s.duration;
+    return;
+  }
+  const o = g.fighterById(a.hold);
+  if (!o || o.hp <= 0) {
+    if (mode !== ASSEMBLE.done) { a.mode = ASSEMBLE.done; a.t = Math.max(a.t, s.duration - ASSEMBLE_TAIL); }
+    return;
+  }
+  const spot = clamp(f.x + f.facing * ASSEMBLE_STOP, X_MIN, X_MAX);
+  const lt = a.t - a.tossAt;
+  if (mode === ASSEMBLE.pull) {
+    const k = Math.min(1, lt / ASSEMBLE_PULL);
+    o.x = a.anchor + (spot - a.anchor) * (1 - (1 - k) * (1 - k));
+    o.vx = 0;
+    o.stun = Math.max(o.stun, .5);
+    if (k < 1) return;
+    a.mode = ASSEMBLE.drum;
+    a.tossAt = a.t;
+    o.facing = (-f.facing) as 1 | -1;
+    return;
+  }
+  if (mode !== ASSEMBLE.drum) return;
+  const parts = assembleOf(s);
+  const beat = a.burst & ASSEMBLE_RECRUITED ? parts.beatR : parts.beat;
+  const beats = s.count ?? 5;
+  o.x = spot;
+  o.vx = 0;
+  while (a.shots < beats && lt >= a.shots * ASSEMBLE_BEAT) {
+    a.hit = new Set();
+    hit(g, f, o, beat, a);
+    g.effect('chieri-drumhead', o.x - f.facing * 6, o.y - 104, f.data.color, .42, { n: a.shots, dir: f.facing, hit: a.hit.size > 0 });
+    g.shake = Math.max(g.shake, 4);
+    a.shots++;
+    setBoard(a, a.shots);
+    if (a.shots === 1) chieriFirst(g, f);
+  }
+  if (lt < beats * ASSEMBLE_BEAT + ASSEMBLE_FINALE) return;
+  a.hit = new Set();
+  hit(g, f, o, a.burst & ASSEMBLE_RECRUITED ? parts.lastR : parts.last, a);
+  g.effect('assemble-cymbal', o.x, o.y - 120, '#ffd34d', .8, { dir: f.facing });
+  g.shake = Math.max(g.shake, 12);
+  g.flash = Math.max(g.flash, .12);
+  g.hitstop = Math.max(g.hitstop, .08);
+  setBoard(a, beats + 1);
+  a.mode = ASSEMBLE.done;
+  a.t = Math.max(a.t, s.duration - ASSEMBLE_TAIL);
+}
+SCRIPTS['chieri-assemble'] = Object.assign(SCRIPTS['chieri-assemble'] ?? {}, {
+  update: step_assemble, noMelee: true, skipCount: true, noSuperFx: true,
+  placesHold: [ASSEMBLE.pull, ASSEMBLE.drum],
+});
 
 SCRIPTS['milk'] = Object.assign(SCRIPTS['milk'] ?? {}, { spawn: 'milk' });
 SCRIPTS['bag'] = Object.assign(SCRIPTS['bag'] ?? {}, { spawn: 'bag' });

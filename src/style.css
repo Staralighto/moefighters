@@ -476,13 +476,13 @@ footer { display: flex; justify-content: space-between; gap: 16px; color: var(--
 .versus span { font: italic 900 48px Impact, sans-serif; color: var(--p2-ink); }
 .versus small { position: absolute; top: calc(50% + 28px); left: 50%; transform: translateX(-50%); color: var(--muted); font-size: 12px; white-space: nowrap; }
 /* ---- 首屏动效：视差、代表色、登场、台词 ---- */
-/* 视差：stageMotion.ts 只写 --mx / --my（-1..1）。舞台整体微倾，背景后退、立绘居中、芯片和 VS 前凸。 */
-.stage-frame { perspective: 1400px; }
-.select-stage { --mx: 0; --my: 0; transform: rotateY(calc(var(--mx) * 2.2deg)) rotateX(calc(var(--my) * -1.6deg)); }
+/* 视差：stageMotion.ts 只写 --mx / --my（-1..1）。背景后退，芯片、名字和 VS 前凸。
+   立绘画布和它的祖先不参与：perspective、rotate，或画布自己的 translate，会让合成器
+   在 150% 这类非整数缩放下把已经按设备像素画好的立绘再滤一遍。 */
+.select-stage { --mx: 0; --my: 0; }
 .select-stage > .stage-bg { position: absolute; top: -14px; right: -14px; bottom: -14px; left: -14px; inset: -14px; z-index: -1; background: var(--panel) center bottom / auto no-repeat; translate: calc(var(--mx) * -12px) calc(var(--my) * -7px); pointer-events: none; }
 /* 四成黑罩，纯色，不带任何渐变。 */
 .stage-bg::after { content: ""; position: absolute; inset: 0; z-index: 0; background: rgb(0 0 0 / 40%); }
-.fighter-preview canvas { translate: calc(var(--mx) * 5px) calc(var(--my) * 3px); }
 .select-stage .slot-head, .select-stage .fighter-preview h1, .versus span { translate: calc(var(--mx) * 10px) calc(var(--my) * 6px); }
 .versus span { display: inline-block; }
 /* 脚下的代表色地面圈和接地阴影画在立绘画布里（select.ts drawGround），钉在脚上，也不会撑高网格。
@@ -1456,10 +1456,9 @@ dialog { border-radius: 18px; }
   .vs-foot { bottom: 2vh; }
 }
 
-/* 减少动态：不倾斜、不位移、不漂浮，登场和过场只剩淡入淡出。 */
+/* 减少动态：不位移、不漂浮，登场和过场只剩淡入淡出。 */
 @media (prefers-reduced-motion: reduce) {
-  .select-stage { transform: none; }
-  .select-stage > .stage-bg, .fighter-preview canvas, .select-stage .slot-head, .select-stage .fighter-preview h1, .versus span { translate: none; }
+  .select-stage > .stage-bg, .select-stage .slot-head, .select-stage .fighter-preview h1, .versus span { translate: none; }
   .fighter-preview.beam::before, .character.picked canvas, .fighter-preview.arrive .slot-title, .character.picked, .character.picked::after, .nope, .slot-quote.typing::after { animation: none; }
   .seg.thumb-live .seg-thumb { transition: opacity .15s ease; }
   .vs-cut.in .vs-side.left .vs-disc, .vs-cut.in .vs-side.right .vs-disc, .vs-cut.in .vs-side.left .vs-ghost canvas, .vs-cut.in .vs-side.right .vs-ghost canvas, .vs-cut.in .vs-ring, .vs-cut.in .vs-stripe, .vs-cut.in .vs-side.left .vs-fighter canvas, .vs-cut.in .vs-side.right .vs-fighter canvas, .vs-cut.in .vs-fighter figcaption, .vs-cut.in .vs-mark span, .vs-cut.in .vs-head, .vs-cut.in .vs-foot { animation: vs-fade .2s ease-out both; }

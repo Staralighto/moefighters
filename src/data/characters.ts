@@ -1593,6 +1593,53 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'chieri', name: '梅里千樱梨', title: '鼓手 / 头号人物', quote: '千樱梨，就是很厉害的！！', color: '#FF55AA',
+    bands: ['ikka-dumb-rock'],
+    ...stats('beat'),
+    view: { kind: 'sprite', common: '/sprites/chieri/common.png', special: '/sprites/chieri/special.png', height: 163, lift: 8 },
+    // 出风头: 「舞台灯光千樱梨要一个人独占！」(第 2 话). U takes the cheers, I makes a 部下 who trots behind her,
+    // O blows up round herself (樱桃炸弹 — her twin buns are the cherries), and the super calls the league in.
+    // Every move but the super is empty-handed; the sticks are only in the L column.
+    skills: [
+      // 千·樱·梨！ (第 3 话: 「不是千梨，是千·樱·梨！」): one syllable a jab; the round's first hit is hers.
+      skill(0, 'light', '千·樱·梨！', { fx: 'chieri-name' }),
+      // 惊叹号 (萌百题头: 「什么……！！」): the loudest voice in the house.
+      skill(1, 'heavy', '惊叹号', { fx: 'chieri-bang' }),
+      // 千樱梨登场 (combat.ts step_entrance): the leap onto the stage, the cymbal, then five seconds of their cheers.
+      skill(2, 'dash', '千樱梨登场', {
+        damage: 36, range: 112, start: .2, duration: 1.15, cd: 10, knock: 220, fx: 'chieri-entrance', noSparks: true,
+        react: { kind: 'stand', stun: .35 },
+        brief: '霸体跃起砸落震地；之后对手的气全归她',
+        detail: '霸体高跳砸向前方对手，落地震波 36 伤害并击退，只打地面、左右都打；落地后 5 秒内所有对手获得的气全部归千樱梨，被打也不会中断',
+      }),
+      // 千樱梨收编令 (第 8 话: 「千樱梨会把你收归麾下的」): the handshake makes them a 部下 who walks behind her.
+      skill(3, 'grab', '千樱梨收编令', {
+        damage: 20, range: 96, start: .2, duration: .6, cd: 9, knock: 0, fx: 'chieri-recruit', noSparks: true,
+        react: { kind: 'stand', stun: .2 },
+        status: [{ kind: 'follow', time: 1.8 }],
+        brief: '近身握手收编对手为跟班；之后留部下徽章',
+        detail: '近身握手 20 伤害并让对手跟班 1.8 秒：失去控制，自动跟在她身后，不能出招、格挡、闪避和跳跃，挨打照常；被击倒则提前结束；结束后 4 秒内不能再次跟班；对手留下部下徽章 6 秒',
+      }),
+      // 千樱梨樱桃炸弹 (combat.ts step_cherry): the buns turn into a pair of cherries; the fuse burns, and the
+      // more they hit her while it burns, the bigger she goes off. Holding the key keeps her lit up to 2.1 s.
+      skill(4, 'heavy', '千樱梨樱桃炸弹', {
+        damage: 40, range: 130, start: .7, duration: 1.15, cd: 8, knock: 260, fx: 'cherry-bomb', noSparks: true,
+        react: { kind: 'stand', stun: .35 },
+        finale: { damage: 80, knock: 380, react: { kind: 'knockdown', vy: -300, knocked: .9 } },
+        brief: '霸体蓄力自爆不可格挡；挨打和长按满都加层',
+        detail: '原地蓄力 0.7 秒，期间霸体、受到伤害减半，每挨一下蓄力加一层，至多 3 层；长按可把引爆推迟到出招后至多 2.1 秒，期间同样霸体、减伤、加层，松手即爆，按满 2.1 秒额外加一层但不超过 3 层；以自身为中心爆炸，不能格挡，0 层 40 伤害，每层伤害和范围都变大，3 层 80 伤害并击倒',
+      }),
+      // 千樱梨联盟集合 (第 20 话家规: 「千樱梨联盟一旦发出集结令，无论何时何地都必须全员到齐！」): the call pulls
+      // the nearest foe to her from anywhere, five drum heads and the cymbal; the 部下 count rolls to 100,000,000.
+      skill(5, 'grab', '千樱梨联盟集合', {
+        cost: 150, damage: 30, count: 5, interval: .2, range: 900, start: .45, duration: 2.6, fx: 'chieri-assemble', knock: 0, gain: 2, noSparks: true,
+        finale: { damage: 90, knock: 300, react: { kind: 'launch', vy: -560, knocked: .9 } },
+        brief: '全屏拽到面前连打挑空；闪避有一半拽不到',
+        detail: '大喊集结令，把最近的对手从任何位置拽到面前，五记鼓点各 30 伤害，最后镲片 90 伤害挑空；不能格挡；对手无敌或闪避中有 50% 拽不到；对手正在跟班或带着部下徽章时必定拽到，伤害 +15%',
+      }),
+    ],
+  },
+  {
     id: 'viola', name: '薇欧拉', title: '队长 / 恶德', quote: '火种燃尽之后会怎么样呢？', color: '#8E5AC8',
     ...stats('armor'),
     view: {

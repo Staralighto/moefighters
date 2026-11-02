@@ -11,6 +11,7 @@ import { SAKIKO_BACK, SAKIKO_SCREEN_BACK } from './sakikoFx.ts';
 import { MIKU_BACK, MIKU_SCREEN_BACK } from './mikuFx.ts';
 import { drawStatusAuras, statusBodyOf } from './statusMarks.ts';
 import { SHIZUKU_BACK } from './shizukuFx.ts';
+import { CHIERI_BACK, CHIERI_SCREEN_FRONT } from './chieriFx.ts';
 
 /** Backing-store pixels per CSS pixel. The compositor then blits 1:1.
  *  Phones use the screen ratio too: a CSS pixel is several physical pixels, and a 1× store
@@ -30,10 +31,10 @@ export function portraitBodyScale(padSplit: boolean): number {
 /** Hard 1px rim, yellow for the left team and green for the right. */
 const TEAM_GLOW = SIDE;
 /** Effects painted under every body: 和泉朋花's coffin and her spotlights. */
-const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK, ...MIKU_BACK, ...SHIZUKU_BACK]);
+const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK, ...MIKU_BACK, ...SHIZUKU_BACK, ...CHIERI_BACK]);
 /** Screen-space layers that ignore the body zoom: behind every body, and in front of them. */
 const SCREEN_BACK = new Set(['encore-stage', 'family-dim', ...SAKIKO_SCREEN_BACK, ...MIKU_SCREEN_BACK]);
-const SCREEN_FRONT = new Set(['encore-rain', 'encore-crowd', 'encore-call', 'slap-flash']);
+const SCREEN_FRONT = new Set(['encore-rain', 'encore-crowd', 'encore-call', 'slap-flash', ...CHIERI_SCREEN_FRONT]);
 /** 安可是主唱的: the eye line on the 175 px body, measured up from the feet. */
 const ENCORE_EYE_Y = 152;
 
@@ -315,6 +316,20 @@ export class Renderer {
             view.draw(c, f, f.x, footY, alpha * lit * .16, '#ff4a5e');
           }
         }
+        // 千樱梨樱桃炸弹: through the fuse she flushes cherry red from the feet up, a little more with every stack.
+        if (f.attack?.skill.fx === 'cherry-bomb' && f.hp > 0 && f.attack.t < f.attack.skill.start + .08) {
+          const a = f.attack, s = a.skill;
+          const k = Math.min(1, a.t / s.start);
+          const vh = f.data.view.kind === 'sprite' ? f.data.view.height : 181;
+          c.save();
+          c.beginPath();
+          c.rect(f.x - 130, footY - (vh + 30) * k, 260, (vh + 40) * k + 8);
+          c.clip();
+          view.draw(c, f, f.x, footY, alpha * (.32 + .07 * Math.min(a.shots, 3) + .08 * Math.sin(g.age * 15)), '#ff2346');
+          c.restore();
+        }
+        // 独占欢呼 (千樱梨登场): their light was taken — a dim wash while it lasts.
+        if (f.hp > 0 && f.mods.some(m => m.kind === 'cheer' && m.left > 0)) view.draw(c, f, f.x, footY, alpha * .28, '#120a1c');
         if (f.attack?.skill.fx === 'encore' && encoreDark(f.attack.mode)) {
           view.draw(c, f, f.x, footY, alpha * .82, '#0a0b14');
           drawEffect(c, { type: 'encore-eye', x: f.x + f.facing * 2, y: footY - ENCORE_EYE_Y, color: '#ffffff', life: 1, max: 1, dir: f.facing });

@@ -1,6 +1,7 @@
 /** Select stage parallax: the pointer (or a slow idle drift when there is none) eases two CSS
- *  variables, --mx and --my in [-1, 1], onto the stage. style.css turns them into the tilt and the
- *  per-layer offsets (backdrop back, portraits mid, chips and VS front).
+ *  variables, --mx and --my in [-1, 1], onto the stage. style.css turns them into per-layer
+ *  offsets (backdrop back, chips and VS front). Portrait canvases stay untransformed: a
+ *  perspective, rotate, or translate on them resamples the bitmap at fractional zoom.
  *
  *  Cost control: the values are written only when they move by a visible step (STEP), so the idle
  *  drift restyles the stage a few times a second rather than every frame, and the stage rect is

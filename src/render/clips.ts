@@ -272,6 +272,42 @@ export const WIDE_SLOT = 96;
  *  and every blast (and the burst) reaches anyone within this radius of that centre. */
 export const WIDE_ZONE_AHEAD = 110;
 export const WIDE_ZONE_R = 110;
+
+/* ---- 梅里千樱梨 ---- */
+/** 千樱梨登场: crouch → leap at the nearest foe ahead within `reach` (else `hop` forward) → land. The leap
+ *  is a plain ballistic arc from vy; `quake` is how long the landing cell holds; `cheer` the seconds of 独占欢呼. */
+export const ENTRANCE = { crouch: 0, air: 1, land: 2 } as const;
+export const ENTRANCE_VY = 560;
+export const ENTRANCE_REACH = 380;
+export const ENTRANCE_HOP = 200;
+export const ENTRANCE_QUAKE = .2;
+export const ENTRANCE_TAIL = .27;
+export const ENTRANCE_CHEER = 5;
+/** 千樱梨樱桃炸弹: the fuse is the skill's start. Stacks cap here; each stack widens the blast this much. */
+export const CHERRY_MAX = 3;
+export const CHERRY_R0 = 130;
+export const CHERRY_R_STEP = 34;
+/** Holding O past the fuse keeps her lit: the blast may wait until this long after the cast. */
+export const CHERRY_HOLD_MAX = 2.1;
+/** The settle after the blast, however long she held. */
+export const CHERRY_TAIL = .45;
+/** How long the shout cell holds after the blast before the hands-on-hips settle. */
+export const CHERRY_SHOUT = .25;
+/** Where her two buns sit (the cherries grow out of them): above her feet, and either side of the crown. */
+export const CHIERI_BUN = { x: -4, y: 158, gap: 15 } as const;
+/** 千樱梨联盟集合: the call is the skill's start; then the pull, five beats `beat` apart, a breath, the cymbal. */
+export const ASSEMBLE = { call: 0, pull: 1, drum: 2, done: 3, whiff: 4 } as const;
+export const ASSEMBLE_PULL = .3;
+export const ASSEMBLE_BEAT = .2;
+export const ASSEMBLE_FINALE = .2;
+export const ASSEMBLE_STOP = 72;
+export const ASSEMBLE_TAIL = .45;
+export const ASSEMBLE_WHIFF = 1;
+/** The 部下 count on the board: the league before, and after the cymbal. */
+export const LEAGUE_START = 3;
+export const LEAGUE_GOAL = 100000000;
+/** The board floats this high over her feet: clear of her head, well under the top-of-screen HUD. */
+export const LEAGUE_BOARD_Y = 236;
 export const PLAY = { bow: 0, dash: 1, away: 2, bye: 3, ear: 4 } as const;
 /** The dash looks for a body this long after the bow. */
 export const PLAY_DASH = .22;
@@ -780,6 +816,28 @@ export function clipFor(f: Fighter): Clip {
       if (mode === PLAY.away) return at('special', a.index - 2, a.t < a.tossAt + PLAY_CUT_HOLD ? 1 : 2);
       if (mode === PLAY.ear) return at('special', 2, 0);
       return at('special', a.index - 2, mode === PLAY.bow ? 0 : mode === PLAY.dash ? 1 : 2);
+    }
+    // 千樱梨登场: the crouch; in the air the common jump; the landing pose held through the quake; hands on hips.
+    if (f.attack.skill.fx === 'chieri-entrance') {
+      const a = f.attack, mode = a.mode ?? ENTRANCE.crouch;
+      if (mode === ENTRANCE.air) return loco('jump');
+      if (mode === ENTRANCE.land) return at('special', a.index - 2, a.t < a.liftAt + ENTRANCE_QUAKE ? 1 : 2);
+      return at('special', a.index - 2, 0);
+    }
+    // 千樱梨樱桃炸弹: stamping and shaking through the fuse; the shout as it goes off; hands on hips, out of breath.
+    if (f.attack.skill.fx === 'cherry-bomb') {
+      const a = f.attack, s = a.skill;
+      // a.liftAt is the blast (0 until it goes off; a held fuse keeps the clock pinned just under the start).
+      if (a.liftAt <= 0) return at('special', a.index - 2, 0);
+      return at('special', a.index - 2, a.t < a.liftAt + CHERRY_SHOUT ? 1 : 2);
+    }
+    // 千樱梨联盟集合: the cupped-hands call holds through the pull (and through a call nobody answers); the
+    // drum beats trade the strike and the raised sticks; the crossed sticks after the cymbal.
+    if (f.attack.skill.fx === 'chieri-assemble') {
+      const a = f.attack, mode = a.mode ?? ASSEMBLE.call;
+      if (mode === ASSEMBLE.drum) return at('special', a.index - 2, ((a.t - a.tossAt) / ASSEMBLE_BEAT) % 1 < .5 ? 1 : 2);
+      if (mode === ASSEMBLE.done) return at('special', a.index - 2, 2);
+      return at('special', a.index - 2, 0);
     }
     // 我背你！: the dash, then the run with them on her back trades the two carry cells.
     if (f.attack.skill.fx === 'piggyback') {

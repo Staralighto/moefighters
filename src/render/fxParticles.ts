@@ -320,3 +320,50 @@ export function burst(t: number, seed: number, spec: BurstSpec, draw: (x: number
     draw(x0 + Math.cos(a) * d, y0 + Math.sin(a) * d + fall, t / life, i);
   }
 }
+
+/* ---- text stamps ---- */
+
+const TEXT_SCALE = 2;
+const TEXT_CAP = 160;
+const textStamps = new Map<string, Stamp | null>();
+/** A line of poster text — `fill` over a round-joined `line` outline (none when line is empty) — laid out
+ *  once into a cached canvas at twice the size and stamped centred on x, y. Laying text out (font parse,
+ *  shaping, a stroke pass and a fill pass) every frame is the dear part of on-screen words; a stamp is one
+ *  drawImage. Returns the drawn width, or -1 with no DOM (the caller can fall back to plain text). */
+export function stampText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, size: number, fill: string, line = '', weight = 900): number {
+  if (!text || !(size > 0) || !visible(ctx)) return 0;
+  const px = Math.round(size);
+  const key = text + '|' + px + '|' + fill + '|' + line + '|' + weight;
+  let c = textStamps.get(key);
+  if (c === undefined) {
+    c = null;
+    if (typeof document !== 'undefined') {
+      const font = `${weight} ${px * TEXT_SCALE}px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif`;
+      const lw = line ? Math.max(3, px * .2) * TEXT_SCALE : 0;
+      const probe = document.createElement('canvas').getContext('2d');
+      if (probe) {
+        probe.font = font;
+        const w = Math.ceil(probe.measureText(text).width + lw + 4);
+        const h = Math.ceil(px * TEXT_SCALE * 1.35 + lw + 4);
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        const g = cv.getContext('2d');
+        if (g) {
+          g.font = font;
+          g.textAlign = 'center';
+          g.textBaseline = 'middle';
+          if (line) { g.lineJoin = 'round'; g.lineWidth = lw; g.strokeStyle = line; g.strokeText(text, w / 2, h / 2); }
+          g.fillStyle = fill;
+          g.fillText(text, w / 2, h / 2);
+          c = cv;
+        }
+      }
+    }
+    if (textStamps.size >= TEXT_CAP) textStamps.clear();
+    textStamps.set(key, c);
+  }
+  if (!c) return -1;
+  const w = c.width / TEXT_SCALE, h = c.height / TEXT_SCALE;
+  ctx.drawImage(c, x - w / 2, y - h / 2, w, h);
+  return w;
+}

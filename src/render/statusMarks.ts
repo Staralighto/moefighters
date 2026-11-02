@@ -9,7 +9,7 @@
 
 import type { Effect } from '../game/game.ts';
 import type { Fighter } from '../game/fighter.ts';
-import { TAU, burst, cycle, dot, flame, glow, glyph, hash, snowflake, sparkle, streak, tri } from './fxParticles.ts';
+import { TAU, burst, cycle, dot, flame, glow, glyph, hash, snowflake, sparkle, stampText, streak, tri } from './fxParticles.ts';
 import { isLiteFx } from './fx.ts';
 
 /** A status that changes the body itself, painted by the renderer with the view's own outline and tint:
@@ -247,7 +247,123 @@ function applyDizzy(ctx: CanvasRenderingContext2D, e: Effect, age: number): void
   ctx.restore();
 }
 
+/* ---------- 跟班: a pink pennant on a little pole over their head with their 部下 number, dust puffs at their
+   heels as they trot, and now and then a small 「是，老大！」 — no outline, nothing over the face ---------- */
+const FOLLOW_PINK = '#FF55AA';
+const FOLLOW_LINES = ['是，老大！', '千樱梨好厉害！'] as const;
+/** Bubble widths for the two lines at 13 px (full-width glyphs are one em each). */
+const FOLLOW_TEXT_W: Record<string, number> = { '是，老大！': 65, '千樱梨好厉害！': 91 };
+function followHeart(ctx: CanvasRenderingContext2D, x: number, y: number, s: number): void {
+  if (!(s > 0)) return;
+  ctx.beginPath();
+  ctx.moveTo(x, y + s * .9);
+  ctx.bezierCurveTo(x - s * 1.4, y - s * .1, x - s * .6, y - s * 1.2, x, y - s * .35);
+  ctx.bezierCurveTo(x + s * .6, y - s * 1.2, x + s * 1.4, y - s * .1, x, y + s * .9);
+  ctx.fill();
+}
+function pennant(ctx: CanvasRenderingContext2D, x: number, y: number, t: number, num: number, scale = 1): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  ctx.strokeStyle = '#3a2433';
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -40); ctx.stroke();
+  const wave = Math.sin(t * 9) * 3;
+  ctx.fillStyle = FOLLOW_PINK;
+  ctx.beginPath(); ctx.moveTo(1, -40); ctx.quadraticCurveTo(16, -36 + wave, 30, -31 + wave); ctx.quadraticCurveTo(16, -26 - wave * .5, 1, -22); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  sparkle(ctx, 11, -31 + wave * .5, 5);
+  ctx.fillStyle = '#ffd34d';
+  ctx.beginPath(); ctx.arc(0, -42, 3, 0, TAU); ctx.fill();
+  if (num > 0) {
+    stampText(ctx, 'No.' + num, 18, -14, 11, '#ffffff', '#2a0f22');
+  }
+  ctx.restore();
+}
+function auraFollow(ctx: CanvasRenderingContext2D, f: Fighter, _left: number, t: number): void {
+  const h = bodyH(f);
+  const num = f.mods.find(m => m.kind === 'follow' && m.left > 0)?.v ?? 0;
+  ctx.save();
+  // A soft pink glow round them and little hearts drifting up off their shoulders: they are hers now.
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = .16 + .05 * Math.sin(t * 6);
+  glow(ctx, f.x, f.y - h * .5, h * .45, '255,110,185');
+  ctx.globalCompositeOperation = 'source-over';
+  for (let i = 0, m = n(5); i < m; i++) {
+    const k = cycle(t, .9, i, 11);
+    ctx.globalAlpha = Math.sin(k * Math.PI) * .85;
+    ctx.fillStyle = i % 2 ? FOLLOW_PINK : '#ffc2e0';
+    followHeart(ctx, f.x + (hash(i, 12) - .5) * 44 + Math.sin(t * 3 + i) * 5, f.y - h * (.45 + .4 * hash(i, 13)) - k * 40, 4 + hash(i, 14) * 3);
+  }
+  ctx.globalAlpha = 1;
+  pennant(ctx, f.x - f.facing * 6, f.y - h - 6, t, num);
+  // Dust at the heels while they trot.
+  if (f.walk > 0) {
+    for (let i = 0, m = n(4); i < m; i++) {
+      const k = cycle(t, 3, i, 6);
+      ctx.globalAlpha = (1 - k) * .45;
+      glow(ctx, f.x - f.facing * (8 + k * 22) + (hash(i, 7) - .5) * 10, f.y - 4 - k * 8, 6 + k * 8, '214,200,226');
+    }
+  }
+  // A small bubble now and then.
+  const phase = (t * .9) % 2;
+  const fr = phase % 1;
+  if (fr < .6) {
+    const text = FOLLOW_LINES[Math.floor(phase)];
+    ctx.globalAlpha = Math.min(1, fr / .08, (.6 - fr) / .1);
+    // The words are a cached stamp; their width (known once laid out) sizes the bubble.
+    const tw = FOLLOW_TEXT_W[text];
+    const w = tw + 14;
+    const bx = f.x + f.facing * 52, by = f.y - h - 66;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.roundRect(bx - w / 2, by - 11, w, 22, 11); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(bx - f.facing * 8, by + 9); ctx.lineTo(bx - f.facing * 16, by + 18); ctx.lineTo(bx - f.facing * 2, by + 10); ctx.fill();
+    stampText(ctx, text, bx, by + 1, 13, FOLLOW_PINK, '', 800);
+  }
+  ctx.restore();
+}
+function applyFollow(ctx: CanvasRenderingContext2D, e: Effect, age: number): void {
+  // The flag is planted: it drops in from above and bounces, with a pink spark.
+  const k = Math.min(1, age / .25);
+  const drop = (1 - k) * (1 - k) * 60;
+  const bounce = 1 + Math.sin(k * Math.PI) * .25;
+  ctx.save();
+  ctx.globalAlpha = 1 - Math.max(0, (age - .35) / .25);
+  pennant(ctx, e.x, e.y - 186 - drop, age, 0, bounce);
+  burst(age, 41, { n: n(12), speed: [70, 180], life: .55, gravity: 220 }, (x, y, kk, i) => {
+    ctx.fillStyle = i % 3 === 0 ? '#ffffff' : i % 3 === 1 ? FOLLOW_PINK : '#ffc2e0';
+    if (i % 3 === 0) sparkle(ctx, x, y, 6 * (1 - kk)); else followHeart(ctx, x, y, 5 * (1 - kk * .5));
+  }, e.x, e.y - 186);
+  ctx.restore();
+}
+function expireFollow(ctx: CanvasRenderingContext2D, e: Effect, age: number): void {
+  // Time's up: the flag pops into pink sparks.
+  ctx.save();
+  ctx.fillStyle = FOLLOW_PINK;
+  ctx.globalAlpha = 1 - Math.min(1, age / .5);
+  burst(age, 43, { n: n(10), speed: [40, 120], life: .5, gravity: -40 }, (x, y, k) => sparkle(ctx, x, y, 6 * (1 - k)), e.x, e.y - 206);
+  ctx.restore();
+}
+/* ---------- 部下 badge: a small pink pin with 「部」 on the chest; hidden while the flag is up ---------- */
+function auraBadge(ctx: CanvasRenderingContext2D, f: Fighter, left: number, t: number): void {
+  if (f.mods.some(m => m.kind === 'follow' && m.left > 0)) return;
+  const h = bodyH(f);
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, left / .4) * (.85 + .15 * Math.sin(t * 4));
+  const x = f.x + f.facing * 6, y = f.y - h * .62;
+  ctx.fillStyle = '#2a0f22';
+  ctx.beginPath(); ctx.arc(x, y, 9, 0, TAU); ctx.fill();
+  ctx.fillStyle = FOLLOW_PINK;
+  ctx.beginPath(); ctx.arc(x, y, 7.5, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  glyph(ctx, '部', x, y, 10);
+  ctx.restore();
+}
+
 export const STATUS_MARKS: Record<string, MarkDrawer> = {
+  'follow-flag': { aura: auraFollow, apply: applyFollow, expire: expireFollow },
+  'recruit-badge': { aura: auraBadge },
   burn: { aura: auraBurn, apply: applyBurn },
   frost: { aura: auraFrost, apply: applyFrost },
   'ice-block': { aura: auraIce, apply: applyIce, expire: expireIce, body: ICE_BODY },
@@ -260,7 +376,7 @@ export function statusMarkOf(mark: string | undefined): MarkDrawer | undefined {
   return mark ? STATUS_MARKS[mark] : undefined;
 }
 
-const STATUS_MOD_KINDS = new Set(['burn', 'slow', 'confuse']);
+const STATUS_MOD_KINDS = new Set(['burn', 'slow', 'confuse', 'follow', 'recruit']);
 
 /** Every status aura on this body, and whether the slow and the root were drawn here (so the old
  *  petal / heart drawings stay off for them). */

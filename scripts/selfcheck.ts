@@ -8,15 +8,16 @@ import { BANDS, BAND_BY_ID } from '../src/data/bands.ts';
 import { AIR_SKILLS, skill } from '../src/data/skills.ts';
 import { STAGES } from '../src/data/stages.ts';
 import { FLOOR, COMBO_DECAY, STEP, W, X_MAX, X_MIN } from '../src/game/constants.ts';
-import { BUSHIDO_TAIL, bushidoClip, clipFor, crashRow, DRUM_SLUMP, drumRow, ROLL, ROLL_BEATS, ROLL_MAX, rollGap, flameFrame, IAIDO_DECIDE, IAIDO_GAP, IAIDO_RECOVER, riotCell, BLOOD, OBLIVION, TWIN_MOON } from '../src/render/clips.ts';
+import { ASSEMBLE, ASSEMBLE_STOP, BUSHIDO_TAIL, bushidoClip, clipFor, crashRow, DRUM_SLUMP, drumRow, ROLL, ROLL_BEATS, ROLL_MAX, rollGap, flameFrame, IAIDO_DECIDE, IAIDO_GAP, IAIDO_RECOVER, riotCell, BLOOD, OBLIVION, TWIN_MOON } from '../src/render/clips.ts';
 import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
 import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell, shouldGoLite } from '../src/render/fx.ts';
 import { backingScale, portraitBodyScale, superZoom, teamGlowOn } from '../src/render/renderer.ts';
 import { previewFighter, gainEnergy } from '../src/game/fighter.ts';
 import { addMod, atkMul, clearMod, incomingMul, jumpMul, moveSign, speedMul } from '../src/game/mods.ts';
-import { DEFAULT_MARK, hasStatus, statusCount, statusMask } from '../src/game/status.ts';
+import { DEFAULT_MARK, hasStatus, isRecruit, statusCount, statusMask } from '../src/game/status.ts';
 import { STATUS_MARKS, drawStatusAuras, drawStatusEffect } from '../src/render/statusMarks.ts';
 import { drawShizukuFx, drawShizukuShot } from '../src/render/shizukuFx.ts';
+import { drawChieriFx } from '../src/render/chieriFx.ts';
 import { assetUrl, easeLoad, imageSources, linkRate, liteFight, liteSrc, nextSrc, portraitSrc, SLOW_RATE, stageThumbSrc } from '../src/assets/loader.ts';
 import { acceptBlank, isTouchJump, matchStickTouch, stickFingerGone, thumbBandTop, touchRelease, turnedStickDelta } from '../src/game/input.ts';
 import { BIT_ATK, BIT_LEFT, BIT_SOFT, NET_BUILD, InputClock, RemotePad, TAP_SLOTS, applyRemoteBits, cleanCode, packBits, readEvents, readPad, tapSlot, type PadEvent } from '../src/net/proto.ts';
@@ -129,7 +130,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(opening < 40, `${id}: the opening stays under a chipped bar, ${opening}`);
     assert.equal(withGuard(s, breakAt + 99).guardDmg, plan![plan!.length - 1], id + ': a late segment repeats the last entry');
   }
-  for (const id of ['uika', 'mutsumi', 'umiri', 'taki', 'layer', 'sayo', 'houka', 'mahoro', 'raika', 'miku', 'shizuku']) {
+  for (const id of ['uika', 'mutsumi', 'umiri', 'taki', 'layer', 'sayo', 'houka', 'mahoro', 'raika', 'miku', 'shizuku', 'chieri']) {
     const s = ROSTER[at(id)].skills[5];
     assert.ok(!s.guardPlan && !s.guardDmg, id + ': the unblockable super carries no guard value');
   }
@@ -7626,6 +7627,275 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     const p = { fx, x: 400, y: 300, vx: 500, vy: i * 10, age: i * .03, trail: [] } as unknown as Parameters<typeof drawShizukuShot>[1];
     assert.ok(drawShizukuShot(ctx, p, undefined, false), fx + ' is drawn by shizukuFx');
   }
+}
+
+// chieri: 出风头. J pops her name a syllable at a time and the round's first hit pays; U leaps onto them,
+// quakes the floor and takes every foe's energy for five seconds whatever they do to her; I makes a 部下 who
+// trots behind her and cannot act, then wears a badge; O fuses (poised, half damage, every hit a stack) and
+// blows up round herself, bigger with every stack; L hauls the nearest foe in from anywhere, five drum heads
+// and the cymbal — a dodging foe is not hauled unless they are her 部下, who take more.
+{
+  const ch = at('chieri');
+  const data = ROSTER[ch];
+  assert.deepEqual(data.bands, ['ikka-dumb-rock'], 'chieri stands with 一家Dumb Rock!');
+  assert.ok(at('chieri') === at('shizuku') + 1, 'right after 宁月 on the roster');
+  assert.equal(data.title, '鼓手 / 头号人物', 'chieri wears the league title');
+  assert.equal(data.quote, '千樱梨，就是很厉害的！！', 'chieri says the line from 视角 4');
+  assert.equal(data.trait, 'beat', 'chieri takes the beat trait');
+  assert.ok(data.skills.slice(2).every(s => s.name.startsWith('千樱梨')), 'every special starts with her name');
+  assert.equal(data.skills[5].name, '千樱梨联盟集合', 'the super is the league call');
+  assert.equal(data.skills[5].cost, 150, 'L costs 150');
+  // J: 千 → 樱 → 梨, and 第一个！ once a round
+  {
+    const g = newGame(ch, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 380; p1.facing = 1; p2.facing = -1;
+    const said: number[] = [];
+    const seen = new Set<object>();
+    for (let i = 0; i < 3; i++) {
+      g.attack(p1, 0);
+      for (let k = 0; k < Math.round(.4 / STEP); k++) {
+        g.step(STEP);
+        for (const e of g.effects) if (e.type === 'chieri-syllable' && !seen.has(e)) { seen.add(e); said.push(e.n ?? -1); }
+      }
+      p2.x = p1.x + 80;
+    }
+    assert.deepEqual(said, [0, 1, 2], 'one syllable a jab, in order: ' + said);
+    assert.equal(g.firstHitBy, p1.id, 'the round\'s first hit is hers');
+    assert.equal(g.effects.filter(e => e.type === 'chieri-first').length, 1, '第一个！ once');
+  }
+  // U: the leap, the quake, and the cheers
+  {
+    const g = newGame(ch, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 260; p2.x = 520; p1.facing = 1; p2.facing = -1;
+    assert.ok(g.attack(p1, 2), 'the leap comes out');
+    run(g, .4);
+    assert.ok(p1.y < FLOOR - 40, 'she is in the air: ' + p1.y);
+    run(g, 1);
+    const lost = p2.data.hp - p2.hp;
+    assert.ok(lost > 30 && lost < 42, 'the landing quake: ' + lost);
+    assert.ok(Math.abs(p1.x - 520) < 40, 'she came down where they stood: ' + p1.x);
+    assert.ok(p2.mods.some(m => m.kind === 'cheer' && m.left > 0), 'their cheers are hers now');
+    const e1 = p1.energy, e2 = p2.energy;
+    gainEnergy(p2, 10);
+    assert.equal(p2.energy, e2, 'they gain nothing');
+    assert.ok(p1.energy - e1 > 9, 'she gains it: ' + (p1.energy - e1));
+    hit(g, p2, p1, p2.data.skills[1], { hit: new Set() });
+    assert.ok(p2.mods.some(m => m.kind === 'cheer' && m.left > 0), 'hitting her does not end it');
+    run(g, 5);
+    assert.ok(!p2.mods.some(m => m.kind === 'cheer' && m.left > 0), 'five seconds and it is over');
+  }
+  {
+    const g = newGame(ch, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 260; p2.x = 520; p1.facing = 1; p2.facing = -1;
+    g.attack(p1, 2);
+    run(g, .05);
+    hit(g, p2, p1, p2.data.skills[0], { hit: new Set() });
+    assert.equal(p1.attack?.skill.fx, 'chieri-entrance', 'a jab does not drop the leap');
+  }
+  // I: the 部下 trots behind her
+  {
+    const g = newGame(ch, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 370; p1.facing = 1; p2.facing = -1;
+    assert.ok(g.attack(p1, 3), 'the handshake comes out');
+    run(g, .4);
+    assert.ok(hasStatus(p2, 'follow'), 'they follow');
+    assert.ok(isRecruit(p2, p1.id), 'and they are hers');
+    assert.ok(!g.attack(p2, 0), 'a follower cannot act');
+    p1.x = 600; p1.facing = 1;
+    run(g, .5);
+    assert.ok(Math.abs(p2.x - (p1.x - 60)) < 8, 'they trot after her and stand behind her: ' + (p2.x - p1.x));
+    p1.facing = -1;
+    run(g, .4);
+    assert.ok(p2.x > p1.x, 'she turns and they go round behind her again: ' + (p2.x - p1.x));
+    run(g, 1.2);
+    assert.ok(!hasStatus(p2, 'follow'), 'it wears off');
+    assert.ok(isRecruit(p2, p1.id), 'the badge stays');
+    assert.ok(g.attack(p2, 0), 'and they act again');
+    run(g, .5);
+    p1.x = 300; p2.x = 370; p1.facing = 1; p2.facing = -1;
+    g.attack(p1, 3);
+    run(g, .4);
+    assert.ok(!hasStatus(p2, 'follow'), 'not again so soon');
+  }
+  {
+    const g = newGame(ch, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 370; p1.facing = 1; p2.facing = -1;
+    g.attack(p1, 3);
+    run(g, .4);
+    hit(g, p1, p2, { ...data.skills[1], react: { kind: 'knockdown', vy: -200, knocked: .8 } }, { hit: new Set() });
+    run(g, .1);
+    assert.ok(!hasStatus(p2, 'follow'), 'a knockdown shakes it off');
+  }
+  // O: the fuse, the stacks, the blast
+  const blast = (hits: number) => {
+    const g = newGame(ch, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 400; p2.x = 480; p1.facing = 1; p2.facing = -1;
+    g.attack(p1, 4);
+    run(g, .1);
+    const before = p1.hp;
+    for (let i = 0; i < hits; i++) { hit(g, p2, p1, p2.data.skills[0], { hit: new Set() }); run(g, .1); }
+    const taken = before - p1.hp;
+    assert.equal(p1.attack?.skill.fx, 'cherry-bomb', 'hits do not drop the fuse');
+    const hp = p2.hp;
+    run(g, .8);
+    return { taken, dealt: hp - p2.hp, stacks: p1.attack?.shots ?? hits, down: p2.knocked > 0 };
+  };
+  {
+    const quiet = blast(0);
+    assert.ok(quiet.dealt > 35 && quiet.dealt < 45, 'nobody touched her: ' + quiet.dealt);
+    const full = blast(3);
+    assert.ok(full.taken > 25 && full.taken < 50, 'three jabs at half damage: ' + full.taken);
+    assert.ok(full.dealt > 70 && full.dealt < 90, 'three stacks go off big: ' + full.dealt);
+    assert.ok(full.down, 'and knock them down');
+    const over = blast(5);
+    assert.ok(over.dealt < 90, 'stacks stop at three: ' + over.dealt);
+  }
+  {
+    // 长按: holding O past the fuse keeps her lit; letting go sets it off; 2.1 s after the cast it goes anyway.
+    const g = newGame(ch, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 400; p2.x = 480; p1.facing = 1; p2.facing = -1;
+    g.keyDown('KeyO');
+    run(g, 1.4);
+    assert.equal(p2.hp, p2.data.hp, 'held: nothing has gone off at 1.4 s');
+    assert.equal(p1.attack?.skill.fx, 'cherry-bomb', 'and she is still lit');
+    assert.ok(g.effects.some(e => e.type === 'cherry-eager'), 'the eager rings show the hold');
+    const before = p1.hp;
+    hit(g, p2, p1, p2.data.skills[0], { hit: new Set() });
+    assert.ok(before - p1.hp < 16, 'still half damage while held: ' + (before - p1.hp));
+    g.keyUp('KeyO');
+    run(g, .1);
+    assert.ok(p2.data.hp - p2.hp > 45, 'letting go sets it off, one stack bigger: ' + (p2.data.hp - p2.hp));
+    run(g, .6);
+    assert.equal(p1.attack, null, 'and she settles as usual');
+    const g2 = newGame(ch, at('boulder')); const [q1, q2] = g2.fighters; dummy(g2);
+    q1.x = 400; q2.x = 480; q1.facing = 1; q2.facing = -1;
+    g2.keyDown('KeyO');
+    run(g2, 2.0);
+    assert.equal(q2.hp, q2.data.hp, 'held to 2.0 s');
+    run(g2, .2);
+    const capped = q2.data.hp - q2.hp;
+    assert.ok(capped > 48 && capped < 58, 'gone off by 2.2 s even still held, one bonus stack: ' + capped);
+  }
+  {
+    // A guard does not stop the blast; three stacks plus the full hold stay at three.
+    const g = newGame(ch, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 400; p2.x = 480; p1.facing = 1; p2.facing = -1;
+    g.keyDown('KeyO');
+    run(g, .1);
+    for (let i = 0; i < 3; i++) { hit(g, p2, p1, p2.data.skills[0], { hit: new Set() }); run(g, .1); }
+    let low = Infinity;
+    for (let i = 0; i < Math.round(2.4 / STEP); i++) { p2.blocking = true; p2.guard = 100; g.step(STEP); low = Math.min(low, p2.hp); }
+    const lost = p2.data.hp - low;
+    assert.ok(lost > 70 && lost < 90, 'a guard does not catch it, and the bonus does not pass three: ' + lost);
+  }
+  // L: the call, the haul, the drums
+  const assemble = (prep: (g: FightGame, p1: ReturnType<FightGame['fighterById']> & object, p2: ReturnType<FightGame['fighterById']> & object) => void) => {
+    const g = newGame(ch, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 200; p2.x = 820; p1.facing = 1; p2.facing = -1;
+    p1.energy = 150;
+    prep(g, p1, p2);
+    assert.ok(g.attack(p1, 5), 'the call goes out');
+    const hp = p2.hp;
+    let board = 0;
+    for (let i = 0; i < Math.round(3 / STEP); i++) {
+      g.step(STEP);
+      const e = g.effects.find(x => x.type === 'league-count');
+      if (e) board = e.n ?? 0;
+    }
+    return { dealt: hp - p2.hp, board, gap: Math.abs(p2.x - p1.x) };
+  };
+  {
+    const plain = assemble(() => {});
+    assert.ok(plain.dealt > 150 && plain.dealt < 210, 'the drums and the cymbal: ' + plain.dealt);
+    assert.equal(plain.board, 6, 'the board rolls to a hundred million');
+    // A dodging or invulnerable foe slips the call half the time.
+    let slips = 0, caught = 0;
+    for (let i = 0; i < 12; i++) {
+      const r = assemble((g, _p1, p2) => { for (let k = 0; k < i * 3; k++) g.random(); p2.invuln = 5; });
+      if (r.dealt === 0) { slips++; assert.equal(r.board, -1, 'a slipped call leaves the crowd cardboard'); }
+      else caught++;
+    }
+    assert.ok(slips >= 2 && caught >= 2, 'a dodge is a coin toss: slipped ' + slips + ', caught ' + caught);
+    const recruit = assemble((_g, p1, p2) => { addMod(p2, 'recruit', 10, { from: p1.id }); p2.invuln = 5; });
+    assert.ok(recruit.dealt > plain.dealt * 1.08, 'a 部下 must come, and takes more: ' + recruit.dealt + ' vs ' + plain.dealt);
+  }
+  {
+    // A live 跟班 is placed by the super. The trot used to walk them off the spot on the same step she set it,
+    // and which write won depended on who was stepped first.
+    const g = newGame(ch, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 200; p2.x = 820; p1.facing = 1; p2.facing = -1;
+    p1.energy = 150;
+    addMod(p2, 'follow', 10, { from: p1.id, v: 4 });
+    assert.ok(g.attack(p1, 5), 'the call goes out on her 跟班');
+    let saw = false, off = 0;
+    for (let i = 0; i < Math.round(2.2 / STEP); i++) {
+      g.step(STEP);
+      if (p1.attack?.mode === ASSEMBLE.drum) {
+        saw = true;
+        off = Math.max(off, Math.abs(p2.x - (p1.x + p1.facing * ASSEMBLE_STOP)));
+      }
+    }
+    assert.ok(saw, 'the drums come out on a follower');
+    assert.ok(off < 2, 'a follower stays on the spot: ' + off);
+  }
+}
+
+// chieri mirror: two 千樱梨 who each took the other's cheers must not hand the same energy back and forth
+// (that recursion overflowed the stack and froze the mirror match); a CPU mirror runs clean.
+{
+  const ch = at('chieri');
+  const g = newGame(ch, ch); const [p1, p2] = g.fighters;
+  addMod(p1, 'cheer', 5, { thief: p2 });
+  addMod(p2, 'cheer', 5, { thief: p1 });
+  const e1 = p1.energy, e2 = p2.energy;
+  gainEnergy(p1, 10);
+  assert.equal(p1.energy, e1, 'her gain is taken');
+  assert.ok(p2.energy - e2 > 9, 'and lands on the other once, not back again: ' + (p2.energy - e2));
+  for (const seed of [2, 4]) {
+    const m = new FightGame([ROSTER[ch], ROSTER[ch]], { mode: 'cpu', difficulty: 2, stage: STAGES[0], audio: silent, random: rng(seed), controllers: [null, null] });
+    for (let i = 0; i < Math.round(40 / STEP); i++) { m.step(STEP); for (const f of m.fighters) f.energy = Math.max(f.energy, 60); }
+  }
+}
+
+// fx sweep: every 梅里千樱梨 effect and her two status marks over their whole life, on a canvas that throws on
+// a negative radius like a real one.
+{
+  const bad = (what: string, v: number) => { if (!(v >= 0)) throw Error(`FAIL: ${what} got a negative radius ${v}`); };
+  const grad = { addColorStop() {} };
+  const ctx = new Proxy({ globalAlpha: 1, fillStyle: '#fff', strokeStyle: '#fff', lineWidth: 1, globalCompositeOperation: 'source-over' } as Record<string, unknown>, {
+    get(o, key: string) {
+      if (key in o) return o[key];
+      if (key === 'arc') return (_x: number, _y: number, r: number) => bad('arc', r);
+      if (key === 'ellipse') return (_x: number, _y: number, rx: number, ry: number) => { bad('ellipse', rx); bad('ellipse', ry); };
+      if (key === 'roundRect') return (_x: number, _y: number, w: number, h: number, r: number) => { bad('roundRect', w); bad('roundRect', h); bad('roundRect', r); };
+      if (key === 'createRadialGradient' || key === 'createLinearGradient') return () => grad;
+      if (key === 'measureText') return () => ({ width: 60 });
+      return () => {};
+    },
+    set(o, key: string, v) { o[key] = v; return true; },
+  }) as unknown as CanvasRenderingContext2D;
+  const types: [string, number, Partial<{ n: number; tx: number; ty: number; radius: number; hit: boolean; heavy: boolean }>][] = [
+    ['chieri-syllable', .7, { n: 0 }], ['chieri-syllable', .7, { n: 2 }], ['chieri-first', 1.1, {}], ['chieri-bang', .5, {}],
+    ['entrance-dust', .45, {}], ['entrance-quake', .5, { radius: 112 }], ['entrance-cymbal', .75, {}], ['chieri-spot', 5, {}],
+    ['cheer-steal', .6, { n: 5, tx: -200, ty: -30 }], ['recruit-shake', .45, { hit: true }], ['recruit-join', .8, { n: 4 }],
+    ['cherry-fuse', .74, { n: 0 }], ['cherry-fuse', .74, { n: 3, heavy: true }], ['cherry-eager', 1.5, { n: 0 }], ['cherry-eager', 1.5, { n: 3 }], ['cherry-swell', .35, { n: 2 }],
+    ['cherry-boom', .9, { radius: 130, n: 0 }], ['cherry-boom', .9, { radius: 232, n: 3 }], ['cherry-shout', .9, { n: 3 }], ['cherry-smoke', .8, {}],
+    ['assemble-call', .8, {}], ['assemble-rope', .42, { tx: 600, ty: 10 }], ['chieri-drumhead', .42, { n: 4 }], ['assemble-cymbal', .8, {}],
+    ['league-crowd', 3.1, { n: 3 }], ['league-crowd', 3.1, { n: -1 }], ['league-count', 3.3, { n: 0 }], ['league-count', 3.3, { n: 6 }], ['league-count', 3.3, { n: -1 }],
+    ['follow-flag@apply', .6, {}], ['follow-flag@expire', .6, {}],
+  ];
+  for (const [type, life, extra] of types) {
+    for (let i = 0; i <= 40; i++) {
+      const e = { type, x: 400, y: FLOOR, color: '#FF55AA', life: life * (1 - i / 40), max: life, dir: -1, ...extra };
+      if (type.includes('@')) assert.ok(drawStatusEffect(ctx, e), type + ' is a status one-shot');
+      else assert.ok(drawChieriFx(ctx, e, i % 2 === 1), type + ' is drawn by chieriFx');
+    }
+  }
+  const body = { x: 400, y: FLOOR, facing: 1, walk: 1, data: ROSTER[at('chieri')], root: 0, rootMark: '', mods: [
+    { kind: 'follow', left: 1, mark: 'follow-flag', v: 4 }, { kind: 'recruit', left: 5, mark: 'recruit-badge' },
+  ] } as unknown as Parameters<typeof drawStatusAuras>[1];
+  for (let i = 0; i < 60; i++) drawStatusAuras(ctx, body, i * .05);
+  assert.ok(STATUS_MARKS[DEFAULT_MARK.follow], '跟班 wears its flag by default');
 }
 
 console.log('selfcheck ok');
