@@ -2362,6 +2362,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
   const deviceTs = readFileSync('src/ui/device.ts', 'utf8');
   assert.ok(deviceTs.includes('(pointer:') && deviceTs.includes('maxTouchPoints'), 'the touch ruling keeps both the media query and the hardware fallback');
+  assert.ok(deviceTs.includes('any-hover') && deviceTs.includes('any-pointer'), 'a phone with no hover pointer still counts as touch when the primary pointer lies');
   const cssText = readFileSync('src/style.css', 'utf8');
   let inComment = false;
   for (const raw of cssText.split('\n')) {
@@ -2381,7 +2382,8 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
       assert.ok(line.includes('max('), 'cqw size must be max() with the fallback so a 0 query size cannot collapse it: ' + raw.trim());
     }
   }
-  assert.ok(!cssText.includes('body.wide .touchpad .tp-stick') && cssText.includes('body.wide:not(.touch) .touchpad .tp-stick'), 'wide mode must scope control stripping to :not(.touch)');
+  assert.ok(!cssText.includes('body.wide .touchpad .tp-stick') && cssText.includes('body.wide.keys .touchpad .tp-stick'), 'wide mode strips the stick only for a positive keyboard ruling (body.keys)');
+  assert.ok(!cssText.includes('body.wide:not(.touch) .touchpad .tp-stick'), 'missing body.touch must not be what hides the stick');
   assert.ok(cssText.includes('.touchpad.in-tower { display: block; }'), 'landscape controls show from .in-tower, not only the orientation media query');
   assert.ok(cssText.includes('--face: 64px'), 'phone portraits shrink below the desktop 96');
   assert.ok(/body\.touch\.in-battle \.arena \{[^}]*\btop:/.test(cssText), 'fullscreen arena keeps longhand offsets so a missing inset shorthand cannot collapse it');

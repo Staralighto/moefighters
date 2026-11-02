@@ -1050,13 +1050,13 @@ body.wide.in-battle .hud-player small { font-size: calc(11px * var(--hud, 1)); }
 body.wide.in-battle .timer { min-width: calc(88px * var(--hud, 1)); }
 body.wide.in-battle .timer small { font-size: calc(11px * var(--hud, 1)); }
 body.wide.in-battle .timer b { font-size: calc(40px * var(--hud, 1)); }
-/* 键鼠宽屏只留必杀 + 三技能指示键。必须写成 :not(.touch)：宽屏是布局开关、不是能力信号，
-   能力探测万一再失手，宽屏里也不能收走触屏玩家的摇杆、攻击和格挡。 */
-body.wide:not(.touch) .touchpad .tp-stick, body.wide:not(.touch) .touchpad .tp-actions .atk, body.wide:not(.touch) .touchpad .tp-actions .guard { display: none; }
+/* 键鼠宽屏只留必杀 + 三技能指示键。只认 body.keys（正向细指针 + 短边 ≥ 768）。
+   没有 body.touch 不等于键鼠：探测失手的小屏进了宽屏也要留着摇杆、攻击和格挡。 */
+body.wide.keys .touchpad .tp-stick, body.wide.keys .touchpad .tp-actions .atk, body.wide.keys .touchpad .tp-actions .guard { display: none; }
 /* 必杀常驻只对键鼠成立：没攒满时图标压暗，整颗按钮的金色（--p）随气量从下沿往上长，攒满走 .ready 发光。
    触屏宽屏里必杀跟手机同一套规则，攒满才出现。 */
-body.wide:not(.touch) .touchpad .tp-actions .ult { display: grid; }
-body.wide:not(.touch) .touchpad .ult:not(.ready) img { opacity: .4; }
+body.wide.keys .touchpad .tp-actions .ult { display: grid; }
+body.wide.keys .touchpad .ult:not(.ready) img { opacity: .4; }
 /* 宽屏的指示键略大一号、离右下角留出空隙（桌面 vmin 大，原 clamp 的 86px 上限把键钳在 55px 左右）。
    只覆盖宽屏；手机横屏的 6px 贴边和原尺寸照旧。 */
 body.wide .touchpad.in-tower .tp-actions { --atk: clamp(86px, 16vmin, 106px); right: 16px; bottom: 16px; }

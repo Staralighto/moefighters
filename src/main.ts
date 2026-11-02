@@ -245,7 +245,7 @@ bindOnline(() => select.onlinePick(), (role, hostChar, guestChar, stageId, link,
   followCast = true;
   observeRoster();
 }
-watchTouch(() => { applyTouchDevice(); syncFullscreenLabel(); select.refresh(); });
+watchTouch(() => { syncFullscreenLabel(); select.refresh(); });
 
 /* An armed run survives a refresh or crash: with the stage's card already picked, the fight was
    the next thing the player was about to see, so it restarts directly. A parked run (stage won,

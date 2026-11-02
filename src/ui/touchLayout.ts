@@ -28,19 +28,30 @@ export function bindBattleFrame(): void {
    */
   const fit = () => {
     const vv = window.visualViewport;
-    const h = Math.round(Math.min(window.innerHeight, vv ? vv.height : Infinity));
-    arena.style.height = h >= 2 ? `${h}px` : '';
+    // 几个视口数里取最小的。虚高的那一个（100dvh / innerHeight 把地址栏算进去）不能把摇杆的 82% 顶出屏幕。
+    const caps = [window.innerHeight, document.documentElement.clientHeight];
+    if (vv && vv.height >= 2) caps.push(vv.height);
+    const usable = caps.filter(n => n >= 2);
+    arena.style.height = usable.length ? `${Math.round(Math.min(...usable))}px` : '';
   };
+  // ponytail: 套壳里 matchMedia 和真实宽高会各说各话。宽 > 高也当横屏，避免竖屏板被钉在横屏视口下面。
+  const viewportLandscape = (): boolean => landscape.matches || window.innerWidth > window.innerHeight;
   const apply = () => {
+    // 已经是横屏还留着 turned，会在 CSS 横屏之上再转 90°，摇杆旋出屏外。change 事件不来时这里摘掉。
+    if (viewportLandscape() && document.body.classList.contains('turned')) {
+      document.body.classList.remove('turned');
+      return;
+    }
     // 宽屏（桌面全屏开关）走同一条管线，但没有横竖屏门槛：窗口什么比例都铺。
     // 竖屏触屏且没转成横屏：按键板在画面下面，不进 in-tower。横屏 / turned / 宽屏维持原叠键。
     const turned = document.body.classList.contains('turned');
     const wideOn = document.body.classList.contains('wide');
+    const land = viewportLandscape();
     const split = document.body.classList.contains('touch')
       && document.body.classList.contains('in-battle')
-      && !turned && !wideOn && !landscape.matches;
+      && !turned && !wideOn && !land;
     document.body.classList.toggle('pad-split', split);
-    const touchOn = document.body.classList.contains('touch') && (landscape.matches || turned);
+    const touchOn = document.body.classList.contains('touch') && (land || turned);
     const on = (touchOn || wideOn)
       && document.body.classList.contains('in-battle')
       && arena.clientWidth >= 2
@@ -81,6 +92,8 @@ export function bindBattleFrame(): void {
   });
   window.addEventListener('resize', () => requestAnimationFrame(apply));
   window.visualViewport?.addEventListener('resize', () => requestAnimationFrame(apply));
+  // 地址栏只改偏移、不改高度时 resize 不来，82% 的摇杆会停在可视区下面。
+  window.visualViewport?.addEventListener('scroll', () => requestAnimationFrame(apply));
   new MutationObserver(() => apply()).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   apply();
 }
