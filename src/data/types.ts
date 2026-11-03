@@ -329,6 +329,9 @@ export interface CharacterData {
   /** 二号资源条 (打气): declared per character, charged by the kernel's hit gates, spent by moves.
    *  Absent means the fighter has no gauge and nothing is drawn or charged. */
   gauge?: GaugeSpec;
+  /** 心跳计 (矢仓蓬咲): the gauge is her heart rate. Declared per character so the kernel needs no id branch;
+   *  combat.ts stepHeart reads it every step. Unset means no heart. */
+  heart?: HeartSpec;
   /** 麦子越踩越坚强 (祐天寺喵梦, hidden): when the hp lost to hits inside `window` seconds reaches `share` of max
    *  hp, roll `chance` once (the window then starts over). A success heals `heal` of max hp and cuts all
    *  damage taken by `cut` for `time` seconds. Declared per character so the kernel needs no id branch. */
@@ -372,6 +375,24 @@ export interface CharacterData {
 
 /** The reusable second meter. Charge amounts are per character; the bar's home (head-floating
  *  vs HUD) is a declaration so a future character picks a style without touching the kernel. */
+/** 心跳计: what raises and calms the heart (the fighter's gauge, 0..gauge.max), the dread it puts on foes walking
+ *  in at the high tiers, and the burst when it tops out. Tiers and beat gaps are shared with the render layer
+ *  (clips.ts HEART_TIERS / HEART_GAP). */
+export interface HeartSpec {
+  /** A foe this close raises it `nearRate` a second. */
+  near: number; nearRate: number;
+  /** A foe this close and facing her raises it `gazeRate` a second more. */
+  gaze: number; gazeRate: number;
+  /** Nobody this close: it falls `calmRate` a second. */
+  calm: number; calmRate: number;
+  /** From tier 2 up, a foe walking toward her inside `dread` walks at `dreadMul`. */
+  dread: number; dreadMul: number;
+  /** Full: the heart bursts — a ring of `burstR` round her chest, `burstDamage`, a knockdown, no guard. */
+  burstR: number; burstDamage: number;
+  /** After a burst the rate drops to `reset` and cannot climb past it for `rest` seconds. */
+  reset: number; rest: number;
+}
+
 export interface GaugeSpec {
   max: number;
   /** Clean unblocked hits: granted to the defender (taking) and attacker (dealing). */

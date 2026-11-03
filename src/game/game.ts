@@ -5,7 +5,7 @@ import { AIR_SKILLS } from '../data/skills.ts';
 import { bandMembers, ROSTER_BY_ID } from '../data/characters.ts';
 import type { BandId } from '../data/bands.ts';
 import { advanceAnim } from './animState.ts';
-import { easeSealSwells, effectSettled, ESCAPE_INVULN, rainbowRoll, stepProjectiles, updateAttack } from './combat.ts';
+import { dreadMul, easeSealSwells, effectSettled, ESCAPE_INVULN, rainbowRoll, stepHeart, stepProjectiles, updateAttack } from './combat.ts';
 import { addMod, atkMul, clearMod, has, jumpMul, moveSign, regenPerSec, speedMul, tickMods } from './mods.ts';
 import { endFollow, followLeader, settleRootMark, tickStatus } from './status.ts';
 import { SCRIPTS } from './scripts.ts';
@@ -99,6 +99,11 @@ export interface Effect {
   t0?: number;
   /** Offset from the spawn point to where the graphic lands (精准踩雷's heart onto their feet). Data, not motion. */
   tx?: number; ty?: number;
+  /** Ghosts: drawn this much bigger about the feet. */
+  scale?: number;
+  /** 想象吧，变强的我's rig: the `age` at which the move let go of it (-1 while held). The host ages it and removes it;
+   *  the picture reads only age and until, which both ride the wire every tick (life is a local clock there). */
+  until?: number;
 }
 export interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string; size: number }
 export interface FloatingText { text: string; x: number; y: number; color: string; life: number; max: number; size: number }
@@ -1061,6 +1066,8 @@ export class FightGame {
     if (comboWas > 0 && f.comboTime === 0 && f.combo >= 4) rainbowRoll(this, f);
     tickStatus(this, f, dt);
     tickMods(this, f, dt);
+    // 心跳计: declared per character (CharacterData.heart), so no id branch here.
+    if (f.data.heart) stepHeart(this, f, dt);
     if (recWas > 0 && f.recLeft === 0) this.startEchoPlayback(f);
     if (f.hp <= 0) { this.retire(f); this.fall(f, dt); return; }
     // ponytail: the 7s timer can die mid-swing. Hold a sliver so the king sheet lasts that one staff hit, then drop it.
@@ -1198,7 +1205,8 @@ export class FightGame {
       const factor = !f.attack ? 1 : f.attack.skill.air ? .6 : f.attack.skill.type === 'light' && !flurry ? .25 : 0;
       const beatMove = f.data.trait === 'beat' ? 1 + f.beatStacks * .02 : 1;
       const sprint = speedMul(f);
-      f.x += move * f.data.speed * f.moveMul * beatMove * sprint * factor * dt;
+      // 帝王引擎式误会: walking at a 矢仓蓬咲 whose heart is out of control, the legs go.
+      f.x += move * f.data.speed * f.moveMul * beatMove * sprint * dreadMul(this, f, move) * factor * dt;
       if (move && factor && grounded) f.walk += dt * 12; else f.walk = 0;
       // Every footfall (two per 0.5s stride, as clips.ts plays the walk) leaves the character's step mark.
       const step = f.data.aura?.step;

@@ -1,5 +1,8 @@
 /* Headless rule check: runs the fixed-step engine without DOM or canvas. `npm run check`. */
 import { FightGame } from '../src/game/game.ts';
+import { dreadMul } from '../src/game/combat.ts';
+import { heartTier, YOMOGI_BODY } from '../src/render/clips.ts';
+import { drawHeartBack, drawHeartFront, drawYomogiFx } from '../src/render/yomogiFx.ts';
 import { BUSHIDO_CREEP, BUSHIDO_LUNGE, BUSHIDO_SPAN, VEIL_NORMAL, VEIL_SHOT, clockRings, drumShotTime, hit, holdNoteSpan, outshines, violetHidden, withGuard } from '../src/game/combat.ts';
 import { vowBeatTime, VOW_BEATS, PRACTICE_GAP1, PRACTICE_HITS, practiceBeat, practiceGap, practiceRow, practiceStrums, FAMILY_MEMBERS, familyLife, PUFF_STOP, PLAY, PLAY_BYE, PLAY_DRAW, PLAY_FIGURES, PLAY_HOUSE, PLAY_PASS, PLAY_SLASHES, RARE_TIME, EAR, WIDE, WIDE_DROPS, WIDE_POP } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
@@ -7,7 +10,7 @@ import { PLAYABLE, ROSTER, bandMembers, guestsFor } from '../src/data/characters
 import { BANDS, BAND_BY_ID } from '../src/data/bands.ts';
 import { AIR_SKILLS, skill } from '../src/data/skills.ts';
 import { STAGES } from '../src/data/stages.ts';
-import { FLOOR, COMBO_DECAY, STEP, W, X_MAX, X_MIN } from '../src/game/constants.ts';
+import { CONTROLS, FLOOR, COMBO_DECAY, STEP, W, X_MAX, X_MIN } from '../src/game/constants.ts';
 import { ASSEMBLE, ASSEMBLE_STOP, BUSHIDO_TAIL, bushidoClip, clipFor, crashRow, DRUM_SLUMP, drumRow, ROLL, ROLL_BEATS, ROLL_MAX, rollGap, flameFrame, IAIDO_DECIDE, IAIDO_GAP, IAIDO_RECOVER, riotCell, BLOOD, OBLIVION, TWIN_MOON } from '../src/render/clips.ts';
 import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
 import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell, shouldGoLite } from '../src/render/fx.ts';
@@ -114,11 +117,11 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const breaksAt: Record<string, number> = {
     nyamu: 4, sakiko: 10, anon: 5, rana: 10, soyo: 3, kokoro: 3, miyako: 5,
-    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5,
+    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5,
   };
   const segments: Record<string, number> = {
     nyamu: 4, sakiko: 16, anon: 6, rana: 22, soyo: 3, kokoro: 3, miyako: 6,
-    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7,
+    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6,
   };
   for (const [id, breakAt] of Object.entries(breaksAt)) {
     const s = ROSTER[at(id)].skills[5];
@@ -7996,6 +7999,258 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   ] } as unknown as Parameters<typeof drawStatusAuras>[1];
   for (let i = 0; i < 60; i++) drawStatusAuras(ctx, body, i * .05);
   assert.ok(STATUS_MARKS[DEFAULT_MARK.follow], '跟班 wears its flag by default');
+}
+
+// yomogi: 脑子里是番长，身体是底层人类. The gauge is her heart: a foe near her and a foe facing her make it race,
+// being alone calms it; it beats faster tier by tier; from 失控 up a foe walking at her walks slower (帝王引擎式误会);
+// full, it bursts round her chest — a knockdown, no guard — and rests at the reset. K reaches further the faster it
+// beats; U slips through to their back and punches when her own heartbeat scares her (lighter if they turn first);
+// I is a slap on a tap and a fist when held, harder on the beat; O curls up, races the heart and bursts it on
+// whoever comes near; L raises her shadow, which punches on her heartbeat and slaps, then the oxygen can.
+{
+  const yo = at('yomogi');
+  const data = ROSTER[yo];
+  assert.deepEqual(data.bands, ['ikka-dumb-rock'], 'yomogi stands with 一家Dumb Rock!');
+  assert.ok(at('yomogi') === at('chieri') + 1, 'right after 千樱梨 on the roster');
+  assert.equal(data.title, '贝斯 / 脑内番长', 'yomogi wears the 番长-in-her-head title');
+  assert.equal(data.quote, '总有一天我会蜕变，变成强强的我给你看！！', 'yomogi says the line from 第 11 话');
+  assert.equal(data.trait, 'armor', 'yomogi takes 硬派身躯');
+  assert.ok(data.heart && data.gauge?.max === 100 && !data.gauge.head, 'her gauge is the heart and floats no bar');
+  assert.equal(data.skills[5].cost, 180, 'L costs 180');
+  const arm = (f: { data: { trait: string } }) => f.data.trait === 'armor' ? .95 : 1;
+  const fresh = (p1x = 300, p2x = 400) => {
+    const g = newGame(yo, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = p1x; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    p1.gauge = 0; p1.heartRest = 0;
+    return { g, p1, p2 };
+  };
+  // the heart: races near a foe who faces her, calms alone, beats by tier
+  {
+    const { g, p1, p2 } = fresh(300, 400);
+    run(g, 1);
+    assert.ok(p1.gauge > 9 && p1.gauge < 13, 'near and watched, about 11 a second: ' + p1.gauge.toFixed(1));
+    p2.x = 900;
+    const was = p1.gauge;
+    run(g, 1);
+    assert.ok(was - p1.gauge > 8, 'alone it calms: ' + (was - p1.gauge).toFixed(1));
+    p1.gauge = 50; p1.heartBeats = 0; p2.x = 900;
+    const beats0 = p1.heartBeats;
+    run(g, 1.5);
+    assert.ok(heartTier(70) === 2 && heartTier(90) === 3 && heartTier(10) === 0 && heartTier(30) === 1, 'four tiers');
+    assert.ok(p1.heartBeats - beats0 >= 2, 'the heart beats on its own clock: ' + (p1.heartBeats - beats0));
+  }
+  // the dread: from 失控 up a foe walking at her walks slower
+  {
+    const { g, p1, p2 } = fresh(300, 500);
+    p1.gauge = 40;
+    assert.equal(dreadMul(g, p2, -1), 1, '紧张 puts no dread on them');
+    p1.gauge = 70;
+    assert.equal(dreadMul(g, p2, -1), .85, '失控: walking at her, the legs go');
+    assert.equal(dreadMul(g, p2, 1), 1, 'walking away is free');
+    p2.x = 800;
+    assert.equal(dreadMul(g, p2, -1), 1, 'out of reach, no dread');
+  }
+  // the burst: full, it goes off round her chest, knocks them down through a guard, and rests at the reset
+  {
+    const { g, p1, p2 } = fresh(300, 390);
+    p2.blocking = true;
+    const hp = p2.hp;
+    p1.gauge = 99.95;
+    run(g, .1);
+    assert.ok(g.effects.some(e => e.type === 'yomogi-burst'), 'the heart bursts');
+    assert.ok(hp - p2.hp > 30, 'it lands through the guard: ' + (hp - p2.hp));
+    assert.ok(p2.knocked > 0, 'and knocks them down');
+    assert.ok(p1.gauge <= 31 && p1.heartRest > 0, 'the heart falls to the reset and rests: ' + p1.gauge.toFixed(1));
+    p2.x = 340;
+    run(g, 1);
+    assert.ok(p1.gauge <= 30.001, 'it cannot climb while it rests: ' + p1.gauge.toFixed(2));
+  }
+  // K: the scream reaches further the faster her heart
+  {
+    const reach: number[] = [];
+    for (const v of [0, 90]) {
+      const { g, p1 } = fresh(300, 900);
+      p1.gauge = v;
+      g.attack(p1, 1);
+      run(g, .3);
+      const e = g.effects.find(x => x.type === 'yomogi-shriek');
+      reach.push(e?.radius ?? 0);
+    }
+    assert.ok(reach[0] > 0 && reach[1] > reach[0] * 1.25, 'wider at 爆表: ' + reach);
+  }
+  // U: through to their back; the punch when they have not turned, lighter when they have
+  for (const turned of [false, true]) {
+    const { g, p1, p2 } = fresh(300, 440);
+    const hp = p2.hp;
+    assert.ok(g.attack(p1, 2), 'the slip comes out');
+    run(g, .4);
+    assert.ok(p1.x > p2.x, 'she is behind them: ' + p1.x.toFixed(0) + ' vs ' + p2.x.toFixed(0));
+    assert.equal(p1.facing, -1, 'facing their back');
+    if (turned) p2.facing = 1;
+    let cried = false;
+    for (let i = 0; i < Math.round(.7 / STEP); i++) { g.step(STEP); if (g.effects.some(e => e.type === 'yomogi-reflex' && !!e.heavy === turned)) cried = true; }
+    const lost = hp - p2.hp;
+    if (turned) assert.ok(lost > 18 && lost < 34, 'caught: the punch is lighter: ' + lost);
+    else assert.ok(lost > 36 && lost < 56, 'unseen: the full backhand: ' + lost);
+    assert.ok(cried, turned ? '被发现了！' : '呀——！');
+  }
+  // I: a tap is the slap (handprint), a held key the fist (further); on the beat it lands harder
+  {
+    const { g, p1, p2 } = fresh(300, 390);
+    p1.heartPhase = .5;
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    run(g, .4);
+    assert.ok(Math.abs((hp - p2.hp) - 45 * arm(p2)) < 1.5, 'the slap: ' + (hp - p2.hp));
+    assert.ok(g.effects.some(e => e.type === 'yomogi-handprint' && e.follow === p2.id), 'a handprint on their cheek');
+  }
+  {
+    const { g, p1, p2 } = fresh(300, 390);
+    const key = CONTROLS[p1.controller ?? 0].attacks[3];
+    g.keys.add(key);
+    const hp = p2.hp, x = p2.x;
+    p1.heartPhase = .5;
+    g.attack(p1, 3);
+    run(g, .4);
+    g.keys.delete(key);
+    assert.ok(Math.abs((hp - p2.hp) - 55 * arm(p2)) < 1.5, 'held: the fist: ' + (hp - p2.hp));
+    assert.ok(!g.effects.some(e => e.type === 'yomogi-handprint'), 'a fist leaves no handprint');
+    assert.ok(p2.x - x > 30, 'and shoves them off: ' + (p2.x - x).toFixed(0));
+  }
+  {
+    const s = data.skills[3];
+    const { g, p1, p2 } = fresh(300, 390);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    // Pin the pump right on the active frame.
+    for (let i = 0; i < Math.round(.4 / STEP); i++) { if (p1.attack && p1.attack.t < s.start + STEP) p1.heartPhase = 0; g.step(STEP); }
+    assert.ok(Math.abs((hp - p2.hp) - Math.round(45 * 1.3) * arm(p2)) < 1.5, 'on the beat: ' + (hp - p2.hp));
+  }
+  // O: curled up the heart races; a foe who comes near sets it off; nobody comes and she gets up still pounding
+  {
+    const { g, p1, p2 } = fresh(300, 900);
+    g.attack(p1, 4);
+    run(g, .3);
+    assert.ok(p1.gauge > 14, 'the heart races in the crouch: ' + p1.gauge.toFixed(1));
+    p2.x = 400;
+    const hp = p2.hp;
+    run(g, .1);
+    assert.ok(hp - p2.hp >= 40, 'they walked in: it goes off: ' + (hp - p2.hp));
+    assert.ok(p2.knocked > 0 && p1.gauge <= 31, 'knocked down; her heart falls back');
+  }
+  {
+    const { g, p1 } = fresh(300, 900);
+    g.attack(p1, 4);
+    run(g, 1.9);
+    assert.equal(p1.attack, null, 'nobody came: the move ends');
+    assert.ok(p1.gauge > 50, 'and her heart stays up: ' + p1.gauge.toFixed(1));
+    assert.ok(!g.effects.some(e => e.type === 'yomogi-burst'), 'nothing went off');
+  }
+  // L: the shadow rises, punches five times on her heartbeat and slaps; then the oxygen can
+  {
+    const { g, p1, p2 } = fresh(300, 620);
+    p1.energy = 180;
+    p1.hp = 700;
+    const hp = p2.hp;
+    assert.ok(g.attack(p1, 5), 'the super comes out');
+    for (let i = 0; i < Math.round(1.5 / STEP) && !g.effects.some(e => e.type === 'yomogi-banchou'); i++) g.step(STEP);
+    assert.ok(g.effects.some(e => e.type === 'yomogi-banchou') && g.effects.some(e => e.type === 'yomogi-cord'), 'her shadow stands up, tied to her heart');
+    assert.ok(p1.gauge > 99, 'her heart is full and does not burst');
+    for (let i = 0; i < Math.round(5 / STEP) && p1.attack; i++) g.step(STEP);
+    const panels = g.effects.filter(e => e.type === 'yomogi-panel');
+    assert.ok(hp - p2.hp > 100, 'five punches and the slap: ' + (hp - p2.hp));
+    assert.equal(p1.attack, null, 'the super is over');
+    assert.ok(p1.gauge < 10, 'the oxygen can: her heart drops to nothing: ' + p1.gauge.toFixed(1));
+    assert.ok(p1.hp >= 718, 'and she heals: ' + p1.hp);
+    assert.ok(panels.length <= 6, 'no more than six panels');
+    run(g, 1.2);
+    assert.ok(!g.effects.some(e => e.type === 'yomogi-banchou' || e.type === 'yomogi-cord' || e.type === 'yomogi-focus'), 'the shadow has sunk and the cord let go');
+  }
+  // L cut short: the shadow and the cord do not hang on screen
+  {
+    const { g, p1 } = fresh(300, 620);
+    p1.energy = 180;
+    g.attack(p1, 5);
+    run(g, 1.4);
+    assert.ok(g.effects.some(e => e.type === 'yomogi-banchou'), 'the shadow is up');
+    p1.attack = null;
+    run(g, 1.2);
+    assert.ok(!g.effects.some(e => e.type === 'yomogi-banchou' || e.type === 'yomogi-cord' || e.type === 'yomogi-focus'), 'cut short, it sinks by itself');
+  }
+  {
+    const v = ROSTER[at('yomogi')].view;
+    assert.ok(v.kind === 'sprite' && v.height === YOMOGI_BODY.height && (v.lift ?? 0) === YOMOGI_BODY.lift, 'the shadow is drawn at her own sprite size');
+  }
+  // Online: a lockstep resync rebuilds f.attack as a new object mid-move. U, O and L keep their state on the Attack
+  // and the synced effects, so each one still finishes (L used to clamp its clock forever).
+  for (const [key, wait] of [[2, .3], [4, .2], [5, 1.3]] as const) {
+    const { g, p1 } = fresh(300, key === 4 ? 900 : 560);
+    p1.energy = 180;
+    g.attack(p1, key);
+    run(g, wait);
+    const a = p1.attack!;
+    p1.attack = { ...a, hit: new Set(a.hit) };
+    for (let i = 0; i < Math.round(5 / STEP) && p1.attack; i++) g.step(STEP);
+    assert.equal(p1.attack, null, 'move ' + key + ' finishes after a resync');
+  }
+  // U: one afterimage per 1/10 s bucket while she slips through, not one per 1/120 s step
+  {
+    const { g, p1 } = fresh(300, 440);
+    g.attack(p1, 2);
+    let ghosts = 0;
+    const seen = new Set<object>();
+    for (let i = 0; i < Math.round(.4 / STEP); i++) { g.step(STEP); for (const e of g.effects) if (e.type === 'ghost' && e.fighter === p1.id && !seen.has(e)) { seen.add(e); ghosts++; } }
+    assert.ok(ghosts >= 1 && ghosts <= 3, 'a few afterimages on the slip: ' + ghosts);
+  }
+  // CPU: two of her play clean for a while
+  for (const seed of [3, 5]) {
+    const m = new FightGame([ROSTER[yo], ROSTER[yo]], { mode: 'cpu', difficulty: 2, stage: STAGES[0], audio: silent, random: rng(seed), controllers: [null, null] });
+    for (let i = 0; i < Math.round(30 / STEP); i++) { m.step(STEP); for (const f of m.fighters) f.energy = Math.max(f.energy, 60); }
+  }
+}
+
+// fx sweep: every 矢仓蓬咲 effect over its whole life, and the heart at every tier, on a canvas that throws on a
+// negative radius like a real one.
+{
+  const bad = (what: string, v: number) => { if (!(v >= 0)) throw Error(`FAIL: ${what} got a negative radius ${v}`); };
+  const grad = { addColorStop() {} };
+  const ctx = new Proxy({ globalAlpha: 1, fillStyle: '#fff', strokeStyle: '#fff', lineWidth: 1, globalCompositeOperation: 'source-over' } as Record<string, unknown>, {
+    get(o, key: string) {
+      if (key in o) return o[key];
+      if (key === 'arc') return (_x: number, _y: number, r: number) => bad('arc', r);
+      if (key === 'ellipse') return (_x: number, _y: number, rx: number, ry: number) => { bad('ellipse', rx); bad('ellipse', ry); };
+      if (key === 'roundRect') return (_x: number, _y: number, w: number, h: number, r: number) => { bad('roundRect', w); bad('roundRect', h); bad('roundRect', r); };
+      if (key === 'createRadialGradient') return (_x0: number, _y0: number, r0: number, _x1: number, _y1: number, r1: number) => { bad('gradient', r0); bad('gradient', r1); return grad; };
+      if (key === 'createLinearGradient') return () => grad;
+      if (key === 'measureText') return () => ({ width: 60 });
+      return () => {};
+    },
+    set(o, key: string, v) { o[key] = v; return true; },
+  }) as unknown as CanvasRenderingContext2D;
+  const types: [string, number, Partial<{ n: number; radius: number; hit: boolean; heavy: boolean; t0: number; age: number; vx: number; tx: number; ty: number; until: number }>][] = [
+    ['yomogi-thump', .55, { n: 1 }], ['yomogi-thump', .55, { n: 3 }], ['yomogi-sweat', .5, { n: 3 }],
+    ['yomogi-burst', .8, { radius: 150, hit: true }], ['yomogi-shy', .5, {}], ['yomogi-shriek', .5, { radius: 126, n: 0 }], ['yomogi-shriek', .5, { radius: 164, n: 3 }],
+    ['yomogi-hide', .45, {}], ['yomogi-reflex', .4, { hit: true }], ['yomogi-reflex', .4, { heavy: true }],
+    ['yomogi-palm', .32, { hit: true, n: 1 }], ['yomogi-palm', .32, { heavy: true, hit: true }], ['yomogi-tone', .2, { n: 1 }], ['yomogi-handprint', 3, { heavy: true }],
+    ['yomogi-radar', 1.1, { radius: 150 }], ['yomogi-rise', .65, {}], ['yomogi-scare', .55, {}],
+    ['yomogi-banchou', 6, { n: 2, t0: .1, age: .3, vx: 900, until: -1 }], ['yomogi-banchou', 6, { heavy: true, t0: 1, age: 1.05, tx: -120, until: -1 }], ['yomogi-banchou', 6, { age: 2, until: 1.4 }],
+    ['yomogi-cord', 6, { tx: 200, ty: 10, t0: .5, age: .55, until: -1 }], ['yomogi-cord', 6, { tx: 0, ty: 0 }], ['yomogi-cord', 6, { tx: 200, ty: 10, age: 2, until: 1.9 }],
+    ['yomogi-focus', 6, { tx: 600, ty: 340, age: 1, until: -1 }], ['yomogi-focus', 6, { age: 2, until: 1.8 }], ['yomogi-bighand', .7, { hit: true }], ['yomogi-impact', .3, { n: 0 }], ['yomogi-impact', .3, { n: 4 }], ['yomogi-dizzy', .7, { n: 1 }],
+    ['yomogi-panel', .5, { n: 0 }], ['yomogi-panel', .5, { n: 4 }], ['yomogi-panel', .8, { n: 5, heavy: true, hit: true }], ['yomogi-oxygen', .9, {}],
+  ];
+  for (const [type, life, extra] of types) {
+    for (let i = 0; i <= 40; i++) {
+      const e = { type, x: 400, y: FLOOR, color: '#448888', life: life * (1 - i / 40), max: life, dir: i % 2 ? 1 : -1, ...extra };
+      assert.ok(drawYomogiFx(ctx, e, i % 2 === 1), type + ' is drawn by yomogiFx');
+    }
+  }
+  for (const v of [0, 30, 60, 90, 100]) {
+    for (let i = 0; i < 24; i++) {
+      const f = { x: 400, y: FLOOR, facing: i % 2 ? 1 : -1, hp: 1, gauge: v, heartPhase: i / 24, heartBeats: i, data: ROSTER[at('yomogi')] } as unknown as Parameters<typeof drawHeartFront>[1];
+      drawHeartBack(ctx, f, i * .05, i % 2 === 1);
+      drawHeartFront(ctx, f, i * .05);
+    }
+  }
 }
 
 console.log('selfcheck ok');

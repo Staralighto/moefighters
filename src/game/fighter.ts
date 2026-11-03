@@ -219,6 +219,12 @@ export interface Fighter {
   recMove: number;
   /** 打气 (GaugeSpec): the second meter. Charged through gainGauge, spent by moves directly. */
   gauge: number;
+  /** 心跳计 (HeartSpec): phase of the current beat (0 → 1), beats so far, and the seconds left of the rest after a burst. */
+  heartPhase: number;
+  heartBeats: number;
+  heartRest: number;
+  /** 想象吧，变强的我: how many of her shadow rig effects are still up (combat.ts tendRig ages and removes them). */
+  shadowRig: number;
   /** 录音: this fighter is a recorded echo — unhittable, bodyless, and it replays its tape once. */
   echo?: boolean;
   /** 录音: the master this echo answers to. Echoes only. */
@@ -266,6 +272,7 @@ export function makeFighter(
     stunMul: 1, escapeCombo: COMBO_ESCAPE, deathSave: 0, vainDmg: 0, vainEnergy: 0,
     recLeft: 0, recTape: [], recMove: 0,
     gauge: 0,
+    heartPhase: 0, heartBeats: 0, heartRest: 0, shadowRig: 0,
     mods: [],
     dmgLog: [],
   };

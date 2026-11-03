@@ -9,6 +9,7 @@ import { watchProp } from './propLayout.ts';
 import { bloodSparkles, drawSakikoFx, drawShiroFloor } from './sakikoFx.ts';
 import { drawMikuFx } from './mikuFx.ts';
 import { drawChieriFx } from './chieriFx.ts';
+import { drawYomogiFx } from './yomogiFx.ts';
 import { drawStatusEffect } from './statusMarks.ts';
 import { drawShizukuFx, drawShizukuShot } from './shizukuFx.ts';
 
@@ -991,6 +992,8 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
   if (drawMikuFx(ctx, e, liteFx)) return;
   // 梅里千樱梨 too.
   if (drawChieriFx(ctx, e, liteFx)) return;
+  // 矢仓蓬咲 too.
+  if (drawYomogiFx(ctx, e, liteFx, images)) return;
   // 异常: `<mark>@apply` / `<mark>@expire`, drawn by the status table.
   if (drawStatusEffect(ctx, e)) return;
   // 四宫宁月's accidents keep their own module too.

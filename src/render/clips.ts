@@ -308,6 +308,56 @@ export const LEAGUE_START = 3;
 export const LEAGUE_GOAL = 100000000;
 /** The board floats this high over her feet: clear of her head, well under the top-of-screen HUD. */
 export const LEAGUE_BOARD_Y = 236;
+
+/* ---- 矢仓蓬咲 ---- */
+/** 心跳计: the gauge value where each tier starts (平静 / 紧张 / 失控 / 爆表), and the seconds between two beats in each. */
+export const HEART_TIERS = [25, 55, 85] as const;
+export const HEART_GAP = [.86, .5, .33, .25] as const;
+export function heartTier(v: number): number {
+  return v >= HEART_TIERS[2] ? 3 : v >= HEART_TIERS[1] ? 2 : v >= HEART_TIERS[0] ? 1 : 0;
+}
+/** Where her heart sits on the 177 px body (lift 6) (from the feet, forward of the spine), and her eye line. */
+export const YOMOGI_CHEST = { x: 14, y: 123 } as const;
+/** Her sprite box (characters.ts view.height / lift, held equal by selfcheck): the shadow is this cell, scaled. */
+export const YOMOGI_BODY = { height: 177, lift: 6 } as const;
+export const YOMOGI_EYE = { x: 12, y: 162 } as const;
+/** 躲到你身后: the slip through (to `gap` behind their back), the crouch they have to turn round in, the punch cell, the settle. */
+export const HIDE = { sneak: 0, hide: 1, punch: 2 } as const;
+export const HIDE_REACH = 320;
+export const HIDE_GAP = 58;
+export const HIDE_HOP = 140;
+export const HIDE_TRAVEL = .22;
+export const HIDE_WAIT = .4;
+export const HIDE_PUNCH = .22;
+export const HIDE_TAIL = .3;
+/** 拳化为掌: a.mode is FIST when the key was still down at the active frame. The strike cell holds this long. */
+export const PALM_FIST = 1;
+export const PALM_HIT = .18;
+/** 人体感应雷达: the crouch lasts at most `RADAR_WAIT`; the burst cell, then the weak-kneed settle. */
+export const RADAR = { crouch: 0, burst: 1, idle: 2 } as const;
+export const RADAR_WAIT = 1;
+export const RADAR_BURST = .16;
+export const RADAR_TAIL = .45;
+/** 想象吧，变强的我: the shadow rises (the skill's start), scares her, rushes in and punches on her heartbeat —
+ *  five beats at these offsets, a breath, the slap — then the oxygen can. The shadow is her own sprite, this much
+ *  bigger, `SHADOW_OFF` ahead of her when it stands and `SHADOW_GAP` short of the foe when it punches. */
+export const SHADOW = { rise: 0, scare: 1, rush: 2, beat: 3, done: 4 } as const;
+export const SHADOW_SCARE = .35;
+export const SHADOW_DASH = .18;
+export const SHADOW_BEATS = [0, .34, .6, .8, .94] as const;
+export const SHADOW_PAUSE = .5;
+export const SHADOW_TAIL = 1;
+export const SHADOW_SCALE = 1.32;
+export const SHADOW_OFF = 46;
+export const SHADOW_GAP = 72;
+/** The shadow's poses, as [sheet, col, row]: standing, the leap of the rush, the two strikes it trades on the beats,
+ *  the wind-up before the slap, the slap (the I strike cell). yomogiFx bakes exactly these ahead of time. */
+export const SHADOW_POSE = {
+  stand: ['common', 0, 0], leap: ['common', 5, 0], jab: ['common', 3, 1], kick: ['common', 6, 1], wind: ['common', 5, 1], slap: ['special', 1, 1],
+} as const satisfies Record<string, readonly ['common' | 'special', number, number]>;
+export const SHADOW_CELLS = Object.values(SHADOW_POSE);
+/** Once the move lets go: the shadow holds `hold`, then sinks over `sink`; the cord and the speed lines fade over theirs. */
+export const SHADOW_LET = { hold: .25, sink: .75, cord: .25, focus: .35 } as const;
 export const PLAY = { bow: 0, dash: 1, away: 2, bye: 3, ear: 4 } as const;
 /** The dash looks for a body this long after the bow. */
 export const PLAY_DASH = .22;
@@ -838,6 +888,36 @@ export function clipFor(f: Fighter): Clip {
       if (mode === ASSEMBLE.drum) return at('special', a.index - 2, ((a.t - a.tossAt) / ASSEMBLE_BEAT) % 1 < .5 ? 1 : 2);
       if (mode === ASSEMBLE.done) return at('special', a.index - 2, 2);
       return at('special', a.index - 2, 0);
+    }
+    // 躲到你身后: hunched scuttle; the crouch behind their back; the reflex punch; then the heavy settle.
+    if (f.attack.skill.fx === 'yomogi-hide') {
+      const a = f.attack, mode = a.mode ?? HIDE.sneak;
+      if (mode === HIDE.hide) return at('special', a.index - 2, 1);
+      if (mode === HIDE.punch) return a.t < a.liftAt + HIDE_PUNCH ? at('special', a.index - 2, 2) : at('common', NORMAL.heavy.c + 2, NORMAL.heavy.r);
+      return at('special', a.index - 2, 0);
+    }
+    // 拳化为掌: the fist drawn back; the open-hand slap, or the common heavy strike for a held fist; staring at the hand.
+    if (f.attack.skill.fx === 'yomogi-palm') {
+      const a = f.attack, s = a.skill;
+      if (a.t < s.start) return at('special', a.index - 2, 0);
+      if (a.t < s.start + PALM_HIT) return a.mode === PALM_FIST ? at('common', NORMAL.heavy.c + 1, NORMAL.heavy.r) : at('special', a.index - 2, 1);
+      return at('special', a.index - 2, 2);
+    }
+    // 人体感应雷达: curled up; springing up screaming as it goes off; weak at the knees after (or after nobody came).
+    if (f.attack.skill.fx === 'yomogi-radar') {
+      const a = f.attack, mode = a.mode ?? RADAR.crouch;
+      if (mode === RADAR.crouch) return at('special', a.index - 2, 0);
+      if (mode === RADAR.burst && a.t < a.liftAt + RADAR_BURST) return at('special', a.index - 2, 1);
+      return at('special', a.index - 2, 2);
+    }
+    // 想象吧，变强的我: eyes shut, fists tight while the shadow rises; the scream when she sees it; then she hides
+    // (the U crouch) while it fights for her; the oxygen can at the end.
+    if (f.attack.skill.fx === 'yomogi-shadow') {
+      const a = f.attack, mode = a.mode ?? SHADOW.rise;
+      if (mode === SHADOW.rise) return at('special', a.index - 2, 0);
+      if (mode === SHADOW.scare) return at('special', a.index - 2, 1);
+      if (mode === SHADOW.done) return at('special', a.index - 2, 2);
+      return at('special', 0, 1);
     }
     // 我背你！: the dash, then the run with them on her back trades the two carry cells.
     if (f.attack.skill.fx === 'piggyback') {

@@ -1,10 +1,10 @@
-import type { HitReact, Op, Skill } from '../data/types.ts';
+import type { HeartSpec, HitReact, Op, Skill } from '../data/types.ts';
 import { gainEnergy, gainGauge, type Attack, type Fighter } from './fighter.ts';
 import { addDebt, addMod, cheerThief, clearMod, dmgDealtMul, dmgTakenMul, has, incomingMul, lifestealOf, moveSign, reflectAmount, type Mod } from './mods.ts';
 import type { Effect, FightGame, Projectile, SealVolley } from './game.ts';
 import { CONTROLS, FLOOR, GRAVITY, H, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
 import { attackPhase } from './animState.ts';
-import { BUSHIDO_TAIL, clipFor, DRUM_SLUMP, drumRow, PAW, PAW_FAIL, PAW_HITS, pawRow, pawTime, ROLL, ROLL_BEATS, ROLL_MAX, ROLL_MIN, ROLL_SLUMP, ROLL_THROW, rollGap, SELFIE, SELFIE_HOLD, SELFIE_LUNGE, SELFIE_SNAP, SELFIE_TAIL, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS, PRACTICE_HITS, practiceBeat, SKIP_HOP, SKIP_MAX, SKIP_MIN, SKIP_TAIL, MINE_FUSE, ENCORE, ENCORE_FACE, ENCORE_GONE, BURDEN_Y, UNBOWED_STEP, UNBOWED_MAX, PIGGY, PIGGY_DASH, PIGGY_CARRY, PIGGY_TAIL, PIGGY_BACK_X, PIGGY_BACK_Y, HUG, HUG_LUNGE, HUG_FIRST, HUG_GAP, HUG_TAIL, MEAL_GRACE, FAMILY, FAMILY_MEMBERS, FAMILY_LUNGE, FAMILY_FINALE, FAMILY_ZONE_AHEAD, FAMILY_ZONE_R, FAMILY_TAIL, familyLife, BLOOD, OBLIVION, TWIN_MOON, TWIN_PHASE, PUFF, PUFF_BLINK, PUFF_ARRIVE, PUFF_REACH, PUFF_STOP, PUFF_HOP, PUFF_BEAT, PUFF_CUT, PUFF_TAIL, EAR, EAR_DECIDE, EAR_PALM_HITS, EAR_PALM_GAP, EAR_PALM, EAR_KNEE, EAR_TAIL, EAR_GLINT, MIKU_EYE, PLAY, PLAY_DASH, PLAY_PASS, PLAY_THROUGH, PLAY_SLASHES, PLAY_BYE, PLAY_THOUGHT, PLAY_EAR_AT, PLAY_EAR_HOLD, PLAY_FIGURES, PLAY_CURTAIN, WIDE, WIDE_DASH, WIDE_DROPS, WIDE_BLAST, WIDE_POP, WIDE_TAIL, WIDE_APPLIANCE_LIFE, WIDE_SLOT, WIDE_ZONE_AHEAD, WIDE_ZONE_R, ENTRANCE, ENTRANCE_VY, ENTRANCE_REACH, ENTRANCE_HOP, ENTRANCE_TAIL, ENTRANCE_CHEER, CHERRY_MAX, CHERRY_R0, CHERRY_R_STEP, CHERRY_HOLD_MAX, CHERRY_TAIL, CHIERI_BUN, ASSEMBLE, ASSEMBLE_PULL, ASSEMBLE_BEAT, ASSEMBLE_FINALE, ASSEMBLE_STOP, ASSEMBLE_TAIL, ASSEMBLE_WHIFF, LEAGUE_BOARD_Y } from '../render/clips.ts';
+import { BUSHIDO_TAIL, clipFor, DRUM_SLUMP, drumRow, PAW, PAW_FAIL, PAW_HITS, pawRow, pawTime, ROLL, ROLL_BEATS, ROLL_MAX, ROLL_MIN, ROLL_SLUMP, ROLL_THROW, rollGap, SELFIE, SELFIE_HOLD, SELFIE_LUNGE, SELFIE_SNAP, SELFIE_TAIL, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS, PRACTICE_HITS, practiceBeat, SKIP_HOP, SKIP_MAX, SKIP_MIN, SKIP_TAIL, MINE_FUSE, ENCORE, ENCORE_FACE, ENCORE_GONE, BURDEN_Y, UNBOWED_STEP, UNBOWED_MAX, PIGGY, PIGGY_DASH, PIGGY_CARRY, PIGGY_TAIL, PIGGY_BACK_X, PIGGY_BACK_Y, HUG, HUG_LUNGE, HUG_FIRST, HUG_GAP, HUG_TAIL, MEAL_GRACE, FAMILY, FAMILY_MEMBERS, FAMILY_LUNGE, FAMILY_FINALE, FAMILY_ZONE_AHEAD, FAMILY_ZONE_R, FAMILY_TAIL, familyLife, BLOOD, OBLIVION, TWIN_MOON, TWIN_PHASE, PUFF, PUFF_BLINK, PUFF_ARRIVE, PUFF_REACH, PUFF_STOP, PUFF_HOP, PUFF_BEAT, PUFF_CUT, PUFF_TAIL, EAR, EAR_DECIDE, EAR_PALM_HITS, EAR_PALM_GAP, EAR_PALM, EAR_KNEE, EAR_TAIL, EAR_GLINT, MIKU_EYE, PLAY, PLAY_DASH, PLAY_PASS, PLAY_THROUGH, PLAY_SLASHES, PLAY_BYE, PLAY_THOUGHT, PLAY_EAR_AT, PLAY_EAR_HOLD, PLAY_FIGURES, PLAY_CURTAIN, WIDE, WIDE_DASH, WIDE_DROPS, WIDE_BLAST, WIDE_POP, WIDE_TAIL, WIDE_APPLIANCE_LIFE, WIDE_SLOT, WIDE_ZONE_AHEAD, WIDE_ZONE_R, ENTRANCE, ENTRANCE_VY, ENTRANCE_REACH, ENTRANCE_HOP, ENTRANCE_TAIL, ENTRANCE_CHEER, CHERRY_MAX, CHERRY_R0, CHERRY_R_STEP, CHERRY_HOLD_MAX, CHERRY_TAIL, CHIERI_BUN, ASSEMBLE, ASSEMBLE_PULL, ASSEMBLE_BEAT, ASSEMBLE_FINALE, ASSEMBLE_STOP, ASSEMBLE_TAIL, ASSEMBLE_WHIFF, LEAGUE_BOARD_Y, HEART_TIERS, HEART_GAP, heartTier, YOMOGI_CHEST, YOMOGI_EYE, HIDE, HIDE_REACH, HIDE_GAP, HIDE_HOP, HIDE_TRAVEL, HIDE_WAIT, HIDE_PUNCH, HIDE_TAIL, PALM_FIST, RADAR, RADAR_WAIT, RADAR_BURST, RADAR_TAIL, SHADOW, SHADOW_SCARE, SHADOW_DASH, SHADOW_BEATS, SHADOW_PAUSE, SHADOW_TAIL, SHADOW_SCALE, SHADOW_OFF, SHADOW_GAP, SHADOW_LET, SHADOW_POSE } from '../render/clips.ts';
 import { SCRIPTS } from './scripts.ts';
 import { applyStatus, applyStatusBlocked, extendStatus, isRecruit, statusMask } from './status.ts';
 
@@ -5409,6 +5409,503 @@ function step_assemble(g: FightGame, f: Fighter, a: Attack): void {
 SCRIPTS['chieri-assemble'] = Object.assign(SCRIPTS['chieri-assemble'] ?? {}, {
   update: step_assemble, noMelee: true, skipCount: true, noSuperFx: true,
   placesHold: [ASSEMBLE.pull, ASSEMBLE.drum],
+});
+
+/* ---- 矢仓蓬咲 ---- */
+
+/* 脑子里是番长，身体是底层人类. Her gauge is her heart (CharacterData.heart): a foe near her, a foe facing her and
+   every hit make it race; being alone calms it. It beats on its own clock (HEART_GAP by tier), and from 失控 up it
+   puts dread on whoever walks at her — she is terrified, they read it as killing intent. When it tops out it bursts.
+   The look (the heart on her chest, the rings, ゴゴゴ, the halftone) is in yomogiFx.ts. */
+
+/** The burst at a given damage: round her chest, no guard, a knockdown. Rare enough to build per burst. */
+function heartBlastOf(damage: number, r: number): Skill {
+  return {
+    key: '', name: '心脏炸开', type: 'heavy', super: false, damage, range: r, start: 0, duration: 0, cd: 0, fx: 'yomogi-burst',
+    brief: '', detail: '', knock: 360, noBlock: true, noSparks: true, react: { kind: 'knockdown', vy: -280, knocked: .8 },
+  };
+}
+
+/** 「心脏快要炸开了」: the heart goes off round her chest. Every foe in `r` takes it; then the rate falls to the
+ *  spec's reset and rests there. The burst shakes her free of a hit she was still reeling from — 惊人的爆发力. */
+export function heartBurst(g: FightGame, f: Fighter, damage: number, r: number): void {
+  const spec = f.data.heart;
+  const cy = f.y - YOMOGI_CHEST.y;
+  const src = { hit: new Set<number>() };
+  const blast = heartBlastOf(Math.round(damage), r);
+  for (const o of g.fighters) {
+    if (!g.isEnemy(f, o) || o.hp <= 0 || o.echo) continue;
+    const dx = o.x - f.x, dy = (o.y - 90) - cy;
+    if (dx * dx + dy * dy < r * r) hit(g, f, o, blast, src);
+  }
+  f.gauge = spec?.reset ?? 0;
+  f.heartRest = spec?.rest ?? 0;
+  f.heartPhase = 0;
+  f.heartBeats++;
+  if (!f.attack) f.stun = 0;
+  addMod(f, 'poise', .3);
+  g.shake = Math.max(g.shake, 9);
+  g.flash = Math.max(g.flash, .06);
+  g.hitstop = Math.max(g.hitstop, .05);
+  g.effect('yomogi-burst', f.x + f.facing * YOMOGI_CHEST.x, cy, '#ff5a78', .8, { radius: r, dir: f.facing, hit: src.hit.size > 0 });
+}
+
+/** One beat: a low ring along the floor from 紧张 up; from 失控 up, every other beat a drop of cold sweat on each foe
+ *  close enough to feel it. */
+function heartBeat(g: FightGame, f: Fighter, tier: number, spec: HeartSpec): void {
+  if (tier >= 1) g.effect('yomogi-thump', f.x, FLOOR, '#448888', .55, { n: tier });
+  if (tier < 2 || f.heartBeats % 2) return;
+  for (const o of g.fighters) {
+    if (!g.isEnemy(f, o) || o.hp <= 0 || o.echo || Math.abs(o.x - f.x) > spec.dread) continue;
+    g.effect('yomogi-sweat', o.x, o.y - 172, '#bfe8ff', .5, { follow: o.id, ox: o.facing * 14, oy: -172, n: tier });
+  }
+}
+
+/** 心跳计, every step of a fighter that has a heart (game.ts stepFighter). */
+export function stepHeart(g: FightGame, f: Fighter, dt: number): void {
+  if (f.shadowRig > 0) tendRig(g, f, dt);
+  const spec = f.data.heart;
+  if (!spec || f.hp <= 0 || f.echo) return;
+  const max = f.data.gauge?.max ?? 100;
+  let near = false, gaze = false, crowd = false;
+  for (const o of g.fighters) {
+    if (!g.isEnemy(f, o) || o.hp <= 0 || o.echo) continue;
+    const d = Math.abs(o.x - f.x);
+    if (d < spec.near) near = true;
+    if (d < spec.gaze && Math.sign(f.x - o.x) === o.facing) gaze = true;
+    if (d < spec.calm) crowd = true;
+  }
+  const holds = !!f.attack && !!SCRIPTS[f.attack.skill.fx]?.holdsHeart;
+  if (f.heartRest > 0) {
+    f.heartRest = Math.max(0, f.heartRest - dt);
+    f.gauge = Math.min(f.gauge, spec.reset);
+  } else if (!holds) {
+    const rate = (near ? spec.nearRate : 0) + (gaze ? spec.gazeRate : 0) - (crowd ? 0 : spec.calmRate);
+    if (rate > 0) gainGauge(f, rate * dt);
+    else f.gauge = Math.max(0, f.gauge + rate * dt);
+  }
+  const tier = heartTier(f.gauge);
+  f.heartPhase += dt / HEART_GAP[tier];
+  if (f.heartPhase >= 1) {
+    f.heartPhase -= Math.floor(f.heartPhase);
+    f.heartBeats++;
+    heartBeat(g, f, tier, spec);
+  }
+  // A knocked-down body waits until it is up; a move that spends the heart keeps it.
+  if (!holds && f.gauge >= max - 1e-6 && f.knocked <= 0) heartBurst(g, f, spec.burstDamage, spec.burstR);
+}
+
+/** 帝王引擎式误会: from 失控 up, a foe walking toward her inside the spec's dread walks at dreadMul. game.ts folds it
+ *  into the stick. 1 for everyone else. */
+export function dreadMul(g: FightGame, f: Fighter, move: number): number {
+  if (!move) return 1;
+  let mul = 1;
+  for (const o of g.fighters) {
+    const spec = o.data.heart;
+    if (!spec || !g.isEnemy(f, o) || o.hp <= 0 || o.gauge < HEART_TIERS[1]) continue;
+    const dx = o.x - f.x;
+    if (Math.abs(dx) < spec.dread && Math.sign(dx) === Math.sign(move)) mul = Math.min(mul, spec.dreadMul);
+  }
+  return mul;
+}
+
+/** True when this instant sits on a heartbeat (within ON_BEAT of the pump either side). 拳化为掌 pays for it. */
+const ON_BEAT = .08;
+export function heartOnBeat(f: Fighter): boolean {
+  const gap = HEART_GAP[heartTier(f.gauge)];
+  const t = f.heartPhase * gap;
+  return t < ON_BEAT || gap - t < ON_BEAT;
+}
+
+/** 请不要看我: hands over her face; cold sweat flies off whoever she hits. */
+SCRIPTS['yomogi-shy'] = Object.assign(SCRIPTS['yomogi-shy'] ?? {}, {
+  flash(g: FightGame, f: Fighter, a: Attack) {
+    g.effect('slash', f.x + f.facing * 60, f.y - 100, f.data.color, .2, { dir: f.facing, radius: a.skill.range * .5 });
+    for (const id of a.hit) {
+      const o = g.fighterById(id);
+      if (o) g.effect('yomogi-shy', o.x - f.facing * 8, o.y - 132, '#9fe3e0', .5, { dir: f.facing });
+    }
+  },
+});
+
+/** 怪叫: each tier past 平静 reaches this much further; the scream itself adds to the heart. */
+const SHRIEK_REACH = .1;
+const SHRIEK_HEART = 6;
+const shriekReach = new WeakMap<Skill, Skill[]>();
+SCRIPTS['yomogi-shriek'] = Object.assign(SCRIPTS['yomogi-shriek'] ?? {}, {
+  emit(g: FightGame, f: Fighter, a: Attack) {
+    const s = a.skill;
+    const tier = heartTier(f.gauge);
+    let list = shriekReach.get(s);
+    if (!list) shriekReach.set(s, list = []);
+    const wide = list[tier] ??= tier ? { ...s, range: Math.round(s.range * (1 + SHRIEK_REACH * tier)) } : s;
+    a.skill = wide;
+    applyMelee(g, f, a);
+    a.skill = s;
+    gainGauge(f, SHRIEK_HEART);
+    g.effect('yomogi-shriek', f.x + f.facing * 30, f.y - 150, '#c9fff4', .5, { dir: f.facing, radius: wide.range, n: tier, hit: a.hit.size > 0, follow: f.id, ox: f.facing * 30, oy: -150 });
+  },
+});
+
+/** 躲到你身后: the heart the slip costs her, the damage per tier past 平静, and what the punch keeps if they turn first. */
+const HIDE_HEART = 15;
+const HIDE_TIER_MUL = .1;
+const HIDE_SPOTTED = .6;
+const HIDE_SPOT = 1;
+const HIDE_GO = 2;
+const hidePunches = new WeakMap<Skill, Skill[]>();
+function hidePunch(s: Skill, tier: number, spotted: boolean): Skill {
+  let list = hidePunches.get(s);
+  if (!list) hidePunches.set(s, list = []);
+  const k = tier * 2 + (spotted ? 1 : 0);
+  return list[k] ??= { ...s, damage: Math.round(s.damage * (1 + HIDE_TIER_MUL * tier) * (spotted ? HIDE_SPOTTED : 1)) };
+}
+/** 躲到你身后 (第 3、11、17、20 话: always behind somebody — 宁月「大半个身子都露出来了哦」): hunched, she slips through
+ *  the foe ahead (invulnerable, the dash's own invuln) and crouches at their back, which costs her heart. If they
+ *  have not turned round within HIDE_WAIT her own heartbeat scares her into a backhand; if they turn first she is
+ *  caught and swings at once, lighter. Nobody ahead: a short scuttle, the crouch, a swing at the air.
+ *  a.mode walks HIDE; a.hold is the foe (-1: nobody), a.anchor where she set off, a.tossAt starts each phase, a.liftAt is
+ *  the punch. All of it lives on the Attack, so a lockstep resync (which rebuilds the Attack) loses nothing. */
+function step_hide(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  const mode = a.mode ?? HIDE.sneak;
+  f.vx = 0;
+  const end = s.duration - HIDE_PUNCH - HIDE_TAIL;
+  if (mode === HIDE.sneak) {
+    if (a.t < s.start) return;
+    if (!(a.burst & HIDE_GO)) {
+      a.burst |= HIDE_GO;
+      const o = foeAhead(g, f, HIDE_REACH);
+      a.hold = o && Math.abs(o.y - f.y) < 112 ? o.id : -1;
+      a.anchor = f.x;
+      a.tossAt = a.t;
+    }
+    // The spot behind them follows them while she slips through (nobody: a short hop ahead).
+    const foe = g.fighterById(a.hold);
+    const to = clamp(foe ? foe.x + f.facing * HIDE_GAP : a.anchor + f.facing * HIDE_HOP, X_MIN, X_MAX);
+    const k = Math.min(1, (a.t - a.tossAt) / HIDE_TRAVEL);
+    f.x = a.anchor + (to - a.anchor) * (1 - (1 - k) * (1 - k));
+    // One ghost per 1/10 s bucket: a bucket stays true for several 1/120 s steps, so stamp only when it changes.
+    const bucket = Math.floor(a.t * 30);
+    if (bucket % 3 === 0 && bucket !== Math.floor((a.t - dt) * 30)) g.effect('ghost', f.x - f.facing * 16, f.y, f.data.color, .16, { fighter: f.id, alpha: .25 });
+    if (k < 1) return;
+    const o = foe;
+    if (o) f.facing = (Math.sign(o.x - f.x) || -f.facing) as 1 | -1;
+    a.mode = HIDE.hide;
+    a.tossAt = a.t;
+    gainGauge(f, HIDE_HEART);
+    g.effect('yomogi-hide', f.x, f.y - 200, '#e8fffb', HIDE_WAIT + .05, { follow: f.id, ox: 0, oy: -200, dir: f.facing });
+    return;
+  }
+  if (mode === HIDE.hide) {
+    if (a.t > end - 1e-3) a.t = end - 1e-3;
+    const o = g.fighterById(a.hold);
+    const turned = !!o && o.hp > 0 && Math.sign(f.x - o.x) === o.facing;
+    if (!turned && a.t - a.tossAt < HIDE_WAIT && !!o && o.hp > 0 && Math.abs(o.x - f.x) < s.range + 60) return;
+    if (turned) a.burst |= HIDE_SPOT;
+    a.mode = HIDE.punch;
+    a.liftAt = a.t = end;
+    a.hit = new Set();
+    const punch = hidePunch(s, heartTier(f.gauge), turned);
+    if (o && o.hp > 0 && Math.abs(o.x - f.x) < s.range && (o.x - f.x) * f.facing >= -20 && Math.abs(o.y - f.y) < 112) hit(g, f, o, punch, a);
+    g.effect('yomogi-reflex', f.x + f.facing * 64, f.y - 112, '#ffffff', .4, { dir: f.facing, hit: a.hit.size > 0, heavy: turned });
+    g.hitstop = Math.max(g.hitstop, a.hit.size ? .05 : 0);
+    return;
+  }
+}
+SCRIPTS['yomogi-hide'] = Object.assign(SCRIPTS['yomogi-hide'] ?? {}, {
+  // No foe ahead: she still scuttles, crouches and swings — the hide phase finds nobody and swings at once.
+  update: step_hide, customDash: true, noMelee: true,
+});
+
+/** 拳化为掌: the beat bonus, and the four strikes (slap / fist, off / on the beat), built once per skill. */
+const PALM_BEAT_MUL = 1.3;
+const palmParts = new WeakMap<Skill, Skill[]>();
+function palmOf(s: Skill, fist: boolean, beat: boolean): Skill {
+  let list = palmParts.get(s);
+  if (!list) palmParts.set(s, list = []);
+  const k = (fist ? 2 : 0) + (beat ? 1 : 0);
+  if (!list[k]) {
+    const base: Skill = fist ? { ...s, ...s.finale, finale: undefined } : { ...s, finale: undefined };
+    list[k] = beat ? { ...base, damage: Math.round(base.damage * PALM_BEAT_MUL) } : base;
+  }
+  return list[k];
+}
+/** 拳化为掌 (第 11 话; 视角 3「拳头张开便化为掌！！」): the fist is drawn back; at the active frame a key still held keeps
+ *  it a fist (the heavy strike, a long shove), a tap opens it into a slap that leaves them reeling and wears a red
+ *  handprint. Landed on the pump of her heart, either one hits harder. a.mode is PALM_FIST for the fist. */
+SCRIPTS['yomogi-palm'] = Object.assign(SCRIPTS['yomogi-palm'] ?? {}, {
+  update(g: FightGame, f: Fighter, a: Attack) {
+    const s = a.skill;
+    if (a.emitted || a.t < s.start) return;
+    a.emitted = true;
+    const fist = attackHeld(g, f);
+    const beat = heartOnBeat(f);
+    a.mode = fist ? PALM_FIST : 0;
+    a.skill = palmOf(s, fist, beat);
+    applyMelee(g, f, a);
+    a.skill = s;
+    g.text(s.name, f.x, f.y - 190, f.data.color, .65, 17);
+    // At cheek height: the slap lands on the face, the fist in the chest.
+    g.effect('yomogi-palm', f.x + f.facing * 74, f.y - (fist ? 118 : 140), '#7ff0dd', .36, { dir: f.facing, heavy: fist, hit: a.hit.size > 0, n: beat ? 1 : 0 });
+    if (beat) g.effect('yomogi-thump', f.x, FLOOR, '#ff5a78', .5, { n: 3 });
+    if (!a.hit.size) return;
+    g.flash = Math.max(g.flash, .04);
+    g.effect('yomogi-tone', W / 2, H / 2, '#ffffff', .14, { n: beat ? 1 : 0 });
+    for (const id of a.hit) {
+      const o = g.fighterById(id);
+      if (!o) continue;
+      if (fist) { g.shake = Math.max(g.shake, 7); continue; }
+      g.effect('yomogi-handprint', o.x, o.y - 160, '#ff3b4f', 3, { follow: o.id, ox: o.facing * 10, oy: -160, dir: o.facing, heavy: beat });
+      g.effect('yomogi-dizzy', o.x, o.y - 198, '#ffe27a', s.react?.stun ?? .7, { follow: o.id, ox: 0, oy: -198, n: beat ? 1 : 0 });
+    }
+  },
+  noMelee: true,
+});
+
+/** 人体感应雷达: how fast the heart climbs while she is curled up; what sets it off early. */
+const RADAR_HEART = 60;
+const RADAR_ARMED = 1;
+/** Her own radar ring, if it is still up. Found by owner, not kept on the side, so a resync cannot lose it. */
+function radarRingOf(g: FightGame, f: Fighter): Effect | undefined {
+  for (const e of g.effects) if (e.type === 'yomogi-radar' && e.fighter === f.id) return e;
+  return undefined;
+}
+/** 人体感应雷达 (第 1 话): curled up on the floor, poised, her heart racing. Anyone who comes inside the skill's range or
+ *  lands a hit — or the heart simply topping out — sets it off early: the heart bursts round her, harder the faster it
+ *  was beating (damage → finale.damage), and falls back. Nobody within RADAR_WAIT: she gets up, heart still high.
+ *  a.mode walks RADAR; a.liftAt is the burst; a.anchor is her hp when she curled up. */
+function step_radar(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  const mode = a.mode ?? RADAR.crouch;
+  f.vx = 0;
+  if (mode !== RADAR.crouch) return;
+  if (!(a.burst & RADAR_ARMED)) {
+    a.burst |= RADAR_ARMED;
+    a.anchor = f.hp;
+    g.effect('yomogi-radar', f.x, FLOOR, '#448888', RADAR_WAIT + .1, { follow: f.id, ox: 0, oy: 0, radius: s.range, fighter: f.id });
+  }
+  gainGauge(f, RADAR_HEART * dt);
+  const max = f.data.gauge?.max ?? 100;
+  let near = false;
+  for (const o of g.fighters) {
+    if (!g.isEnemy(f, o) || o.hp <= 0 || o.echo) continue;
+    if (Math.abs(o.x - f.x) < s.range && Math.abs(o.y - f.y) < 140) { near = true; break; }
+  }
+  const struck = f.hp < a.anchor;
+  if (near || struck || f.gauge >= max - 1e-6) {
+    const k = clamp(f.gauge / max, 0, 1);
+    const top = s.finale?.damage ?? s.damage * 2;
+    const ring = radarRingOf(g, f);
+    if (ring) ring.life = 0;
+    heartBurst(g, f, s.damage + (top - s.damage) * k, s.range);
+    a.mode = RADAR.burst;
+    a.liftAt = a.t;
+    a.t = Math.max(a.t, s.duration - RADAR_TAIL - RADAR_BURST);
+    a.liftAt = a.t;
+    return;
+  }
+  if (a.t >= RADAR_WAIT) {
+    const ring = radarRingOf(g, f);
+    if (ring) ring.life = 0;
+    a.mode = RADAR.idle;
+    a.t = Math.max(a.t, s.duration - RADAR_TAIL);
+    return;
+  }
+  // Hold the clock inside the crouch until the wait is over.
+  if (a.t > s.duration - RADAR_TAIL - RADAR_BURST - 1e-3) a.t = s.duration - RADAR_TAIL - RADAR_BURST - 1e-3;
+}
+SCRIPTS['yomogi-radar'] = Object.assign(SCRIPTS['yomogi-radar'] ?? {}, {
+  update: step_radar, noMelee: true, poise: true, holdsHeart: true,
+});
+
+/** 想象吧，变强的我: the heal at the end; how far the shadow rushes when nobody is ahead. */
+const SHADOW_HEAL = 20;
+const SHADOW_RUSH = 260;
+/** The rig never expires on its own clock while the move runs (tendRig removes it); this is only the backstop for a
+ *  body that stops being stepped (a KO in a team match), so nothing can hang on screen. */
+const RIG_BACKSTOP = 6;
+const RIG_END: Record<string, number> = {
+  'yomogi-banchou': SHADOW_LET.hold + SHADOW_LET.sink, 'yomogi-cord': SHADOW_LET.cord, 'yomogi-focus': SHADOW_LET.focus,
+};
+/** One of her rig effects by type. Found by owner, never kept on the side: a lockstep resync rebuilds the Attack, so
+ *  anything keyed by it would be lost, while the effects themselves are part of the synced state. */
+function rigOf(g: FightGame, f: Fighter, type: string): Effect | undefined {
+  for (const e of g.effects) if (e.type === type && e.fighter === f.id) return e;
+  return undefined;
+}
+/** Every step from stepHeart: age her rig on its own clock, mark the moment the move lets go of it, and remove each
+ *  piece once its let-go time is over. */
+function tendRig(g: FightGame, f: Fighter, dt: number): void {
+  const a = f.attack;
+  const held = f.hp > 0 && !!a && a.skill.fx === 'yomogi-shadow' && (a.mode ?? SHADOW.rise) !== SHADOW.done;
+  let live = 0;
+  for (const e of g.effects) {
+    if (e.fighter !== f.id || e.life <= 0) continue;
+    const end = RIG_END[e.type];
+    if (end === undefined) continue;
+    e.age = (e.age ?? 0) + dt;
+    if (!held && (e.until ?? -1) < 0) e.until = e.age;
+    if ((e.until ?? -1) >= 0 && e.age - (e.until ?? 0) >= end) { e.life = 0; continue; }
+    live++;
+  }
+  f.shadowRig = live;
+}
+function spawnRig(g: FightGame, f: Fighter, type: string, x: number, y: number, color: string, extra: Partial<Effect>): Effect {
+  f.shadowRig++;
+  return g.effect(type, x, y, color, RIG_BACKSTOP, { ...extra, fighter: f.id, age: 0, until: -1 });
+}
+const shadowParts = new WeakMap<Skill, { punch: Skill[]; slap: Skill }>();
+function shadowPartsOf(s: Skill): { punch: Skill[]; slap: Skill } {
+  let p = shadowParts.get(s);
+  if (!p) {
+    const beats = s.count ?? 5;
+    const punch: Skill[] = [];
+    for (let i = 0; i < beats; i++) punch.push(withGuard({ ...s, finale: undefined, count: undefined }, i));
+    p = { punch, slap: withGuard({ ...s, ...s.finale, finale: undefined, count: undefined }, beats) };
+    shadowParts.set(s, p);
+  }
+  return p;
+}
+function shadowPose(e: Effect, [sheet, col, row]: readonly ['common' | 'special', number, number]): void {
+  e.sheet = sheet; e.col = col; e.row = row;
+}
+/** Put the shadow at x, joined to her feet, and keep the cord strung from her heart to its chest. */
+function shadowAt(g: FightGame, f: Fighter, body: Effect, x: number): void {
+  body.x = x;
+  body.tx = f.x - x;
+  const cord = rigOf(g, f, 'yomogi-cord');
+  if (cord) {
+    cord.tx = x - cord.x;
+    cord.ty = (FLOOR - YOMOGI_CHEST.y * SHADOW_SCALE) - cord.y;
+  }
+}
+/** 想象吧，变强的我 (第 3 话意象训练; 第 18 话「想象……变强的我……！」「等着吧，兄弟。老子马上就把他们收拾干净」、氧气罐、
+ *  「矢仓蓬咲，奇迹生还！！！」; B 站「看到自己影子的蓬咲」): eyes shut and fists tight, her heart climbs to the top and
+ *  her shadow stands up off the floor — her own figure, bigger and inked, still joined to her feet, with white eyes and
+ *  a headband: the 番长 in her head. A red cord runs from her heart to its chest. It scares her (she screams and backs
+ *  off behind it); then it rushes the foe ahead and punches on her heartbeat, faster and faster (SHADOW_BEATS) — every
+ *  beat runs down the cord into its fist — a breath, and the fist opens into the slap. It sinks back into the floor;
+ *  she takes a pull on the oxygen can, heals and her heart drops to nothing.
+ *  State lives on the Attack and the rig effects only (a.mode walks SHADOW, a.tossAt starts each phase, a.shots counts
+ *  the punches, a.hold is the foe, a.anchor where the shadow stood up); tendRig ages the rig. The look is yomogiFx.ts. */
+function step_shadow(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  const mode = a.mode ?? SHADOW.rise;
+  const max = f.data.gauge?.max ?? 100;
+  f.vx = 0;
+  const end = s.duration - SHADOW_TAIL;
+  if (mode === SHADOW.rise) {
+    if (!(a.burst & 1)) {
+      a.burst |= 1;
+      g.effect('yomogi-rise', f.x + f.facing * SHADOW_OFF, FLOOR, '#0d2427', s.start + .1, { dir: f.facing });
+    }
+    f.gauge = Math.max(f.gauge, max * Math.min(1, a.t / s.start));
+    if (a.t < s.start) return;
+    const x = clamp(f.x + f.facing * SHADOW_OFF, X_MIN, X_MAX);
+    const body = spawnRig(g, f, 'yomogi-banchou', x, FLOOR, '#0d2427', { dir: f.facing, sheet: SHADOW_POSE.stand[0], col: SHADOW_POSE.stand[1], row: SHADOW_POSE.stand[2], n: 0, t0: -1, vx: 0 });
+    spawnRig(g, f, 'yomogi-cord', f.x + f.facing * YOMOGI_CHEST.x, f.y - YOMOGI_CHEST.y, '#ff4d6d', { dir: f.facing, t0: -1, follow: f.id, ox: f.facing * YOMOGI_CHEST.x, oy: -YOMOGI_CHEST.y });
+    a.anchor = x;
+    a.hold = -1;
+    shadowAt(g, f, body, x);
+    a.mode = SHADOW.scare;
+    a.tossAt = a.t;
+    g.effect('yomogi-scare', f.x, f.y - 214, '#e8fffb', SHADOW_SCARE + .2, { follow: f.id, ox: 0, oy: -214, dir: f.facing });
+    return;
+  }
+  if (mode === SHADOW.done) {
+    if (!(a.burst & 2) && a.t - a.tossAt >= .3) {
+      a.burst |= 2;
+      f.gauge = 0;
+      f.heartRest = 0;
+      f.hp = Math.min(f.data.hp, f.hp + SHADOW_HEAL);
+      g.effect('yomogi-oxygen', f.x + f.facing * YOMOGI_EYE.x, f.y - YOMOGI_EYE.y + 22, '#ffffff', .9, { follow: f.id, ox: f.facing * (YOMOGI_EYE.x + 18), oy: -YOMOGI_EYE.y + 22, dir: f.facing });
+      g.text('矢仓蓬咲，奇迹生还！！', f.x, f.y - 236, '#9fe3e0', 1.1, 17);
+      g.text('+' + SHADOW_HEAL, f.x, f.y - 206, '#7dffa8', .7, 15);
+    }
+    return;
+  }
+  // The clock waits inside the fight until the slap; the tail is the oxygen can.
+  if (a.t > end - 1e-3) a.t = end - 1e-3;
+  const body = rigOf(g, f, 'yomogi-banchou');
+  // The shadow is gone (removed under it): finish rather than wait forever.
+  if (!body) { a.mode = SHADOW.done; a.tossAt = a.t = end; return; }
+  const lt = a.t - a.tossAt;
+  const foe = g.fighterById(a.hold);
+  const alive = !!foe && foe.hp > 0;
+  if (mode === SHADOW.scare) {
+    f.x = clamp(f.x - f.facing * 120 * dt, X_MIN, X_MAX);
+    shadowAt(g, f, body, a.anchor);
+    if (lt < SHADOW_SCARE) return;
+    const o = foeAhead(g, f, s.range);
+    a.hold = o && Math.abs(o.y - f.y) < 170 ? o.id : -1;
+    spawnRig(g, f, 'yomogi-focus', W / 2, H / 2, '#ffffff', { tx: o ? o.x : a.anchor + f.facing * SHADOW_RUSH, ty: FLOOR - 110 });
+    a.mode = SHADOW.rush;
+    a.tossAt = a.t;
+    shadowPose(body, SHADOW_POSE.leap);
+    return;
+  }
+  if (mode === SHADOW.rush) {
+    // The spot short of them follows them while it rushes (nobody: a run ahead).
+    const to = clamp(alive ? foe!.x - f.facing * SHADOW_GAP : a.anchor + f.facing * SHADOW_RUSH, X_MIN, X_MAX);
+    const k = Math.min(1, lt / SHADOW_DASH);
+    shadowAt(g, f, body, a.anchor + (to - a.anchor) * k);
+    body.vx = k < 1 ? (to - a.anchor) / SHADOW_DASH : 0;
+    if (k < 1) return;
+    a.mode = SHADOW.beat;
+    a.tossAt = a.t;
+    a.shots = 0;
+    return;
+  }
+  // SHADOW.beat
+  const parts = shadowPartsOf(s);
+  const beats = parts.punch.length;
+  if (alive) shadowAt(g, f, body, clamp(foe!.x - f.facing * SHADOW_GAP, X_MIN, X_MAX));
+  const focus = rigOf(g, f, 'yomogi-focus');
+  if (focus && alive) focus.tx = foe!.x;
+  const cord = rigOf(g, f, 'yomogi-cord');
+  while (a.shots < beats && lt >= SHADOW_BEATS[Math.min(a.shots, SHADOW_BEATS.length - 1)]) {
+    const i = a.shots++;
+    // Her heart and its fist land together: the beat runs down the cord.
+    f.heartPhase = 0;
+    f.heartBeats++;
+    body.t0 = body.age ?? 0;
+    if (cord) cord.t0 = cord.age ?? 0;
+    body.n = i + 1;
+    shadowPose(body, i % 2 ? SHADOW_POSE.jab : SHADOW_POSE.kick);
+    a.hit = new Set();
+    if (alive && Math.abs(foe!.x - body.x) < SHADOW_GAP + 70 && Math.abs(foe!.y - f.y) < 170) hit(g, f, foe!, parts.punch[i], a);
+    // Every punch that lands bursts on them too — a small cousin of the slap's, so the five read as one string.
+    if (a.hit.size) g.effect('yomogi-impact', foe!.x - f.facing * 16, foe!.y - 112 - (i % 2 ? 18 : 0), '#8ff5e4', .3, { dir: f.facing, n: i });
+    const px = alive ? foe!.x : body.x + f.facing * 80;
+    // Panels take turns either side of them, so the last one has cleared before the next lands on its spot.
+    g.effect('yomogi-panel', px + (i % 2 ? -1 : 1) * 62, f.y - (i % 2 ? 238 : 262), '#ffffff', .4, { n: i, dir: f.facing, hit: a.hit.size > 0 });
+    g.shake = Math.max(g.shake, 3 + i);
+  }
+  const last = SHADOW_BEATS[SHADOW_BEATS.length - 1];
+  if (a.shots >= beats && lt >= last + .12 && lt < last + SHADOW_PAUSE) shadowPose(body, SHADOW_POSE.wind);
+  if (a.shots < beats || lt < last + SHADOW_PAUSE) return;
+  // The slap: the fist opens (the I strike cell) — every beat of her heart in one.
+  shadowPose(body, SHADOW_POSE.slap);
+  body.heavy = true;
+  body.t0 = body.age ?? 0;
+  if (cord) cord.t0 = cord.age ?? 0;
+  a.hit = new Set();
+  if (alive && Math.abs(foe!.x - body.x) < SHADOW_GAP + 80 && Math.abs(foe!.y - f.y) < 170) hit(g, f, foe!, parts.slap, a);
+  const hx = alive ? foe!.x : body.x + f.facing * 90;
+  g.effect('yomogi-bighand', hx, f.y - 120, '#0d2427', .7, { dir: f.facing, hit: a.hit.size > 0 });
+  g.effect('yomogi-panel', hx, f.y - 270, '#ffffff', .8, { n: beats, dir: f.facing, hit: a.hit.size > 0, heavy: true });
+  for (const id of a.hit) { const v = g.fighterById(id); if (v) g.effect('yomogi-handprint', v.x, v.y - 160, '#ff3b4f', 3, { follow: v.id, ox: v.facing * 10, oy: -160, dir: v.facing, heavy: true }); }
+  g.effect('yomogi-tone', W / 2, H / 2, '#ffffff', .12, { n: 0 });
+  g.shake = Math.max(g.shake, 12);
+  g.flash = Math.max(g.flash, .1);
+  g.hitstop = Math.max(g.hitstop, .08);
+  // From here the move lets go: tendRig marks the rig, the shadow holds the slap a moment and sinks.
+  a.mode = SHADOW.done;
+  a.tossAt = a.t = end;
+}
+SCRIPTS['yomogi-shadow'] = Object.assign(SCRIPTS['yomogi-shadow'] ?? {}, {
+  update: step_shadow, noMelee: true, skipCount: true, poise: true, holdsHeart: true,
 });
 
 SCRIPTS['milk'] = Object.assign(SCRIPTS['milk'] ?? {}, { spawn: 'milk' });

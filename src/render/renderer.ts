@@ -12,6 +12,8 @@ import { MIKU_BACK, MIKU_SCREEN_BACK } from './mikuFx.ts';
 import { drawStatusAuras, statusBodyOf } from './statusMarks.ts';
 import { SHIZUKU_BACK } from './shizukuFx.ts';
 import { CHIERI_BACK, CHIERI_SCREEN_FRONT } from './chieriFx.ts';
+import { YOMOGI_BACK, YOMOGI_SCREEN_BACK, YOMOGI_SCREEN_FRONT, drawHeartBack, drawHeartFront } from './yomogiFx.ts';
+import { heartTier } from './clips.ts';
 
 /** Backing-store pixels per CSS pixel. The compositor then blits 1:1.
  *  Phones use the screen ratio too: a CSS pixel is several physical pixels, and a 1× store
@@ -31,10 +33,10 @@ export function portraitBodyScale(padSplit: boolean): number {
 /** Hard 1px rim, yellow for the left team and green for the right. */
 const TEAM_GLOW = SIDE;
 /** Effects painted under every body: 和泉朋花's coffin and her spotlights. */
-const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK, ...MIKU_BACK, ...SHIZUKU_BACK, ...CHIERI_BACK]);
+const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK, ...MIKU_BACK, ...SHIZUKU_BACK, ...CHIERI_BACK, ...YOMOGI_BACK]);
 /** Screen-space layers that ignore the body zoom: behind every body, and in front of them. */
-const SCREEN_BACK = new Set(['encore-stage', 'family-dim', ...SAKIKO_SCREEN_BACK, ...MIKU_SCREEN_BACK]);
-const SCREEN_FRONT = new Set(['encore-rain', 'encore-crowd', 'encore-call', 'slap-flash', ...CHIERI_SCREEN_FRONT]);
+const SCREEN_BACK = new Set(['encore-stage', 'family-dim', ...SAKIKO_SCREEN_BACK, ...MIKU_SCREEN_BACK, ...YOMOGI_SCREEN_BACK]);
+const SCREEN_FRONT = new Set(['encore-rain', 'encore-crowd', 'encore-call', 'slap-flash', ...CHIERI_SCREEN_FRONT, ...YOMOGI_SCREEN_FRONT]);
 /** 安可是主唱的: the eye line on the 175 px body, measured up from the feet. */
 const ENCORE_EYE_Y = 152;
 
@@ -241,7 +243,7 @@ export class Renderer {
       if (!f) continue;
       // 梦想即力量！: ghosts stamped with a cell draw that frozen pose; the rest mirror the live one.
       const pose = e.sheet ? { sheet: e.sheet, col: e.col ?? 0, row: e.row ?? 0, facing: e.facing ?? f.facing } : undefined;
-      zoomAbout(c, bodyScale, e.x, e.y, () => this.view(f.data.id).draw(c, f, e.x, e.y, (e.alpha ?? .3) * (e.life / e.max), e.tint, undefined, pose));
+      zoomAbout(c, bodyScale * (e.scale ?? 1), e.x, e.y, () => this.view(f.data.id).draw(c, f, e.x, e.y, (e.alpha ?? .3) * (e.life / e.max), e.tint, undefined, pose));
     }
     // 彩虹色: the wash and the far bokeh sit behind the body and follow her head.
     for (const e of g.effects) {
@@ -273,7 +275,19 @@ export class Renderer {
         // 异常 that change the body (冻住's ice sculpture): its outline takes the rim's place, then washes of the
         // sprite's own silhouette and a light band clipped to it. All of it is the view's cached tint / rim.
         const look = f.hp > 0 ? statusBodyOf(f) : undefined;
+        // 心跳计 (矢仓蓬咲): ゴゴゴ and the closing dark behind her once her heart is out of control.
+        if (f.data.heart) drawHeartBack(c, f, g.age, lite);
         view.draw(c, f, f.x, footY, alpha, undefined, look?.outline ?? outline);
+        // 帝王引擎式误会: from 失控 up a shadow falls over the top of her face — killing intent, to anyone watching.
+        if (f.data.heart && f.hp > 0 && heartTier(f.gauge) >= 2) {
+          const vh = f.data.view.kind === 'sprite' ? f.data.view.height : 181;
+          c.save();
+          c.beginPath();
+          c.rect(f.x - 100, footY - vh - 40, 200, vh * .2 + 40);
+          c.clip();
+          view.draw(c, f, f.x, footY, alpha * (heartTier(f.gauge) === 3 ? .5 : .36), '#04090b');
+          c.restore();
+        }
         if (look) {
           for (const w of look.washes) {
             c.save();
@@ -374,6 +388,7 @@ export class Renderer {
           drawEffect(c, { type: 'halo', x: f.x, y: f.y - 176, color: '#ffd54a', life: 1, max: 1, radius: 16 });
         }
         drawGauge(c, f);
+        if (f.data.heart) drawHeartFront(c, f, g.age, this.images);
         if (f.feast > 0 && f.hp > 0) drawEffect(c, { type: 'feast', x: f.x, y: f.y - 92, color: '#9ad4ff', life: 1, max: 1, radius: 40 });
         if (f.debt > 0 && f.hp > 0) {
           drawEffect(c, { type: 'debt', x: f.x, y: FLOOR, color: f.data.color, life: 1, max: 1, radius: 52 });

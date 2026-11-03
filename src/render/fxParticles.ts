@@ -330,6 +330,8 @@ const textStamps = new Map<string, Stamp | null>();
  *  once into a cached canvas at twice the size and stamped centred on x, y. Laying text out (font parse,
  *  shaping, a stroke pass and a fill pass) every frame is the dear part of on-screen words; a stamp is one
  *  drawImage. Returns the drawn width, or -1 with no DOM (the caller can fall back to plain text). */
+/** One measuring context for every stamp miss, instead of a fresh canvas per miss. */
+let probeCtx: CanvasRenderingContext2D | null | undefined;
 export function stampText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, size: number, fill: string, line = '', weight = 900): number {
   if (!text || !(size > 0) || !visible(ctx)) return 0;
   const px = Math.round(size);
@@ -340,7 +342,7 @@ export function stampText(ctx: CanvasRenderingContext2D, text: string, x: number
     if (typeof document !== 'undefined') {
       const font = `${weight} ${px * TEXT_SCALE}px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif`;
       const lw = line ? Math.max(3, px * .2) * TEXT_SCALE : 0;
-      const probe = document.createElement('canvas').getContext('2d');
+      const probe = probeCtx === undefined ? (probeCtx = document.createElement('canvas').getContext('2d')) : probeCtx;
       if (probe) {
         probe.font = font;
         const w = Math.ceil(probe.measureText(text).width + lw + 4);

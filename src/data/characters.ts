@@ -1640,6 +1640,67 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'yomogi', name: '矢仓蓬咲', title: '贝斯 / 脑内番长', quote: '总有一天我会蜕变，变成强强的我给你看！！', color: '#448888',
+    bands: ['ikka-dumb-rock'],
+    ...stats('armor'),
+    // 硬派身躯 is the trait's own name — the 硬派 she worships in 《鬼时雨》 and does not have. The heart is hers.
+    passive: ['硬派身躯 · 心跳计', '受到伤害降低 5%；对手靠近、正对她或打中她时心跳加快，满了自动炸开击倒周围；心跳失控时朝她走来的对手会腿软'],
+    // 心跳计 (第 1、8、11 话: 「心脏都要扭成一团」「像抹布一样被拧紧」「要被吓得蹦出来了」「快要炸开了」): the gauge is
+    // her heart rate. combat.ts stepHeart raises and calms it, beats it, puts the dread on foes and bursts it.
+    gauge: { max: 100, onHitTaken: 5, label: '心跳', color: '#ff5a78' },
+    heart: { near: 180, nearRate: 8, gaze: 300, gazeRate: 3, calm: 360, calmRate: 10, dread: 260, dreadMul: .85, burstR: 150, burstDamage: 35, reset: 30, rest: 4 },
+    view: { kind: 'sprite', common: '/sprites/yomogi/common.png', special: '/sprites/yomogi/special.png', height: 177, lift: 6 },
+    // 脑子里是番长，身体是底层人类. The look is 不良漫画 (yomogiFx.ts): halftone, speed lines, ゴゴゴ, a heart that
+    // will not calm down. Every move is empty-handed; the oxygen can at the end of L is the only prop.
+    skills: [
+      // 请不要看我 (第 3 话: 「请不要看我这种底层小人物～～！！」): hands over her face, flailing.
+      skill(0, 'light', '请不要看我', { fx: 'yomogi-shy' }),
+      // 怪叫 (萌百萌点; B 站「像被电了」): the scream comes out as a zigzag of current, wider the faster her heart.
+      skill(1, 'heavy', '怪叫', {
+        fx: 'yomogi-shriek',
+        brief: '重击击退；心跳越快范围越大',
+        detail: '重击击退；心跳每升一档范围扩大 10%；用一次心跳上升 6',
+      }),
+      // 躲到你身后 (第 3、11、17、20 话; 宁月「大半个身子都露出来了哦」): through them to their back, a crouch, and the
+      // scare of her own heartbeat throws the punch. Turn round first and she is caught — the punch comes early and light.
+      skill(2, 'dash', '躲到你身后', {
+        damage: 40, range: 110, start: .1, duration: 1.4, cd: 7, knock: 260, invuln: .34, fx: 'yomogi-hide', noSparks: true,
+        react: { kind: 'stand', stun: .45 },
+        brief: '无敌穿身绕后一拳；对手先转身则伤害降低',
+        detail: '无敌穿过身前对手停在其背后蹲下 0.4 秒再反手一拳并击退，心跳上升 15；期间对手先转身则立刻出拳但伤害 ×0.6；心跳每升一档伤害 +10%；身前没有对手则向前躲一小段后挥空',
+      }),
+      // 拳化为掌 (第 11 话《鬼时雨》第 14 卷: 「既可以出石头，也可以出布哦」「轰堂的必杀技就变成了打耳光」): a tap opens the
+      // fist into a slap that spins them; held, it stays a fist. On the beat of her heart it lands harder.
+      skill(3, 'heavy', '拳化为掌', {
+        damage: 45, range: 118, start: .24, duration: .72, cd: 5, knock: 140, fx: 'yomogi-palm', noSparks: true,
+        react: { kind: 'stand', stun: .7 },
+        finale: { damage: 55, knock: 440, react: { kind: 'stand', stun: .4 } },
+        brief: '点按耳光眩晕，长按重拳击退；踩心跳加伤',
+        detail: '点按打出耳光 45 伤害并眩晕 0.7 秒；长按打出重拳 55 伤害并强击退；出手落在心跳那一拍伤害 +30%',
+      }),
+      // 人体感应雷达 (第 1 话: 「我的人体感应雷达没有反应……！」): she curls up and her heart races; whoever comes near
+      // or hits her sets it off early. Nobody comes, and she stands up with her heart still pounding.
+      skill(4, 'endure', '人体感应雷达', {
+        damage: 40, range: 150, start: .06, duration: 1.75, cd: 8, knock: 360, fx: 'yomogi-radar', noSparks: true,
+        react: { kind: 'knockdown', vy: -280, knocked: .8 },
+        finale: { damage: 80 },
+        brief: '霸体蹲下心跳飙升；有人靠近或挨打即炸开',
+        detail: '霸体抱头蹲下至多 1 秒，心跳每秒上升 60；对手靠近或打中她即提前炸开心脏，以自身为中心击倒且不能格挡，心跳越快伤害越高 40～80，之后心跳回落；1 秒内无人靠近则什么都不发生，心跳留在高位',
+      }),
+      // 想象吧，变强的我 (第 3 话意象训练; 第 18 话「想象……变强的我……！」「等着吧，兄弟」、氧气罐、「矢仓蓬咲，奇迹生还！！！」;
+      // B 站「看到自己影子的蓬咲」): her shadow stands up as the 番长 in her head. It scares her first; then it punches
+      // on her heartbeat, faster and faster, and the last blow opens into the slap. The oxygen can, and she lives.
+      skill(5, 'endure', '想象吧，变强的我', {
+        cost: 180, damage: 18, count: 5, range: 560, start: .55, duration: 3.8, knock: 40, fx: 'yomogi-shadow', gain: 2, noSparks: true,
+        react: { kind: 'stand', stun: .55 },
+        guardPlan: [8, 14, 20, 30, 30],
+        finale: { damage: 70, knock: 520, react: { kind: 'launch', vy: -480, knocked: .9 } },
+        brief: '影子番长连打五拳接耳光；结束回血心跳清零',
+        detail: '心跳拉满，影子化作番长冲向身前对手，五拳随心跳加速各 18 伤害，停顿后一记耳光 70 伤害并挑空；可格挡，第五拳破防；结束时吸氧回复 20 并清零心跳',
+      }),
+    ],
+  },
+  {
     id: 'viola', name: '薇欧拉', title: '队长 / 恶德', quote: '火种燃尽之后会怎么样呢？', color: '#8E5AC8',
     ...stats('armor'),
     view: {
