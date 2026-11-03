@@ -1,3 +1,5 @@
+import { TOUCH_LAYOUT } from './touchLayout.data.ts';
+
 /** Dev-only. Drag a pad control, and the drop writes src/ui/touchLayout.data.ts. */
 export function mountTouchTune(pad: HTMLElement): void {
   const open = document.createElement('button');
@@ -21,6 +23,7 @@ export function mountTouchTune(pad: HTMLElement): void {
     const y = Math.round(Math.min(100, Math.max(0, (clientY - box.top) / box.height * 100)) * 10) / 10;
     el.style.setProperty('--x', x + '%');
     el.style.setProperty('--y', y + '%');
+    if (el.dataset.pad === 'stick') Object.assign(TOUCH_LAYOUT.stick, { x, y });
   };
 
   const save = () => {

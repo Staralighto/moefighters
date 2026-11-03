@@ -278,6 +278,8 @@ export class TouchInput {
     window.addEventListener('resize', this.scheduleReflow);
     window.visualViewport?.addEventListener('resize', this.scheduleReflow);
     window.visualViewport?.addEventListener('scroll', this.scheduleReflow);
+    const ring = this.pad.querySelector('.tp-ring');
+    if (ring && typeof ResizeObserver !== 'undefined') new ResizeObserver(this.scheduleReflow).observe(ring);
   }
 
   /** Y of the thumb band, in viewport coordinates. Null when the anchor key cannot be measured.
@@ -327,9 +329,9 @@ export class TouchInput {
   }
 
   private readonly noteTouch = (e: TouchEvent) => {
-    this.liveTouches = [...e.touches].map(t => t.identifier);
+    this.liveTouches = Array.from(e.touches, t => t.identifier);
     if (stickFingerGone(this.stickTouch, this.liveTouches)) this.releaseStick();
-    for (const t of e.changedTouches) {
+    for (const t of Array.from(e.changedTouches)) {
       this.pendingTouch = { id: t.identifier, x: t.clientX, y: t.clientY, t: performance.now() };
       if (this.stickId === null || this.stickTouch !== null) continue;
       const id = matchStickTouch(this.stickX, this.stickY, this.pendingTouch, performance.now());
@@ -340,7 +342,8 @@ export class TouchInput {
   };
   private readonly onTouchMove = (e: TouchEvent) => {
     if (this.stickTouch === null) return;
-    for (const t of e.touches) {
+    for (let i = 0; i < e.touches.length; i++) {
+      const t = e.touches[i];
       if (t.identifier !== this.stickTouch) continue;
       if (e.cancelable) e.preventDefault();
       this.placeStick(t.clientX, t.clientY);
@@ -348,9 +351,9 @@ export class TouchInput {
     }
   };
   private readonly onTouchEnd = (e: TouchEvent) => {
-    const ended = [...e.changedTouches].map(t => t.identifier);
+    const ended = Array.from(e.changedTouches, t => t.identifier);
     if (this.pendingTouch && ended.includes(this.pendingTouch.id)) this.pendingTouch = null;
-    this.liveTouches = [...e.touches].map(t => t.identifier);
+    this.liveTouches = Array.from(e.touches, t => t.identifier);
     const lift = e.type !== 'touchcancel';
     const kind = touchRelease(this.stickTouch, ended, e.touches.length);
     if (kind === 'all') this.releaseAll(lift, lift);
@@ -359,7 +362,8 @@ export class TouchInput {
   private readonly onDrop = () => { this.releaseAll(false, false); };
   private layoutNow(): string {
     const b = document.body.classList;
-    return (b.contains('pad-split') ? 's' : '') + (b.contains('turned') ? 't' : '') + (b.contains('wide') ? 'w' : '');
+    return (b.contains('pad-split') ? 's' : '') + (b.contains('turned') ? 't' : '') + (b.contains('wide') ? 'w' : '')
+      + (b.contains('stage-fill') ? 'f' : '') + (b.contains('stage-deck') ? 'd' : '') + (b.contains('in-battle') ? 'b' : '');
   }
   private readonly onLayout = () => {
     const next = this.layoutNow();

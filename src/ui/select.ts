@@ -1,4 +1,4 @@
-import { applyImageUrl, assignFirst, stageThumbSrc } from '../assets/loader.ts';
+import { applyImageUrl, assignFirst, loadImage, stageThumbSrc } from '../assets/loader.ts';
 import type { CharacterData, StageData } from '../data/types.ts';
 import { BAND_BY_ID, type BandId } from '../data/bands.ts';
 import { STAGES } from '../data/stages.ts';
@@ -12,6 +12,11 @@ import { MAILBOX_URL, mailboxUsable } from '../net/endpoint.ts';
 import { cancelOnline, ensureCodename, formatCodename, noteOnlinePlace, notifyOnlinePick } from './online.ts';
 import { fitCanvasCached } from './canvasFit.ts';
 import { StageMotion } from './stageMotion.ts';
+
+/** Roster card face: the idle fighter sprite on its colour disc, or the head-shot avatar as a badge. */
+export type RosterThumb = 'sprite' | 'face';
+/** Anything that is not a known value (junk, an older save, a future value) reads as the sprite. */
+export const parseRosterThumb = (v: unknown): RosterThumb => v === 'face' ? 'face' : 'sprite';
 
 /** What a select-screen change should sound like. Unset is the plain blip. */
 export type PickCue = 'pick' | 'mode' | 'deny';
@@ -53,6 +58,8 @@ interface SavedSelect {
   stageId?: string;
   /** Roster layout: true shows band group headers. Absent in pre-setting saves reads as flat. */
   grouped?: boolean;
+  /** Roster card face. Absent in pre-setting saves reads as the sprite. */
+  thumb?: RosterThumb;
 }
 const KEYS_1P = 'A D 移动 · W / 空格 跳跃 · 长按 S 格挡 · 点按 S 后闪 · J K 轻 / 重击（跳中为空击） · U I O 技能 · L 必杀';
 const KEYS_2P = '玩家二：方向键移动 · 上跳 · 下格挡 · 小键盘 1 / 2 轻重击 · 4 / 5 / 6 技能 · 3 必杀';
@@ -181,6 +188,8 @@ export class SelectScreen {
   private time = 0;
   /** Roster thumbnails, cached once at mount — animate() used to re-query them every frame. */
   private rosterCanvases: HTMLCanvasElement[] = [];
+  /** Roster buttons, same order as rosterCanvases; the frame loop reads their face state. */
+  private rosterButtons: HTMLButtonElement[] = [];
   private lastRosterDraw = 0;
   /** One idle stand-in per portrait canvas, rebuilt only when the slot switches character. */
   /** `drawn` is the signature of the settled picture already on the canvas ('' = needs a paint). */
@@ -191,6 +200,7 @@ export class SelectScreen {
   private motion: StageMotion | null = null;
   private readonly typing = new Map<HTMLElement, number>();  /** Each canvas's authored raster size, read before the backing store starts following the display. */
   private readonly designs = new WeakMap<HTMLCanvasElement, { w: number; h: number }>();
+  private skillKey = '';
   /** Slow link: the panel backdrop is the 480px preview, behind a 40% shade. */
   liteStage = false;
 
@@ -287,6 +297,17 @@ export class SelectScreen {
       }
     });
     document.querySelectorAll<HTMLButtonElement>('[data-challenge-kind]').forEach(b => b.onclick = () => this.setChallengeKind(b.dataset.challengeKind as ChallengeKind));
+    document.querySelectorAll<HTMLButtonElement>('[data-thumb-pick]').forEach(b => b.onclick = () => {
+      const next = parseRosterThumb(b.dataset.thumbPick);
+      if (next === this.thumb) return;
+      this.onPick('mode');
+      this.setRosterThumb(next);
+    });
+    // The ticket in the middle of the switch flips to the other face.
+    document.querySelectorAll<HTMLButtonElement>('.thumb-track').forEach(b => b.onclick = () => {
+      this.onPick('mode');
+      this.setRosterThumb(this.thumb === 'face' ? 'sprite' : 'face');
+    });
     $('start').onclick = () => {
       this.onPick();
       this.onStart(this.setup());
@@ -326,7 +347,7 @@ export class SelectScreen {
   get isGrouped(): boolean { return this.grouped; }
 
   /** Roster layout switch from the header settings popover. Re-renders the roster in place;
-   *  main.ts re-attaches the scroll observer afterwards. */
+   *  renderRoster re-attaches the scroll observer to the new nodes. */
   setRosterGrouped(grouped: boolean): void {
     if (grouped === this.grouped) return;
     this.grouped = grouped;
@@ -334,10 +355,178 @@ export class SelectScreen {
     this.renderRoster();
   }
 
+  /** Roster card face. Both faces live in every card; each card's data-view ('face' | 'sprite') is the
+   *  one thing CSS reads, so nothing re-renders and switching back is free. data-view folds in the
+   *  avatar state: a card whose head-shot will not load stays 'sprite' in face mode, so a new
+   *  character with no avatar yet never leaves a hole in the grid. A switch flips the visible cards
+   *  over one by one (flipCards); each changes its data-view at the edge-on moment. */
+  private thumb: RosterThumb = 'sprite';
+
+  get rosterThumb(): RosterThumb { return this.thumb; }
+
+  /** Fired after every thumb change, whichever control made it; main.ts syncs the settings row. */
+  onThumb: () => void = () => {};
+  /** Request an idle crop. Face cards pass background=true so it starts with the avatar, outside the two-wide queue; hover and picks use the queue. */
+  onNeedSprite: (c: CharacterData, background?: boolean) => void = () => {};
+
+  setRosterThumb(value: RosterThumb): void {
+    const next = parseRosterThumb(value);
+    if (next === this.thumb) return;
+    this.thumb = next;
+    this.save();
+    this.applyThumb();
+    this.onThumb();
+    this.flipCards();
+  }
+
+  /** Controls only. The cards are switched by renderRoster (instantly) or flipCards. */
+  private applyThumb(): void {
+    document.querySelectorAll<HTMLElement>('.thumb-switch').forEach(el => el.dataset.thumb = this.thumb);
+    document.querySelectorAll<HTMLButtonElement>('[data-thumb-pick]').forEach(b => {
+      b.setAttribute('aria-pressed', String(b.dataset.thumbPick === this.thumb));
+    });
+  }
+
+  private viewOf(b: HTMLButtonElement, want: RosterThumb): RosterThumb {
+    return want === 'face' && b.dataset.face !== 'none' ? 'face' : 'sprite';
+  }
+
+  /** Cards within 240px of the viewport, kept by one observer that lives as long as the roster DOM.
+   *  Loading follows what a card shows: its avatar in face mode, its idle sheet otherwise. A switch
+   *  loads the near set for the new face without rebuilding the observer, and flipCards only
+   *  measures these cards instead of all of them. */
+  private readonly near = new Set<number>();
+  private observer: IntersectionObserver | null = null;
+  private watching = false;
+
+  /** Start lazy roster loading. main.ts calls it once the first screen's pictures are pinned, so roster thumbs queue behind them. */
+  watchRoster(): void {
+    this.watching = true;
+    this.observeRoster();
+  }
+
+  private observeRoster(): void {
+    this.observer?.disconnect();
+    this.near.clear();
+    if (!this.watching) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      this.rosterButtons.forEach((_, i) => { this.near.add(i); this.load(i); });
+      return;
+    }
+    this.observer = new IntersectionObserver(entries => {
+      for (const e of entries) {
+        const i = Number((e.target as HTMLElement).dataset.index);
+        if (!e.isIntersecting) { this.near.delete(i); continue; }
+        this.near.add(i);
+        this.load(i);
+      }
+    }, { rootMargin: '240px' });
+    for (const b of this.rosterButtons) this.observer.observe(b);
+  }
+
+  /** What card i needs for the current mode. Both paths are idempotent (the image queue and loader dedupe). */
+  private load(i: number): void {
+    const c = this.roster[i];
+    if (!c) return;
+    if (this.thumb === 'face') {
+      void this.wantFace(i);
+      // 舞台立绘仍是全身。必须和头像一起开始加载，不能排到点击时再拉。
+      this.onNeedSprite(c, true);
+    }
+    else this.onNeedSprite(c);
+  }
+
+  /** Bumped by every switch; a flip from an older switch that is still in flight stops touching its card. */
+  private flipGen = 0;
+  private readonly flips = new WeakMap<HTMLButtonElement, Animation>();
+
+  /** 翻牌: the cards turn over like a stadium card stunt, starting next to the switch's ticket and
+   *  rolling outward by distance. Each card turns edge-on, changes data-view there, and springs back.
+   *  Only near cards are measured, all reads before any write; everything else, reduced motion, a
+   *  hidden roster or a browser without the individual rotate property switches at once. Face mode
+   *  first gives the near avatars a short head start, so cards turn over onto a picture, not an empty frame. */
+  private flipCards(): void {
+    const gen = ++this.flipGen;
+    const want = this.thumb;
+    const roster = document.getElementById('roster');
+    const canFlip = !reduceMotion() && !!roster && roster.offsetParent !== null
+      && typeof Element.prototype.animate === 'function'
+      && typeof CSS !== 'undefined' && CSS.supports('rotate', 'y 90deg');
+    // Reads: the ticket and the near cards, before anything below dirties layout.
+    const o = canFlip ? document.querySelector('.thumb-switch .thumb-knob')?.getBoundingClientRect() : undefined;
+    const ox = o ? o.left + o.width / 2 : window.innerWidth / 2;
+    const oy = o ? o.top + o.height / 2 : window.innerHeight;
+    const live = canFlip ? [...this.near].flatMap(i => {
+      const b = this.rosterButtons[i];
+      if (!b) return [];
+      const r = b.getBoundingClientRect();
+      return [{ b, i, delay: Math.min(Math.hypot(r.left + r.width / 2 - ox, r.top + r.height / 2 - oy) * .55, 560) }];
+    }) : [];
+    const moving = new Set(live.map(x => x.b));
+    // Writes.
+    for (const b of this.rosterButtons) {
+      this.flips.get(b)?.cancel();
+      if (!moving.has(b)) b.dataset.view = this.viewOf(b, want);
+    }
+    for (const i of this.near) this.load(i);
+    if (!live.length) return;
+    const run = (): void => {
+      if (gen !== this.flipGen) return;
+      for (const { b, delay } of live) {
+        const out = b.animate([{ rotate: 'y 0deg' }, { rotate: 'y 90deg' }], { duration: 160, delay, easing: 'cubic-bezier(.55, 0, 1, .45)', fill: 'forwards' });
+        this.flips.set(b, out);
+        out.onfinish = () => {
+          if (gen !== this.flipGen) return;
+          b.dataset.view = this.viewOf(b, want);
+          this.flips.set(b, b.animate([{ rotate: 'y -90deg' }, { rotate: 'y 0deg' }], { duration: 460, easing: 'cubic-bezier(.2, 1.5, .4, 1)' }));
+          out.cancel();
+        };
+      }
+    };
+    if (want !== 'face') { run(); return; }
+    void Promise.race([Promise.all(live.map(({ i }) => this.wantFace(i))), new Promise(res => setTimeout(res, 320))]).then(run);
+  }
+
+  private readonly faceLoads = new WeakMap<HTMLButtonElement, Promise<void>>();
+
+  /** One completion per card as well as one download per path, even while a flip is loading. */
+  private wantFace(index: number): Promise<void> {
+    const btn = this.rosterButtons[index];
+    const c = this.roster[index];
+    const img = btn?.querySelector<HTMLImageElement>('.face img');
+    if (!btn || !c || !img) return Promise.resolve();
+    if (btn.dataset.face === 'ready' || btn.dataset.face === 'none') return Promise.resolve();
+    const pending = this.faceLoads.get(btn);
+    if (pending) return pending;
+    btn.dataset.face = 'loading';
+    const loading = loadImage(`/avatars/${c.id}.png`).then(im => {
+      if (!btn.isConnected) return;
+      img.src = im.src;
+      btn.dataset.face = 'ready';
+    }, () => {
+      if (!btn.isConnected) return;
+      btn.dataset.face = 'none';
+      btn.dataset.view = 'sprite';
+      this.onNeedSprite(c);
+    });
+    this.faceLoads.set(btn, loading);
+    return loading;
+  }
+
   private renderRoster(): void {
     $('roster').innerHTML = this.rosterHTML();
-    $('roster').querySelectorAll<HTMLButtonElement>('button').forEach(b => b.onclick = () => this.pick(Number(b.dataset.index)));
-    this.rosterCanvases = [...$('roster').querySelectorAll<HTMLCanvasElement>('canvas')];
+    this.rosterButtons = [...$('roster').querySelectorAll<HTMLButtonElement>('button.character')];
+    this.rosterButtons.forEach((b, i) => {
+      b.onclick = () => this.pick(i);
+      b.onpointerenter = b.onfocus = () => {
+        if (this.thumb === 'face') this.onNeedSprite(this.roster[i]);
+      };
+    });
+    this.rosterCanvases = this.rosterButtons.map(b => b.querySelector('canvas')!);
+    for (const b of this.rosterButtons) b.dataset.view = this.thumb;
+    this.applyThumb();
+    this.refreshSelection();
+    this.observeRoster();
   }
 
   private rosterHTML(): string {
@@ -356,7 +545,7 @@ export class SelectScreen {
             : `<div class="band-head"><b>无所属</b><span>${count} 人</span></div>`;
         }
       }
-      html += `<button class="character" style="--c:${c.color}" data-index="${i}" title="${c.name} · ${c.title}" aria-label="选择${c.name}"><canvas width="96" height="96" aria-hidden="true"></canvas><span class="slot-tag" hidden></span><span class="char-name">${c.name}</span></button>`;
+      html += `<button class="character" style="--c:${c.color}" data-index="${i}" title="${c.name} · ${c.title}" aria-label="选择${c.name}"><canvas width="96" height="96" aria-hidden="true"></canvas><span class="face" aria-hidden="true"><i class="face-cut"><img alt="" decoding="async" draggable="false"></i></span><span class="slot-tag" hidden></span><span class="char-name">${c.name}</span><span class="pick-sheen" aria-hidden="true"></span></button>`;
     });
     return html;
   }
@@ -454,7 +643,10 @@ export class SelectScreen {
       const raw = localStorage.getItem(STATE_KEY);
       if (raw) saved = JSON.parse(raw) as SavedSelect;
     } catch { /* private mode or junk */ }
-    if (!saved) return;
+    if (!saved || typeof saved !== 'object') return;
+    // Display prefs do not depend on the match state, so a stale or junk match half cannot wipe them.
+    if (typeof saved.grouped === 'boolean') this.grouped = saved.grouped;
+    this.thumb = parseRosterThumb(saved.thumb);
     // Slots grow to four in team mode; challenge keeps one controller per fielded fighter.
     const need = saved.mode === 'team' ? 4 : 2;
     const isWho = (w: unknown): w is 'player' | 'cpu' => w === 'player' || w === 'cpu';
@@ -480,11 +672,10 @@ export class SelectScreen {
     this.side = Number.isInteger(saved.side) && saved.side >= 0 && saved.side < need ? saved.side : 0;
     if (this.mode === 'challenge') this.side = 0;
     if (saved.stageId === 'random' || STAGES.some(s => s.id === saved.stageId)) this.stageId = saved.stageId!;
-    if (typeof saved.grouped === 'boolean') this.grouped = saved.grouped;
   }
 
   private save(): void {
-    const saved: SavedSelect = { mode: this.mode, difficulty: this.difficulty, challengeKind: this.challengeKind, selected: this.selected, who: this.who, side: this.side, stageId: this.stageId, grouped: this.grouped };
+    const saved: SavedSelect = { mode: this.mode, difficulty: this.difficulty, challengeKind: this.challengeKind, selected: this.selected, who: this.who, side: this.side, stageId: this.stageId, grouped: this.grouped, thumb: this.thumb };
     try { localStorage.setItem(STATE_KEY, JSON.stringify(saved)); } catch { /* private mode */ }
   }
 
@@ -538,7 +729,7 @@ export class SelectScreen {
   }
 
   private pick(index: number): void {
-    const card = $('roster').querySelector<HTMLElement>(`.character[data-index="${index}"]`);
+    const card = this.rosterButtons[index];
     // A waiting run locks the cast: the stage keeps its character until it is fought or abandoned.
     if (this.netLocked || (this.place !== 'net' && this.mode === 'challenge' && readRun(this.challengeKind))) {
       this.onPick('deny');
@@ -546,11 +737,16 @@ export class SelectScreen {
       return;
     }
     if (this.place === 'net') this.side = 0;
-    this.selected[this.side] = index;
-    if (this.place === 'net') notifyOnlinePick(this.roster[this.selected[0]].id);
     this.onPick('pick');
-    this.refresh();
-    if (card) restartClass(card, 'picked');
+    const previous = this.selected[this.side];
+    if (previous !== index) {
+      this.selected[this.side] = index;
+      if (this.place === 'net') notifyOnlinePick(this.roster[index].id);
+      this.refreshSelection([previous, index]);
+      this.save();
+      this.onShown(this.cast());
+    }
+    if (card) restartClass(card, 'picked', 0, 'card-sheen');
   }
 
   /** Refused click: the thing shakes its head instead of doing nothing. */
@@ -716,22 +912,10 @@ export class SelectScreen {
       b.textContent = diffName;
       b.setAttribute('aria-label', `人机强度：${diffName}，点按切换`);
     });
-    const shown = this.shown();
-    for (const v of shown) {
-      const c = this.slotChar(v);
-      $(v.name).textContent = c.name;
-      $(v.tag).textContent = this.mode === 'challenge' && v.slot > 0 ? '人机' : this.slotMark(v.slot);
-      // Online, the far slot is a stranger until their pick arrives: no colour, no words.
-      const blank = net && v.slot === 1 && !this.netPeerCharId;
-      this.dress(v, blank ? null : c);
-    }
+    this.refreshSelection();
     const p1code = document.getElementById('p1code');
     const p2code = document.getElementById('p2code');
     if (net) {
-      $('p1tag').textContent = '你';
-      $('p2tag').textContent = '对手';
-      const peerChar = this.netPeerCharId ? this.roster.find(c => c.id === this.netPeerCharId) : undefined;
-      $('name2').textContent = peerChar ? peerChar.name : '等待对手';
       if (p1code) {
         p1code.textContent = formatCodename(ensureCodename());
         p1code.hidden = false;
@@ -755,35 +939,6 @@ export class SelectScreen {
     document.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach(b => b.classList.toggle('active', !net && b.dataset.mode === this.mode));
     document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach(b => b.classList.toggle('active', Number(b.dataset.difficulty) === this.difficulty));
     document.querySelectorAll<HTMLButtonElement>('[data-challenge-kind]').forEach(b => b.classList.toggle('active', b.dataset.challengeKind === this.challengeKind));
-    $('roster').querySelectorAll<HTMLButtonElement>('button').forEach((b, i) => {
-      if (net) {
-        const on = this.selected[0] === i;
-        b.classList.toggle('p1', on);
-        b.classList.toggle('ally', false);
-        b.classList.toggle('p2', false);
-        b.setAttribute('aria-pressed', String(on));
-        const mine = b.querySelector('.slot-tag') as HTMLElement;
-        mine.hidden = !on;
-        mine.textContent = '你';
-        return;
-      }
-      const chosen = challenge
-        ? (this.selected[0] === i ? [0] : [])
-        : this.selected.flatMap((pick, p) => pick === i ? [p] : []);
-      b.classList.toggle('p1', chosen.includes(0));
-      b.classList.toggle('ally', team && chosen.includes(1));
-      b.classList.toggle('p2', chosen.some(p => team ? p >= 2 : p === 1));
-      b.setAttribute('aria-pressed', String(i === this.selected[this.side]));
-      const tag = b.querySelector('.slot-tag') as HTMLElement;
-      tag.hidden = !chosen.length;
-      tag.textContent = [...new Set(chosen.map(p => this.rosterTag(p)))].join('/');
-    });
-    const c = this.roster[this.selected[this.side]];
-    const scheme = this.scheme(this.side);
-    $('skill-owner').textContent = (net ? '你' : this.slotMark(this.side)) + ' · ' + c.name + (scheme ? ' · 小键盘' : '');
-    $('flavor').textContent = c.title + ' · ' + c.quote;
-    $('passive').textContent = c.passive[0] + '：' + c.passive[1];
-    $('skills').innerHTML = skillHTML(c, scheme);
     const train = trainPrefs();
     $('round-rules').textContent = net
       ? '两胜制 · 60 秒 / 回合'
@@ -821,15 +976,55 @@ export class SelectScreen {
     this.onShown(this.cast());
   }
 
+  /** Picking changes the cast and details, not the mode controls or stage geometry. */
+  private refreshSelection(indices: Iterable<number> = this.rosterButtons.keys()): void {
+    const net = this.place === 'net';
+    const team = this.mode === 'team';
+    const challenge = this.mode === 'challenge';
+    for (const v of this.shown()) {
+      const c = this.slotChar(v);
+      const blank = net && v.slot === 1 && !this.netPeerCharId;
+      $(v.name).textContent = blank ? '等待对手' : c.name;
+      $(v.tag).textContent = net ? (v.slot === 0 ? '你' : '对手')
+        : challenge && v.slot > 0 ? '人机' : this.slotMark(v.slot);
+      this.dress(v, blank ? null : c);
+    }
+    for (const i of indices) {
+      const b = this.rosterButtons[i];
+      if (!b) continue;
+      const chosen = net || challenge
+        ? (this.selected[0] === i ? [0] : [])
+        : this.selected.flatMap((pick, p) => pick === i ? [p] : []);
+      b.classList.toggle('p1', chosen.includes(0));
+      b.classList.toggle('ally', !net && team && chosen.includes(1));
+      b.classList.toggle('p2', !net && chosen.some(p => team ? p >= 2 : p === 1));
+      b.setAttribute('aria-pressed', String(i === this.selected[this.side]));
+      const tag = b.querySelector('.slot-tag') as HTMLElement;
+      tag.hidden = !chosen.length;
+      tag.textContent = net ? '你' : [...new Set(chosen.map(p => this.rosterTag(p)))].join('/');
+    }
+    const c = this.roster[this.selected[this.side]];
+    const scheme = this.scheme(this.side);
+    $('skill-owner').textContent = (net ? '你' : this.slotMark(this.side)) + ' · ' + c.name + (scheme ? ' · 小键盘' : '');
+    $('flavor').textContent = c.title + ' · ' + c.quote;
+    $('passive').textContent = c.passive[0] + '：' + c.passive[1];
+    const touch = isTouch();
+    const key = `${c.id}|${scheme}|${touch}`;
+    if (key !== this.skillKey) {
+      this.skillKey = key;
+      $('skills').innerHTML = skillHTML(c, scheme, touch);
+    }
+  }
+
   /** A slot's colour, title and typed quote. Animations restart only when the character changes. */
   private dress(v: SlotView, c: CharacterData | null): void {
     const box = $(v.portrait).closest<HTMLElement>('.fighter-preview');
     const suffix = v.name.slice(4);
     if (!box) return;
     const id = c?.id ?? '';
+    if (box.dataset.cid === id) return;
     if (c) box.style.setProperty('--c', c.color);
     else box.style.removeProperty('--c');
-    if (box.dataset.cid === id) return;
     box.dataset.cid = id;
     $('title' + suffix).textContent = c?.title ?? '';
     this.type($('quote' + suffix), c ? `「${c.quote.replace(/^「|」$/g, '')}」` : '');
@@ -853,7 +1048,9 @@ export class SelectScreen {
     // Thumbs are checked at ~15fps; a settled one costs a signature compare, not a repaint.
     if (now - this.lastRosterDraw >= 66) {
       this.lastRosterDraw = now;
-      for (let i = 0; i < this.rosterCanvases.length; i++) {
+      for (const i of this.near) {
+        // A card showing its avatar hides the sprite, unless it fell back to it.
+        if (this.rosterButtons[i]?.dataset.view === 'face') continue;
         this.portrait(this.rosterCanvases[i], this.roster[i], 1, .46, 93);
       }
     }
@@ -881,9 +1078,10 @@ export class SelectScreen {
     const k = fitCanvasCached(canvas, design.w, design.h);
     if (k === null) return;
     const waiting = !!view.idleReady && !view.idleReady();
-    canvas.classList.toggle('pending', waiting);
+    const wasWaiting = canvas.classList.contains('pending');
+    if (waiting !== wasWaiting) canvas.classList.toggle('pending', waiting);
     if (waiting) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!wasWaiting) ctx.clearRect(0, 0, canvas.width, canvas.height);
       return;
     }
     // Reuse the stand-in instead of building a fresh Fighter every frame; the view only
@@ -1018,9 +1216,12 @@ export class SelectScreen {
 /** Re-run a one-shot CSS animation class even when it is already on the element. The class comes
  *  off when the element's own animation ends, or after `ms` when only its children animate. */
 const classTimers = new WeakMap<HTMLElement, Map<string, number>>();
-function restartClass(el: HTMLElement, cls: string, ms = 0): void {
-  el.classList.remove(cls);
-  void el.offsetWidth;
+function restartClass(el: HTMLElement, cls: string, ms = 0, endAnimation = ''): void {
+  if (reduceMotion()) { el.classList.remove(cls); return; }
+  if (el.classList.contains(cls)) {
+    el.classList.remove(cls);
+    void el.offsetWidth;
+  }
   el.classList.add(cls);
   if (ms) {
     let timers = classTimers.get(el);
@@ -1030,7 +1231,8 @@ function restartClass(el: HTMLElement, cls: string, ms = 0): void {
     return;
   }
   el.addEventListener('animationend', function done(ev) {
-    if (ev.target !== el) return;
+    // Card, portrait and pseudo-element animations have different end times.
+    if (ev.target !== el || (endAnimation && ev.animationName !== endAnimation)) return;
     el.classList.remove(cls);
     el.removeEventListener('animationend', done);
   });

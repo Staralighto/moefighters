@@ -29,9 +29,13 @@ import { stateFor } from '../src/game/animState.ts';
 import { decodeFrame, relayAddressCount, relaysCovered, sealCandidates, turnHosts, turnUrlHost } from '../src/net/rtc.ts';
 import { swipeEdgeBlock, swipeEdgeHit, swipeEdgeSlide, swipeGuardPop, swipeGuardWanted, toyScriptWanted } from '../src/ui/swipeBack.ts';
 import { battleFrame, comboAnchor, pictureHud } from '../src/ui/battleFrame.ts';
+import { clampStick, visibleBox } from '../src/ui/stageFit.ts';
+import { onMediaChange } from '../src/ui/media.ts';
+import { checkDevice } from './device-selfcheck.ts';
+import { checkSelect } from './select-selfcheck.ts';
 import { TOUCH_LAYOUT } from '../src/ui/touchLayout.data.ts';
 import { DEFAULT_ULT_ICON, ultIcon } from '../src/ui/touchIcons.ts';
-import { assignSlotWho, guideIndex, skillHTML, stageCover } from '../src/ui/select.ts';
+import { assignSlotWho, guideIndex, parseRosterThumb, skillHTML, stageCover } from '../src/ui/select.ts';
 import { BLOCKED_CODE_HASHES, CODE_SALT, CODENAME_ADJS, CODENAME_CHARS, READY_SECONDS, formatCodename, hashCodeNum, isBlockedCodeNum, rollCodeNum, validCodenameText } from '../src/ui/online.ts';
 import { placePick } from '../src/ui/settings.ts';
 import { DARK_ISLAND, MIN_CONTRAST, PAPER, auditCss, contrast, deriveScheme, parseColor, readTokens, themeCss } from '../src/theme/palette.ts';
@@ -51,6 +55,8 @@ const readFileSync = process.getBuiltinModule('fs').readFileSync;
 const statSync = process.getBuiltinModule('fs').statSync;
 
 checkSpriteGuard();
+await checkDevice();
+checkSelect();
 
 const assert = {
   ok(v: unknown, msg: string) { if (!v) throw Error('FAIL: ' + msg); },
@@ -2209,9 +2215,9 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.deepEqual(edge.headers?.map(h => [h.source, h.headers.length === 1 && h.headers[0].key === 'Cache-Control' ? h.headers[0].value : '']), rules, 'edgeone.json carries the same cache rules as public/_headers');
   assert.ok(!readFileSync('src/assets/loader.ts', 'utf8').includes('loadPortrait'), 'a failed idle crop does not download the full sheet');
   assert.ok(readFileSync('src/render/spriteView.ts', 'utf8').includes('missingImages.has(stand)'), 'a failed idle crop shows the block figure');
-  assert.equal(portraitSrc('/sprites/aya/common.png', true), '/sprites/aya/idle.png', 'the select screen asks for the idle cell, not the whole sheet');
-  assert.equal(portraitSrc('/sprites/aya/common.png', false), '/sprites/aya/common.png', 'dev has no idle crop and uses the sheet');
-  assert.equal(portraitSrc('/sprites/aya/special.png', true), '/sprites/aya/special.png', 'only the common sheet has an idle crop');
+  assert.equal(portraitSrc('/sprites/aya/common.png'), '/sprites/aya/idle.png', 'dev and production both ask for the idle cell, not the whole sheet');
+  assert.equal(portraitSrc('/sprites/aya/idle.png'), '/sprites/aya/idle.png', 'an idle crop is already a portrait source');
+  assert.equal(portraitSrc('/sprites/aya/special.png'), '/sprites/aya/special.png', 'only the common sheet has an idle crop');
   assert.equal(stageThumbSrc('/stages/ring.png', true), '/stages/ring-thumb.png', 'stage cards ask for the small preview');
   assert.equal(stageThumbSrc('/stages/ring.png', false), '/stages/ring.png', 'dev stage cards use the full backdrop');
   assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes('const NEAR = 22'), 'webp stays at the near-lossless 22 baseline');
@@ -2251,13 +2257,14 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(Math.abs(widePhone.top) < 1, 'a 16:9 phone is barely cropped');
   assert.ok(Math.abs(widePhone.imageH - 375) < 1, 'a 16:9 phone already fills the height');
   assert.ok(widePhone.hud > 0.99 && widePhone.hud <= 1, 'a 16:9 phone keeps the desktop HUD size');
-  const tablet = battleFrame(1024, 768);
-  const tabletScale = 1024 / 960;
-  const centered = (768 - 540 * tabletScale) / 2 + FLOOR * tabletScale;
-  const ratio = 768 * FLOOR / 540;
-  assert.ok(tablet.floorY > centered, 'tablet floor sits lower than the old centered picture');
-  assert.ok(tablet.floorY - centered < 768 * 0.18, 'tablet floor is not much lower than centered');
-  assert.ok(Math.abs(ratio - tablet.floorY) <= 768 * 0.04 + 1e-6, 'tablet floor never rises past 4% off the desktop ratio');
+  // 比 16:9 高：画面完整、不拉伸，落在 HUD 正下方，剩下的高度是按键台。
+  const tablet = battleFrame(1024, 768, 96);
+  assert.ok(tablet.deck && !phone.deck, 'only a box taller than 16:9 becomes a deck');
+  assert.ok(Math.abs(tablet.imageH - 576) < 1e-6, 'the tablet picture keeps 16:9 at full width');
+  assert.equal(tablet.top, 96, 'the tablet picture starts right under the HUD band');
+  assert.ok(768 - tablet.top - tablet.imageH > 90, 'the rest of the slack is a control deck under the picture');
+  assert.equal(battleFrame(1440, 900, 140).top, 90, 'slack smaller than the HUD pins the picture to the bottom edge');
+  assert.equal(battleFrame(1024, 768, NaN).top, 0, 'an unmeasured HUD cannot poison the picture offset');
   assert.equal(tablet.hud, 1, 'a tall tablet does not shrink the HUD');
   assert.equal(comboAnchor(128, 1), 205, 'desktop chrome already sits above the resting HIT line');
   const cropped = comboAnchor(212, 844 / 960);
@@ -2265,11 +2272,65 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok((cropped - 45) * (844 / 960) >= 212 - 1e-6, 'the HIT face ends below the HUD chrome');
   assert.equal(comboAnchor(10, 0), 205, 'an unmeasured canvas keeps the resting line');
   assert.equal(pictureHud(960), 1.2, 'a desktop-wide picture sits 1.2× above the base HUD');
+  // 安全区 ∩ 视觉视口。刘海和地址栏各扣一次，已经落在安全区里的视觉视口不再扣。
+  {
+    const full = visibleBox(
+      { innerWidth: 1194, innerHeight: 834, clientWidth: 1194, clientHeight: 834, visual: { width: 1194, height: 834, offsetTop: 0, offsetLeft: 0 } },
+      { top: 24, right: 0, bottom: 21, left: 0 },
+    );
+    assert.equal(full.top, 24, 'a tablet status bar insets the arena from the top');
+    assert.equal(full.height, 834 - 24 - 21, 'arena height loses both insets, so the keys are not pushed past the home indicator');
+    assert.equal(full.width, 1194, 'a landscape tablet with no side inset keeps the full width');
+    const notch = visibleBox(
+      { innerWidth: 844, innerHeight: 390, clientWidth: 844, clientHeight: 390, visual: { width: 844, height: 390, offsetTop: 0, offsetLeft: 0 } },
+      { top: 0, right: 47, bottom: 0, left: 47 },
+    );
+    assert.equal(notch.left, 47, 'a landscape phone notch insets the left');
+    assert.equal(notch.width, 844 - 94, 'both side insets come off the width');
+    const bar = visibleBox(
+      { innerWidth: 844, innerHeight: 390, clientWidth: 844, clientHeight: 390, visual: { width: 844, height: 340, offsetTop: 0, offsetLeft: 0 } },
+      { top: 0, right: 0, bottom: 0, left: 0 },
+    );
+    assert.equal(bar.height, 340, 'a shorter visual viewport wins over a tall layout viewport');
+    const once = visibleBox(
+      { innerWidth: 800, innerHeight: 800, clientWidth: 800, clientHeight: 800, visual: { width: 800, height: 760, offsetTop: 40, offsetLeft: 0 } },
+      { top: 40, right: 0, bottom: 0, left: 0 },
+    );
+    assert.equal(once.top, 40, 'an inset the visual viewport already cleared is not applied twice');
+    assert.equal(once.height, 760, 'the arena stays the visible height when the visual viewport starts below the notch');
+    const zero = { top: 0, right: 0, bottom: 0, left: 0 };
+    const measures = { innerWidth: 844, innerHeight: 390, clientWidth: 0, clientHeight: 0, visual: null };
+    assert.equal(visibleBox(measures, zero).width, 844, 'a zero root width falls back to the inner viewport, not min(width, 0)');
+    const stale = visibleBox({ ...measures, visual: { width: 600, height: 300, offsetLeft: 1000, offsetTop: -10 } }, zero);
+    assert.deepEqual(stale, { left: 244, top: 0, width: 600, height: 300 }, 'stale rotation offsets stay within the new layout viewport');
+    const invalid = visibleBox({ ...measures, visual: { width: NaN, height: Infinity, offsetLeft: NaN, offsetTop: Infinity } }, { top: NaN, right: Infinity, bottom: -30, left: 0 });
+    assert.deepEqual(invalid, { left: 0, top: 0, width: 844, height: 390 }, 'invalid WebView measurements cannot poison CSS geometry');
+    assert.deepEqual(clampStick(NaN, Infinity, 96, 844, 390), clampStick(12, 82, 96, 844, 390), 'bad saved centers use the thumb-zone defaults');
+    let mediaCalls = 0;
+    onMediaChange({ addEventListener: (_: string, fn: () => void) => fn() } as unknown as MediaQueryList, () => { mediaCalls++; });
+    onMediaChange({ addListener: (fn: () => void) => fn() } as unknown as MediaQueryList, () => { mediaCalls++; });
+    onMediaChange({} as MediaQueryList, () => { mediaCalls++; });
+    assert.equal(mediaCalls, 2, 'modern, legacy and inert media-query objects cannot abort boot');
+  }
   assert.equal(pictureHud(480), 0.6, 'a half-width portrait picture keeps that 1.2× on the smaller share');
   // The landscape keys are placed by CSS: attack in the bottom-right, three skills in a row to its left,
   // guard above the attack, the ultimate to the left of the skills once it is ready. Jump is still the stick edge.
   assert.deepEqual(Object.keys(TOUCH_LAYOUT), ['stick'], 'only the stick keeps a hand-placed spot; the keys are laid out');
   assert.ok(TOUCH_LAYOUT.stick.x < 20 && TOUCH_LAYOUT.stick.y > 70, 'the stick stays in the bottom-left thumb zone');
+  // Roster card face: only 'face' switches; an absent, junk or future saved value falls back to the sprite.
+  assert.equal(parseRosterThumb('face'), 'face', 'face is the avatar badge');
+  for (const v of [undefined, null, '', 'sprite', 'avatar', 1, {}]) assert.equal(parseRosterThumb(v), 'sprite', `saved thumb ${JSON.stringify(v)} reads as the sprite`);
+  {
+    // CSS reads one per-card attribute; select.ts folds "avatar failed" into it so such a card keeps its sprite.
+    const css = readFileSync('src/style.css', 'utf8');
+    const ts = readFileSync('src/ui/select.ts', 'utf8');
+    assert.ok(css.includes('.character[data-view="face"] canvas') && !css.includes('data-show'), 'card faces switch on data-view only');
+    assert.ok(/want === 'face' && b\.dataset\.face !== 'none'/.test(ts), 'a card whose avatar failed resolves to the sprite view');
+    for (const name of ['card-sheen', 'card-sweep']) {
+      const frames = css.slice(css.indexOf(`@keyframes ${name} `)).split('@keyframes ')[1];
+      assert.ok(frames && !/\b(background-position|filter|box-shadow)\s*:/.test(frames), 'pick sheen animates only opacity and transforms');
+    }
+  }
   const html = readFileSync('index.html', 'utf8');
   // Settings dialog shows control names and option names only. Extra sentences fail this lock.
   {
@@ -2280,7 +2341,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const onlineGroup = dialogHtml.match(/<section class="setting-group" id="set-online-group">[\s\S]*?<\/section>/)?.[0] ?? '';
     assert.equal(onlineGroup.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(), '联机 联机代号 修改代号', 'online codename setting row has control name and button only');
     const visible = dialogHtml.replace(onlineGroup, '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-    assert.equal(visible, '设置 × 外观 主题 暗色 暗色 亮色 跟随系统 名册 名册显示 直接排开 直接排开 按乐队分组 训练场 无技能冷却 开 开 关 无限大招 开 开 关 音乐 开打换曲 ? 只在随机播放时生效，其他时候不能改。 开 开 关', 'settings dialog keeps control names, plus the fight-shuffle tip (with #set-online-group exempted)');
+    assert.equal(visible, '设置 × 外观 主题 暗色 暗色 亮色 跟随系统 名册 名册显示 直接排开 直接排开 按乐队分组 名册卡面 全身 全身 头像 训练场 无技能冷却 开 开 关 无限大招 开 开 关 音乐 开打换曲 ? 只在随机播放时生效，其他时候不能改。 开 开 关', 'settings dialog keeps control names, plus the fight-shuffle tip (with #set-online-group exempted)');
     const css = readFileSync('src/style.css', 'utf8');
     assert.ok(css.includes('width: min(760px, calc(100% - 2rem))'), 'settings dialog width is reserved, not content-sized');
     assert.ok(css.includes('#start > span') && !/\.start span \{ display: inline-grid/.test(css), 'the start arrow badge does not restyle the rematch label');
@@ -2336,6 +2397,11 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
       8,
       'a menu that would hang off the left is pinned to the edge',
     );
+    assert.deepEqual(
+      placePick({ right: 500, top: 20, bottom: 60 }, { width: 100, height: 60 }, { left: 100, top: 200, width: 200, height: 100 }),
+      { top: 208, left: 192 },
+      'zoomed or keyboard-shifted visual viewports clamp menus inside the visible offset rectangle',
+    );
   }
   for (const gone of ['data-pad="jump"']) {
     assert.ok(!html.includes(gone), gone + ' is gone: jumping is the stick edge');
@@ -2354,6 +2420,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     .filter(f => f.endsWith('.ts'));
   for (const f of tsFiles) {
     const src = readFileSync('src/' + f, 'utf8');
+    if (f !== 'ui/overlays.ts') assert.ok(!src.includes(':popover-open') && !/\.(?:hide|show)Popover\(/.test(src), 'popover calls and selectors go through the feature fallback (src/' + f + ')');
     for (const cap of ['(pointer:', '(hover:', 'any-pointer']) {
       if (f !== 'ui/device.ts' && src.includes(cap)) {
         throw Error(`FAIL: capability media query ${cap} must live only in src/ui/device.ts (src/${f})`);
@@ -2364,6 +2431,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(deviceTs.includes('(pointer:') && deviceTs.includes('maxTouchPoints'), 'the touch ruling keeps both the media query and the hardware fallback');
   assert.ok(deviceTs.includes('any-hover') && deviceTs.includes('any-pointer'), 'a phone with no hover pointer still counts as touch when the primary pointer lies');
   const cssText = readFileSync('src/style.css', 'utf8');
+  assert.ok(!/html:has\(body\.touch\),\s*body\.touch/.test(cssText), 'unknown :has cannot discard body touch-action and selection protection');
   let inComment = false;
   for (const raw of cssText.split('\n')) {
     let line = raw;
@@ -2376,17 +2444,23 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     if (line.startsWith('/*')) { inComment = true; continue; }
     assert.ok(!line.includes('(pointer:') && !line.includes('(hover:'), 'css owns layout only; capability queries go through body classes');
     if (line.includes('100dvh')) assert.ok(line.includes('100vh'), 'dvh needs a same-line vh fallback: ' + raw.trim());
-    if (line.includes('cqw')) assert.ok(line.includes('vmin') || /(\d|\.)vw\b/.test(line), 'cqw needs a same-line vmin/vw fallback: ' + raw.trim());
+    if (line.includes('cqw') && !line.startsWith('@supports')) assert.ok(line.includes('vmin') || /(\d|\.)vw\b/.test(line), 'cqw needs a same-line vmin/vw fallback: ' + raw.trim());
     // A bare `width: 20cqw` is a valid 0px when the container size is 0, and it replaces the vmin line.
-    if (line.includes('cqw') && /(?:^|[^\w-])(?:width|height|max-width|max-height|--ring)\s*:/.test(line)) {
+    if (line.includes('cqw') && !line.startsWith('@supports') && /(?:^|[^\w-])(?:width|height|max-width|max-height|--ring)\s*:/.test(line)) {
       assert.ok(line.includes('max('), 'cqw size must be max() with the fallback so a 0 query size cannot collapse it: ' + raw.trim());
     }
   }
   assert.ok(!cssText.includes('body.wide .touchpad .tp-stick') && cssText.includes('body.wide.keys .touchpad .tp-stick'), 'wide mode strips the stick only for a positive keyboard ruling (body.keys)');
   assert.ok(!cssText.includes('body.wide:not(.touch) .touchpad .tp-stick'), 'missing body.touch must not be what hides the stick');
   assert.ok(cssText.includes('.touchpad.in-tower { display: block; }'), 'landscape controls show from .in-tower, not only the orientation media query');
+  const layoutSrc = readFileSync('src/ui/touchLayout.ts', 'utf8');
+  assert.ok(!cssText.includes('arena-bleed') && !cssText.includes('filter: blur(7px)'), 'taller-than-16:9 fights show the whole picture with bands, not a blurred copy');
+  assert.ok(cssText.includes('body.stage-deck.in-battle .arena {') && layoutSrc.includes("setClass('stage-deck', frame.deck)"), 'a tablet landscape fight uses the HUD band and control deck');
+  assert.ok(layoutSrc.includes("setStyle(arena, 'bottom', 'auto')"), 'the pinned arena height clears bottom so the keys cannot sit past the home bar');
+  assert.ok(/body\.pad-split \.touchpad \{[^}]*--u: min\(5px, 1vmin\)/.test(cssText), 'portrait pad keys are capped so tablets do not get giant buttons');
+  assert.ok(cssText.includes('@container (max-width: 1100px)') && cssText.includes('.brand-kicker { display: none; }'), 'the decorative kicker hides before it covers the header buttons');
   assert.ok(cssText.includes('--face: 64px'), 'phone portraits shrink below the desktop 96');
-  assert.ok(/body\.touch\.in-battle \.arena \{[^}]*\btop:/.test(cssText), 'fullscreen arena keeps longhand offsets so a missing inset shorthand cannot collapse it');
+  assert.ok(/body\.touch\.stage-fill\.in-battle \.arena \{[^}]*\btop:/.test(cssText), 'fullscreen arena keeps longhand offsets so a missing inset shorthand cannot collapse it');
   assert.ok(/\.hud \{[^}]*\btop:/.test(cssText), 'the HUD keeps longhand offsets so a missing inset shorthand cannot drop it below the picture');
   assert.ok(/\.end-overlay \{[^}]*\btop:/.test(cssText), 'the result card keeps longhand offsets so a missing inset shorthand cannot drop it below the picture');
   assert.ok(cssText.includes('body.touch.turned.in-battle') && cssText.includes('rotate(90deg)'), 'portrait phones turn the battle instead of waiting for the app to rotate');
@@ -2411,10 +2485,34 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     }
     throw Error('FAIL: unclosed ' + needle);
   };
+  // Custom properties accept unknown units; a second --ring declaration is not a fallback.
+  // Test a real length in @supports so old WebViews never substitute an invalid ring size.
+  const ringUnits = atRuleBody(cssText, '@supports (width: 1cqw)');
+  const oldEngineCss = cssText.replace(ringUnits, '');
+  assert.ok(!/--[\w-]+\s*:[^;{}]*cqw\b/.test(oldEngineCss.replace(/\/\*[\s\S]*?\*\//g, '')), 'container units in custom properties need a real-property support gate');
+  for (const selector of ['.touchpad']) {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const base = oldEngineCss.match(new RegExp('(?:^|\\n)' + escaped + ' \\{([^}]*)\\}'))?.[1] ?? '';
+    assert.ok(/--ring:\s*clamp\([^;]*vmin/.test(base), selector + ' keeps a viewport-based ring without container-unit support');
+    assert.ok(ringUnits.includes(selector + ' { --ring:'), selector + ' upgrades the ring only after checking length support');
+  }
+  let oldColors = cssText;
+  for (const guard of ['@supports (color: color-mix(in srgb, white, black))', '@supports (color: color-mix(in oklab, white, black))', '@supports (color: oklch(from red l c h))']) {
+    while (oldColors.includes(guard)) {
+      const start = oldColors.indexOf(guard);
+      const open = oldColors.indexOf('{', start);
+      const block = atRuleBody(oldColors, guard);
+      oldColors = oldColors.slice(0, start) + oldColors.slice(open + block.length);
+    }
+  }
+  assert.ok(!/(?:color-mix|oklch)\(/.test(oldColors.replace(/\/\*[\s\S]*?\*\//g, '')), 'modern color functions are gated before var() can invalidate a fallback fill');
+  assert.ok(oldColors.includes('.energy span { background: var(--cyan); }') && oldColors.includes('.energy.full span { background: var(--cyan); }'), 'both charging and full energy bars keep their cyan fill on old engines');
+  assert.ok(!/\.touchpad button \{[^}]*transition:[^;]*transform/.test(cssText), 'placement transforms never interpolate across pad layouts');
   const stageRows = atRuleBody(cssText, '@container stage (max-width: 36rem)');
   assert.ok(html.includes('class="stage-frame"') && cssText.includes('container-name: stage'), 'the stage container wraps the select stage');
   assert.ok(stageRows.includes('grid-area: 2 / 1'), 'a narrow stage uses the 2x2 team layout');
-  assert.equal((cssText.match(/grid-area: 2 \/ 1/g) ?? []).length, 1, 'the 2x2 team placement lives only in the stage container');
+  assert.equal((cssText.match(/grid-area: 2 \/ 1/g) ?? []).length, 2, 'the 2x2 team placement has one container rule and one old-engine fallback');
+  assert.ok(cssText.includes('@supports not (container-type: inline-size)') && cssText.includes('@media (max-width: 620px)'), 'a browser without container queries keeps the narrow team layout');
   const shortLandscape = atRuleBody(cssText, '@media (orientation: landscape) and (max-height: 500px)');
   assert.ok(!shortLandscape.includes('grid-area'), 'short landscape does not choose stage rows');
   assert.ok(!shortLandscape.includes('/ 2)'), 'short landscape does not halve portrait height');

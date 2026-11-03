@@ -190,7 +190,7 @@ export function updateHUD(g: FightGame): void {
   // Landscape phones, the portrait turn, and wide mode hide the movelist. Writing it still dirties style.
   const skillsHidden = document.body.classList.contains('wide')
     || document.body.classList.contains('turned')
-    || (document.body.classList.contains('touch') && matchMedia('(orientation: landscape)').matches);
+    || document.body.classList.contains('stage-fill');
   if (skillsHidden) return;
   for (let i = 0; i < skillRows.length; i++) {
     const el = skillRows[i];

@@ -226,6 +226,13 @@
   </div>
 
   <div id="roster" class="roster"></div>
+  <div class="roster-foot">
+    <div class="thumb-switch" data-thumb="sprite" role="group" aria-label="名册卡面">
+      <button type="button" data-thumb-pick="sprite" aria-pressed="true">全身</button>
+      <button type="button" class="thumb-track" aria-label="切换名册卡面"><i class="thumb-knob" aria-hidden="true"><b class="k-front"><svg viewBox="0 0 16 16"><circle cx="8" cy="3.1" r="2.3" fill="currentColor"/><path fill="currentColor" d="M5 6.3h6l-.7 4.4H9.3L8.9 15H7.1l-.4-4.3H5.7z"/></svg></b><b class="k-back"><svg viewBox="0 0 256 256"><use href="#i-user"/></svg></b></i></button>
+      <button type="button" data-thumb-pick="face" aria-pressed="false">头像</button>
+    </div>
+  </div>
 
   <section class="stage-select" aria-labelledby="stage-heading">
     <div class="sectionline"><span id="stage-heading" data-en="STAGE SELECT"><i>02</i> 选择场景</span><span id="stage-choice" class="muted">默认随机</span></div>
@@ -479,6 +486,16 @@
       <div id="set-roster-menu" class="pick-menu" popover role="listbox" aria-labelledby="set-roster">
         <button type="button" role="option" data-value="flat" aria-selected="true">直接排开</button>
         <button type="button" role="option" data-value="band" aria-selected="false">按乐队分组</button>
+      </div>
+    </div>
+    <div class="setting-row">
+      <b id="set-thumb">名册卡面</b>
+      <button type="button" class="pick-btn" popovertarget="set-thumb-menu" aria-haspopup="listbox" aria-expanded="false" aria-controls="set-thumb-menu" aria-labelledby="set-thumb set-thumb-value">
+        <span class="pick-value" id="set-thumb-value">全身</span>
+      </button>
+      <div id="set-thumb-menu" class="pick-menu" popover role="listbox" aria-labelledby="set-thumb">
+        <button type="button" role="option" data-value="sprite" aria-selected="true">全身</button>
+        <button type="button" role="option" data-value="face" aria-selected="false">头像</button>
       </div>
     </div>
   </section>

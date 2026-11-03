@@ -49,7 +49,6 @@ html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.
    body.touch is the capability class from device.ts. Vertical pan stays so the roster still
    scrolls. Horizontal pan is the browser's back swipe, so it is not offered.
    A landscape fight tightens the arena further to touch-action:none. */
-html:has(body.touch),
 body.touch {
   -webkit-text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
@@ -59,6 +58,8 @@ body.touch {
   touch-action: pan-y;
   overscroll-behavior: none;
 }
+/* 不把 :has 与 body.touch 拼成一个选择器列表，旧内核会把整条触屏保护一起丢弃。 */
+html:has(body.touch) { touch-action: pan-y; overscroll-behavior: none; }
 body.touch img { -webkit-user-drag: none; }
 button { font: inherit; color: inherit; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: .45em .9em; cursor: pointer; transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .26s cubic-bezier(.34, 1.7, .5, 1), box-shadow .15s ease, filter .15s ease; }
 button:hover { border-color: var(--muted); }
@@ -346,7 +347,7 @@ body.net-ready-phase #stage-grid { pointer-events: none; opacity: .55; transitio
 /* Selected segment is a lifted chip, same idea as the reference: the accent color stays on 1P and the start button. */
 .seg button.active { background: var(--line); color: var(--text); border-color: transparent; }
 
-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 22px; border-bottom: 1px solid var(--line); container-type: inline-size; }
+header { display: flex; justify-content: space-between; align-items: center; padding: max(10px, env(safe-area-inset-top, 0px)) max(22px, env(safe-area-inset-right, 0px)) 10px max(22px, env(safe-area-inset-left, 0px)); border-bottom: 1px solid var(--line); container-type: inline-size; }
 .brand { display: flex; gap: 10px; align-items: center; text-decoration: none; color: inherit; font-weight: 800; letter-spacing: .06em; }
 .brand small { display: block; font-weight: 400; color: var(--muted); letter-spacing: 0; }
 .brand-icon { display: grid; place-items: center; width: 34px; height: 34px; background: var(--p1); color: var(--on-accent); border-radius: 8px; }
@@ -376,7 +377,7 @@ nav { display: flex; gap: 8px; align-items: center; }
 /* 设置弹窗宽度写死，不跟文案变。窄屏用百分比收缩，视口宽度单位含滚动条，会把页面撑出横向滚动再跳回来。
    每行是同一套两列：左边名称吃剩余空间，右边下拉是同一条 min(16em, 46%)。
    以后名称或选项变长，多出来的字进这截留白，列宽和弹窗宽都不变。 */
-#settings-dialog { width: min(760px, calc(100% - 2rem)); max-width: min(760px, calc(100% - 2rem)); max-height: calc(100% - 2rem); padding: 26px 36px 32px; overflow: auto; overscroll-behavior: contain; }
+#settings-dialog { width: min(760px, calc(100% - 2rem)); max-width: min(760px, calc(100% - 2rem)); max-height: calc(100% - 2rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); padding: 26px 36px 32px; overflow: auto; overscroll-behavior: contain; }
 #settings-dialog .setting-group:first-of-type { margin-top: 26px; }
 #settings-dialog .setting-group + .setting-group { margin-top: 28px; }
 #settings-dialog .setting-title { margin: 0 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 700; color: var(--muted); }
@@ -385,13 +386,13 @@ nav { display: flex; gap: 8px; align-items: center; }
 #settings-dialog .setting-row > b,
 #settings-dialog .setting-name > b,
 #codename-dialog .setting-row > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#codename-dialog { width: min(520px, calc(100% - 2rem)); max-width: min(520px, calc(100% - 2rem)); max-height: calc(100% - 2rem); padding: 22px 28px 26px; overflow: auto; overscroll-behavior: contain; }
+#codename-dialog { width: min(520px, calc(100% - 2rem)); max-width: min(520px, calc(100% - 2rem)); max-height: calc(100% - 2rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); padding: 22px 28px 26px; overflow: auto; overscroll-behavior: contain; }
 .codename-preview { margin: 16px 0 8px; padding: 10px 14px; background: var(--well); border: 1px solid var(--line); border-radius: 10px; text-align: center; color: var(--p1-ink); font-variant-numeric: tabular-nums; }
 .codename-open-btn { display: flex; align-items: center; justify-content: center; width: 100%; min-width: 0; text-align: center; font-weight: 700; }
 .codename-num-lock { color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
 .setting-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .tip { flex: none; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border-radius: 50%; line-height: 1; font-weight: 700; }
-.tip-pop { inset: unset; position: fixed; width: max-content; max-width: 16em; margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); box-shadow: 0 6px 18px var(--shade); font-size: 13px; line-height: 1.5; }
+.tip-pop { inset: unset; position: fixed; width: max-content; max-width: 16em; margin: 0; padding: 10px 12px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); box-shadow: 0 6px 18px var(--shade); font-size: 13px; line-height: 1.5; }
 .pick-btn:disabled { color: var(--muted); cursor: not-allowed; }
 .pick-btn:disabled:hover { border-color: var(--line); }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 0; border-top: 1px solid var(--line); }
@@ -404,10 +405,12 @@ nav { display: flex; gap: 8px; align-items: center; }
 /* 菜单走 popover 顶层，不进文档流。清掉浏览器默认的 inset:0 + margin:auto，否则打开时先跳到屏幕正中。
    宽度由脚本写成和触发器一样，长选项在浮层里省略，不把浮层撑得比按钮宽。底色、描边、圆角、阴影抄音乐面板。 */
 .pick-menu { inset: unset; position: fixed; width: min(16em, 46%); height: max-content; max-height: min(260px, calc(100vh - 24px)); margin: 0; padding: 4px; overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); box-shadow: 0 6px 18px var(--shade); }
+.popover-fallback { z-index: 2; }
 .pick-menu button { display: block; width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; white-space: nowrap; background: transparent; border-color: transparent; padding: .4em .8em; font-weight: 700; transition: background-color .12s ease; }
 .pick-menu button:hover, .pick-menu button:focus-visible { background: var(--panel-2); border-color: transparent; }
 .pick-menu button[aria-selected="true"] { background: var(--line); border-color: transparent; color: var(--text-strong); }
-.pick-menu:popover-open, .tip-pop:popover-open, details[open] .music-pop { animation: menu-slide-down .16s cubic-bezier(0.16, 1, 0.3, 1); }
+.pick-menu:popover-open, .tip-pop:popover-open { animation: menu-slide-down .16s cubic-bezier(0.16, 1, 0.3, 1); }
+details[open] .music-pop { animation: menu-slide-down .16s cubic-bezier(0.16, 1, 0.3, 1); }
 @keyframes menu-slide-down { from { opacity: 0; transform: translateY(-6px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
 /* 模态打开时收走页面滚动条，用等宽留白补上，页面内容不横跳。
    弹窗在顶层，按视口居中，吃不到 body 的留白；滚动条一消失视口变宽，中线往右偏半个滚动条。
@@ -416,7 +419,7 @@ html.modal-open, html.modal-open body { overflow: hidden; }
 html.modal-open body { padding-right: var(--scrollbar-gap, 0px); }
 html.modal-open dialog { translate: calc(var(--scrollbar-gap, 0px) / -2) 0; }
 
-main { max-width: 1080px; margin: 0 auto; padding: 18px 22px 40px; }
+main { max-width: 1080px; margin: 0 auto; padding: 18px max(22px, env(safe-area-inset-right, 0px)) max(40px, env(safe-area-inset-bottom, 0px)) max(22px, env(safe-area-inset-left, 0px)); }
 #selection { display: flex; flex-direction: column; }
 footer { display: flex; justify-content: space-between; gap: 16px; color: var(--muted); font-size: 13px; margin-top: 26px; flex-wrap: wrap; }
 .site-foot { flex-direction: column; justify-content: center; align-items: center; gap: 10px; margin: 0; padding: 10px 22px; border-top: 1px solid var(--line); }
@@ -490,15 +493,24 @@ footer { display: flex; justify-content: space-between; gap: 16px; color: var(--
    伪元素当 art 格的网格项，stretch 加负的上外边距让它向上伸出，空内容不贡献尺寸。 */
 .fighter-preview::before { content: ""; grid-area: art; align-self: stretch; justify-self: center; width: min(170px, 72%); margin-top: -140px; margin-bottom: 4px; z-index: -1; pointer-events: none; opacity: 0;
   clip-path: polygon(38% 0, 62% 0, 100% 100%, 0 100%);
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, color-mix(in srgb, var(--c, white) 22%, white) 30%, transparent) 30%, color-mix(in srgb, color-mix(in srgb, var(--c, white) 22%, white) 46%, transparent) 50%, color-mix(in srgb, color-mix(in srgb, var(--c, white) 22%, white) 30%, transparent) 70%, transparent);
+  background: linear-gradient(90deg, transparent, var(--wash), transparent);
   -webkit-mask-image: linear-gradient(to bottom, transparent, black 45%, black 88%, transparent); mask-image: linear-gradient(to bottom, transparent, black 45%, black 88%, transparent);
   transform-origin: 50% 0; }
+@supports (color: color-mix(in srgb, white, black)) {
+  .fighter-preview::before { background: linear-gradient(90deg, transparent, color-mix(in srgb, color-mix(in srgb, var(--c, white) 22%, white) 30%, transparent) 30%, color-mix(in srgb, color-mix(in srgb, var(--c, white) 22%, white) 46%, transparent) 50%, color-mix(in srgb, color-mix(in srgb, var(--c, white) 22%, white) 30%, transparent) 70%, transparent); }
+}
 .fighter-preview.beam::before { animation: beam-on .95s cubic-bezier(.2, .8, .3, 1) both; }
 @keyframes beam-on { 0% { opacity: 0; transform: scaleX(.35); } 18% { opacity: 1; transform: scaleX(1); } 45% { opacity: .75; } 100% { opacity: 0; transform: scaleX(1.06); } }
-.slot-title { grid-area: title; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 700; letter-spacing: .18em; color: color-mix(in srgb, var(--c, var(--muted)) 32%, white); opacity: .85; }
+.slot-title { grid-area: title; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 700; letter-spacing: .18em; color: var(--text); opacity: .85; }
+@supports (color: color-mix(in srgb, white, black)) {
+  .slot-title { color: color-mix(in srgb, var(--c, var(--muted)) 32%, white); }
+}
 .slot-title:empty, .slot-quote:empty:not(.typing) { visibility: hidden; }
 .slot-quote { grid-area: quote; margin: 2px 0 0; max-width: 100%; min-height: 1.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--text); }
-.slot-quote.typing::after { content: "▍"; margin-left: 1px; color: color-mix(in srgb, var(--c, var(--muted)) 70%, white); animation: caret .5s steps(1) infinite; }
+.slot-quote.typing::after { content: "▍"; margin-left: 1px; color: var(--text); animation: caret .5s steps(1) infinite; }
+@supports (color: color-mix(in srgb, white, black)) {
+  .slot-quote.typing::after { color: color-mix(in srgb, var(--c, var(--muted)) 70%, white); }
+}
 @keyframes caret { 50% { opacity: 0; } }
 .select-stage.team .slot-quote, .select-stage.challenge:not(.solo) .slot-quote { display: none; }
 /* 换人：头衔字距收拢浮现。落地在画布里。 */
@@ -509,11 +521,20 @@ footer { display: flex; justify-content: space-between; gap: 16px; color: var(--
 .character:hover, .character:focus, .character.picked { z-index: 2; }
 .character.picked { animation: card-pop .42s cubic-bezier(.34, 1.7, .5, 1); }
 .character.picked::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--c, white) 45%, white);
+  box-shadow: inset 0 0 0 2px var(--c, var(--p1-ink));
+  animation: card-sheen .5s ease-out forwards; }
+/* A fixed clip and a moving gradient preserve the sweep without repainting background-position. */
+.pick-sheen { display: none; position: absolute; inset: 0; overflow: hidden; border-radius: inherit; pointer-events: none; }
+.character.picked .pick-sheen { display: block; }
+.pick-sheen::before { content: ""; position: absolute; top: 0; bottom: 0; left: -150%; width: 250%;
   background: linear-gradient(115deg, transparent 30%, rgb(255 255 255 / 22%) 45%, transparent 60%) no-repeat;
-  background-size: 250% 100%; animation: card-sheen .5s ease-out forwards; }
+  animation: card-sweep .5s ease-out forwards; }
+@supports (color: color-mix(in srgb, white, black)) {
+  .character.picked::after { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--c, white) 45%, white); }
+}
 .character.picked canvas { animation: thumb-hop .38s cubic-bezier(.3, .7, .4, 1); }
-@keyframes card-sheen { from { opacity: 1; background-position: 100% 0; } to { opacity: 0; background-position: -60% 0; } }
+@keyframes card-sheen { from { opacity: 1; } to { opacity: 0; } }
+@keyframes card-sweep { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(96%); } }
 @keyframes thumb-hop { 0%, 100% { translate: 0 0; } 40% { translate: 0 -7px; } }
 .character canvas { transition: scale .28s cubic-bezier(.34, 1.7, .5, 1); }
 .character:hover canvas { scale: 1.08; }
@@ -552,7 +573,10 @@ canvas.pending { background: linear-gradient(90deg, var(--panel) 25%, var(--pane
 .band-head span { font-weight: 400; color: var(--muted); font-size: 13px; }
 .character { position: relative; display: grid; justify-items: center; padding: 8px 6px; background: var(--panel); border-color: transparent; border-radius: 8px; outline: none; transition: transform .28s cubic-bezier(.34, 1.7, .5, 1), border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
 .character:focus, .character:focus-visible { outline: none; }
-.character:focus, .character:hover { border-color: var(--line); background: var(--panel-2); transform: translateY(-4px); box-shadow: 0 6px 16px var(--shade), 0 0 0 1px color-mix(in srgb, var(--c, transparent) 35%, transparent); }
+.character:focus, .character:hover { border-color: var(--line); background: var(--panel-2); transform: translateY(-4px); box-shadow: 0 6px 16px var(--shade); }
+@supports (color: color-mix(in srgb, white, black)) {
+  .character:focus, .character:hover { box-shadow: 0 6px 16px var(--shade), 0 0 0 1px color-mix(in srgb, var(--c, transparent) 35%, transparent); }
+}
 .character:active { transform: translateY(0) scale(0.93); transition-duration: .05s, .15s, .15s, .15s; }
 .character canvas { width: 96px; height: 96px; }
 .character.p1 { box-shadow: inset 0 0 0 2px var(--p1-ink), 0 0 10px rgba(253, 233, 121, 0.3); }
@@ -664,10 +688,11 @@ body.touch.turned.in-battle .hud { --face: 64px; }
 .hud-avatar { position: relative; object-fit: cover; rotate: calc(var(--tilt) * 3deg);
   --ring: var(--side-ink);
   background: var(--panel);
-  background: linear-gradient(color-mix(in srgb, var(--side) 45%, var(--panel)), var(--panel) 70%);
   box-shadow: 0 0 0 2px var(--ring), 0 4px 0 2px var(--shade-strong);
-  box-shadow: 0 0 0 2px var(--ring), 0 0 12px color-mix(in srgb, var(--ring) 40%, transparent), 0 4px 0 2px var(--shade-strong);
   transition: rotate .5s cubic-bezier(.34, 1.7, .5, 1), translate .5s ease, filter .5s ease; }
+@supports (color: color-mix(in srgb, white, black)) {
+  .hud-avatar { background: linear-gradient(color-mix(in srgb, var(--side) 45%, var(--panel)), var(--panel) 70%); box-shadow: 0 0 0 2px var(--ring), 0 0 12px color-mix(in srgb, var(--ring) 40%, transparent), 0 4px 0 2px var(--shade-strong); }
+}
 .hud-avatar[data-state="low"] { --ring: var(--danger-ink); }
 .hud-avatar[data-state="ko"] { --ring: var(--line); rotate: calc(var(--tilt) * 12deg); translate: 0 4px; filter: grayscale(1) brightness(.6); }
 .hud.faces .hud-player:has(> .hud-avatar[data-state="ko"])::before { opacity: .3; }
@@ -677,7 +702,11 @@ body.touch.turned.in-battle .hud { --face: 64px; }
 @keyframes avatar-low {
   50% {
     box-shadow: 0 0 0 2px var(--ring), 0 4px 0 2px var(--shade-strong);
-    box-shadow: 0 0 0 2px var(--ring), 0 0 18px 2px color-mix(in srgb, var(--ring) 70%, transparent), 0 4px 0 2px var(--shade-strong);
+  }
+}
+@supports (color: color-mix(in srgb, white, black)) {
+  @keyframes avatar-low {
+    50% { box-shadow: 0 0 0 2px var(--ring), 0 0 18px 2px color-mix(in srgb, var(--ring) 70%, transparent), 0 4px 0 2px var(--shade-strong); }
   }
 }
 .hud-player.sub .health { height: 10px; }
@@ -696,10 +725,17 @@ body.touch.turned.in-battle .hud { --face: 64px; }
 /* 能量（气）恒为青色，四格刻度；攒满 = 大招可放：流光 + MAX。 */
 .energy { height: calc(8px * var(--hud, 1)); width: 72%; }
 .hud-player.second .energy { justify-self: end; }
-.energy span { background: var(--cyan); background: linear-gradient(color-mix(in srgb, var(--cyan) 40%, var(--text-strong)), var(--cyan)); }
+.energy span { background: var(--cyan); }
+@supports (color: color-mix(in srgb, white, black)) {
+  .energy span { background: linear-gradient(color-mix(in srgb, var(--cyan) 40%, var(--text-strong)), var(--cyan)); }
+}
 .energy::before { content: ""; position: absolute; inset: 0; z-index: 1; border-radius: inherit; background: repeating-linear-gradient(90deg, transparent 0 calc(25% - 1px), var(--shade-strong) calc(25% - 1px) 25%); }
-.energy.full { box-shadow: 0 0 10px var(--cyan); box-shadow: 0 0 10px color-mix(in srgb, var(--cyan) 70%, transparent); }
-.energy.full span { background: var(--cyan); background: linear-gradient(100deg, transparent 35%, color-mix(in srgb, var(--text-strong) 85%, transparent) 50%, transparent 65%) 0 0 / 300% 100% no-repeat, linear-gradient(color-mix(in srgb, var(--cyan) 40%, var(--text-strong)), var(--cyan)); }
+.energy.full { box-shadow: 0 0 10px var(--cyan); }
+.energy.full span { background: var(--cyan); }
+@supports (color: color-mix(in srgb, white, black)) {
+  .energy.full { box-shadow: 0 0 10px color-mix(in srgb, var(--cyan) 70%, transparent); }
+  .energy.full span { background: linear-gradient(100deg, transparent 35%, color-mix(in srgb, var(--text-strong) 85%, transparent) 50%, transparent 65%) 0 0 / 300% 100% no-repeat, linear-gradient(color-mix(in srgb, var(--cyan) 40%, var(--text-strong)), var(--cyan)); }
+}
 .energy.full::after { content: "MAX"; position: absolute; left: calc(100% + 6px * var(--hud, 1)); top: 50%; translate: 0 -50%; font: 800 calc(10px * var(--hud, 1)) / 1 var(--font-display); letter-spacing: .1em; color: var(--cyan-ink); text-shadow: 0 1px 0 #000, 0 0 6px var(--cyan); }
 .hud-player.second .energy.full::after { left: auto; right: calc(100% + 6px * var(--hud, 1)); }
 @media (prefers-reduced-motion: no-preference) {
@@ -772,7 +808,7 @@ body.touch.turned.in-battle .hud { --face: 64px; }
 .end-overlay > div { display: flex; gap: 10px; justify-content: center; margin-top: 12px; }
 
 /* challenge buff picker: fixed, so it covers the select screen before stage 1 too. */
-.buff-picker { position: fixed; top: 0; right: 0; bottom: 0; left: 0; inset: 0; z-index: 20; display: grid; place-content: center; text-align: center; background: #0b0a12eb; gap: 6px; }
+.buff-picker { position: fixed; top: 0; right: 0; bottom: 0; left: 0; inset: 0; z-index: 20; display: grid; place-content: safe center; overflow: auto; box-sizing: border-box; padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); text-align: center; background: #0b0a12eb; gap: 6px; }
 .buff-picker small { color: #fff; font: 700 20px/1.3 var(--font); letter-spacing: .14em; -webkit-text-stroke: 5px #000; paint-order: stroke fill; text-shadow: 0 2px 0 #000, 2px 0 0 #000, -2px 0 0 #000, 0 -2px 0 #000; }
 .buff-picker h2 { margin: 0; font-size: 40px; }
 .buff-picker p { margin: 0; color: var(--muted); }
@@ -832,6 +868,9 @@ body.touch.turned.in-battle .hud { --face: 64px; }
 dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 14px; max-width: 560px; padding: 18px 22px; }
 dialog[open] { animation: dialog-appear .18s cubic-bezier(0.16, 1, 0.3, 1); }
 dialog::backdrop { background: var(--shade-scrim); }
+.dialog-fallback { display: none; position: fixed; top: 50%; left: 50%; right: auto; bottom: auto; margin: 0; transform: translate(-50%, -50%); max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); overflow-y: auto; }
+.dialog-fallback[open] { display: block; animation: none; }
+.dialog-backdrop { position: fixed; top: 0; right: 0; bottom: 0; left: 0; background: var(--shade-scrim); }
 dialog[open]::backdrop { animation: backdrop-fade .18s ease-out; }
 @keyframes dialog-appear { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
 @keyframes backdrop-fade { from { opacity: 0; } to { opacity: 1; } }
@@ -854,11 +893,13 @@ dialog[open]::backdrop { animation: backdrop-fade .18s ease-out; }
 /* touch */
 .touch-only { display: none; }
 body.touch .touch-only { display: block; }
-/* 摇杆环跟场地宽度走。cqw 被认出来但算成 0 时会盖掉上一行，max 让 0 退回 vmin。 */
-.touchpad { --ring: clamp(96px, 26vmin, 136px); --ring: max(clamp(96px, 26vmin, 136px), 11.6cqw); display: none; position: absolute; top: 0; right: 0; bottom: 0; left: 0; inset: 0; pointer-events: none; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+/* 摇杆环先用视口单位。自定义属性会收下未知的 cqw，不能靠重复声明回退；容器单位在下方 @supports 内启用。
+   上限 136：再大，平板横屏 12% 处的摇杆会探出左边或底边。JS 还会按场地再收一档。 */
+.touchpad { --ring: clamp(96px, 26vmin, 136px); display: none; position: absolute; top: 0; right: 0; bottom: 0; left: 0; inset: 0; pointer-events: none; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 /* 横屏叠键由 JS 挂 .in-tower。显示跟这个类走，不单靠 orientation，避免套壳里 CSS 和 matchMedia 取向不一致时整块按键消失。 */
 .touchpad.in-tower { display: block; }
-.touchpad button { display: grid; place-items: center; padding: 0; pointer-events: auto; touch-action: none; border-radius: 50%; color: #fff; font-weight: 800; text-shadow: 0 1px 0 #000; background: #ffffff2e; border: 2px solid #ffffff73; transition: background-color .08s ease, transform .08s ease; }
+/* transform 也承担分板定位；跨布局插值会把按键短暂推出屏幕，按压缩放直接落值。 */
+.touchpad button { display: grid; place-items: center; padding: 0; pointer-events: auto; touch-action: none; border-radius: 50%; color: #fff; font-weight: 800; text-shadow: 0 1px 0 #000; background: #ffffff2e; border: 2px solid #ffffff73; transition: background-color .08s ease; }
 .touchpad.in-tower .tp-actions button.held { transform: scale(0.92); }
 body.pad-split .tp-actions button.held { transform: translate(-50%, -50%) scale(0.92); }
 .touchpad button img { width: 58%; height: 58%; object-fit: contain; pointer-events: none; filter: drop-shadow(0 1px 0 #000); }
@@ -928,35 +969,39 @@ body.touch.in-battle #battle {
 /* 宽屏 is the desktop wide-mode toggle (body.wide). Phones hide it except in a portrait
    fight, where the same button turns the battle sideways (body.turned) instead. */
 body.touch .battle-top #fullscreen { display: none; }
-@media (orientation: landscape) {
-  /* 右滑是容器的返回。页面不交出横向滑动，空历史才不会把 toy 浏览器关掉。 */
-  html:has(body.touch.in-battle) { overscroll-behavior: none; }
-  body.touch.in-battle { position: fixed; top: 0; right: 0; bottom: 0; left: 0; inset: 0; height: 100vh; height: 100dvh; overflow: hidden; overscroll-behavior: none; touch-action: none; }
-  body.touch.in-battle header, body.touch.in-battle .battle-top, body.touch.in-battle #battle-skills, body.touch.in-battle #battle-skills-bar, body.touch.in-battle #battle footer, body.touch.in-battle .site-foot { display: none; }
-  /* dvh tracks the real viewport; the 100vh declaration before it is the fallback for browsers without dvh. */
-  body.touch.in-battle #battle { width: 100%; height: 100vh; height: 100dvh; max-width: none; margin: 0; padding: 0; display: block; touch-action: none; }
-  /* One box owns the safe area: all four insets land on the same element, so the leftover bars stay symmetric instead of pooling at the top. */
-  body.touch.in-battle .arena { position: fixed; top: 0; right: 0; bottom: 0; left: 0; top: env(safe-area-inset-top, 0px); right: env(safe-area-inset-right, 0px); bottom: env(safe-area-inset-bottom, 0px); left: env(safe-area-inset-left, 0px); inset: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); width: auto; height: auto; max-height: none; aspect-ratio: auto; border: 0; border-radius: 0; }
-  /* Width fills the safe box. Height and top come from battleFrame so the floor stays at the desktop ratio. */
-  body.touch.in-battle .arena canvas { position: absolute; left: 0; top: 0; width: 100%; height: auto; object-fit: fill; }
-  body.touch.in-battle .touchpad { display: block; }
-  /* Same share of the box as on a 16:9 desktop arena. --hud is 1 there, smaller on a short phone. */
-  body.touch.in-battle .hud { top: calc(10px * var(--hud, 1)); right: calc(14px * var(--hud, 1)); bottom: auto; left: calc(14px * var(--hud, 1)); inset: calc(10px * var(--hud, 1)) calc(14px * var(--hud, 1)) auto; gap: calc(14px * var(--hud, 1)); }
-  body.touch.in-battle .hud-side { gap: calc(8px * var(--hud, 1)); }
-  body.touch.in-battle .hud-player { gap: calc(3px * var(--hud, 1)); font-size: calc(15px * var(--hud, 1)); }
-  body.touch.in-battle .health { height: calc(14px * var(--hud, 1)); }
-  body.touch.in-battle .hud-player.sub .health { height: calc(10px * var(--hud, 1)); }
-  body.touch.in-battle .hud.team .hud-player.sub .health,
-  body.touch.in-battle .hud.challenge .hud-player.sub .health { height: calc(14px * var(--hud, 1)); }
-  body.touch.in-battle .energy { height: calc(8px * var(--hud, 1)); }
-  body.touch.in-battle .hud-player small { font-size: calc(11px * var(--hud, 1)); }
-  body.touch.in-battle .timer { min-width: calc(88px * var(--hud, 1)); }
-  body.touch.in-battle .timer small { font-size: calc(11px * var(--hud, 1)); }
-  body.touch.in-battle .timer b { font-size: calc(40px * var(--hud, 1)); }
-}
-@media (orientation: portrait) {
-  body.touch.in-battle .battle-top #fullscreen { display: inline-flex; }
-}
+/* 横屏或竖屏放不下分板时统一挂 stage-fill。CSS 与 JS 使用同一布局状态，不各自判断方向。 */
+html:has(body.touch.stage-fill.in-battle) { overscroll-behavior: none; }
+body.touch.stage-fill.in-battle { position: fixed; top: 0; right: 0; bottom: 0; left: 0; inset: 0; height: 100vh; height: 100dvh; overflow: hidden; overscroll-behavior: none; touch-action: none; }
+body.touch.stage-fill.in-battle header, body.touch.stage-fill.in-battle .battle-top, body.touch.stage-fill.in-battle #battle-skills, body.touch.stage-fill.in-battle #battle-skills-bar, body.touch.stage-fill.in-battle #battle footer, body.touch.stage-fill.in-battle .site-foot { display: none; }
+body.touch.stage-fill.in-battle #battle { width: 100%; height: 100vh; height: 100dvh; max-width: none; margin: 0; padding: 0; display: block; touch-action: none; }
+/* 画面铺到屏幕四边（刘海、home 条、手势条下面也是画面），不再用安全区把盒子往里缩——那会在底部和两侧露出页面底色。
+   安全区只交给控件层和 HUD：按键、摇杆、血条不进刘海和 home 条。高度一般不钉，只在视觉视口被工具条盖矮时由 JS 钉。 */
+body.touch.stage-fill.in-battle .arena { position: fixed; top: 0; right: 0; bottom: 0; left: 0; inset: 0; width: auto; height: auto; max-height: none; aspect-ratio: auto; border: 0; border-radius: 0; }
+body.touch.stage-fill.in-battle .touchpad { top: env(safe-area-inset-top, 0px); right: env(safe-area-inset-right, 0px); bottom: env(safe-area-inset-bottom, 0px); left: env(safe-area-inset-left, 0px); }
+body.touch.stage-fill.in-battle .arena canvas { position: absolute; left: 0; top: 0; width: 100%; height: auto; object-fit: fill; }
+body.touch.stage-fill.in-battle .touchpad { display: block; }
+/* Same share of the box as on a 16:9 desktop arena. --hud is 1 there, smaller on a short phone. */
+body.touch.stage-fill.in-battle .hud { top: calc(10px * var(--hud, 1) + env(safe-area-inset-top, 0px)); right: calc(14px * var(--hud, 1) + env(safe-area-inset-right, 0px)); bottom: auto; left: calc(14px * var(--hud, 1) + env(safe-area-inset-left, 0px)); gap: calc(14px * var(--hud, 1)); }
+body.touch.stage-fill.in-battle .hud-side { gap: calc(8px * var(--hud, 1)); }
+body.touch.stage-fill.in-battle .hud-player { gap: calc(3px * var(--hud, 1)); font-size: calc(15px * var(--hud, 1)); }
+body.touch.stage-fill.in-battle .health { height: calc(14px * var(--hud, 1)); }
+body.touch.stage-fill.in-battle .hud-player.sub .health { height: calc(10px * var(--hud, 1)); }
+body.touch.stage-fill.in-battle .hud.team .hud-player.sub .health,
+body.touch.stage-fill.in-battle .hud.challenge .hud-player.sub .health { height: calc(14px * var(--hud, 1)); }
+body.touch.stage-fill.in-battle .energy { height: calc(8px * var(--hud, 1)); }
+body.touch.stage-fill.in-battle .hud-player small { font-size: calc(11px * var(--hud, 1)); }
+body.touch.stage-fill.in-battle .timer { min-width: calc(88px * var(--hud, 1)); }
+body.touch.stage-fill.in-battle .timer small { font-size: calc(11px * var(--hud, 1)); }
+body.touch.stage-fill.in-battle .timer b { font-size: calc(40px * var(--hud, 1)); }
+
+/* 比 16:9 高的横向盒子（平板横屏、16:10 桌面宽屏、转屏的方屏）：画面完整，不拉伸、不补虚化边。
+   battleFrame 把画面放到 HUD 正下方，上条是血条，下条是按键台；两条都是站点底色，只用发丝线和画面分开。
+   摇杆和技能键仍贴盒子右下角和左下，自然落在按键台上，台不够高时才叠到画面的地面上，跟手机横屏一样。 */
+body.stage-deck.in-battle .arena { background: var(--bg); }
+body.stage-deck.in-battle .arena canvas { box-shadow: 0 -1px 0 var(--line), 0 1px 0 var(--line); }
+/* 方屏里 HUD 跟着画面一起下移（--deck-shift 由 touchLayout 写），血条始终贴在画面上沿。 */
+body.stage-deck.in-battle .hud { translate: 0 var(--deck-shift, 0px); }
+body.pad-split .battle-top #fullscreen { display: inline-flex; }
 /* 竖屏触屏：竞技场下面再放一块同比例的按键板（960:540，又宽又矮，cqw = 板宽的 1%）。
    摇杆在左侧上下居中、环占板高约六成，左半边不再放键。
    攻击在右方上下居中。上方 s1、s2、s3 等距排成一行，右端与攻击对齐。下方必杀、格挡各对上 s1、s2，
@@ -980,23 +1025,31 @@ body.pad-split .arena { overflow: visible; aspect-ratio: auto; height: auto; bac
 body.pad-split .arena-view { position: relative; inset: auto; width: 100%; height: 56.25vw; background: #000; border: 1px solid var(--line); border-radius: 12px; touch-action: none; }
 body.pad-split .arena-view canvas { position: absolute; top: 0; right: 0; bottom: 0; left: 0; inset: 0; width: 100%; height: 100%; }
 body.pad-split .arena:has(.end-overlay:not([hidden])) .touchpad { pointer-events: none; }
-body.pad-split .touchpad { --ring: clamp(88px, 34vmin, 180px); --ring: max(clamp(88px, 34vmin, 180px), 33.75cqw); display: block; position: relative; inset: auto; width: 100%; height: 56.25vw; margin-top: 8px; pointer-events: auto; background-color: var(--bg); border: 1px solid var(--line); border-radius: 12px; }
+/* --u 是按键板的尺寸单位：手机上等于 1vmin（竖屏即屏宽的 1%，和原来的 cqw 板几乎一样）。
+   平板竖屏板子变宽，单位封顶 5px：攻击键 100px、摇杆环 170px，手指够得着，不会长成一块巨型按钮。
+   封顶后板子仍铺满宽度，摇杆贴左、技能群贴右（横坐标从右缘量），中间留空给拇指之外的区域。 */
+body.pad-split .touchpad { --u: min(5px, 1vmin); --ring: calc(34 * var(--u)); display: block; position: relative; inset: auto; width: 100%; height: 56.25vw; max-height: calc(56.25 * var(--u)); margin-top: 8px; pointer-events: auto; background-color: var(--bg); border: 1px solid var(--line); border-radius: 12px; }
+/* 必须测真实长度属性，不能测 --ring: 1cqw（未知单位在自定义属性里也会通过）。
+   max 同时兜住支持 cqw 但容器量成 0 的情况。 */
+@supports (width: 1cqw) {
+  .touchpad { --ring: min(136px, max(clamp(96px, 26vmin, 136px), 11.6cqw)); }
+}
 @supports (aspect-ratio: 1 / 1) {
   body.pad-split .arena-view,
   body.pad-split .touchpad { height: auto; aspect-ratio: 960 / 540; }
 }
 body.pad-split .tp-stick { position: absolute; left: 0; top: 50%; bottom: auto; transform: translateY(-50%); }
 body.pad-split .tp-actions { position: absolute; top: 0; right: 0; bottom: 0; left: 0; inset: 0; pointer-events: none; }
-body.pad-split .tp-actions button { position: absolute; transform: translate(-50%, -50%); }
+body.pad-split .tp-actions button { position: absolute; transform: translate(-50%, -50%); left: calc(100% - (100 - var(--px)) * var(--u)); top: var(--y); }
 body.pad-split .tp-actions .atk,
 body.pad-split .tp-actions .guard { background: #ffffff59; border-color: #fff; }
-body.pad-split .tp-actions .atk { --x: 84.9%; --y: 50%; left: var(--x); top: var(--y); width: 20vmin; width: max(20vmin, 20cqw); height: 20vmin; height: max(20vmin, 20cqw); }
-body.pad-split .tp-actions .guard { --x: 68.4%; --y: 84.4%; left: var(--x); top: var(--y); width: 13vmin; width: max(13vmin, 13cqw); height: 13vmin; height: max(13vmin, 13cqw); }
-body.pad-split .tp-actions .sk { width: 13vmin; width: max(13vmin, 13cqw); height: 13vmin; height: max(13vmin, 13cqw); }
-body.pad-split .tp-actions .s1 { --x: 51.9%; --y: 15.6%; left: var(--x); top: var(--y); }
-body.pad-split .tp-actions .s2 { --x: 68.4%; --y: 15.6%; left: var(--x); top: var(--y); }
-body.pad-split .tp-actions .s3 { --x: 84.9%; --y: 15.6%; left: var(--x); top: var(--y); }
-body.pad-split .tp-actions .ult { --x: 51.9%; --y: 84.4%; left: var(--x); top: var(--y); }
+body.pad-split .tp-actions .atk { --px: 84.9; --y: 50%; width: calc(20 * var(--u)); height: calc(20 * var(--u)); }
+body.pad-split .tp-actions .guard { --px: 68.4; --y: 84.4%; width: calc(13 * var(--u)); height: calc(13 * var(--u)); }
+body.pad-split .tp-actions .sk { width: calc(13 * var(--u)); height: calc(13 * var(--u)); }
+body.pad-split .tp-actions .s1 { --px: 51.9; --y: 15.6%; }
+body.pad-split .tp-actions .s2 { --px: 68.4; --y: 15.6%; }
+body.pad-split .tp-actions .s3 { --px: 84.9; --y: 15.6%; }
+body.pad-split .tp-actions .ult { --px: 51.9; --y: 84.4%; }
 body.pad-split .tp-actions .sk::before { content: ''; position: absolute; inset: -3px; border-radius: 50%; }
 /* Toy 的手机容器不转系统方向。body.turned 把战斗转 90°，尺寸对调后就和真横屏同一套键位。
    玩家把手机横过来看。真横屏时这个类会被拿掉，避免转两次。
@@ -1006,10 +1059,12 @@ body.touch.turned.in-battle { position: fixed; top: 0; right: 0; bottom: 0; left
 body.touch.turned.in-battle header, body.touch.turned.in-battle .battle-top, body.touch.turned.in-battle #battle-skills, body.touch.turned.in-battle #battle-skills-bar, body.touch.turned.in-battle #battle footer, body.touch.turned.in-battle .site-foot { display: none; }
 /* 竖屏时 vmin 就是手机的宽，转完正好铺满。 */
 body.touch.turned.in-battle #battle { position: fixed; z-index: 5; top: 0; left: 100%; width: 100vh; width: 100dvh; height: 100vmin; max-width: none; margin: 0; padding: 0; display: block; transform: rotate(90deg); transform-origin: top left; touch-action: none; }
-body.touch.turned.in-battle .arena { position: fixed; top: 0; right: 0; bottom: 0; left: 0; top: env(safe-area-inset-right, 0px); right: env(safe-area-inset-bottom, 0px); bottom: env(safe-area-inset-left, 0px); left: env(safe-area-inset-top, 0px); inset: env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left) env(safe-area-inset-top); width: auto; height: auto; max-height: none; aspect-ratio: auto; border: 0; border-radius: 0; }
+/* 和横屏一样：画面铺满转过来的整块，安全区交给控件层和 HUD。转了 90°，所以盒子的上 = 屏幕的右，右 = 下，下 = 左，左 = 上。 */
+body.touch.turned.in-battle .arena { position: fixed; top: 0; right: 0; bottom: 0; left: 0; inset: 0; width: auto; height: auto; max-height: none; aspect-ratio: auto; border: 0; border-radius: 0; }
+body.touch.turned.in-battle .touchpad { top: env(safe-area-inset-right, 0px); right: env(safe-area-inset-bottom, 0px); bottom: env(safe-area-inset-left, 0px); left: env(safe-area-inset-top, 0px); }
 body.touch.turned.in-battle .arena canvas { position: absolute; left: 0; top: 0; width: 100%; height: auto; object-fit: fill; }
 body.touch.turned.in-battle .touchpad { display: block; }
-body.touch.turned.in-battle .hud { top: calc(10px * var(--hud, 1)); right: calc(14px * var(--hud, 1)); bottom: auto; left: calc(14px * var(--hud, 1)); inset: calc(10px * var(--hud, 1)) calc(14px * var(--hud, 1)) auto; gap: calc(14px * var(--hud, 1)); }
+body.touch.turned.in-battle .hud { top: calc(10px * var(--hud, 1) + env(safe-area-inset-right, 0px)); right: calc(14px * var(--hud, 1) + env(safe-area-inset-bottom, 0px)); bottom: auto; left: calc(14px * var(--hud, 1) + env(safe-area-inset-top, 0px)); gap: calc(14px * var(--hud, 1)); }
 body.touch.turned.in-battle .hud-side { gap: calc(8px * var(--hud, 1)); }
 body.touch.turned.in-battle .hud-player { gap: calc(3px * var(--hud, 1)); font-size: calc(15px * var(--hud, 1)); }
 body.touch.turned.in-battle .health { height: calc(14px * var(--hud, 1)); }
@@ -1073,7 +1128,10 @@ body.wide .touchpad.in-tower .tp-actions { --atk: clamp(86px, 16vmin, 106px); ri
    色彩冲击交给平涂几何：页面两侧的大圆、圆环、斜纹、网点，组件里的圆形徽章和色圆。不用大面积渐变。
    形状一律圆角（面板 18、卡片 14、按钮 12、选择器胶囊），粉色只做装饰点，1P 黄 / 2P 绿照旧。
    --cv 是把角色代表色提亮到海报明度的版本：深色代表色（海铃的藏青）也能当色块用。 */
-.character, .vs-cut .vs-disc { --cv: color-mix(in oklab, var(--c, var(--brand)) 78%, white); }
+.character, .vs-cut .vs-disc { --cv: var(--c, var(--brand)); }
+@supports (color: color-mix(in oklab, white, black)) {
+  .character, .vs-cut .vs-disc { --cv: color-mix(in oklab, var(--c, var(--brand)) 78%, white); }
+}
 @supports (color: oklch(from red l c h)) {
   .character, .vs-cut .vs-disc { --cv: oklch(from var(--c, var(--brand)) max(l, .7) max(c, .12) h); }
 }
@@ -1119,6 +1177,11 @@ header { border-bottom: 0; background: transparent; }
 .brand-en { font: 700 13px/1 var(--font-display); letter-spacing: .16em; color: var(--brand-ink); font-style: normal; }
 .brand-lock small { grid-column: 1 / -1; font-size: 12px; }
 .brand-kicker { position: absolute; left: calc(100% + 10px); top: 4px; font: 400 18px/1 var(--font-hand); color: var(--brand-ink); transform: rotate(-7deg); white-space: nowrap; font-style: normal; pointer-events: none; }
+/* 手写引子不占位，窄于内容列的平板竖屏会盖住右边的按钮。藏掉引子，按钮保持原样。 */
+@container (max-width: 1100px) { .brand-kicker { display: none; } }
+@supports not (container-type: inline-size) {
+  @media (max-width: 1144px) { .brand-kicker { display: none; } }
+}
 header nav .icon-btn, header nav summary { border-radius: 999px; }
 
 /* 区块标题：粉色圆形编号徽章 + 中文标题 + 等宽英文小标签。 */
@@ -1151,14 +1214,86 @@ header nav .icon-btn, header nav summary { border-radius: 999px; }
 /* 名册：干净的圆角卡。卡里一个圆垫在缩略图后，平时是中性色，悬停和选中时才变成角色色；
    未选中的卡不带任何代表色，整片名册只有选中的那几张是彩色的。未选中的圆只留三成底色，远看几乎隐形，主体是角色。 */
 .roster { gap: 10px; }
+/* 翻牌（切换卡面）时卡片绕竖轴转，名册给一点透视，离中心远的卡转起来略带斜角，像看台。 */
+#roster { perspective: 1600px; }
 .character { padding: 8px 4px 10px; border-radius: 14px; background: var(--panel); }
-.character::before { content: ""; position: absolute; left: 50%; top: 12px; width: 76px; aspect-ratio: 1; translate: -50% 0; border-radius: 50%; background: color-mix(in srgb, var(--panel-2) 30%, transparent); transition: background-color .25s ease, scale .35s cubic-bezier(.34, 1.7, .5, 1); pointer-events: none; }
+.character::before { content: ""; position: absolute; left: 50%; top: 12px; width: 76px; aspect-ratio: 1; translate: -50% 0; border-radius: 50%; background: var(--wash); transition: background-color .25s ease, scale .35s cubic-bezier(.34, 1.7, .5, 1); pointer-events: none; }
+@supports (color: color-mix(in srgb, white, black)) {
+  .character::before { background: color-mix(in srgb, var(--panel-2) 30%, transparent); }
+}
 .character canvas { position: relative; }
 .character:hover::before, .character:focus-visible::before, .character.p1::before, .character.p2::before, .character.ally::before { background: var(--cv); }
 .character:hover::before { scale: 1.06; }
 .char-name { position: relative; margin-top: 2px; font: 900 13px/1.3 var(--font-head); letter-spacing: .04em; }
 .character:focus, .character:hover { background: var(--panel-2); }
 .slot-tag { border-radius: 999px; padding: 1px 7px; font-family: var(--font-display); }
+
+/* 名册卡面·头像：整张卡就是一张票面。照片铺满卡片，只留 3px 卡边（选中描边正好落在这圈边里），
+   所以没有「框里套框」。照片底色带一层角色色，悬停和选中时换成全色；顶上一道很淡的舞台顶光。
+   照片和名字之间是一条撕票虚线，两端咬出半圆缺口，跟血条旁的 ADMIT ONE 票根同一套语言。
+   每张卡自己的 data-view 决定显示哪一面（select.ts 已把「头像加载不到就留小人」折进去），两套卡面都在 DOM 里。 */
+.face { position: relative; display: none; width: 100%; aspect-ratio: 1; overflow: hidden; border-radius: 11px; background: var(--panel-2); pointer-events: none; transition: background-color .25s ease; }
+@supports (color: color-mix(in srgb, white, black)) {
+  .face { background: color-mix(in srgb, var(--cv) 20%, var(--panel-2)); }
+}
+.character[data-view="face"] { padding: 3px 3px 7px; }
+.character[data-view="face"] .face { display: block; }
+.character[data-view="face"] canvas,
+.character[data-view="face"]::before { display: none; }
+.character:hover .face, .character:focus-visible .face,
+.character.p1 .face, .character.p2 .face, .character.ally .face { background: var(--cv); }
+/* 顶光压在底色上、头像下面。 */
+.face::before { content: ""; position: absolute; inset: 0; background: radial-gradient(70% 45% at 50% 0%, rgb(255 255 255 / 16%), transparent 100%); }
+.face-cut { display: contents; }
+.face img { position: relative; display: block; width: 100%; height: 100%; object-fit: contain; opacity: 0; transform-origin: 50% 45%; transition: opacity .25s ease, scale .3s ease; }
+.character[data-face="ready"] .face img { opacity: 1; }
+/* 头像动效只许放大、不许位移：照片框裁掉溢出，放大时脖子切口始终压在框外；一旦上下平移，切口就露出来。
+   小人卡的 thumb-hop（原地上跳）因此不用在这里。 */
+.character:hover .face img { scale: 1.05; }
+/* 选中＝按快门：镜头往脸上推一下再回位，推到最近时整张照片闪亮一下（闪光灯），随后落回。
+   头像画得很满，藏在脑后的光效会被头发挡住，所以闪光直接打在照片上。
+   关键帧不写起止，起止取当前值，悬停中的 1.05 不会先跳回 1。 */
+.character.picked .face img { animation: face-shutter .45s cubic-bezier(.3, .7, .3, 1); }
+@keyframes face-shutter { 25% { scale: 1.13; filter: brightness(1.28); } 60% { filter: none; } }
+/* 撕票线 + 两端缺口。缺口是在卡片上真正挖空（mask），透出卡片后面的任何背景，选中描边也一起被咬断。
+   --tear 是撕票线离卡片底边的距离 = 卡片下内边距 7 + 名字行高 + 名字上内边距 5，手机字号小，单独覆盖。
+   代价：mask 也会裁掉卡片外侧的阴影和选中光晕，头像模式下卡片只靠描边和上浮表达状态。 */
+.character[data-view="face"] { --tear: 29px;
+  --notch: radial-gradient(circle 5px at 0 calc(100% - var(--tear)), transparent 97%, black), radial-gradient(circle 5px at 100% calc(100% - var(--tear)), transparent 97%, black);
+  -webkit-mask: var(--notch); mask: var(--notch); -webkit-mask-composite: source-in; mask-composite: intersect; }
+/* 不认 intersect 的内核会把整张卡蒙没。去掉标准 mask，留下 -webkit-mask + source-in。 */
+@supports not (mask-composite: intersect) {
+  .character[data-view="face"] { mask: none; }
+}
+.character[data-view="face"] .char-name { justify-self: stretch; text-align: center; margin-top: 6px; padding-top: 5px;
+  background: repeating-linear-gradient(90deg, var(--line) 0 3px, transparent 3px 6px) 50% 0 / calc(100% - 16px) 1px no-repeat; }
+/* 标题行里的卡面快切：同一枚胶囊分段，内边距压到和旁边「随机」一样高。 */
+/* 名册下方的卡面切换，居中。中间是一条撕票虚线，一张两侧咬缺口的粉色小票沿线滑动并翻面：
+   正面全身剪影、背面头像剪影。悬停时小票先偏一点，提示它能翻。小票落定后名册从它这里开始翻牌（select.ts flipCards）。
+   两侧的字是直接选项，选中的那侧转亮。整个控件不加底和框。 */
+.roster-foot { display: flex; justify-content: center; margin-top: 14px; }
+.thumb-switch { display: inline-flex; align-items: center; gap: 6px; }
+.thumb-switch > button[data-thumb-pick] { padding: .3em .5em; background: transparent; border: 0; color: var(--muted); font-family: var(--font-display); font-weight: 700; letter-spacing: .04em; }
+.thumb-switch > button[data-thumb-pick]:hover { color: var(--text); }
+.thumb-switch > button[aria-pressed="true"] { color: var(--text-strong); }
+.thumb-track { position: relative; width: 72px; height: 34px; padding: 0; background: transparent; border: 0; perspective: 240px; }
+.thumb-track:hover { border: 0; }
+.thumb-track::before { content: ""; position: absolute; left: 2px; right: 2px; top: 50%; border-top: 1.5px dashed var(--line); }
+.thumb-knob { position: absolute; left: 0; top: 50%; width: 36px; height: 24px; margin-top: -12px; transform-style: preserve-3d;
+  transition: translate .55s cubic-bezier(.34, 1.45, .5, 1), rotate .6s cubic-bezier(.35, 1.5, .5, 1); }
+.thumb-switch[data-thumb="face"] .thumb-knob { translate: 36px 0; rotate: y 180deg; }
+.thumb-track:hover .thumb-knob { rotate: y 28deg; }
+.thumb-switch[data-thumb="face"] .thumb-track:hover .thumb-knob { rotate: y 152deg; }
+.thumb-knob b { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 6px; background: var(--brand); color: var(--on-brand);
+  -webkit-backface-visibility: hidden; backface-visibility: hidden;
+  --notch: radial-gradient(circle 4px at 0 50%, transparent 97%, black), radial-gradient(circle 4px at 100% 50%, transparent 97%, black);
+  -webkit-mask: var(--notch); mask: var(--notch); -webkit-mask-composite: source-in; mask-composite: intersect; }
+@supports not (mask-composite: intersect) {
+  .thumb-knob b { mask: none; }
+}
+.thumb-knob .k-back { rotate: y 180deg; }
+.thumb-knob svg { width: 15px; height: 15px; }
+.roster-foot + .stage-select { margin-top: 10px; }
 
 /* 场景卡：圆角，选中是黄圈。 */
 .stage-card { border-radius: 14px; }
@@ -1171,23 +1306,33 @@ header nav .icon-btn, header nav summary { border-radius: 999px; }
 #skills { gap: 8px; }
 #skills .skill { gap: 12px; align-items: flex-start; border-left: 0; border-radius: 12px; padding: 12px 14px 12px 12px; background: var(--panel-2); }
 #skills .skill kbd { flex: none; width: 30px; height: 30px; border-radius: 8px; background: var(--well); border: 1px solid var(--line); border-bottom-width: 3px; font: 700 14px/1 var(--font-display); color: var(--text); }
-#skills .skill.super kbd { background: var(--p1); border-color: color-mix(in srgb, var(--p1) 55%, black); color: var(--on-accent); }
+#skills .skill.super kbd { background: var(--p1); border-color: var(--p1-ink); color: var(--on-accent); }
+@supports (color: color-mix(in srgb, white, black)) {
+  #skills .skill.super kbd { border-color: color-mix(in srgb, var(--p1-ink) 55%, black); }
+}
 #skills .skill > div { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 10px; }
 #skills .skill b { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; font: 900 15px/1.35 var(--font-head); letter-spacing: .03em; }
 #skills .skill b small.ult-tag { display: inline-block; flex: none; white-space: nowrap; padding: 2px 8px; border-radius: 999px; background: var(--brand); color: var(--on-brand); font: 900 11px/1.3 var(--font-head); letter-spacing: .1em; }
 #skills .skill .nums { flex: 1 0 100%; margin: 3px 0 0; height: auto; font: 500 12px/1.4 var(--font); font-variant-numeric: tabular-nums; color: var(--muted); opacity: .85; }
 #skills .skill .detail { flex: 1 0 100%; margin: 6px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--text); opacity: .78; }
-#skills .skill.super { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--brand) 60%, transparent); }
+#skills .skill.super { box-shadow: inset 0 0 0 1.5px var(--brand-ink); }
+@supports (color: color-mix(in srgb, white, black)) {
+  #skills .skill.super { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--brand) 60%, transparent); }
+}
 /* 触屏的必杀键帽本身就写着「必」，名字旁不再重复标签。 */
 body.touch #skills .skill b small.ult-tag { display: none; }
-#skills .skill:hover { transform: translateY(-2px); background: color-mix(in srgb, var(--panel-2) 82%, var(--line)); }
+#skills .skill:hover { transform: translateY(-2px); background: var(--panel-2); }
+@supports (color: color-mix(in srgb, white, black)) {
+  #skills .skill:hover { background: color-mix(in srgb, var(--panel-2) 82%, var(--line)); }
+}
 
 dialog { border-radius: 18px; }
 .dialog-head h2 { font-family: var(--font-head); font-weight: 900; letter-spacing: .04em; }
 
-/* 窄竖屏和矮视口共用的压缩：字号、芯片、图标。行列不看横竖屏，见 @container stage。 */
-@media (max-width: 760px) and (orientation: portrait), (orientation: landscape) and (max-height: 500px) {
-  header { padding: 8px 12px; gap: 8px; }
+/* 窄竖屏和矮视口共用的压缩：字号、芯片、图标。行列不看横竖屏，见 @container stage。
+   竖屏收到 1100：平板竖屏（768–1024）比手机宽、又放不下桌面三列，跟手机同一套才不会把模式名挤成省略号。 */
+@media (max-width: 1100px) and (orientation: portrait), (orientation: landscape) and (max-height: 500px) {
+  header { padding: max(8px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) 8px max(12px, env(safe-area-inset-left, 0px)); gap: 8px; }
   .site-foot { padding: 8px 12px; }
   .brand { gap: 8px; letter-spacing: .02em; min-width: 0; }
   .brand small { display: none; }
@@ -1201,6 +1346,9 @@ dialog { border-radius: 18px; }
   #selection > .sectionline { margin: 2px 0 8px; }
   .rules-summary { font-size: 12px; }
   .sectionline #random { padding: .3em .6em; font-size: 13px; white-space: nowrap; }
+  .roster-foot { margin-top: 8px; }
+  .roster-foot + .stage-select { margin-top: 6px; }
+  .character[data-view="face"] { --tear: 26px; }
 
   /* 1V1 仍是一行两格。芯片在名字下面。2V2 / 激战的行列见 @container stage。 */
   .select-stage { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; padding: 10px; border-radius: 12px; }
@@ -1261,7 +1409,7 @@ dialog { border-radius: 18px; }
 
   #roster { margin-top: 14px; gap: 6px; }
   .character { padding: 4px 2px 6px; }
-  .character canvas { width: 100%; height: auto; aspect-ratio: 1; }
+  .character canvas, .face { width: 100%; height: auto; aspect-ratio: 1; }
   .char-name { max-width: 100%; font-size: 11px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .slot-tag { top: 3px; left: 3px; font-size: 10px; padding: 0 4px; }
 
@@ -1287,12 +1435,17 @@ dialog { border-radius: 18px; }
 }
 
 /* 竖屏：角色 5 列（每格够放 5 个字的名字），开打钉在屏幕底部，滚到招式表也能直接点。 */
-@media (max-width: 760px) and (orientation: portrait) {
-  main { max-width: none; padding: 10px 12px calc(84px + env(safe-area-inset-bottom)); }
+@media (max-width: 1100px) and (orientation: portrait) {
+  main { max-width: none; padding: 10px max(12px, env(safe-area-inset-right, 0px)) calc(84px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px)); }
   .site-foot { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
   .action-foot { display: grid; grid-template-columns: 1fr; gap: 8px; }
   .action-start { position: fixed; z-index: 10; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); width: auto; min-width: 0; font-size: 17px; box-shadow: 0 8px 24px var(--shade-strong); }
   .roster { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+/* 平板竖屏和折叠屏也走上面这套单列版式，但五列会把卡片放成巴掌大、整页只剩名册。
+   宽于 640 改按卡片宽度自动排：iPad mini 6 列、iPad 7 列、12.9 寸 9 列，卡片和手机差不多大。 */
+@media (min-width: 640px) and (max-width: 1100px) and (orientation: portrait) {
+  .roster { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
 }
 
 /* 横屏矮屏：舞台跟屏幕一样宽。立绘沿用上面的单行高度，不因为矮就改成两行。 */
@@ -1327,6 +1480,25 @@ dialog { border-radius: 18px; }
 }
 
 
+/* 没有容器查询的内核，用保守视口断点保住四人选人卡，不让两侧角色被裁掉。 */
+@supports not (container-type: inline-size) {
+  @media (max-width: 620px) {
+    .select-stage.team { grid-template-columns: 1fr 1fr; align-items: center; gap: 4px; }
+    .select-stage.team #preview-left { grid-area: 1 / 1; }
+    .select-stage.team #preview-ally { grid-area: 2 / 1; }
+    .select-stage.team #preview-right { grid-area: 1 / 2; }
+    .select-stage.team #preview-enemy2 { grid-area: 2 / 2; }
+    .select-stage.team .versus small { display: none; }
+    .select-stage.challenge:not(.solo) { grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: center; gap: 4px; }
+    .select-stage.challenge:not(.solo) #preview-left { grid-column: 2 / 4; grid-row: 1; padding-bottom: 18px; }
+    .select-stage.challenge:not(.solo) #preview-right { grid-column: 1 / 3; grid-row: 2; padding-top: 18px; }
+    .select-stage.challenge:not(.solo) #preview-enemy2 { grid-column: 3 / 5; grid-row: 2; padding-top: 18px; }
+    .select-stage.challenge:not(.solo) .versus small { display: none; }
+    .select-stage.team .fighter-preview canvas,
+    .select-stage.challenge:not(.solo) .fighter-preview canvas { height: clamp(72px, calc((100vh - 220px) / 2), 152px); }
+  }
+}
+
 /* ---- 开打过场（ui/versusCut.ts）：几何海报 ----
    双方各一枚大色圆（角色色提亮到海报明度），角色只放到接近原生像素的尺寸，不暴露细节；
    气势交给大字、VS 徽章和图形的入场节奏。退场是一个圆形光圈收拢，露出已经开打的画面。 */
@@ -1358,7 +1530,7 @@ dialog { border-radius: 18px; }
 .vs-head { position: absolute; left: 4vw; top: 4vh; display: flex; align-items: center; gap: 10px; opacity: 0; }
 .vs-head b { font: 700 15px/1 var(--font-display); letter-spacing: .18em; color: var(--text-strong); }
 .vs-head small { padding: 4px 10px; border-radius: 999px; background: var(--brand); color: var(--on-brand); font: 700 12px/1 var(--font-display); letter-spacing: .1em; }
-.vs-foot { position: absolute; left: 50%; bottom: 4vh; translate: -50% 0; display: grid; justify-items: center; gap: 4px; min-width: min(320px, 70vw); opacity: 0; }
+.vs-foot { position: absolute; left: 50%; bottom: max(4vh, env(safe-area-inset-bottom, 0px)); translate: -50% 0; display: grid; justify-items: center; gap: 4px; min-width: min(320px, 70vw); opacity: 0; }
 .vs-foot small { font: 600 12px/1 var(--font-display); letter-spacing: .24em; color: var(--muted); }
 .vs-foot b { font: 900 20px/1.2 var(--font-head); letter-spacing: .1em; }
 .vs-track { width: 100%; height: 6px; margin-top: 8px; background: var(--panel-2); border-radius: 999px; overflow: hidden; visibility: hidden; }
@@ -1399,7 +1571,7 @@ dialog { border-radius: 18px; }
 @keyframes vs-blowup { from { opacity: 1; scale: 1; } to { opacity: 0; scale: 1.6; } }
 
 /* 手机竖屏和矮横屏：舞台本来就挤，头衔和台词让位。 */
-@media (max-width: 760px) and (orientation: portrait), (orientation: landscape) and (max-height: 500px) {
+@media (max-width: 1100px) and (orientation: portrait), (orientation: landscape) and (max-height: 500px) {
   .slot-title, .slot-quote { display: none; }
   .sectionline > span:first-child { font-size: 17px; gap: 8px; }
   .sectionline i { width: 32px; height: 32px; font-size: 13px; }
@@ -1429,7 +1601,7 @@ dialog { border-radius: 18px; }
    · 模式条改成无底色的文字页签，选中项一条粉色短下划线。
    · 顶栏音效开关收进音乐弹层，四个按钮变三个。
    色圆上下排，VS 在正中。顶栏只留图标和「萌趣格斗」。 */
-@media (max-width: 760px) and (orientation: portrait) {
+@media (max-width: 1100px) and (orientation: portrait) {
   .brand-en { display: none; }
   #selection > .sectionline:first-child { display: none; }
   #difficulty-row { display: none; }
@@ -1453,14 +1625,18 @@ dialog { border-radius: 18px; }
   .vs-mark span { width: 92px; border-width: 4px; font-size: 36px; }
   .vs-flash { width: 92px; }
   .vs-head { left: 5vw; }
-  .vs-foot { bottom: 2vh; }
+  .vs-foot { bottom: max(2vh, env(safe-area-inset-bottom, 0px)); }
 }
 
 /* 减少动态：不位移、不漂浮，登场和过场只剩淡入淡出。 */
 @media (prefers-reduced-motion: reduce) {
   .select-stage > .stage-bg, .select-stage .slot-head, .select-stage .fighter-preview h1, .versus span { translate: none; }
-  .fighter-preview.beam::before, .character.picked canvas, .fighter-preview.arrive .slot-title, .character.picked, .character.picked::after, .nope, .slot-quote.typing::after { animation: none; }
+  .fighter-preview.beam::before, .character.picked canvas, .character.picked .face img, .fighter-preview.arrive .slot-title, .character.picked, .character.picked::after, .character.picked .pick-sheen::before, .nope, .slot-quote.typing::after { animation: none; }
   .seg.thumb-live .seg-thumb { transition: opacity .15s ease; }
+  .thumb-knob { transition: translate .2s ease; }
+  .thumb-switch[data-thumb] .thumb-knob, .thumb-switch[data-thumb] .thumb-track:hover .thumb-knob { rotate: none; }
+  .thumb-switch[data-thumb="face"] .k-front { visibility: hidden; }
+  .thumb-switch[data-thumb="face"] .k-back { rotate: none; }
   .vs-cut.in .vs-side.left .vs-disc, .vs-cut.in .vs-side.right .vs-disc, .vs-cut.in .vs-side.left .vs-ghost canvas, .vs-cut.in .vs-side.right .vs-ghost canvas, .vs-cut.in .vs-ring, .vs-cut.in .vs-stripe, .vs-cut.in .vs-side.left .vs-fighter canvas, .vs-cut.in .vs-side.right .vs-fighter canvas, .vs-cut.in .vs-fighter figcaption, .vs-cut.in .vs-mark span, .vs-cut.in .vs-head, .vs-cut.in .vs-foot { animation: vs-fade .2s ease-out both; }
   .vs-cut.in .vs-flash, .vs-cut.in .vs-cast { animation: none; }
   .vs-cut.out { animation: vs-unfade .2s ease-in forwards; }

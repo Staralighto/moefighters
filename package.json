@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build && node --experimental-strip-types scripts/compress-images.ts",
     "preview": "vite preview",
     "check": "node --experimental-strip-types scripts/selfcheck.ts",
+    "check:adaptation": "node scripts/adaptation-e2e.mjs",
     "sheets": "node --experimental-strip-types scripts/write-sheets.ts"
   },
   "devDependencies": {

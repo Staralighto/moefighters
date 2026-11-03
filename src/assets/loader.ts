@@ -21,9 +21,9 @@ export function imageSources(src: string, prod = import.meta.env.PROD, webpOk = 
   return [src];
 }
 
-/** Select portraits and roster thumbs only draw the idle cell. Production asks for that 256px crop. */
-export function portraitSrc(common: string, prod = import.meta.env.PROD): string {
-  return prod && common.endsWith('/common.png') ? common.replace(/\/common\.png$/, '/idle.png') : common;
+/** Both dev (Vite crop) and production (built WebP) only need the 256px idle cell. */
+export function portraitSrc(common: string): string {
+  return common.endsWith('/common.png') ? common.replace(/\/common\.png$/, '/idle.png') : common;
 }
 
 /** Stage cards are 78px tall. Production asks for the 480px preview; the backdrop keeps the full file. */

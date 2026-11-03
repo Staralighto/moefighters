@@ -1,6 +1,8 @@
 /** 主题开关。暗色是站点本色，亮色的颜色全部由 src/theme/palette.ts 从暗色 token 推导，这里只管挑哪一套。
  *  index.html 头部的内联脚本在首帧前读同一个键挂上 data-theme，这里负责之后的切换和「跟随系统」。 */
 
+import { onMediaChange } from './media.ts';
+
 export type ThemePref = 'dark' | 'light' | 'system';
 
 export const THEME_KEY = 'mf-theme';
@@ -24,7 +26,7 @@ function apply(): void {
   requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove('theme-swap')));
 }
 
-media?.addEventListener?.('change', () => { if (pref === 'system') apply(); });
+if (media) onMediaChange(media, () => { if (pref === 'system') apply(); });
 apply();
 
 export function themePref(): ThemePref { return pref; }

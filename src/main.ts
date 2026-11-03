@@ -9,7 +9,7 @@ import { createViews } from './render/view.ts';
 import { assetsFor, easeLoad, imageQueue, liteFight, loadInto, loadKujiFont, missingImages, portraitSrc, preload, slowLink, stageThumbSrc, supportsWebp, type ImageCache } from './assets/loader.ts';
 import { Sfx } from './audio/sfx.ts';
 import { cycleMusicOrder, fightShuffle, musicEnabled, musicOrder, musicTitle, musicVolume, nudgeMusic, pokeMusic, setFightShuffle, setMusicEnabled, setMusicHeld, setMusicOrder, setMusicSuspended, setMusicVolume, shuffleFightTrack, stepMusic } from './audio/bgm.ts';
-import { matchName, SelectScreen, type MatchSetup } from './ui/select.ts';
+import { matchName, parseRosterThumb, SelectScreen, type MatchSetup } from './ui/select.ts';
 import { bestLabel, challengeName, deckLabel, foeCount, hideBuffPicker, readBest, readRun, rollEnemies, showBuffPicker, stageSetup, writeBest, writeRun, type ChallengeKind, type ChallengeRun } from './ui/challenge.ts';
 import { cycleSkillTier, hideEnd, setBattleGuide, setRoundLabel, showBanner, showEnd, updateHUD } from './ui/hud.ts';
 import { setIconBtn } from './ui/iconBtn.ts';
@@ -17,6 +17,8 @@ import { hideVersus, showVersus, versusHeld, versusProgress, versusSides } from 
 import { mountSegThumbs } from './ui/segThumb.ts';
 import { applyTouchDevice, watchTouch } from './ui/device.ts';
 import { applyTouchLayout, bindBattleFrame } from './ui/touchLayout.ts';
+import { onMediaChange } from './ui/media.ts';
+import { bindDialogFallback, closePopover } from './ui/overlays.ts';
 import { bindSwipeGuard } from './ui/swipeBack.ts';
 import { bindPick, bindTip, setTrainPrefs, trainPrefs } from './ui/settings.ts';
 import { setThemePref, themePref, type ThemePref } from './ui/theme.ts';
@@ -97,21 +99,6 @@ let bootAt = 0;
 let bootDisplay = 0;
 let bootShown = false;
 let bootDone = true;
-
-/** Roster thumbnails load as they approach the viewport. Re-runs after the roster re-renders
- *  (the settings popover swaps layouts), since the old observed nodes are gone. */
-let rosterObserver: IntersectionObserver | null = null;
-function observeRoster(): void {
-  rosterObserver?.disconnect();
-  if (typeof IntersectionObserver === 'undefined') return;
-  rosterObserver = new IntersectionObserver(entries => {
-    for (const e of entries) if (e.isIntersecting) {
-      const c = PLAYABLE[Number((e.target as HTMLElement).dataset.index)];
-      if (c) queue.soon(portraitOf([c]));
-    }
-  }, { rootMargin: '240px' });
-  $('roster').querySelectorAll('.character').forEach(el => rosterObserver!.observe(el));
-}
 
 function noteMissing(): void {
   const miss = bootPins.filter(s => missingImages.has(s));
@@ -197,6 +184,16 @@ const select = new SelectScreen(PLAYABLE, previewViews, setup => {
 });
 select.liteStage = slowLink();
 select.onLand = () => sfx.ui('land');
+select.onNeedSprite = (c, background) => {
+  const srcs = portraitOf([c]);
+  // 头像卡上看不见全身。若把待机图排进两条并发的队列，头像先出来，一点击舞台才去拉全身，手机上就是这一下卡顿。
+  // 和头像同时直接进缓存；loadInto 与队列去重，点的时候舞台用的是已经解码的那张。
+  if (background) {
+    for (const src of srcs) void loadInto(images, src);
+    return;
+  }
+  queue.soon(srcs);
+};
 select.mount();
 mountSegThumbs($('selection'));
 /* Mouse hover ticks on the select screen and header. Touch has no hover, so it stays quiet. */
@@ -241,9 +238,9 @@ bindOnline(() => select.onlinePick(), (role, hostChar, guestChar, stageId, link,
   // standing picture is not stuck behind it.
   queue.pin(idles);
   if (stageSrc) void loadInto(images, stageSrc);
-  // Roster crops load on scroll. Full sheets wait until a fight starts.
+  // Roster crops (or avatars) load on scroll. Full sheets wait until a fight starts.
   followCast = true;
-  observeRoster();
+  select.watchRoster();
 }
 watchTouch(() => { syncFullscreenLabel(); select.refresh(); });
 
@@ -660,8 +657,9 @@ $('wide-exit').onclick = () => {
   document.body.classList.remove('wide', 'turned');
   $('wide-exit').hidden = true;
 };
-matchMedia('(orientation: landscape)').addEventListener('change', e => {
-  if (e.matches) document.body.classList.remove('turned');
+const battleOrientation = matchMedia('(orientation: landscape)');
+onMediaChange(battleOrientation, () => {
+  if (window.innerWidth > window.innerHeight) document.body.classList.remove('turned');
   if (menuUp()) showLayoutExit(true);
 });
 // 手机点计时暂停；桌面宽屏同理——顶栏藏了，这是鼠标开暂停浮层的入口。
@@ -691,19 +689,21 @@ function unlockScroll(): void {
   document.documentElement.classList.remove('modal-open');
   document.documentElement.style.removeProperty('--scrollbar-gap');
 }
-let lastTrigger: HTMLElement | null = null;
+const dialogTriggers = new WeakMap<HTMLDialogElement, HTMLElement | null>();
 function openDialog(dialog: HTMLDialogElement): void {
   if (dialog.open) return;
-  lastTrigger = document.activeElement as HTMLElement | null;
+  dialogTriggers.set(dialog, document.activeElement as HTMLElement | null);
   lockScroll();
   dialog.showModal();
 }
 document.querySelectorAll<HTMLDialogElement>('dialog').forEach(dialog => {
+  bindDialogFallback(dialog);
   dialog.addEventListener('click', e => { if (e.target === dialog) dialog.close(); });
   dialog.addEventListener('close', () => {
     unlockScroll();
-    if (lastTrigger?.isConnected) lastTrigger.focus();
-    lastTrigger = null;
+    const trigger = dialogTriggers.get(dialog);
+    if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+    dialogTriggers.delete(dialog);
   });
 });
 
@@ -847,7 +847,7 @@ $('settings').onclick = () => {
 };
 $('close-settings').onclick = () => settingsDialog.close();
 
-/* 设置里每一行都是左名、右下拉。名册显示改分组后名册重渲染，滚动预加载观察器跟着重挂。
+/* 设置里每一行都是左名、右下拉。名册显示改分组后名册重渲染，SelectScreen 自己重挂滚动预加载观察器。
    训练场两项写进同一份 prefs，进行中的对局下一帧就生效。 */
 bindPick('set-theme-menu', {
   get: themePref,
@@ -855,8 +855,14 @@ bindPick('set-theme-menu', {
 });
 bindPick('set-roster-menu', {
   get: () => select.isGrouped ? 'band' : 'flat',
-  set: value => { select.setRosterGrouped(value === 'band'); observeRoster(); },
+  set: value => select.setRosterGrouped(value === 'band'),
 });
+const syncThumbPick = bindPick('set-thumb-menu', {
+  get: () => select.rosterThumb,
+  set: value => select.setRosterThumb(parseRosterThumb(value)),
+});
+// The roster title row has its own quick switch; whichever control flips it, both show the same value.
+select.onThumb = syncThumbPick;
 bindPick('set-nocd-menu', {
   get: () => trainPrefs().noCd ? 'on' : 'off',
   set: value => { setTrainPrefs({ noCd: value === 'on' }); select.refresh(); },
@@ -876,7 +882,7 @@ function syncFightShuffleLock(): void {
   if (!btn) return;
   const locked = musicOrder() !== 'shuffle';
   btn.disabled = locked;
-  if (locked && menu?.matches(':popover-open')) menu.hidePopover();
+  if (locked && menu) closePopover(menu);
 }
 syncFightShuffleLock();
 

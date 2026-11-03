@@ -3,7 +3,40 @@ import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, type Plugin } from 'vite';
+import sharp from 'sharp';
 import { themeCss } from './src/theme/palette.ts';
+
+/** Match the build's idle crop without writing generated images into public/. */
+function idlePortraits(): Plugin {
+  const crops = new Map<string, { mtime: number; image: Promise<Buffer> }>();
+  return {
+    name: 'idle-portraits',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        const match = /^\/sprites\/([a-z0-9-]+)\/idle\.png(?:\?.*)?$/.exec(req.url ?? '');
+        if (!match || (req.method !== 'GET' && req.method !== 'HEAD')) return next();
+        const id = match[1];
+        try {
+          const file = fileURLToPath(new URL(`./public/sprites/${id}/common.png`, import.meta.url));
+          const mtime = statSync(file).mtimeMs;
+          let crop = crops.get(id);
+          if (!crop || crop.mtime !== mtime) {
+            crop = { mtime, image: sharp(file).extract({ left: 0, top: 0, width: 256, height: 256 }).png().toBuffer() };
+            crops.set(id, crop);
+          }
+          const image = await crop.image;
+          res.setHeader('Content-Type', 'image/png');
+          res.setHeader('Cache-Control', 'no-cache');
+          res.end(req.method === 'HEAD' ? undefined : image);
+        } catch {
+          crops.delete(id);
+          res.statusCode = 404;
+          res.end();
+        }
+      });
+    },
+  };
+}
 
 /** 亮色主题：style.css 只写暗色 token，加载时在文件尾追加推导出的亮色块和暗色美术面块。
     开发和构建走同一条，改了暗色 token 亮色立刻跟着变。规则见 src/theme/palette.ts。 */
@@ -147,7 +180,7 @@ export default defineConfig(({ command }) => ({
   define: { __NET_HASH__: JSON.stringify(sourceHash()) },
   // Toy hosts the built page under /toy/<slug>/. Dev stays at the site root.
   base: command === 'build' ? './' : '/',
-  plugins: [themeLight(), propLayout(), touchLayout()],
+  plugins: [themeLight(), idlePortraits(), propLayout(), touchLayout()],
   server: { host: true },
   preview: { host: true },
 }));

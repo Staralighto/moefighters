@@ -1,3 +1,5 @@
+import { onMediaChange } from './media.ts';
+
 /** Same-document history entry. A container Back pops this instead of closing the webview. */
 export const SWIPE_STAY = 'mf-stay';
 
@@ -172,7 +174,10 @@ function onEdgeStart(e: TouchEvent): void {
 function blockEdgeMove(e: TouchEvent): void {
   if (!armed || edgeId === null || !e.cancelable) return;
   let t: Touch | null = null;
-  for (const one of e.touches) if (one.identifier === edgeId) t = one;
+  for (let i = 0; i < e.touches.length; i++) {
+    const one = e.touches[i];
+    if (one.identifier === edgeId) { t = one; break; }
+  }
   if (!t || !swipeEdgeSlide(t.clientX - edgeX, t.clientY - edgeY)) return;
   const el = e.target;
   if (el instanceof Element && el.closest('dialog')) return;
@@ -181,7 +186,7 @@ function blockEdgeMove(e: TouchEvent): void {
 
 function clearEdge(e: TouchEvent): void {
   if (edgeId === null) return;
-  for (const one of e.changedTouches) if (one.identifier === edgeId) edgeId = null;
+  for (const one of Array.from(e.changedTouches)) if (one.identifier === edgeId) edgeId = null;
 }
 
 /**
@@ -203,10 +208,10 @@ export function bindSwipeGuard(): void {
   const sync = () => {
     const body = document.body.classList;
     const touch = body.contains('touch');
-    eatMoves = touch && body.contains('in-battle') && (landscape.matches || body.contains('turned'));
+    eatMoves = touch && body.contains('in-battle') && (body.contains('stage-fill') || body.contains('turned'));
     setArmed(swipeGuardWanted(touch));
   };
-  landscape.addEventListener('change', sync);
+  onMediaChange(landscape, sync);
   new MutationObserver(sync).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   document.addEventListener('touchstart', onEdgeStart, { passive: false, capture: true });
   document.addEventListener('touchmove', blockMove, { passive: false, capture: true });

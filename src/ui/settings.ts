@@ -1,6 +1,9 @@
 /** Header settings: roster layout stays on the select screen; training switches live here
  *  and are handed to FightGame as the same object, so a change during a match applies on the next step. */
 
+import { bindPopoverFallback, closePopover, openPopover, popoverOpen, positionPopover } from './overlays.ts';
+import { visibleBox } from './stageFit.ts';
+
 const KEY = 'mf-train';
 
 export interface TrainPrefs {
@@ -37,15 +40,27 @@ export function setTrainPrefs(patch: Partial<TrainPrefs>): void {
 export function placePick(
   anchor: { right: number; top: number; bottom: number },
   menu: { width: number; height: number },
-  view: { width: number; height: number },
+  view: { width: number; height: number; left?: number; top?: number },
 ): { top: number; left: number } {
   const gap = 4, edge = 8;
+  const leftEdge = (view.left ?? 0) + edge, topEdge = (view.top ?? 0) + edge;
+  const rightEdge = (view.left ?? 0) + view.width - edge, bottomEdge = (view.top ?? 0) + view.height - edge;
   let top = anchor.bottom + gap;
-  if (top + menu.height > view.height - edge) top = Math.max(edge, anchor.top - gap - menu.height);
+  if (top + menu.height > bottomEdge) top = anchor.top - gap - menu.height;
+  top = Math.max(topEdge, Math.min(top, bottomEdge - menu.height));
   let left = anchor.right - menu.width;
-  if (left + menu.width > view.width - edge) left = view.width - edge - menu.width;
-  if (left < edge) left = edge;
+  left = Math.max(leftEdge, Math.min(left, rightEdge - menu.width));
   return { top, left };
+}
+
+/** Menus and the battle share the same visual-viewport coordinates after zoom or a keyboard. */
+function menuViewport() {
+  const vv = window.visualViewport;
+  return visibleBox({
+    innerWidth: window.innerWidth, innerHeight: window.innerHeight,
+    clientWidth: document.documentElement.clientWidth, clientHeight: document.documentElement.clientHeight,
+    visual: vv ? { width: vv.width, height: vv.height, offsetLeft: vv.offsetLeft, offsetTop: vv.offsetTop } : null,
+  }, { top: 0, right: 0, bottom: 0, left: 0 });
 }
 
 export interface PickBinding {
@@ -53,20 +68,21 @@ export interface PickBinding {
   set(value: string): void;
 }
 
-/** One listbox. The menu is a popover (top layer, out of flow) so opening it cannot grow the
+/** One listbox; returns its re-sync, for state that another control can also change. The menu is a popover (top layer, out of flow) so opening it cannot grow the
  *  dialog or summon a scrollbar. Coordinates are written in the toggle handler, before paint,
  *  and the UA's centered `inset: 0; margin: auto` is cleared in CSS — otherwise the menu
  *  flashes in the middle of the screen. Focus uses preventScroll so the dialog does not jump. */
-export function bindPick(menuId: string, binding: PickBinding): void {
+export function bindPick(menuId: string, binding: PickBinding): () => void {
   const menu = document.getElementById(menuId);
   const btn = document.querySelector<HTMLButtonElement>(`[popovertarget="${menuId}"]`);
-  if (!menu || !btn) return;
+  if (!menu || !btn) return () => {};
+  bindPopoverFallback(menu, btn);
   const dialog = menu.closest('dialog');
   if (dialog && !dialog.dataset.picks) {
     dialog.dataset.picks = '1';
     dialog.addEventListener('close', () => {
       for (const m of dialog.querySelectorAll<HTMLElement>('.pick-menu, .tip-pop')) {
-        if (m.matches(':popover-open')) m.hidePopover();
+        closePopover(m);
       }
     });
   }
@@ -83,16 +99,17 @@ export function bindPick(menuId: string, binding: PickBinding): void {
   };
 
   const place = (): void => {
-    const w = btn.offsetWidth;
+    const view = menuViewport();
+    const w = Math.min(btn.offsetWidth, Math.max(1, view.width - 16));
     menu.style.width = w + 'px';
     menu.style.maxWidth = w + 'px';
+    menu.style.maxHeight = Math.max(1, Math.min(260, view.height - 16)) + 'px';
     const box = placePick(
       btn.getBoundingClientRect(),
       { width: menu.offsetWidth, height: menu.offsetHeight },
-      { width: window.innerWidth, height: window.innerHeight },
+      view,
     );
-    menu.style.top = box.top + 'px';
-    menu.style.left = box.left + 'px';
+    positionPopover(menu, box);
   };
 
   menu.addEventListener('beforetoggle', e => {
@@ -106,15 +123,17 @@ export function bindPick(menuId: string, binding: PickBinding): void {
     else if (menu.contains(document.activeElement)) btn.focus({ preventScroll: true });
   });
 
-  const reposition = (): void => { if (menu.matches(':popover-open')) place(); };
+  const reposition = (): void => { if (popoverOpen(menu)) place(); };
   window.addEventListener('resize', reposition);
+  window.visualViewport?.addEventListener('resize', reposition);
+  window.visualViewport?.addEventListener('scroll', reposition);
   menu.closest('dialog')?.addEventListener('scroll', reposition);
 
   btn.addEventListener('keydown', e => {
     if (btn.disabled) return;
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     e.preventDefault();
-    if (!menu.matches(':popover-open')) menu.showPopover();
+    if (!popoverOpen(menu)) openPopover(menu);
     const opt = e.key === 'ArrowUp' ? options[options.length - 1] : options[0];
     opt?.focus({ preventScroll: true });
   });
@@ -132,13 +151,14 @@ export function bindPick(menuId: string, binding: PickBinding): void {
   for (const opt of options) {
     opt.addEventListener('click', () => {
       const value = opt.dataset.value;
-      if (!value || value === binding.get()) { menu.hidePopover(); return; }
+      if (!value || value === binding.get()) { closePopover(menu); return; }
       binding.set(value);
       sync();
-      menu.hidePopover();
+      closePopover(menu);
     });
   }
   sync();
+  return sync;
 }
 
 /** 说明气泡跟下拉一样，打开前钉在按钮旁，避免先出现在屏幕正中。 */
@@ -146,14 +166,22 @@ export function bindTip(popId: string): void {
   const pop = document.getElementById(popId);
   const btn = document.querySelector<HTMLButtonElement>(`[popovertarget="${popId}"]`);
   if (!pop || !btn) return;
-  pop.addEventListener('toggle', e => {
-    if ((e as ToggleEvent).newState !== 'open') return;
+  bindPopoverFallback(pop, btn);
+  const place = () => {
+    const view = menuViewport();
+    pop.style.maxWidth = Math.max(1, Math.min(16 * Number.parseFloat(getComputedStyle(pop).fontSize), view.width - 16)) + 'px';
+    pop.style.maxHeight = Math.max(1, view.height - 16) + 'px';
     const box = placePick(
       btn.getBoundingClientRect(),
       { width: pop.offsetWidth, height: pop.offsetHeight },
-      { width: window.innerWidth, height: window.innerHeight },
+      view,
     );
-    pop.style.top = box.top + 'px';
-    pop.style.left = box.left + 'px';
-  });
+    positionPopover(pop, box);
+  };
+  pop.addEventListener('toggle', e => { if ((e as ToggleEvent).newState === 'open') place(); });
+  const reposition = () => { if (popoverOpen(pop)) place(); };
+  window.addEventListener('resize', reposition);
+  window.visualViewport?.addEventListener('resize', reposition);
+  window.visualViewport?.addEventListener('scroll', reposition);
+  pop.closest('dialog')?.addEventListener('scroll', reposition);
 }
