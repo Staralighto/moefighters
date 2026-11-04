@@ -40,11 +40,21 @@ function isSkill(v: object): v is Skill {
   return typeof s.fx === 'string' && typeof s.cd === 'number' && typeof s.type === 'string' && typeof s.duration === 'number';
 }
 
+/** Both forms' moves in one list: base 0–5, then the alt form's 6–11. */
+const bothForms = new WeakMap<CharacterData, Skill[]>();
+function allSkills(c: CharacterData): Skill[] {
+  if (!c.forms) return c.skills;
+  let list = bothForms.get(c);
+  if (!list) bothForms.set(c, list = [...c.skills, ...c.forms.alt.skills]);
+  return list;
+}
+
 /** A skill travels as a reference into the roster; a frenzy clone keeps its changed numbers. */
 function skillRef(s: Skill, owner: CharacterData | undefined): unknown {
   const air = AIR_SKILLS.indexOf(s);
   if (air >= 0) return { $a: air };
-  const list = owner?.skills ?? [];
+  // 一人二役: the alt form's six ride after the base six, so one index names either form's move.
+  const list = owner ? allSkills(owner) : [];
   let i = list.indexOf(s);
   if (i >= 0) return { $k: i, c: owner!.id };
   i = list.findIndex(x => x.fx === s.fx && x.name === s.name);
@@ -80,7 +90,7 @@ export function dec(v: unknown): unknown {
   if ('$a' in o || '$k' in o || '$s' in o) {
     let base: Skill | undefined;
     if ('$a' in o) base = AIR_SKILLS[o.$a as number];
-    else if ('$k' in o) base = ROSTER_BY_ID.get(String(o.c))?.skills[o.$k as number];
+    else if ('$k' in o) { const c = ROSTER_BY_ID.get(String(o.c)); base = c ? allSkills(c)[o.$k as number] : undefined; }
     else base = o.$s as Skill;
     if (!base) return undefined;
     return typeof o.range === 'number' ? { ...base, range: o.range, damage: o.damage as number } : base;

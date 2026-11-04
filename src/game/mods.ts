@@ -147,14 +147,18 @@ export function moveSign(f: Fighter): 1 | -1 {
 
 /** Walk multiplier. 1 when nothing changes the pace. Sprint speeds up, 减速 slows down. */
 export function speedMul(f: Fighter): number {
-  let m = 1;
+  // 一人二役: the form that is up sets the base pace.
+  const p = f.data.forms;
+  let m = p ? (f.form ? p.alt.speed : p.base.speed) ?? 1 : 1;
   for (const mod of f.mods) if ((mod.kind === 'speed' || mod.kind === 'slow') && mod.left > 0) m *= mod.v ?? 1;
   return m;
 }
 
 /** Jump launch-velocity multiplier. 1 when no 减速 is up; the height scales with the square. */
 export function jumpMul(f: Fighter): number {
-  let m = 1;
+  // 一人二役: a heavy form jumps lower.
+  const p = f.data.forms;
+  let m = p ? (f.form ? p.alt.jump : p.base.jump) ?? 1 : 1;
   for (const mod of f.mods) if (mod.kind === 'slow' && mod.left > 0) m *= mod.jump ?? 1;
   return m;
 }
@@ -162,7 +166,9 @@ export function jumpMul(f: Fighter): number {
 /** Attack-speed multiplier. 1 when no pace mod cuts or lifts it. J/K cooldown clocks tick at this rate.
  *  起死开战: a 'speed' mod may carry atk above 1, so the sprint and the faster swings ride one clock. */
 export function atkMul(f: Fighter): number {
-  let m = 1;
+  // 一人二役: the form that is up sets the base swing pace.
+  const p = f.data.forms;
+  let m = p ? (f.form ? p.alt.atk : p.base.atk) ?? 1 : 1;
   for (const mod of f.mods) if ((mod.kind === 'slow' || mod.kind === 'speed') && mod.left > 0) m *= mod.atk ?? 1;
   return m;
 }

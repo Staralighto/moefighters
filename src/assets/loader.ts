@@ -21,9 +21,15 @@ export function imageSources(src: string, prod = import.meta.env.PROD, webpOk = 
   return [src];
 }
 
-/** Both dev (Vite crop) and production (built WebP) only need the 256px idle cell. */
+/** Both dev (Vite crop) and production (built WebP) only need the 256px idle cell.
+ *  common.png crops to idle.png. Any other standing sheet (michelle.png) crops to <name>-idle.png.
+ *  special.png stays itself: it has no standing cell the roster should ask for. */
 export function portraitSrc(common: string): string {
-  return common.endsWith('/common.png') ? common.replace(/\/common\.png$/, '/idle.png') : common;
+  if (common.endsWith('/idle.png') || common.endsWith('-idle.png')) return common;
+  if (common.endsWith('/common.png')) return common.replace(/\/common\.png$/, '/idle.png');
+  if (common.endsWith('/special.png') || common.endsWith('-special.png') || common.endsWith('/frenzy.png')) return common;
+  if (/^\/sprites\/[a-z0-9-]+\/[a-z0-9-]+\.png$/.test(common)) return common.replace(/\.png$/, '-idle.png');
+  return common;
 }
 
 /** Stage cards are 78px tall. Production asks for the 480px preview; the backdrop keeps the full file. */
@@ -157,7 +163,7 @@ export function applyImageUrl(src: string, apply: (url: string) => void): void {
 /** Every image a match needs: sprite views plus the stage backdrop. */
 export function assetsFor(characters: CharacterData[], stage: StageData): string[] {
   const srcs = characters.flatMap(c => c.view.kind === 'sprite'
-    ? [c.view.common, c.view.special, ...(c.view.frenzy ? [c.view.frenzy] : []), ...(c.view.king ? [c.view.king] : []), ...(c.view.world ? [c.view.world] : []), ...(c.view.box ? [c.view.box] : []), ...(c.view.extras ?? [])]
+    ? [c.view.common, c.view.special, ...(c.view.frenzy ? [c.view.frenzy] : []), ...(c.view.king ? [c.view.king] : []), ...(c.view.world ? [c.view.world] : []), ...(c.view.box ? [c.view.box] : []), ...(c.forms ? [c.forms.alt.common, c.forms.alt.special] : []), ...(c.view.extras ?? [])]
     : []);
   if (stage.image) srcs.push(stage.image);
   for (const c of characters) for (const s of c.skills) if (s.domain) srcs.push(s.domain.background);
@@ -176,6 +182,8 @@ export function liteFight(characters: CharacterData[], stage: StageData, have: (
   const need = views.flatMap(v => [...small(v.common, lite), ...small(v.special, lite)]);
   need.push(...small(stage.image, s => stageThumbSrc(s, prod)));
   const rest = views.flatMap(v => [v.frenzy, v.king, v.world, v.box].flatMap(s => small(s, lite)));
+  // 一人二役: the alt form's sheets come in with the other form sheets.
+  for (const c of characters) if (c.forms) rest.push(...small(c.forms.alt.common, lite), ...small(c.forms.alt.special, lite));
   return { need: [...new Set(need)], rest: [...new Set(rest)] };
 }
 

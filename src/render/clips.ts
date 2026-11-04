@@ -145,6 +145,30 @@ export const HUG_SQUEEZE = .09;
 export const HUG_TAIL = .3;
 /** 爱之拥抱: a.mode — lunging, holding, let go (or nobody caught). */
 export const HUG = { lunge: 0, held: 1, done: 2 } as const;
+/** 奥泽美咲 / 米歇尔 (一人二役). Shared by the game scripts and the cells they pick.
+ *  快乐飞行模式: the jets light through the start, then a carry (caught) or a short hop (missed). */
+export const FLIGHT = { lift: 0, carry: 1, whiff: 2, done: 3 } as const;
+/** Seconds of the carry: up through the fireworks and back down. */
+export const FLIGHT_CARRY = 1.05;
+/** Seconds of the missed hop. */
+export const FLIGHT_WHIFF = .45;
+/** The landing pose after either. */
+export const FLIGHT_TAIL = .3;
+/** How high the carry arcs, and how far forward the carry and the hop each travel. */
+export const FLIGHT_RISE = 175;
+export const FLIGHT_TRAVEL = 170;
+export const FLIGHT_HOP = 260;
+/** 明明我才是米歇尔！: the bagged lunge, the three yanks and the tear on a fixed beat, the dazed settle. */
+export const WITHDRAW = { lunge: 0, held: 1, done: 2 } as const;
+export const WITHDRAW_LUNGE = .42;
+export const WITHDRAW_FIRST = .2;
+export const WITHDRAW_GAP = .27;
+export const WITHDRAW_YANKS = 3;
+/** Seconds each yank holds the pull-up cell. */
+export const WITHDRAW_PULL = .13;
+export const WITHDRAW_TAIL = .55;
+/** 黑衣人，拜托了: from the start the curtain hides her until the move ends (she is changing). */
+export const SUITS_REVEAL = .08;
 
 /** 我开动了！: palms together this long before the bowl comes up. */
 export const MEAL_GRACE = .15;
@@ -924,6 +948,19 @@ export function clipFor(f: Fighter): Clip {
       const a = f.attack, mode = a.mode ?? PIGGY.dash;
       if (mode === PIGGY.carry) return at('special', a.index - 2, 1 + (Math.floor(a.t * 10) % 2));
       return at('special', a.index - 2, mode === PIGGY.dash ? 0 : 1);
+    }
+    // 快乐飞行模式: jets lit on the crouch; arms full in the air (the carry or the hop); the landing.
+    if (f.attack.skill.fx === 'happy-flight') {
+      const a = f.attack, mode = a.mode ?? FLIGHT.lift;
+      if (mode === FLIGHT.lift) return at('special', a.index - 2, 0);
+      return at('special', a.index - 2, mode === FLIGHT.done ? 2 : 1);
+    }
+    // 明明我才是米歇尔！: the bagged lunge; the grip, and the pull-up cell for a beat on every yank; dazed after.
+    if (f.attack.skill.fx === 'withdrawal') {
+      const a = f.attack, mode = a.mode ?? WITHDRAW.lunge;
+      if (mode === WITHDRAW.lunge) return at('special', a.index - 2, 0);
+      if (mode === WITHDRAW.held) return at('special', a.index - 2, a.liftAt > 0 && a.t < a.liftAt + WITHDRAW_PULL ? 2 : 1);
+      return at('special', a.index - 2, 2);
     }
     // 爱之拥抱: arms out on the lunge; the hug, tightened for a beat on every squeeze.
     if (f.attack.skill.fx === 'bear-hug') {

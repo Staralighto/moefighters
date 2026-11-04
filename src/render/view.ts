@@ -30,7 +30,8 @@ export function createView(data: CharacterData, images: ImageCache): FighterView
   const spec = data.view;
   const geometry = new GeometryView(data.color, buildFor(data));
   if (spec.kind === 'geometry') return geometry;
-  return new SpriteView(images, spec.common, spec.special, spec.height, geometry, spec.frenzy, spec.king, spec.kingScale, spec.world, spec.box, spec.specialScale, spec.worldScale, spec.lift);
+  return new SpriteView(images, spec.common, spec.special, spec.height, geometry, spec.frenzy, spec.king, spec.kingScale, spec.world, spec.box, spec.specialScale, spec.worldScale, spec.lift,
+    data.forms ? { common: data.forms.alt.common, special: data.forms.alt.special, height: data.forms.alt.height, lift: data.forms.alt.lift, specialScale: data.forms.alt.specialScale } : undefined);
 }
 
 export function createViews(characters: CharacterData[], images: ImageCache): Map<string, FighterView> {

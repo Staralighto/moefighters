@@ -1,6 +1,6 @@
 import type { CharacterData, Skill, StageData } from '../data/types.ts';
 import type { Attack, Fighter } from './fighter.ts';
-import { DECAY_TIMERS, gainEnergy, makeFighter, meterCap } from './fighter.ts';
+import { DECAY_TIMERS, formTune, gainEnergy, makeFighter, meterCap, skillsOf } from './fighter.ts';
 import { AIR_SKILLS } from '../data/skills.ts';
 import { bandMembers, ROSTER_BY_ID } from '../data/characters.ts';
 import type { BandId } from '../data/bands.ts';
@@ -137,6 +137,10 @@ export interface Projectile {
   face?: 1 | -1;
   /** 血月的奏鸣: phase of the note's gentle bob, rolled once at birth. */
   wave?: number;
+  /** 快乐火力模式: the floor x the missile dives onto, locked at the cast. */
+  aim?: number;
+  /** 请叫我本名: floor bounces so far; after the last one the head rolls. */
+  bounces?: number;
 }
 
 /** 九字真言: a committed six-hit string. It outlives the circle, so a late or wall hit still pays in full. */
@@ -479,7 +483,7 @@ export class FightGame {
 
   /** The move a key would produce right now: shared air normals off the ground, the character's list on it. */
   skillFor(f: Fighter, index: number): Skill {
-    return this.airborne(f) && index <= 1 ? AIR_SKILLS[index] : f.data.skills[index];
+    return this.airborne(f) && index <= 1 ? AIR_SKILLS[index] : skillsOf(f)[index];
   }
 
   /** Hitstun, knockdown, or a super that still has them. A breakout may cut out of this. */
@@ -491,7 +495,7 @@ export class FightGame {
     if (this.paused || this.phase !== 'fight') return false;
     if (f.hp <= 0 || f.blocking || f.dodge > 0 || (f.cooldowns[index] > 0 && !has(f, 'nocd'))) return false;
     if (f.feast > 0 && index <= 1) return false;
-    const breakout = !!f.data.skills[index]?.breakout;
+    const breakout = !!skillsOf(f)[index]?.breakout;
     const escape = breakout && this.suppressed(f);
     if (!escape && (f.ban > 0 || f.stun > 0 || f.knocked > 0)) return false;
     // 跟班: no moves of their own while they walk behind someone; a breakout still cuts out.
@@ -536,7 +540,7 @@ export class FightGame {
     // Only a lock skips startup. A queued jab makes the escape start now; it does not become a 0-frame.
     const escaping = !!skill.breakout && this.suppressed(f);
     f.attack = {
-      skill, index: slot, serial: ++f.attackSerial, t: escaping ? skill.start : 0, emitted: false, shots: 0, hit: new Set(),
+      skill, index: slot, form: f.form, serial: ++f.attackSerial, t: escaping ? skill.start : 0, emitted: false, shots: 0, hit: new Set(),
       burst: SCRIPTS[skill.fx]?.burst?.(f) ?? 0,
       // holdEndure is a promise of armour through the cast, so any move that asks for it (a projectile
       // super, 须贺蕾叶's dash and hug) gets the same one-strike shield the endure template arms.
@@ -625,7 +629,7 @@ export class FightGame {
   /** Newest breakout first. A press only sticks for the next action, same as a one-deep buffer. */
   private tryBreakout(f: Fighter): boolean {
     for (let i = f.queue.length - 1; i >= 0; i--) {
-      if (!f.data.skills[f.queue[i].index]?.breakout) continue;
+      if (!skillsOf(f)[f.queue[i].index]?.breakout) continue;
       if (this.attack(f, f.queue[i].index)) return true;
     }
     return false;
@@ -639,7 +643,7 @@ export class FightGame {
     if (this.tryBreakout(f)) { f.queue.length = 0; return true; }
     let firedAt = -1;
     for (let i = 0; i < f.queue.length && firedAt < 0; i++) {
-      if (f.data.skills[f.queue[i].index]?.breakout) continue;
+      if (skillsOf(f)[f.queue[i].index]?.breakout) continue;
       if (this.attack(f, f.queue[i].index)) firedAt = i;
     }
     if (firedAt < 0) {
@@ -911,7 +915,7 @@ export class FightGame {
 
   /** The I-slot wait after the device leaves: the skill's own cooldown, scaled by her cd mul. */
   private apparatusCd(owner: Fighter): number {
-    return (owner.data.skills[APPARATUS_SLOT]?.cd ?? APPARATUS_CD) * owner.cdMul;
+    return (skillsOf(owner)[APPARATUS_SLOT]?.cd ?? APPARATUS_CD) * owner.cdMul;
   }
 
   private dismissMinion(m: Fighter, expired: boolean): void {
@@ -1034,7 +1038,7 @@ export class FightGame {
   private startDodge(f: Fighter): void {
     if (f.purge > 0) return;
     f.dodge = DODGE_TIME;
-    f.dodgeCd = DODGE_CD * f.dodgeCdMul;
+    f.dodgeCd = DODGE_CD * f.dodgeCdMul * (formTune(f)?.dodgeCd ?? 1);
     f.invuln = Math.max(f.invuln, DODGE_INVULN);
     f.blocking = false;
     f.walk = 0;
@@ -1055,6 +1059,8 @@ export class FightGame {
     for (let i = 0; i < f.cooldowns.length; i++) {
       const rate = cdRate * (i <= 1 ? atk : 1);
       f.cooldowns[i] = Math.max(0, f.cooldowns[i] - dt * rate);
+      // 一人二役: the form that is not up keeps cooling at the same rate.
+      if (f.formCds[i] > 0) f.formCds[i] = Math.max(0, f.formCds[i] - dt * rate);
     }
     const recWas = f.recLeft;
     const comboWas = f.comboTime;

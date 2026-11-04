@@ -790,6 +790,85 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    // 一人二役: 米歇尔 is the base form (the bear on stage, where every match starts); 美咲 is the alt.
+    // Each O swaps to the other form; the pair shares one wait (combat.ts swapForm).
+    id: 'misaki', name: '奥泽美咲', title: 'DJ / 熊熊侠', quote: '不会飞的熊，就只是普通的熊！', color: '#DD33CC',
+    bands: ['hello-happy'],
+    ...stats('armor'),
+    view: {
+      // 米歇尔 is the bigger body (193, lifted 5); 美咲's own size is on the alt form (168, lifted 6).
+      kind: 'sprite', common: '/sprites/misaki/michelle.png', special: '/sprites/misaki/michelle-special.png', height: 193, lift: 5,
+      extras: ['/sprites/misaki/head.png'],
+    },
+    forms: {
+      // 米歇尔, the big unit: J / K 20% above the arcade normals, and the price is paid when she is hit or misses,
+      // never on her own swing — walking 30% under the arcade 225, a wider body to hit, a lower jump, a slower
+      // back-dodge, and a missed J / K that does not stop on time.
+      base: { name: '米歇尔', speed: .81, girth: 12, jump: .85, dodgeCd: 1.4, whiff: .1 },
+      alt: {
+        name: '美咲', speed: 1.27, dmgDealt: .85,
+        common: '/sprites/misaki/common.png', special: '/sprites/misaki/special.png', height: 168, lift: 6, specialScale: 1.05,
+        skills: [
+          skill(0, 'light', '喂', { start: .065 }),
+          skill(1, 'heavy', '节能主义', { damage: 48 }),
+          skill(2, 'dash', '不要跳过我的问题', {
+            damage: 40, speed: 900, range: 100, start: .1, duration: .5, cd: 6, knock: 120, fx: 'tsukkomi',
+            brief: '吐槽突进；打中前摇中的对手则打断该招并让它冷却',
+            detail: '吐槽突进小击退；打中出招前摇中的对手时打断那一招并补满它的冷却，对手僵住 0.5 秒',
+          }),
+          skill(3, 'light', '会长猜拳', {
+            damage: 30, range: 112, start: .35, duration: .7, cd: 6, fx: 'janken',
+            brief: '头顶先亮手势再出拳：石头击倒、剪刀定身、布推远',
+            detail: '随机出拳，头顶先亮手势：石头 55 伤害并击倒，剪刀 30 伤害并定身 1.2 秒，布 25 伤害并大幅推远',
+          }),
+          skill(4, 'sweep', '黑衣人，拜托了', {
+            damage: 24, range: 200, start: .3, duration: .9, cd: 6, knock: 360, fx: 'black-suits',
+            hitbox: 'radial', hitAll: true, reach: 'low',
+            react: { kind: 'stand', stun: .3 },
+            brief: '黑衣人围成帘子推开对手；换上米歇尔，换装中无敌',
+            detail: '黑衣人围成帘子推开身边对手；同时换上米歇尔，换装中无敌；与米歇尔的换装共用冷却',
+          }),
+          skill(5, 'grab', '明明我才是米歇尔！', {
+            cost: 100, damage: 35, range: 120, speed: 760, start: .3, duration: 1.9, fx: 'withdrawal',
+            finale: { damage: 110, knock: 340, react: { kind: 'knockdown', vy: -260, knocked: .85, stun: .5 } },
+            brief: '套纸袋冲去抓人当成米歇尔猛扯头套；末下击倒',
+            detail: '冲刺抓取；连扯三下各 35 伤害，最后扯飞熊头 110 伤害并击倒',
+          }),
+        ],
+      },
+    },
+    skills: [
+      skill(0, 'light', '熊掌', { damage: 31, range: 108 }),
+      skill(1, 'heavy', '熊的力气', { damage: 64, range: 132, knock: 300 }),
+      skill(2, 'grab', '快乐飞行模式', {
+        damage: 83, range: 130, start: .22, duration: 1.75, cd: 8, fx: 'happy-flight',
+        react: { kind: 'knockdown', vy: -160, knocked: .8, stun: .45 },
+        brief: '喷射抓人公主抱飞过烟花后击倒；抓空则飞过去压人',
+        detail: '喷射起飞抓住对手，穿过三朵烟花后放下，击倒；抓空则向前飞出一段，落地压到落点的对手造成 33 伤害，可格挡',
+      }),
+      skill(3, 'projectile', '快乐火力模式', {
+        damage: 18, count: 4, interval: .12, size: 48, start: .3, duration: .75, cd: 9, knock: 90, gain: 3, fx: 'happy-missile',
+        solid: false,
+        brief: '四发导弹砸向锁定的落点；离开准星可躲，可格挡',
+        detail: '锁定对手脚下，导弹升空后依次落在准星附近；离开准星可躲，可格挡',
+      }),
+      skill(4, 'projectile', '请叫我本名', {
+        damage: 33, speed: 400, size: 90, life: 2.2, start: .3, duration: .7, cd: 6, knock: 220, fx: 'bear-head',
+        contact: 'pass', solid: false,
+        brief: '摘下熊头扔出，弹地后滚动；变回美咲',
+        detail: '摘下熊头扔出，弹地两次后滚动，同一人只打一次；同时变回美咲；与美咲的换装共用冷却',
+      }),
+      skill(5, 'projectile', '米歇尔乐园', {
+        cost: 120, damage: 10, count: 11, interval: .1, speed: 560, size: 70, life: 2.8, start: .4, duration: 1.95,
+        knock: 0, gain: 1, fx: 'michelle-land', solid: false, contact: 'pass',
+        finale: { damage: 132, knock: 420, react: { kind: 'knockdown', vy: -280, knocked: .9, stun: .5 }, shake: 10 },
+        guardPlan: [6, 8, 20, 30, 40],
+        brief: '小米歇尔跑过全场不打断可跳过；巨型米歇尔压过击倒',
+        detail: '十只小米歇尔接连跑过全场，各 10 伤害且不打断，可跳过；最后一只巨型米歇尔 132 伤害并击倒，跳不过；可格挡',
+      }),
+    ],
+  },
+  {
     id: 'mana', name: '纯田真奈', title: '主唱 / 甜甜圈', quote: '我是获得全国歌唱大赛五连冠的纯田真奈！', color: '#BB9955',
     bands: ['sumimi'],
     ...stats('focus'),

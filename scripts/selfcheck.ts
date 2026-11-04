@@ -4,7 +4,7 @@ import { dreadMul } from '../src/game/combat.ts';
 import { heartTier, YOMOGI_BODY } from '../src/render/clips.ts';
 import { drawHeartBack, drawHeartFront, drawYomogiFx } from '../src/render/yomogiFx.ts';
 import { BUSHIDO_CREEP, BUSHIDO_LUNGE, BUSHIDO_SPAN, VEIL_NORMAL, VEIL_SHOT, clockRings, drumShotTime, hit, holdNoteSpan, outshines, violetHidden, withGuard } from '../src/game/combat.ts';
-import { vowBeatTime, VOW_BEATS, PRACTICE_GAP1, PRACTICE_HITS, practiceBeat, practiceGap, practiceRow, practiceStrums, FAMILY_MEMBERS, familyLife, PUFF_STOP, PLAY, PLAY_BYE, PLAY_DRAW, PLAY_FIGURES, PLAY_HOUSE, PLAY_PASS, PLAY_SLASHES, RARE_TIME, EAR, WIDE, WIDE_DROPS, WIDE_POP } from '../src/render/clips.ts';
+import { FLIGHT_HOP, vowBeatTime, VOW_BEATS, PRACTICE_GAP1, PRACTICE_HITS, practiceBeat, practiceGap, practiceRow, practiceStrums, FAMILY_MEMBERS, familyLife, PUFF_STOP, PLAY, PLAY_BYE, PLAY_DRAW, PLAY_FIGURES, PLAY_HOUSE, PLAY_PASS, PLAY_SLASHES, RARE_TIME, EAR, WIDE, WIDE_DROPS, WIDE_POP } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
 import { PLAYABLE, ROSTER, bandMembers, guestsFor } from '../src/data/characters.ts';
 import { BANDS, BAND_BY_ID } from '../src/data/bands.ts';
@@ -15,7 +15,7 @@ import { ASSEMBLE, ASSEMBLE_STOP, BUSHIDO_TAIL, bushidoClip, clipFor, crashRow, 
 import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
 import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell, shouldGoLite } from '../src/render/fx.ts';
 import { backingScale, portraitBodyScale, superZoom, teamGlowOn } from '../src/render/renderer.ts';
-import { previewFighter, gainEnergy } from '../src/game/fighter.ts';
+import { previewFighter, gainEnergy, skillsOf } from '../src/game/fighter.ts';
 import { addMod, atkMul, clearMod, incomingMul, jumpMul, moveSign, speedMul } from '../src/game/mods.ts';
 import { DEFAULT_MARK, hasStatus, isRecruit, statusCount, statusMask } from '../src/game/status.ts';
 import { STATUS_MARKS, drawStatusAuras, drawStatusEffect } from '../src/render/statusMarks.ts';
@@ -24,7 +24,7 @@ import { drawChieriFx } from '../src/render/chieriFx.ts';
 import { assetUrl, easeLoad, imageSources, linkRate, liteFight, liteSrc, nextSrc, portraitSrc, SLOW_RATE, stageThumbSrc } from '../src/assets/loader.ts';
 import { acceptBlank, isTouchJump, matchStickTouch, stickFingerGone, thumbBandTop, touchRelease, turnedStickDelta } from '../src/game/input.ts';
 import { BIT_ATK, BIT_LEFT, BIT_SOFT, NET_BUILD, InputClock, RemotePad, TAP_SLOTS, applyRemoteBits, cleanCode, packBits, readEvents, readPad, tapSlot, type PadEvent } from '../src/net/proto.ts';
-import { GAME_FIELDS, IdBook, NO_WIRE, PART_BYTES, applyState, captureState, diffState, partText, patchState, readPart, splitParts, type WireState } from '../src/net/state.ts';
+import { dec, enc, GAME_FIELDS, IdBook, NO_WIRE, PART_BYTES, applyState, captureState, diffState, partText, patchState, readPart, splitParts, type WireState } from '../src/net/state.ts';
 import { iceList, parseIce } from '../src/net/config.ts';
 import { HASH_EVERY, LockSession, Rng, SNAP_RTT_MS, TICK_MS, TICK_STEPS, dumpGame, hashGame, loadGame } from '../src/net/lock.ts';
 import { EchoBook, HOST_LEAD_MS, applyClaimHit, coastHost, guestFrame, netAudio, queueGuestState, reconcileGuestPred, resetNetForTest, snapshotGuestPred, stepSoftOffset, syncHostGuestPos, type SoftOffset } from '../src/net/play.ts';
@@ -117,11 +117,11 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const breaksAt: Record<string, number> = {
     nyamu: 4, sakiko: 10, anon: 5, rana: 10, soyo: 3, kokoro: 3, miyako: 5,
-    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5,
+    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5,
   };
   const segments: Record<string, number> = {
     nyamu: 4, sakiko: 16, anon: 6, rana: 22, soyo: 3, kokoro: 3, miyako: 6,
-    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6,
+    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11,
   };
   for (const [id, breakAt] of Object.entries(breaksAt)) {
     const s = ROSTER[at(id)].skills[5];
@@ -2143,7 +2143,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   );
   // 技能文案 (docs/skill-desc-guide.md): the battle table opens on tier 2 and the two tiers never
   // show at once, so a brief has to stand alone. These are the rules the copy pass has to keep.
-  for (const s of [...ROSTER.flatMap(c => c.skills), ...AIR_SKILLS]) {
+  for (const s of [...ROSTER.flatMap(c => [...c.skills, ...(c.forms?.alt.skills ?? [])]), ...AIR_SKILLS]) {
     const where = `${s.name}(${s.key})`;
     assert.ok(s.brief.trim().length > 0 && s.detail.trim().length > 0, `${where} carries both tiers`);
     assert.ok([...s.brief].length <= 24, `${where} brief stays within 24 chars: ${s.brief}`);
@@ -2221,6 +2221,8 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(portraitSrc('/sprites/aya/common.png'), '/sprites/aya/idle.png', 'dev and production both ask for the idle cell, not the whole sheet');
   assert.equal(portraitSrc('/sprites/aya/idle.png'), '/sprites/aya/idle.png', 'an idle crop is already a portrait source');
   assert.equal(portraitSrc('/sprites/aya/special.png'), '/sprites/aya/special.png', 'only the common sheet has an idle crop');
+  assert.equal(portraitSrc('/sprites/misaki/michelle.png'), '/sprites/misaki/michelle-idle.png', 'a second standing sheet still crops to its own idle cell');
+  assert.equal(portraitSrc('/sprites/misaki/michelle-special.png'), '/sprites/misaki/michelle-special.png', 'a second special sheet is not an idle crop');
   assert.equal(stageThumbSrc('/stages/ring.png', true), '/stages/ring-thumb.png', 'stage cards ask for the small preview');
   assert.equal(stageThumbSrc('/stages/ring.png', false), '/stages/ring.png', 'dev stage cards use the full backdrop');
   assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes('const NEAR = 22'), 'webp stays at the near-lossless 22 baseline');
@@ -2329,6 +2331,9 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const ts = readFileSync('src/ui/select.ts', 'utf8');
     assert.ok(css.includes('.character[data-view="face"] canvas') && !css.includes('data-show'), 'card faces switch on data-view only');
     assert.ok(/want === 'face' && b\.dataset\.face !== 'none'/.test(ts), 'a card whose avatar failed resolves to the sprite view');
+    const shutter = css.slice(css.indexOf('@keyframes face-shutter ')).split('/*')[0];
+    assert.ok(shutter.includes('transform: scale(') && !/\bscale\s*:/.test(shutter), 'avatar shutter must not compete with the hover scale transition on touch');
+    assert.ok(/\.character\.picked \{[^}]*transition-property:\s*border-color, box-shadow, background-color;/.test(css), 'card pop owns transform without a competing hover/press transition');
     for (const name of ['card-sheen', 'card-sweep']) {
       const frames = css.slice(css.indexOf(`@keyframes ${name} `)).split('@keyframes ')[1];
       assert.ok(frames && !/\b(background-position|filter|box-shadow)\s*:/.test(frames), 'pick sheen animates only opacity and transforms');
@@ -4120,6 +4125,167 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     assert.ok(p1.cooldowns[2] > 5.5, `a window cast still lands on its full cd, got ${p1.cooldowns[2]}`);
     run(g, 4.9);
     assert.ok(p1.cooldowns[2] > 5.4, `the window end starts full cooldowns, got ${p1.cooldowns[2]}`);
+  }
+}
+
+// misaki (一人二役): 米歇尔 opens; each O swaps to the other form on a shared wait; each form keeps its own
+// cooldowns; the bear's flight carries a body, the missiles dive onto the locked mark, the head bounces and
+// rolls, the parade ends on a knockdown; 美咲's dash cuts a windup short and the bag yanks four times.
+{
+  const mi = at('misaki');
+  const data = ROSTER[mi];
+  assert.ok(data.forms, 'misaki has two forms');
+  assert.equal(data.forms!.alt.skills.length, 6, 'the alt form has six moves');
+  assert.equal(data.skills[4].fx, 'bear-head', '米歇尔 O is the head throw');
+  assert.equal(data.forms!.alt.skills[4].fx, 'black-suits', '美咲 O is the men in black');
+  // The wire names an alt move by its place after the base six, and reads it back to the same object.
+  const altU = data.forms!.alt.skills[2];
+  assert.equal(dec(enc(altU, data)), altU, 'an alt-form move survives the wire');
+  // O: the head flies, the form flips, the new O waits; the other form's cooldowns were parked and keep cooling.
+  {
+    const g = newGame(mi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 300 * p1.facing;
+    assert.equal(p1.form, 0, 'the match opens on 米歇尔');
+    p1.queue.push({ index: 2, ttl: .18 });
+    run(g, 2);
+    const parkedU = p1.cooldowns[2];
+    assert.ok(parkedU > 0, 'the flight is on its cooldown');
+    // The hop carried her forward; put her back so the head has the stage to bounce on.
+    p1.x = 260; p1.facing = 1; p2.x = 900;
+    p1.queue.push({ index: 4, ttl: .18 });
+    run(g, .35);
+    assert.equal(p1.form, 1, 'the head throw turns her into 美咲');
+    assert.ok(violetHidden(p1), 'the change happens under the cloud, the body is not drawn');
+    assert.ok(g.effects.some(e => e.type === 'misaki-cloud'), 'the costume cloud covers the change');
+    assert.ok(g.projectiles.some(p => p.fx === 'bear-head'), 'the head is thrown');
+    assert.equal(skillsOf(p1)[4].fx, 'black-suits', 'the move list is 美咲s');
+    assert.ok(p1.cooldowns[4] > 5, `the new O starts the shared wait, ${p1.cooldowns[4]}`);
+    assert.ok(p1.formCds[2] > 0 && p1.formCds[2] < parkedU, 'the parked flight cooldown keeps cooling');
+    let bounced = 0;
+    for (let i = 0; i < 240; i++) { run(g, STEP); bounced = Math.max(bounced, g.projectiles.find(p => p.fx === 'bear-head')?.bounces ?? 0); }
+    assert.equal(bounced, 2, 'the head bounces twice, then rolls');
+    p1.queue.push({ index: 4, ttl: .18 });
+    run(g, .5);
+    assert.equal(p1.form, 1, 'the shared wait holds the swap back');
+    run(g, 6);
+    p1.queue.push({ index: 4, ttl: .18 });
+    run(g, .5);
+    assert.ok(violetHidden(p1), 'she is out of sight behind the curtain');
+    run(g, .6);
+    assert.equal(p1.form, 0, 'the curtain opens on 米歇尔');
+  }
+  // U: the carry lifts the body and sets it down knocked down.
+  {
+    const g = newGame(mi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 90 * p1.facing; p2.facing = (-p1.facing) as 1 | -1;
+    const hp = p2.hp;
+    p1.queue.push({ index: 2, ttl: .18 });
+    run(g, .7);
+    assert.ok(p2.y < FLOOR - 60, `the carry lifts them, y ${p2.y}`);
+    run(g, 1.2);
+    assert.ok(hp - p2.hp >= 60, `the landing pays the grab, lost ${hp - p2.hp}`);
+    assert.ok(p2.knocked > 0 || p2.downTime > 0 || p2.y >= FLOOR - 1, 'the landing puts them down');
+    assert.equal(p1.y, FLOOR, 'she lands on the floor');
+  }
+  // The big unit pays when she is hit or misses, never on her own swing: a missed J holds a little longer,
+  // a J that lands ends on time; her body is wider to hit; she jumps lower and back-dodges less often.
+  {
+    const g = newGame(mi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p1.facing = 1; p2.x = 900;
+    const tune = data.forms!.base;
+    let steps = 0;
+    p1.queue.push({ index: 0, ttl: .18 });
+    run(g, STEP);
+    while (p1.attack && steps < 200) { run(g, STEP); steps++; }
+    const missed = (steps + 1) * STEP;
+    p2.x = p1.x + 70; p2.facing = -1;
+    run(g, .5);
+    steps = 0;
+    p1.queue.push({ index: 0, ttl: .18 });
+    run(g, STEP);
+    while (p1.attack && steps < 200) { run(g, STEP); steps++; }
+    const landed = (steps + 1) * STEP;
+    assert.ok(missed - data.skills[0].duration > (tune.whiff ?? 0) * .8, `a missed paw holds longer, ${missed.toFixed(3)}`);
+    // The landed one only runs past its duration by the hitstop freeze, never by the whiff hold.
+    assert.ok(landed < missed, `a paw that lands is not held for the whiff, ${landed.toFixed(3)} vs ${missed.toFixed(3)}`);
+    assert.ok((tune.girth ?? 0) > 0 && (tune.jump ?? 1) < 1 && (tune.dodgeCd ?? 1) > 1, 'the bear is a big body: wider, lower jump, slower dodge');
+    assert.ok(jumpMul(p1) < 1, 'the bear jumps lower');
+    p1.form = 1;
+    assert.equal(jumpMul(p1), 1, '美咲 jumps like anyone');
+  }
+  // U, missed: nobody in reach, so she hops — and lands on whoever stands at the end of the hop.
+  {
+    const g = newGame(mi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p1.facing = 1; p2.x = 300 + FLIGHT_HOP; p2.facing = -1;
+    const hp = p2.hp;
+    p1.queue.push({ index: 2, ttl: .18 });
+    run(g, 1);
+    assert.ok(hp - p2.hp >= 20, `the landing squashes the body under her, lost ${hp - p2.hp}`);
+  }
+  // I: four missiles; a body that stays on the mark eats them, one that walks off does not.
+  {
+    const g = newGame(mi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 280 * p1.facing;
+    const hp = p2.hp;
+    p1.queue.push({ index: 3, ttl: .18 });
+    run(g, .8);
+    assert.equal(g.projectiles.filter(p => p.fx === 'happy-missile').length, 4, 'four missiles go up');
+    run(g, 1);
+    assert.ok(hp - p2.hp >= 30, `the missiles land on the mark, lost ${hp - p2.hp}`);
+    const g2 = newGame(mi, at('boulder')); const [q1, q2] = g2.fighters; dummy(g2);
+    q2.x = q1.x + 280 * q1.facing;
+    const hp2 = q2.hp;
+    q1.queue.push({ index: 3, ttl: .18 });
+    run(g2, .35);
+    q2.x += 220 * q1.facing;
+    run(g2, 1.2);
+    assert.equal(q2.hp, hp2, 'walking off the mark clears them');
+  }
+  // L (米歇尔乐园): the little ones are quiet, the giant knocks down.
+  {
+    const g = newGame(mi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 200 * p1.facing;
+    gainEnergy(p1, 300);
+    const hp = p2.hp;
+    p1.queue.push({ index: 5, ttl: .18 });
+    run(g, 4);
+    assert.ok(hp - p2.hp >= 120, `the parade and the giant land, lost ${hp - p2.hp}`);
+  }
+  // 美咲 U: a foe winding up a special has it cut and put back on cooldown.
+  {
+    const g = newGame(mi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.form = 1;
+    p2.x = p1.x + 150 * p1.facing; p2.facing = (-p1.facing) as 1 | -1;
+    p1.queue.push({ index: 2, ttl: .18 });
+    run(g, .05);
+    const s = p2.data.skills[3];
+    p2.attack = { skill: s, index: 3, serial: 99, t: 0, emitted: false, shots: 0, burst: 0, hit: new Set<number>(), endure: 0, liftAt: 0, tossAt: 0, hold: -1, anchor: p2.x };
+    p2.cooldowns[3] = 0;
+    run(g, .25);
+    assert.ok(p2.cooldowns[3] >= s.cd * .9, `the cut move goes back on cooldown, ${p2.cooldowns[3]}`);
+  }
+  // 美咲 I: the hand is one of the three, and it lands.
+  {
+    const g = newGame(mi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.form = 1;
+    p2.x = p1.x + 90 * p1.facing; p2.facing = (-p1.facing) as 1 | -1;
+    const hp = p2.hp;
+    p1.queue.push({ index: 3, ttl: .18 });
+    run(g, .2);
+    assert.ok([0, 1, 2].includes(p1.attack?.mode ?? -1), 'a hand is rolled');
+    run(g, .6);
+    assert.ok(p2.hp < hp, 'the hand lands');
+  }
+  // 美咲 L: the bag catches, three yanks and the tear.
+  {
+    const g = newGame(mi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.form = 1;
+    gainEnergy(p1, 300);
+    p2.x = p1.x + 160 * p1.facing;
+    const hp = p2.hp;
+    p1.queue.push({ index: 5, ttl: .18 });
+    run(g, 2.4);
+    assert.ok(hp - p2.hp >= 120, `three yanks and the tear land, lost ${hp - p2.hp}`);
   }
 }
 

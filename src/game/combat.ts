@@ -1,10 +1,10 @@
 import type { HeartSpec, HitReact, Op, Skill } from '../data/types.ts';
-import { gainEnergy, gainGauge, type Attack, type Fighter } from './fighter.ts';
+import { formTune, gainEnergy, gainGauge, girth, skillsOf, type Attack, type Fighter } from './fighter.ts';
 import { addDebt, addMod, cheerThief, clearMod, dmgDealtMul, dmgTakenMul, has, incomingMul, lifestealOf, moveSign, reflectAmount, type Mod } from './mods.ts';
 import type { Effect, FightGame, Projectile, SealVolley } from './game.ts';
 import { CONTROLS, FLOOR, GRAVITY, H, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
 import { attackPhase } from './animState.ts';
-import { BUSHIDO_TAIL, clipFor, DRUM_SLUMP, drumRow, PAW, PAW_FAIL, PAW_HITS, pawRow, pawTime, ROLL, ROLL_BEATS, ROLL_MAX, ROLL_MIN, ROLL_SLUMP, ROLL_THROW, rollGap, SELFIE, SELFIE_HOLD, SELFIE_LUNGE, SELFIE_SNAP, SELFIE_TAIL, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS, PRACTICE_HITS, practiceBeat, SKIP_HOP, SKIP_MAX, SKIP_MIN, SKIP_TAIL, MINE_FUSE, ENCORE, ENCORE_FACE, ENCORE_GONE, BURDEN_Y, UNBOWED_STEP, UNBOWED_MAX, PIGGY, PIGGY_DASH, PIGGY_CARRY, PIGGY_TAIL, PIGGY_BACK_X, PIGGY_BACK_Y, HUG, HUG_LUNGE, HUG_FIRST, HUG_GAP, HUG_TAIL, MEAL_GRACE, FAMILY, FAMILY_MEMBERS, FAMILY_LUNGE, FAMILY_FINALE, FAMILY_ZONE_AHEAD, FAMILY_ZONE_R, FAMILY_TAIL, familyLife, BLOOD, OBLIVION, TWIN_MOON, TWIN_PHASE, PUFF, PUFF_BLINK, PUFF_ARRIVE, PUFF_REACH, PUFF_STOP, PUFF_HOP, PUFF_BEAT, PUFF_CUT, PUFF_TAIL, EAR, EAR_DECIDE, EAR_PALM_HITS, EAR_PALM_GAP, EAR_PALM, EAR_KNEE, EAR_TAIL, EAR_GLINT, MIKU_EYE, PLAY, PLAY_DASH, PLAY_PASS, PLAY_THROUGH, PLAY_SLASHES, PLAY_BYE, PLAY_THOUGHT, PLAY_EAR_AT, PLAY_EAR_HOLD, PLAY_FIGURES, PLAY_CURTAIN, WIDE, WIDE_DASH, WIDE_DROPS, WIDE_BLAST, WIDE_POP, WIDE_TAIL, WIDE_APPLIANCE_LIFE, WIDE_SLOT, WIDE_ZONE_AHEAD, WIDE_ZONE_R, ENTRANCE, ENTRANCE_VY, ENTRANCE_REACH, ENTRANCE_HOP, ENTRANCE_TAIL, ENTRANCE_CHEER, CHERRY_MAX, CHERRY_R0, CHERRY_R_STEP, CHERRY_HOLD_MAX, CHERRY_TAIL, CHIERI_BUN, ASSEMBLE, ASSEMBLE_PULL, ASSEMBLE_BEAT, ASSEMBLE_FINALE, ASSEMBLE_STOP, ASSEMBLE_TAIL, ASSEMBLE_WHIFF, LEAGUE_BOARD_Y, HEART_TIERS, HEART_GAP, heartTier, YOMOGI_CHEST, YOMOGI_EYE, HIDE, HIDE_REACH, HIDE_GAP, HIDE_HOP, HIDE_TRAVEL, HIDE_WAIT, HIDE_PUNCH, HIDE_TAIL, PALM_FIST, RADAR, RADAR_WAIT, RADAR_BURST, RADAR_TAIL, SHADOW, SHADOW_SCARE, SHADOW_DASH, SHADOW_BEATS, SHADOW_PAUSE, SHADOW_TAIL, SHADOW_SCALE, SHADOW_OFF, SHADOW_GAP, SHADOW_LET, SHADOW_POSE } from '../render/clips.ts';
+import { BUSHIDO_TAIL, clipFor, DRUM_SLUMP, drumRow, PAW, PAW_FAIL, PAW_HITS, pawRow, pawTime, ROLL, ROLL_BEATS, ROLL_MAX, ROLL_MIN, ROLL_SLUMP, ROLL_THROW, rollGap, SELFIE, SELFIE_HOLD, SELFIE_LUNGE, SELFIE_SNAP, SELFIE_TAIL, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS, PRACTICE_HITS, practiceBeat, SKIP_HOP, SKIP_MAX, SKIP_MIN, SKIP_TAIL, MINE_FUSE, ENCORE, ENCORE_FACE, ENCORE_GONE, BURDEN_Y, UNBOWED_STEP, UNBOWED_MAX, PIGGY, PIGGY_DASH, PIGGY_CARRY, PIGGY_TAIL, PIGGY_BACK_X, PIGGY_BACK_Y, HUG, HUG_LUNGE, HUG_FIRST, HUG_GAP, HUG_TAIL, MEAL_GRACE, FAMILY, FAMILY_MEMBERS, FAMILY_LUNGE, FAMILY_FINALE, FAMILY_ZONE_AHEAD, FAMILY_ZONE_R, FAMILY_TAIL, familyLife, BLOOD, OBLIVION, TWIN_MOON, TWIN_PHASE, PUFF, PUFF_BLINK, PUFF_ARRIVE, PUFF_REACH, PUFF_STOP, PUFF_HOP, PUFF_BEAT, PUFF_CUT, PUFF_TAIL, EAR, EAR_DECIDE, EAR_PALM_HITS, EAR_PALM_GAP, EAR_PALM, EAR_KNEE, EAR_TAIL, EAR_GLINT, MIKU_EYE, PLAY, PLAY_DASH, PLAY_PASS, PLAY_THROUGH, PLAY_SLASHES, PLAY_BYE, PLAY_THOUGHT, PLAY_EAR_AT, PLAY_EAR_HOLD, PLAY_FIGURES, PLAY_CURTAIN, WIDE, WIDE_DASH, WIDE_DROPS, WIDE_BLAST, WIDE_POP, WIDE_TAIL, WIDE_APPLIANCE_LIFE, WIDE_SLOT, WIDE_ZONE_AHEAD, WIDE_ZONE_R, ENTRANCE, ENTRANCE_VY, ENTRANCE_REACH, ENTRANCE_HOP, ENTRANCE_TAIL, ENTRANCE_CHEER, CHERRY_MAX, CHERRY_R0, CHERRY_R_STEP, CHERRY_HOLD_MAX, CHERRY_TAIL, CHIERI_BUN, ASSEMBLE, ASSEMBLE_PULL, ASSEMBLE_BEAT, ASSEMBLE_FINALE, ASSEMBLE_STOP, ASSEMBLE_TAIL, ASSEMBLE_WHIFF, LEAGUE_BOARD_Y, HEART_TIERS, HEART_GAP, heartTier, YOMOGI_CHEST, YOMOGI_EYE, HIDE, HIDE_REACH, HIDE_GAP, HIDE_HOP, HIDE_TRAVEL, HIDE_WAIT, HIDE_PUNCH, HIDE_TAIL, PALM_FIST, RADAR, RADAR_WAIT, RADAR_BURST, RADAR_TAIL, SHADOW, SHADOW_SCARE, SHADOW_DASH, SHADOW_BEATS, SHADOW_PAUSE, SHADOW_TAIL, SHADOW_SCALE, SHADOW_OFF, SHADOW_GAP, SHADOW_LET, SHADOW_POSE, FLIGHT, FLIGHT_CARRY, FLIGHT_WHIFF, FLIGHT_TAIL, FLIGHT_RISE, FLIGHT_TRAVEL, FLIGHT_HOP, WITHDRAW, WITHDRAW_LUNGE, WITHDRAW_FIRST, WITHDRAW_GAP, WITHDRAW_YANKS, WITHDRAW_TAIL, SUITS_REVEAL } from '../render/clips.ts';
 import { SCRIPTS } from './scripts.ts';
 import { applyStatus, applyStatusBlocked, extendStatus, isRecruit, statusMask } from './status.ts';
 
@@ -340,8 +340,8 @@ export interface HitSource { hit: Set<number>; pierce?: boolean }
 /** A hit or a grab eats the buffer. A breakout press stays, so the escape can still come out. */
 export function retainEscape(f: Fighter, superHit = false): void {
   if (superHit) f.hitBySuper = true;
-  if (!f.data.skills.some(s => s.breakout)) { f.queue = []; return; }
-  f.queue = f.queue.filter(q => f.data.skills[q.index]?.breakout);
+  if (!skillsOf(f).some(s => s.breakout)) { f.queue = []; return; }
+  f.queue = f.queue.filter(q => skillsOf(f)[q.index]?.breakout);
 }
 
 /** A reversal reaches the swing that is on us. A dodge, and the other person's reversal, stay up. */
@@ -415,7 +415,7 @@ const SPECIAL_HIT_KEYS = new Set(['U', 'I', 'O', 'L']);
 /** 珍稀动物认证: one of her specials lands on a body wearing her base tag — it becomes the upgrade, fresh
  *  clock. Data-driven: the spec is whichever of the attacker's moves declares `curse.upBy`. */
 function upgradeOwnCurse(defender: Fighter, attacker: Fighter): void {
-  const c = attacker.data.skills.find(s => s.curse?.upBy === 'specials')?.curse;
+  const c = skillsOf(attacker).find(s => s.curse?.upBy === 'specials')?.curse;
   if (!c?.up) return;
   const from = c.own ? attacker.id : undefined;
   const base = defender.mods.find(m => m.kind === c.kind && m.tag === 'curse:' + (c.mark ?? '') && m.left > 0 && m.from === from);
@@ -511,7 +511,9 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     * dmgTakenMul(defender, { grab: isGrab, superHit: !!skill.super, superBrace, fallback: BRACED_DAMAGE })
     * incomingMul(defender, attacker.id)
     * (defender.ban > 0 ? BAN_DAMAGE : 1) * attacker.baseDmgMul * attacker.dmgMul * dmgDealtMul(attacker)
-    * (defender.frail > 0 ? 1 + defender.frailBonus : 1);
+    * (defender.frail > 0 ? 1 + defender.frailBonus : 1)
+    // 一人二役: the form that is up on either side.
+    * (formTune(attacker)?.dmgDealt ?? 1) * (formTune(defender)?.dmgTaken ?? 1);
   // 堕天: below half health the attacker swings harder; 这是最后通牒: a defender under a quarter takes more.
   if (attacker.lowHpDmg > 0 && attacker.hp < attacker.data.hp * .5) damage *= 1 + attacker.lowHpDmg;
   if (defender.executeDmg > 0 && defender.hp < defender.data.hp * .25) damage *= 1 + defender.executeDmg;
@@ -868,7 +870,7 @@ export function applyMelee(g: FightGame, f: Fighter, a: Attack): void {
     const dy = Math.abs(o.y - f.y);
     if (s.hitbox === 'disc') {
       // 吉他激奏: a screen-facing disc centred on her — every direction, any height. A jump no longer dodges it.
-      if (Math.hypot(o.x - f.x, o.y - f.y) < s.range) {
+      if (Math.hypot(o.x - f.x, o.y - f.y) < s.range + girth(o)) {
         hit(g, f, o, s, a);
         if (f.hp <= 0) break;
       }
@@ -881,7 +883,7 @@ export function applyMelee(g: FightGame, f: Fighter, a: Attack): void {
     const height = s.reach === 'ground' || s.type === 'sweep' ? o.y > FLOOR - 40
       : s.reach === 'low' ? dy < 48
       : dy < (s.super ? 170 : s.air || s.type === 'upper' ? 150 : 112);
-    if (dist < s.range && (radial || front) && height) {
+    if (dist < s.range + girth(o) && (radial || front) && height) {
       hit(g, f, o, s, a);
       if (f.hp <= 0 || f.stun > 0 || f.attack !== a || (radial && !s.hitAll && a.hit.size)) break;
     }
@@ -1172,6 +1174,22 @@ export function escapePulse(g: FightGame, f: Fighter): void {
   repel(g, f, ESCAPE_RANGE, ESCAPE_PUSH, ESCAPE_STUN);
 }
 
+/** 一人二役: flip to the other form. The two cooldown arrays trade places (the one put away keeps
+ *  cooling in game.ts), and the new form's swap key — the same slot as the move that swapped — starts
+ *  its own cooldown, so the pair shares one wait and cannot be flicked back and forth. */
+export function swapForm(g: FightGame, f: Fighter, s: Skill): void {
+  const pair = f.data.forms;
+  if (!pair) return;
+  const parked = f.formCds;
+  f.formCds = f.cooldowns;
+  f.cooldowns = parked;
+  f.form = f.form ? 0 : 1;
+  const slot = f.attack?.skill === s ? f.attack.index : skillsOf(f).findIndex(x => x.fx === s.fx);
+  const next = slot >= 0 ? skillsOf(f)[slot] : undefined;
+  if (next) f.cooldowns[slot] = Math.max(f.cooldowns[slot], next.cd * f.cdMul);
+  g.text((f.form ? pair.alt : pair.base).name, f.x, f.y - 215, f.data.color, .8, 18);
+}
+
 /** Active-frame and finish ops. A missing mod time uses the form this list just armed. */
 function runOps(g: FightGame, f: Fighter, s: Skill, ops: Op[]): void {
   let formTime = 0;
@@ -1216,7 +1234,7 @@ function runOps(g: FightGame, f: Fighter, s: Skill, ops: Op[]): void {
         pulse: (game, who) => game.effect('burst', who.x, who.y - 130, '#ffb0d8', .45, { radius: 70 }),
         // 安可结束: every skill starts its full cooldown, as if all of them were just cast.
         onExpire: (game, who) => {
-          who.data.skills.forEach((sk, i) => { who.cooldowns[i] = sk.cd * who.cdMul; });
+          skillsOf(who).forEach((sk, i) => { who.cooldowns[i] = sk.cd * who.cdMul; });
           game.text('冷却开始', who.x, who.y - 215, '#ffb0d8', .8, 16);
         },
       });
@@ -1269,6 +1287,8 @@ function runOps(g: FightGame, f: Fighter, s: Skill, ops: Op[]): void {
           },
         });
       }
+    } else if (op.op === 'swap') {
+      swapForm(g, f, s);
     } else if (op.op === 'repel') {
       repel(g, f, op.range ?? s.range, op.push, op.stun);
     } else if (op.op === 'heal') {
@@ -1354,7 +1374,9 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
   if (f.root > 0 && f.rootLevel === 'freeze') return;
   const s = a.skill;
   // Frenzy only hurries the ground jab and kick; specials and air normals keep their own clock.
-  const rate = f.frenzy > 0 && a.index <= 1 && !s.air ? (f.data.frenzy?.rate ?? FRENZY_RATE) : 1;
+  const frenzyRate = f.frenzy > 0 && a.index <= 1 && !s.air ? (f.data.frenzy?.rate ?? FRENZY_RATE) : 1;
+  // 一人二役: a form can swing J / K slower or faster (米歇尔's paws are heavy).
+  const rate = frenzyRate * (a.index <= 1 ? formTune(f)?.atk ?? 1 : 1);
   a.t += dt * rate;
   // 狂化: every attack trails an afterimage frozen on the frame it stamped, one behind her live pose.
   // Nono国王 keeps the frenzy clock for the staff buffs, but the cape form has no ghosts.
@@ -1467,6 +1489,12 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
   }
 
   syncGuitar(g, f, a);
+  // A big form's missed J / K: the swing does not stop on time (FormTune.whiff). Hits end as usual.
+  const whiff = a.index <= 1 ? formTune(f)?.whiff : undefined;
+  if (whiff && a.t >= s.duration && !a.hit.size && !a.whiffed && f.attack === a) {
+    a.whiffed = true;
+    a.t = s.duration - whiff;
+  }
   if (a.t >= s.duration) {
     if (s.onFinish && f.attack === a && f.hp > 0 && f.stun <= 0) runOps(g, f, s, s.onFinish);
     if (sc?.echo && f.attack === a && f.hp > 0 && f.stun <= 0) g.spawnEcho(f);
@@ -1480,7 +1508,7 @@ function stepSeal(g: FightGame, p: Projectile, owner: Fighter): void {
   let touching = false;
   for (const target of g.opponents(owner)) {
     if (target.hp <= 0 || p.life <= 0) continue;
-    const near = Math.abs(p.x - target.x) < 38 + p.radius && Math.abs(p.y - (target.y - 83)) < 72;
+    const near = Math.abs(p.x - target.x) < 38 + girth(target) + p.radius && Math.abs(p.y - (target.y - 83)) < 72;
     if (near) touching = true;
     if (p.marks.has(target.id) || !near) continue;
     const dir = Math.sign(p.vx || 1);
@@ -1556,7 +1584,7 @@ function touchProjectile(g: FightGame, p: Projectile): void {
   for (const target of g.fighters) {
     if (!g.isEnemy(owner, target) || target.hp <= 0 || target.echo) continue;
     const bandY = SCRIPTS[p.fx]?.hitY ?? 72;
-    if (Math.abs(p.x - target.x) >= 38 + p.radius || Math.abs(p.y - (target.y - 83)) >= bandY) continue;
+    if (Math.abs(p.x - target.x) >= 38 + girth(target) + p.radius || Math.abs(p.y - (target.y - 83)) >= bandY) continue;
     if (!hit(g, owner, target, p.skill, { hit: p.hit }, p.x - Math.sign(p.vx) * 40)) continue;
     g.effect('burst', p.x, p.y, p.color, .3, { radius: p.size * .8 });
     SCRIPTS[p.fx]?.pulse?.(g, p, target);
@@ -5907,6 +5935,476 @@ function step_shadow(g: FightGame, f: Fighter, a: Attack, dt: number): void {
 SCRIPTS['yomogi-shadow'] = Object.assign(SCRIPTS['yomogi-shadow'] ?? {}, {
   update: step_shadow, noMelee: true, skipCount: true, poise: true, holdsHeart: true,
 });
+
+/* ---- 奥泽美咲 / 米歇尔 (一人二役) ---- */
+
+/** 快乐飞行模式 (「不会飞的熊，就只是普通的熊！」, 动画 2 季第 4 集): jets lit through the start, then the
+ *  nearest body in reach is scooped up in a princess carry and flown up and over through three fireworks, set
+ *  down at the far end of the arc and knocked down. Nobody in reach: the same jets carry her a short hop
+ *  forward. a.mode walks FLIGHT; a.tossAt is the catch or the take-off, a.anchor the x she left from. */
+function step_flight(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  a.emitted = true;
+  const mode = a.mode ?? FLIGHT.lift;
+  if (mode === FLIGHT.lift) {
+    if (a.shots === 0) {
+      a.shots = 1;
+      g.effect('misaki-jet', f.x, f.y, '#ffd0ec', s.start + .1, { follow: f.id, ox: 0, oy: 0, dir: f.facing, n: 0 });
+    }
+    if (a.t < s.start) return;
+    a.tossAt = a.t;
+    a.anchor = f.x;
+    const o = foeAhead(g, f, s.range);
+    if (o && Math.abs(o.y - f.y) < 140 && o.invuln <= 0) {
+      a.mode = FLIGHT.carry;
+      a.hold = o.id;
+      o.vx = 0;
+      o.vy = 0;
+      o.knocked = 0;
+      o.attack = null;
+      o.stun = Math.max(o.stun, .35);
+      retainEscape(o);
+      g.hitstop = Math.max(g.hitstop, .05);
+      g.text('快乐飞行模式！', f.x, f.y - 222, '#ffd0ec', .9, 16);
+      g.effect('misaki-jet', f.x, f.y, '#ffd0ec', FLIGHT_CARRY, { follow: f.id, ox: 0, oy: 0, dir: f.facing, n: 1 });
+    } else {
+      a.mode = FLIGHT.whiff;
+      g.effect('misaki-jet', f.x, f.y, '#ffd0ec', FLIGHT_WHIFF, { follow: f.id, ox: 0, oy: 0, dir: f.facing, n: 1 });
+    }
+    return;
+  }
+  if (mode === FLIGHT.done) { f.y = FLOOR; f.vy = 0; return; }
+  const span = mode === FLIGHT.carry ? FLIGHT_CARRY : FLIGHT_WHIFF;
+  const u = clamp((a.t - a.tossAt) / span, 0, 1);
+  const travel = mode === FLIGHT.carry ? FLIGHT_TRAVEL : FLIGHT_HOP;
+  const rise = mode === FLIGHT.carry ? FLIGHT_RISE : FLIGHT_RISE * .45;
+  f.x = clamp(a.anchor + f.facing * travel * u, X_MIN, X_MAX);
+  f.y = FLOOR - Math.sin(Math.PI * u) * rise;
+  f.vx = 0;
+  f.vy = 0;
+  f.invuln = Math.max(f.invuln, .03);
+  const o = mode === FLIGHT.carry ? g.fighterById(a.hold) : undefined;
+  if (o && o.hp > 0) {
+    // In her arms: a little ahead and lifted, facing back at her.
+    o.x = clamp(f.x + f.facing * 40, X_MIN, X_MAX);
+    o.y = f.y - 26;
+    o.vx = 0;
+    o.vy = 0;
+    o.knocked = 0;
+    o.stun = Math.max(o.stun, .3);
+    o.facing = (-f.facing) as 1 | -1;
+    // Three fireworks bloom along the arc, in the band's colours.
+    const bloom = Math.floor(u * 4);
+    while (a.shots - 1 < Math.min(3, bloom)) {
+      const i = a.shots - 1;
+      a.shots++;
+      g.effect('misaki-firework', f.x + f.facing * (30 + i * 40) + (i - 1) * 30, f.y - 140 - (i % 2) * 50, HHW_FIREWORK[i % HHW_FIREWORK.length], .9, { n: i, radius: 70 + i * 12 });
+      g.shake = Math.max(g.shake, 2);
+    }
+  }
+  if (u < 1) return;
+  f.y = FLOOR;
+  a.mode = FLIGHT.done;
+  a.t = Math.max(a.t, s.duration - FLIGHT_TAIL);
+  g.effect('misaki-pop', f.x, FLOOR - 14, '#ffe3f2', .35, { radius: 30 });
+  if (mode === FLIGHT.whiff) {
+    // Nobody in her arms: the bear comes down on whoever is standing where she lands.
+    const slam = flightSlam(s);
+    a.hit = new Set();
+    for (const v of g.fighters) {
+      if (!g.isEnemy(f, v) || v.hp <= 0 || v.echo) continue;
+      if (Math.abs(v.x - f.x) < FLIGHT_SLAM_REACH && v.y > FLOOR - 120) hit(g, f, v, slam, a);
+    }
+    g.effect('misaki-pop', f.x - f.facing * 30, FLOOR - 8, '#ffe3f2', .35, { radius: 26 });
+    g.effect('misaki-pop', f.x + f.facing * 30, FLOOR - 8, '#ffe3f2', .35, { radius: 26 });
+    g.shake = Math.max(g.shake, a.hit.size ? 6 : 3);
+  }
+  if (o && o.hp > 0) {
+    o.y = FLOOR;
+    a.hit = new Set();
+    hit(g, f, o, s, a);
+    g.effect('misaki-firework', o.x, o.y - 90, HHW_FIREWORK[3], .7, { n: 3, radius: 90 });
+  }
+  a.hold = -1;
+}
+/** 快乐飞行模式, missed: the landing squashes whoever is under her. A blockable body slam, not the grab. */
+const FLIGHT_SLAM_REACH = 70;
+const flightSlams = new WeakMap<Skill, Skill>();
+function flightSlam(s: Skill): Skill {
+  let k = flightSlams.get(s);
+  if (!k) {
+    k = { ...s, type: 'heavy', damage: 33, knock: 220, react: { kind: 'stand', stun: .3 } };
+    flightSlams.set(s, k);
+  }
+  return k;
+}
+/** 快乐飞行模式: Hello, Happy World! in fireworks — 心's gold, 薰's violet, 育美's orange, 花音's sky, 米歇尔's pink. */
+const HHW_FIREWORK = ['#ffe14a', '#b48cff', '#ff9a3c', '#7fd0ff', '#ff6fc8'] as const;
+SCRIPTS['happy-flight'] = Object.assign(SCRIPTS['happy-flight'] ?? {}, { update: step_flight, noMelee: true, skipCount: true });
+
+/** 快乐火力模式 (黑衣人's exoskeleton suit, the one that flies): the cast locks the floor under the nearest foe,
+ *  a pale crosshair marks it, and four missiles climb off her shoulders out of the top of the frame, then dive
+ *  one after another round the mark. Walking off the mark is the answer; a guard catches each one. */
+const MISSILE_RISE = .3;
+const MISSILE_CLIMB = 1100;
+const MISSILE_DROP = 1250;
+/** Where each of the four lands round the mark. */
+const MISSILE_SPREAD = [-36, 22, -12, 42] as const;
+/** The blast on the floor: half-width, and how high off the floor a body still gets caught. */
+const MISSILE_BLAST = 54;
+const MISSILE_BLAST_H = 130;
+function step_missiles(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  a.emitted = true;
+  if (a.t < s.start) return;
+  const count = s.count ?? 4;
+  if (a.shots === 0) {
+    const foe = g.nearestEnemyTo(f, f.x);
+    a.anchor = clamp(foe ? foe.x : f.x + f.facing * 260, X_MIN, X_MAX);
+    // The mark stays until the last missile is down.
+    g.effect('misaki-reticle', a.anchor, FLOOR, '#ff6fc8', MISSILE_RISE + (count - 1) * (s.interval ?? .12) + .5, { radius: 62 });
+  }
+  while (a.shots < count && a.t >= s.start + a.shots * (s.interval ?? .12)) {
+    const i = a.shots++;
+    const sx = f.x - f.facing * 30 + (i % 2 ? 10 : -10), sy = f.y - 128;
+    g.effect('misaki-launch', sx, sy, '#ff6fc8', .4, { dir: f.facing, n: i });
+    g.projectiles.push({
+      owner: f.id, x: sx, y: sy,
+      vx: -f.facing * 40, vy: -MISSILE_CLIMB, life: 2, skill: s, color: '#ff6fc8',
+      radius: 14, size: s.size ?? 48, fx: 'happy-missile', attack: a, hit: new Set(), trail: [], age: 0, solid: false,
+      aim: clamp(a.anchor + MISSILE_SPREAD[i % MISSILE_SPREAD.length] * f.facing, X_MIN, X_MAX), face: f.facing,
+    });
+  }
+}
+function shot_missile(g: FightGame, p: Projectile, dt: number): boolean {
+  p.x += p.vx * dt;
+  p.y += p.vy * dt;
+  p.trail.push({ x: p.x, y: p.y });
+  if (p.trail.length > 9) p.trail.shift();
+  if (p.age < MISSILE_RISE) return true;
+  if (!p.locked) {
+    // Out of the top of the frame: the dive starts straight over its spot.
+    p.locked = true;
+    p.x = p.aim ?? p.x;
+    p.y = -40;
+    p.vx = 0;
+    p.vy = MISSILE_DROP;
+    p.trail.length = 0;
+    // The shadow on the floor grows as it comes down: the last read before it lands.
+    g.effect('misaki-fallshadow', p.x, FLOOR, '#2a0f24', (FLOOR + 26) / MISSILE_DROP, { radius: 34 });
+    return true;
+  }
+  const owner = g.fighterById(p.owner);
+  let boom = p.y >= FLOOR - 14;
+  if (!boom && owner) {
+    for (const o of g.fighters) {
+      if (!g.isEnemy(owner, o) || o.hp <= 0 || o.echo) continue;
+      if (Math.abs(p.x - o.x) < 34 + girth(o) + p.radius && Math.abs(p.y - (o.y - 83)) < 72) { boom = true; break; }
+    }
+  }
+  if (!boom) return true;
+  const y = Math.min(p.y, FLOOR - 14);
+  p.life = 0;
+  g.effect('misaki-boom', p.x, y, '#ff6fc8', .55, { radius: 54, n: Math.round(p.x) });
+  g.shake = Math.max(g.shake, 3);
+  if (!owner) return true;
+  for (const o of g.fighters) {
+    if (!g.isEnemy(owner, o) || o.hp <= 0 || o.echo) continue;
+    const near = Math.abs(o.x - p.x) < MISSILE_BLAST + 20 && (o.y - 83) > y - MISSILE_BLAST_H && (o.y - 83) < y + MISSILE_BLAST_H * .6;
+    if (near) hit(g, owner, o, p.skill, p, p.x);
+  }
+  return true;
+}
+SCRIPTS['happy-missile'] = Object.assign(SCRIPTS['happy-missile'] ?? {}, {
+  update: step_missiles, shot: shot_missile, noMelee: true, skipVolley: true, skipCount: true, trail: 0,
+});
+
+/** 请叫我本名 (「叫我本名」): she grabs the bear's head, a big costume-change cloud bursts over her, and the head
+ *  flies out of the top of it; when the cloud thins she is 美咲. The pull itself and the change are never drawn
+ *  on the sheet: the body is hidden from the burst to the end of the move (the O cells after the windup stay
+ *  plain bear poses). The head flies on an arc, bounces twice off the floor and rolls out; it catches each body
+ *  once on the way. */
+const HEAD_CLOUD = .75;
+const HEAD_LOFT = 460;
+const HEAD_REST = 34;
+const HEAD_BOUNCES = 2;
+function emit_bear_head(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  g.projectiles.push({
+    owner: f.id, x: f.x + f.facing * 20, y: f.y - 190,
+    vx: f.facing * (s.speed ?? 520), vy: -HEAD_LOFT, life: s.life ?? 2, skill: s, color: '#ff8fd4',
+    radius: 30, size: s.size ?? 90, fx: 'bear-head', attack: a, hit: new Set(), trail: [], age: 0, solid: false, bounces: 0,
+  });
+  g.effect('misaki-cloud', f.x, f.y, '#ffe3f2', HEAD_CLOUD, { follow: f.id, ox: 0, oy: 0, radius: 92 });
+  swapForm(g, f, s);
+}
+function shot_bear_head(_g: FightGame, p: Projectile, dt: number): boolean {
+  p.vy += GRAVITY * .8 * dt;
+  // Rolling: the floor slows it down.
+  if ((p.bounces ?? 0) >= HEAD_BOUNCES) p.vx *= Math.max(0, 1 - 2.2 * dt);
+  return false;
+}
+function after_bear_head(g: FightGame, p: Projectile): boolean {
+  if (p.y < FLOOR - HEAD_REST || p.vy <= 0) return false;
+  p.y = FLOOR - HEAD_REST;
+  const n = p.bounces ?? 0;
+  if (n < HEAD_BOUNCES) {
+    p.bounces = n + 1;
+    p.vy = -p.vy * .42;
+    p.vx *= .82;
+    g.effect('misaki-pop', p.x, FLOOR - 10, '#ffe3f2', .3, { radius: 20 });
+  } else p.vy = 0;
+  return false;
+}
+SCRIPTS['bear-head'] = Object.assign(SCRIPTS['bear-head'] ?? {}, {
+  emit: emit_bear_head, shot: shot_bear_head, after: after_bear_head, trail: 0, hitY: 90,
+  hideWhile: (a: Attack) => a.t >= a.skill.start - .02 && a.t < a.skill.duration,
+});
+
+/** 米歇尔乐园 (「米歇尔住在米歇尔乐园里，里面还住着好多米歇尔」): a parade of little 米歇尔 with balloons runs in
+ *  from behind her and right across the stage, then one giant one. The little ones are quiet ticks that never
+ *  stop anyone (a hop clears them); the giant one is too tall to hop and knocks down. */
+const LAND_SMALL_Y = 38;
+const LAND_BIG_Y = 120;
+/** The giant waits a beat after the last little one. */
+const LAND_BIG_GAP = .32;
+const landParts = new WeakMap<Skill, Skill[]>();
+function landPart(s: Skill, i: number, big: boolean): Skill {
+  let list = landParts.get(s);
+  if (!list) landParts.set(s, list = []);
+  let k = list[i];
+  if (!k) {
+    k = big
+      ? withGuard({ ...s, ...s.finale, finale: undefined }, i)
+      : withGuard({ ...s, finale: undefined, react: { kind: 'none', stun: 0 }, shake: 0, hitstop: 0, noSparks: true }, i);
+    list[i] = k;
+  }
+  return k;
+}
+function step_land(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  a.emitted = true;
+  if (a.t < s.start) return;
+  const count = s.count ?? 11;
+  const gap = s.interval ?? .1;
+  while (a.shots < count) {
+    const i = a.shots;
+    const big = i === count - 1;
+    const at = s.start + i * gap + (big ? LAND_BIG_GAP : 0);
+    if (a.t < at) break;
+    a.shots++;
+    const k = landPart(s, i, big);
+    // In from the edge behind her, so the whole parade crosses the stage.
+    const from = f.facing > 0 ? -60 : W + 60;
+    g.projectiles.push({
+      owner: f.id, x: from, y: FLOOR - (big ? LAND_BIG_Y : LAND_SMALL_Y),
+      vx: f.facing * (s.speed ?? 560) * (big ? .82 : 1 + (i % 3) * .06), vy: 0, life: s.life ?? 2.6, skill: k, color: '#ff8fd4',
+      radius: big ? 92 : 22, size: big ? 300 : s.size ?? 70, fx: big ? 'michelle-land-big' : 'michelle-land',
+      attack: a, hit: new Set(), trail: [], age: 0, solid: false, hue: big ? 0 : (i * 37) % 60 - 30, wave: i,
+    });
+  }
+}
+/** The parade spawns off the near edge, so it is kept as 'wide'; once a bear is past the far edge it is done. */
+function landGone(p: Projectile, margin: number): boolean {
+  if ((p.vx > 0 && p.x > W + margin) || (p.vx < 0 && p.x < -margin)) p.life = 0;
+  return p.life <= 0;
+}
+SCRIPTS['michelle-land'] = Object.assign(SCRIPTS['michelle-land'] ?? {}, {
+  update: step_land, noMelee: true, skipVolley: true, skipCount: true, trail: 0, wide: true, hitY: 64,
+  shot: (_g: FightGame, p: Projectile) => landGone(p, 70),
+});
+SCRIPTS['michelle-land-big'] = Object.assign(SCRIPTS['michelle-land-big'] ?? {}, {
+  trail: 0, wide: true, hitY: 210,
+  shot(g: FightGame, p: Projectile): boolean {
+    if (landGone(p, 220)) return true;
+    // Every stride shakes the floor a little.
+    if (Math.floor(p.age * 4) !== Math.floor((p.age - 1 / 120) * 4)) {
+      g.shake = Math.max(g.shake, 3);
+      g.effect('misaki-pop', p.x - Math.sign(p.vx) * 70, FLOOR - 14, '#ffe3f2', .35, { radius: 28 });
+    }
+    return false;
+  },
+});
+
+/** 不要跳过我的问题 (心: 「对不起……你是哪位？」 美咲: 「喂，不要跳过我的问题啊！」): the dash snapshots every
+ *  foe's move before it swings, so the clean-hit pose can tell whether they were still winding up. If so, that
+ *  move is cut: its cooldown fills back up and they hold still a moment under a 「喂！」. */
+const TSUKKOMI_STUN = .5;
+const tsukkomiSeen = new WeakMap<Fighter, { skill: Skill; index: number; t: number } | null>();
+function step_tsukkomi(g: FightGame, f: Fighter, a: Attack): void {
+  if (a.shots === 0) {
+    a.shots = 1;
+    g.effect('misaki-rainbow', f.x, f.y, '#ffffff', a.skill.duration + .25, { follow: f.id, ox: 0, oy: 0, dir: f.facing });
+  }
+  for (const o of g.fighters) {
+    if (!g.isEnemy(f, o)) continue;
+    const at = o.attack;
+    tsukkomiSeen.set(o, at ? { skill: at.skill, index: at.index, t: at.t } : null);
+  }
+}
+function hit_tsukkomi(g: FightGame, attacker: Fighter, defender: Fighter): boolean {
+  // Every clean hit is the paper fan coming down: 「啪！」.
+  g.effect('misaki-harisen', defender.x - attacker.facing * 6, defender.y - 120, '#ffffff', .5, { dir: attacker.facing });
+  g.shake = Math.max(g.shake, 4);
+  const was = tsukkomiSeen.get(defender);
+  tsukkomiSeen.delete(defender);
+  if (!was || was.skill.super || was.t >= was.skill.start || was.index <= 1) return false;
+  defender.cooldowns[was.index] = Math.max(defender.cooldowns[was.index], was.skill.cd * defender.cdMul);
+  defender.stun = Math.max(defender.stun, TSUKKOMI_STUN * defender.stunMul);
+  defender.vy = 0;
+  g.effect('misaki-tsukkomi', defender.x, defender.y - 210, attacker.data.color, .8, { follow: defender.id, ox: 0, oy: -210, dir: attacker.facing });
+  g.hitstop = Math.max(g.hitstop, .07);
+  return true;
+}
+SCRIPTS['tsukkomi'] = Object.assign(SCRIPTS['tsukkomi'] ?? {}, { update: step_tsukkomi, hit: hit_tsukkomi });
+
+/** 会长猜拳 (she won the rock-paper-scissors with 有咲 and became 花女's student-council president): the hand is
+ *  rolled on the first frame and shown over her head through the windup, so the foe can read it; then the
+ *  punch lands as rock (knockdown), scissors (root) or paper (a big shove). a.mode is the hand. */
+const JANKEN = { rock: 0, scissors: 1, paper: 2 } as const;
+const jankenParts = new WeakMap<Skill, Skill[]>();
+function jankenOf(s: Skill, hand: number): Skill {
+  let list = jankenParts.get(s);
+  if (!list) {
+    list = [
+      { ...s, damage: 55, knock: 260, react: { kind: 'knockdown', vy: -200, knocked: .7, stun: .4 } },
+      { ...s, damage: 30, knock: 0, root: 1.2, rootBreak: 2 },
+      { ...s, damage: 25, knock: 640, react: { kind: 'stand', stun: .32 } },
+    ];
+    jankenParts.set(s, list);
+  }
+  return list[hand];
+}
+function step_janken(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  if (a.mode == null) {
+    a.mode = Math.min(2, Math.floor(g.random() * 3));
+    g.effect('misaki-janken', f.x, f.y - 210, f.data.color, s.start + .35, { follow: f.id, ox: 0, oy: -210, n: a.mode });
+  }
+  if (a.emitted || a.t < s.start) return;
+  a.emitted = true;
+  const prev = a.skill;
+  a.skill = jankenOf(s, a.mode);
+  applyMelee(g, f, a);
+  a.skill = prev;
+  g.effect('misaki-jankenhit', f.x + f.facing * 92, f.y - 98, f.data.color, .55, { dir: f.facing, n: a.mode, hit: a.hit.size > 0 });
+  g.shake = Math.max(g.shake, a.hit.size ? 4 : 1);
+}
+SCRIPTS['janken'] = Object.assign(SCRIPTS['janken'] ?? {}, { update: step_janken, noMelee: true });
+void JANKEN;
+
+/** 黑衣人，拜托了 (弦卷家's men in black keep a suit for every occasion): they rush in from both sides, circle her
+ *  as a curtain and shove the ring back; when the curtain opens she is 米歇尔. She cannot be touched while she
+ *  changes, and she is not drawn behind the curtain. */
+function step_suits(g: FightGame, f: Fighter, a: Attack): void {
+  const s = a.skill;
+  if (a.shots === 0) {
+    a.shots = 1;
+    g.effect('misaki-suits', f.x, f.y, '#141418', s.duration + .05, { follow: f.id, ox: 0, oy: 0, dir: f.facing, t0: s.start });
+  }
+  f.invuln = Math.max(f.invuln, .05);
+  f.vx = 0;
+  // As the curtain opens, a short puff of the same costume cloud: 米歇尔 steps out of it.
+  if (a.shots === 1 && a.t >= s.duration - SUITS_REVEAL - .06) {
+    a.shots = 2;
+    g.effect('misaki-cloud', f.x, f.y, '#ffe3f2', .45, { follow: f.id, ox: 0, oy: 0, radius: 70, t0: .08 });
+  }
+}
+function flash_suits(g: FightGame, f: Fighter, a: Attack): void {
+  swapForm(g, f, a.skill);
+}
+SCRIPTS['black-suits'] = Object.assign(SCRIPTS['black-suits'] ?? {}, {
+  update: step_suits, flash: flash_suits,
+  hideWhile: (a: Attack) => a.t >= a.skill.start - .04 && a.t < a.skill.duration - SUITS_REVEAL,
+});
+
+/** 明明我才是米歇尔！ (美咲戒断症, PICO 2-6: a bag over her head, she sees every bear as 米歇尔 and goes for its
+ *  head — 「你为什么会在这啊！明明我才是米歇尔啊！」): a bagged lunge, then the foe wears 米歇尔's ears in her eyes
+ *  while she yanks at their "head" three times; the fourth tug tears off a bear's head and knocks them down. */
+const withdrawParts = new WeakMap<Skill, { yank: Skill; tear: Skill }>();
+function withdrawOf(s: Skill): { yank: Skill; tear: Skill } {
+  let w = withdrawParts.get(s);
+  if (!w) {
+    w = {
+      yank: { ...s, finale: undefined, knock: 0, react: { kind: 'pin', stun: .35, holdStill: true } },
+      tear: { ...s, ...s.finale, finale: undefined },
+    };
+    withdrawParts.set(s, w);
+  }
+  return w;
+}
+function step_withdrawal(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+  const s = a.skill;
+  a.emitted = true;
+  const mode = a.mode ?? WITHDRAW.lunge;
+  if (mode === WITHDRAW.lunge) {
+    if (a.t < s.start) return;
+    if (a.shots === 0) {
+      a.shots = -1;
+      g.effect('misaki-bagdash', f.x, f.y, '#ffffff', WITHDRAW_LUNGE + .15, { follow: f.id, ox: 0, oy: 0, dir: f.facing });
+    }
+    const o = foeAhead(g, f, s.range);
+    if (o && Math.abs(o.y - f.y) < 112 && o.invuln <= 0) {
+      a.mode = WITHDRAW.held;
+      a.hold = o.id;
+      a.tossAt = a.t;
+      a.shots = 0;
+      f.x = clamp(o.x - f.facing * 50, X_MIN, X_MAX);
+      o.vx = 0;
+      o.vy = 0;
+      o.knocked = 0;
+      o.attack = null;
+      o.stun = Math.max(o.stun, .4);
+      retainEscape(o, true);
+      g.hitstop = Math.max(g.hitstop, .06);
+      g.text('你为什么会在这啊！', f.x, f.y - 222, '#ffd0ec', 1, 17);
+      g.effect('misaki-bearify', o.x, o.y, '#ff8fd4', WITHDRAW_FIRST + WITHDRAW_YANKS * WITHDRAW_GAP + .25, { follow: o.id, ox: 0, oy: 0 });
+      return;
+    }
+    f.x = clamp(f.x + f.facing * (s.speed ?? 760) * dt, X_MIN, X_MAX);
+    if (a.t >= s.start + WITHDRAW_LUNGE || f.x <= X_MIN || f.x >= X_MAX) {
+      a.mode = WITHDRAW.done;
+      a.t = Math.max(a.t, s.duration - WITHDRAW_TAIL);
+    }
+    return;
+  }
+  if (mode !== WITHDRAW.held) return;
+  const o = g.fighterById(a.hold);
+  if (!o || o.hp <= 0) {
+    a.mode = WITHDRAW.done;
+    a.hold = -1;
+    a.t = Math.max(a.t, s.duration - WITHDRAW_TAIL);
+    return;
+  }
+  o.x = clamp(f.x + f.facing * 50, X_MIN, X_MAX);
+  o.y = FLOOR;
+  o.vx = 0;
+  o.vy = 0;
+  o.knocked = 0;
+  o.stun = Math.max(o.stun, .3);
+  o.facing = (-f.facing) as 1 | -1;
+  const parts = withdrawOf(s);
+  while (a.shots <= WITHDRAW_YANKS && a.t >= a.tossAt + WITHDRAW_FIRST + a.shots * WITHDRAW_GAP) {
+    const i = a.shots++;
+    const last = i === WITHDRAW_YANKS;
+    a.hit = new Set();
+    hit(g, f, o, last ? parts.tear : parts.yank, a);
+    a.liftAt = a.t;
+    g.effect('misaki-yank', o.x, o.y - 168, '#ffd0ec', .3, { n: i, dir: f.facing });
+    g.shake = Math.max(g.shake, last ? 9 : 3);
+    if (!last) continue;
+    // The head she tore off sails away over her shoulder.
+    g.effect('misaki-headfly', o.x, o.y - 170, '#ff8fd4', 1.1, { dir: -f.facing });
+    g.effect('misaki-tear', o.x + f.facing * 20, o.y - 245, '#ff6fc8', .75, { dir: f.facing });
+    g.flash = Math.max(g.flash, .08);
+    g.text('……我在干什么', f.x - f.facing * 40, f.y - 150, '#d8e0ff', 1.1, 16);
+    a.mode = WITHDRAW.done;
+    a.hold = -1;
+    a.t = Math.max(a.t, s.duration - WITHDRAW_TAIL);
+  }
+}
+SCRIPTS['withdrawal'] = Object.assign(SCRIPTS['withdrawal'] ?? {}, { update: step_withdrawal, noMelee: true, skipCount: true });
+
 
 SCRIPTS['milk'] = Object.assign(SCRIPTS['milk'] ?? {}, { spawn: 'milk' });
 SCRIPTS['bag'] = Object.assign(SCRIPTS['bag'] ?? {}, { spawn: 'bag' });

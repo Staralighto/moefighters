@@ -10,6 +10,7 @@ import { bloodSparkles, drawSakikoFx, drawShiroFloor } from './sakikoFx.ts';
 import { drawMikuFx } from './mikuFx.ts';
 import { drawChieriFx } from './chieriFx.ts';
 import { drawYomogiFx } from './yomogiFx.ts';
+import { drawMisakiFx, drawMisakiShot } from './misakiFx.ts';
 import { drawStatusEffect } from './statusMarks.ts';
 import { drawShizukuFx, drawShizukuShot } from './shizukuFx.ts';
 
@@ -994,6 +995,8 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
   if (drawChieriFx(ctx, e, liteFx)) return;
   // 矢仓蓬咲 too.
   if (drawYomogiFx(ctx, e, liteFx, images)) return;
+  // 奥泽美咲 / 米歇尔 too.
+  if (drawMisakiFx(ctx, e, liteFx, images)) return;
   // 异常: `<mark>@apply` / `<mark>@expire`, drawn by the status table.
   if (drawStatusEffect(ctx, e)) return;
   // 四宫宁月's accidents keep their own module too.
@@ -6158,6 +6161,7 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   // 抹茶芭菲: the standing parfait is drawn by its effect, never as a shot.
   if (p.fx === 'parfait') return;
   if (drawShizukuShot(ctx, p, images, liteFx)) return;
+  if (drawMisakiShot(ctx, p, images, liteFx)) return;
   ctx.save();
   // 火的故事: the arrow art rides ten pixels above its flight band so the flame head reads on the body.
   if (p.fx === 'fuga') ctx.translate(0, -10);

@@ -13,23 +13,25 @@ function idlePortraits(): Plugin {
     name: 'idle-portraits',
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
-        const match = /^\/sprites\/([a-z0-9-]+)\/idle\.png(?:\?.*)?$/.exec(req.url ?? '');
+        const match = /^\/sprites\/([a-z0-9-]+)\/(?:idle\.png|([a-z0-9-]+)-idle\.png)(?:\?.*)?$/.exec(req.url ?? '');
         if (!match || (req.method !== 'GET' && req.method !== 'HEAD')) return next();
         const id = match[1];
+        const sheet = match[2] ?? 'common';
         try {
-          const file = fileURLToPath(new URL(`./public/sprites/${id}/common.png`, import.meta.url));
+          const file = fileURLToPath(new URL(`./public/sprites/${id}/${sheet}.png`, import.meta.url));
           const mtime = statSync(file).mtimeMs;
-          let crop = crops.get(id);
+          const key = id + '/' + sheet;
+          let crop = crops.get(key);
           if (!crop || crop.mtime !== mtime) {
             crop = { mtime, image: sharp(file).extract({ left: 0, top: 0, width: 256, height: 256 }).png().toBuffer() };
-            crops.set(id, crop);
+            crops.set(key, crop);
           }
           const image = await crop.image;
           res.setHeader('Content-Type', 'image/png');
           res.setHeader('Cache-Control', 'no-cache');
           res.end(req.method === 'HEAD' ? undefined : image);
         } catch {
-          crops.delete(id);
+          crops.delete(id + '/' + sheet);
           res.statusCode = 404;
           res.end();
         }

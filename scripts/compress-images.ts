@@ -60,9 +60,12 @@ await pool(files, 4, async file => {
   if (rel.includes('/sprites/')) {
     await sharp(file).resize({ width: Math.max(1, Math.round((meta.width ?? 2) / 2)) }).webp({ quality: LITE_Q, effort: 5, alphaQuality: 80 }).toFile(file.slice(0, -4) + '-lite.webp');
   }
-  if (!rel.endsWith('/common.png')) return;
-  if ((meta.width ?? 0) < IDLE || (meta.height ?? 0) < IDLE) return;
-  await sharp(file).extract({ left: 0, top: 0, width: IDLE, height: IDLE }).webp(near).toFile(file.slice(0, -'common.png'.length) + 'idle.webp');
+  // Standing sheets only: 8 columns wide. common.png stays idle.webp; another body (michelle.png) is <name>-idle.webp.
+  if (!rel.includes('/sprites/') || (meta.width ?? 0) < IDLE * 8 || (meta.height ?? 0) < IDLE) return;
+  const idleFile = rel.endsWith('/common.png')
+    ? file.slice(0, -'common.png'.length) + 'idle.webp'
+    : file.slice(0, -4) + '-idle.webp';
+  await sharp(file).extract({ left: 0, top: 0, width: IDLE, height: IDLE }).webp(near).toFile(idleFile);
 });
 
 const mb = (n: number) => (n / 1024 / 1024).toFixed(1) + 'MB';

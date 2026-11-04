@@ -263,6 +263,8 @@ export type Op =
   /** mark: the status graphic this mod wears, when one kind serves two looks (完全复活's halo). */
   | { op: 'mod'; kind: BuffKind; time?: number; v?: number; set?: boolean; max?: boolean; mark?: string }
   | { op: 'form'; king?: boolean }
+  /** 一人二役 (奥泽美咲): flip to the other of the two CharacterData.forms. */
+  | { op: 'swap' }
   | { op: 'repel'; range?: number; push: number; stun?: number }
   | { op: 'heal'; hp: number }
   | { op: 'fx'; type?: string; life: number; y?: number; radius?: number; dir?: boolean; floor?: boolean; color?: string; flash?: number; announce?: { color: string; life: number; size: number; y: number } }
@@ -294,6 +296,45 @@ export type ViewSpec =
       worldScale?: number;
       /** Pixels to draw the whole cell above the fighter origin. Positive is up. */
       lift?: number };
+
+/** 一人二役: how one of the two forms plays. Multipliers are 1 when unset. */
+export interface FormTune {
+  /** Shown in the movelist and on the swap. */
+  name: string;
+  /** Walk multiplier. */
+  speed?: number;
+  /** Damage dealt multiplier. */
+  dmgDealt?: number;
+  /** Damage taken multiplier (grabs and supers too). */
+  dmgTaken?: number;
+  /** Attack-speed multiplier on J / K (ground and air): their move clock and their cooldowns run at this rate. */
+  atk?: number;
+  /** A big body: this many pixels added to the half-width that melee reach and shots test against. */
+  girth?: number;
+  /** Jump launch-velocity multiplier (the height goes with its square). */
+  jump?: number;
+  /** Back-dodge cooldown multiplier. */
+  dodgeCd?: number;
+  /** Seconds of extra recovery when a J / K ends without touching anyone. Hits are untouched. */
+  whiff?: number;
+}
+
+/** 一人二役: the second form swaps the whole move list and both sheets; the base form is the
+ *  character's own skills and view. Fighter.form says which one is up (0 base, 1 alt). */
+export interface FormPair {
+  base: FormTune;
+  alt: FormTune & {
+    /** Exactly six: J K U I O L. Cooldowns are kept per form. */
+    skills: Skill[];
+    common: string;
+    special: string;
+    /** This form's own body height and lift; unset keeps the view's. */
+    height?: number;
+    lift?: number;
+    /** This form's special-sheet playback scale; unset keeps the view's. */
+    specialScale?: number;
+  };
+}
 
 export interface CharacterData {
   id: string;
@@ -344,6 +385,8 @@ export interface CharacterData {
     /** Internal cooldown between two procs. */
     cooldown: number;
   };
+  /** 一人二役 (奥泽美咲): two forms, each with its own six moves and sheets. Unset: one form. */
+  forms?: FormPair;
   /** 狂化 (夢はパワー！): how this character's frenzy behaves. Soyo stays on the arcade defaults
    *  (rate 1.55, J/K cooldowns ×.6, the jab-chain auto-heavy) by leaving this unset. */
   frenzy?: {

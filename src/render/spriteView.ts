@@ -167,6 +167,8 @@ export class SpriteView implements FighterView {
     private readonly specialScale?: number,
     private readonly worldScale?: number,
     private readonly lift = 0,
+    /** 一人二役: the alt form's common and special sheets. */
+    private readonly alt?: { common: string; special: string; height?: number; lift?: number; specialScale?: number },
   ) {}
 
   /** The select screen only needs the idle cell. A missing crop or sheet is "ready" so the block figure can stand in. */
@@ -188,7 +190,11 @@ export class SpriteView implements FighterView {
     // 无敌仓库大王: one 256×256 picture stands in for the whole body while the form runs.
     // The picture is a single cell, so the clip reads (0,0) and no grid math applies.
     const boxed = f.king && !!this.box && clip.sheet === 'common';
+    // 一人二役: a move keeps the sheet of the form it was cast in; otherwise the form that is up.
+    const alt = this.alt && (f.attack?.form ?? f.form) === 1 ? this.alt : undefined;
     const src = boxed ? this.box
+      : alt && clip.sheet === 'common' ? alt.common
+      : alt && clip.sheet === 'special' ? alt.special
       : f.king && clip.sheet === 'common' && this.king
       ? this.king
       : clip.sheet === 'common' ? this.common
@@ -206,7 +212,8 @@ export class SpriteView implements FighterView {
     const im = stand?.naturalWidth ? stand : lite?.naturalWidth ? lite : sheetIm;
     if (!im || !im.naturalWidth) { this.fallback.draw(ctx, f, x, y, alpha, undefined, outline); return; }
     const k = im === lite ? LITE_SCALE : 1;
-    const h = src === this.king ? this.height * this.kingScale : this.height;
+    const h = src === this.king ? this.height * this.kingScale : alt?.height ?? this.height;
+    const lift = alt?.lift ?? this.lift;
     // Bake the cell at the resolution this canvas rasterises at (device pixels in the arena,
     // the portrait's own scale on the select screen), so the blit below is 1:1 instead of a
     // resample. hypot of the x basis is the scale under any entry rotation or skew; the entry
@@ -219,7 +226,7 @@ export class SpriteView implements FighterView {
     const cs = CELL * k;
     ctx.save();
     try {
-      ctx.translate(Math.round(x), Math.round(y) - this.lift);
+      ctx.translate(Math.round(x), Math.round(y) - lift);
       // 微笑大回旋: the cell is a front-facing 大字. Don't mirror it; spin that pose three turns on the screen.
       // Frozen ghosts keep their stamped cell; only the live fighter spins.
       const cartwheel = !pose && f.attack?.skill.fx === 'cartwheel';
@@ -240,7 +247,7 @@ export class SpriteView implements FighterView {
       if (!boxed && clip.ox) ctx.translate(-Math.round(clip.ox * h / CELL), 0);
       // 必杀表、超必杀表单独缩放时绕脚线，脚不动。一列自己的 scale 优先于整表。
       const sheetScale = boxed ? undefined
-        : clip.sheet === 'special' ? (clip.scale ?? this.specialScale)
+        : clip.sheet === 'special' ? (clip.scale ?? alt?.specialScale ?? this.specialScale)
         : clip.sheet === 'world' ? (clip.scale ?? this.worldScale)
         : undefined;
       if (sheetScale) {

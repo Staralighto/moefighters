@@ -1,6 +1,6 @@
 import type { CharacterData } from '../data/types.ts';
 import type { FightGame } from '../game/game.ts';
-import type { Fighter } from '../game/fighter.ts';
+import { skillsOf, type Fighter } from '../game/fighter.ts';
 import { assetUrl, assignFirst } from '../assets/loader.ts';
 import { guideIndex, skillHTML } from './select.ts';
 import { applyTouchIcons } from './touchIcons.ts';
@@ -41,6 +41,9 @@ let skillRows: HTMLElement[] = [];
 let skillCharges: (HTMLElement | null)[] = [];
 let cooldownTags: (HTMLElement | null)[] = [];
 let guideFighter = 0;
+/** 一人二役: the guide fighter's pad, and which of their forms the movelist shows. */
+let guidePad = 0;
+let guideForm = 0;
 /** Challenge stages swap the ROUND counter for the stage number; empty keeps the round. */
 let roundLabel = '';
 /** Battle movelist text density (docs/skill-desc-guide.md §1): 1 names only, 2 the standalone
@@ -149,7 +152,8 @@ export function updateHUD(g: FightGame): void {
   setText($m('timer'), g.mode === 'training' ? '∞' : String(Math.max(0, Math.ceil(g.time))));
   setText($m('round'), roundLabel || 'ROUND ' + g.round);
   const me = g.fighters[guideFighter] ?? g.fighters[0];
-  const ultCost = me.data.skills[5]?.cost ?? 100;
+  if ((me.form ?? 0) !== guideForm) showGuideMoves(me.data.forms ? { ...me.data, skills: skillsOf(me) } : me.data, me.form ?? 0);
+  const ultCost = skillsOf(me)[5]?.cost ?? 100;
   const cdMsg = (i: number) => {
     const cd = me.cooldowns[i];
     return cd > 0 ? cd.toFixed(1) : i === 5 && me.energy < ultCost ? Math.floor(me.energy) + ' / ' + ultCost : '';
@@ -229,14 +233,21 @@ export function showEnd(title: string, stats: string): void {
 
 export function hideEnd(): void { $('end').hidden = true; }
 
-export function setBattleGuide(characters: CharacterData[], controllers: (number | null)[]): void {
-  guideFighter = Math.min(guideIndex(controllers), Math.max(0, characters.length - 1));
-  $('battle-skills').innerHTML = skillHTML(characters[guideFighter], controllers[guideFighter] ?? 0);
-  applyTouchIcons(characters[guideFighter]);
+/** Writes the battle movelist and the touch icons for one move list (一人二役: the form that is up). */
+function showGuideMoves(c: CharacterData, form: number): void {
+  guideForm = form;
+  $('battle-skills').innerHTML = skillHTML(c, guidePad);
+  applyTouchIcons(c);
   // The movelist was just rebuilt: re-index its rows so the 14Hz loop stops re-querying.
   skillRows = [...document.querySelectorAll<HTMLElement>('#battle-skills .skill')];
   skillCharges = skillRows.map(el => el.querySelector<HTMLElement>('.charge i'));
   cooldownTags = skillRows.map(() => null);
+}
+
+export function setBattleGuide(characters: CharacterData[], controllers: (number | null)[]): void {
+  guideFighter = Math.min(guideIndex(controllers), Math.max(0, characters.length - 1));
+  guidePad = controllers[guideFighter] ?? 0;
+  showGuideMoves(characters[guideFighter], 0);
   // Every match opens on the compact tier; the button is there when someone reaches for detail.
   skillTier = 2;
   paintSkillTier();

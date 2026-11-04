@@ -147,14 +147,15 @@ interface SlotView {
 /** Movelist card: the key chip, the name, and all three text tiers (docs/skill-desc-guide.md).
  *  Which tiers show is CSS: the select screen pins tier 3, the battle table picks via data-tier.
  *  Both the brief and the detail carry the full mechanic set; only the numbers differ. */
-export function skillHTML(c: CharacterData, pad = 0, touch = isTouch()): string {
+export function skillHTML(c: CharacterData, pad = 0, touch = isTouch(), form = ''): string {
   const keys = touch ? TOUCH_KEYS : PAD_KEYS[pad] ?? PAD_KEYS[0];
   const swap = (t: string): string => touch ? t.replaceAll('J / K', '轻 / 重') : pad ? t.replaceAll('J / K', '1 / 2') : t;
   return c.skills.map((s, i) => {
     const dmg = (s.count ? s.count + ' × ' : '') + s.damage + ' 基础伤害';
     const cost = s.super ? ' · ' + (s.cost ?? 100) + ' 气' : s.cd ? ' · ' + s.cd + 's 冷却' : '';
     // The ultimate's 必杀 tag rides in <small>, which the battle table already hides.
-    const tag = s.super ? '<small class="ult-tag">必杀</small>' : '';
+    // 一人二役: on the select screen each card also names its form, in the same chip.
+    const tag = (form ? `<small class="ult-tag">${form}</small>` : '') + (s.super ? '<small class="ult-tag">必杀</small>' : '');
     return `<div class="skill ${s.super ? 'super' : ''}"><kbd>${keys[i]}</kbd><div><b>${s.name}${tag}</b><p class="brief">${swap(s.brief)}</p><p class="nums">${dmg}${cost}</p><p class="detail">${swap(s.detail)}</p></div>${s.super ? '<span class="charge" aria-hidden="true"><i></i></span>' : ''}</div>`;
   }).join('');
 }
@@ -1012,7 +1013,9 @@ export class SelectScreen {
     const key = `${c.id}|${scheme}|${touch}`;
     if (key !== this.skillKey) {
       this.skillKey = key;
-      $('skills').innerHTML = skillHTML(c, scheme, touch);
+      $('skills').innerHTML = c.forms
+        ? skillHTML(c, scheme, touch, c.forms.base.name) + skillHTML({ ...c, skills: c.forms.alt.skills }, scheme, touch, c.forms.alt.name)
+        : skillHTML(c, scheme, touch);
     }
   }
 

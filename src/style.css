@@ -519,7 +519,8 @@ footer { display: flex; justify-content: space-between; gap: 16px; color: var(--
 /* 名册：选中时卡片抬到邻居上层再弹，光效全收在卡片里面（内描边一闪 + 一道斜扫光），缩略图原地跳一下。
    被拒绝的点击摇头。悬停和聚焦也抬层，放大的卡片不会被后面的卡压住。 */
 .character:hover, .character:focus, .character.picked { z-index: 2; }
-.character.picked { animation: card-pop .42s cubic-bezier(.34, 1.7, .5, 1); }
+/* The pop owns transform until it ends; a live hover/press transition makes Chrome reject compositing. */
+.character.picked { animation: card-pop .42s cubic-bezier(.34, 1.7, .5, 1); transition-property: border-color, box-shadow, background-color; }
 .character.picked::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
   box-shadow: inset 0 0 0 2px var(--c, var(--p1-ink));
   animation: card-sheen .5s ease-out forwards; }
@@ -1245,16 +1246,17 @@ header nav .icon-btn, header nav summary { border-radius: 999px; }
 /* 顶光压在底色上、头像下面。 */
 .face::before { content: ""; position: absolute; inset: 0; background: radial-gradient(70% 45% at 50% 0%, rgb(255 255 255 / 16%), transparent 100%); }
 .face-cut { display: contents; }
-.face img { position: relative; display: block; width: 100%; height: 100%; object-fit: contain; opacity: 0; transform-origin: 50% 45%; transition: opacity .25s ease, scale .3s ease; }
+.face img { --face-zoom: 1; position: relative; display: block; width: 100%; height: 100%; object-fit: contain; opacity: 0; transform-origin: 50% 45%; transition: opacity .25s ease, scale .3s ease; }
 .character[data-face="ready"] .face img { opacity: 1; }
 /* 头像动效只许放大、不许位移：照片框裁掉溢出，放大时脖子切口始终压在框外；一旦上下平移，切口就露出来。
    小人卡的 thumb-hop（原地上跳）因此不用在这里。 */
-.character:hover .face img { scale: 1.05; }
+.character:hover .face img { --face-zoom: 1.05; scale: var(--face-zoom); }
 /* 选中＝按快门：镜头往脸上推一下再回位，推到最近时整张照片闪亮一下（闪光灯），随后落回。
    头像画得很满，藏在脑后的光效会被头发挡住，所以闪光直接打在照片上。
-   关键帧不写起止，起止取当前值，悬停中的 1.05 不会先跳回 1。 */
+   悬停过渡用 scale，快门用 transform，避免触屏合成的 hover 与点击争用 scale 而回退主线程。
+   除掉悬停倍率，峰值仍是 1.13；关键帧不写起止，回到原来的悬停状态。 */
 .character.picked .face img { animation: face-shutter .45s cubic-bezier(.3, .7, .3, 1); }
-@keyframes face-shutter { 25% { scale: 1.13; filter: brightness(1.28); } 60% { filter: none; } }
+@keyframes face-shutter { 25% { transform: scale(calc(1.13 / var(--face-zoom))); filter: brightness(1.28); } 60% { filter: none; } }
 /* 撕票线 + 两端缺口。缺口是在卡片上真正挖空（mask），透出卡片后面的任何背景，选中描边也一起被咬断。
    --tear 是撕票线离卡片底边的距离 = 卡片下内边距 7 + 名字行高 + 名字上内边距 5，手机字号小，单独覆盖。
    代价：mask 也会裁掉卡片外侧的阴影和选中光晕，头像模式下卡片只靠描边和上浮表达状态。 */

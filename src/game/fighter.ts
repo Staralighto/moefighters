@@ -1,4 +1,4 @@
-import type { CharacterData, RootLevel, Skill } from '../data/types.ts';
+import type { CharacterData, FormTune, RootLevel, Skill } from '../data/types.ts';
 import { cheerThief, type Mod } from './mods.ts';
 import { COMBO_DECAY, COMBO_ESCAPE, FLOOR, clamp } from './constants.ts';
 
@@ -33,6 +33,10 @@ export interface Attack {
   anchor: number;
   /** This cast cut in (escape or ahead of another input). Its hit ignores invuln and armour. */
   pierce?: boolean;
+  /** 一人二役: the form the move was cast in, so its cells stay on that form's sheet after a swap. */
+  form?: number;
+  /** FormTune.whiff: the missed J / K has already been held for its extra recovery. */
+  whiffed?: boolean;
   /** Per-move phase. 剑道三连: 0 pending, 1 tap, 2 stance, 3 waves. 请你喝茶: 0 lunge, 1 caught, 2 whiff. */
   mode?: number;
 }
@@ -231,6 +235,10 @@ export interface Fighter {
   master?: number;
   /** 录音: the tape an echo performs. Echoes only. */
   tape?: RecTape;
+  /** 一人二役 (CharacterData.forms): 0 is the base form, 1 the alt. Always 0 without forms. */
+  form: number;
+  /** 一人二役: the cooldowns of the form that is not up. They keep ticking; a swap trades the two arrays. */
+  formCds: number[];
   /** Scalar buffs. The same-named timers below are a projection of this list. */
   mods: Mod[];
   /** 这次不算: hp actually lost to hit(), stamped with the game clock. Only hit() writes it; entries
@@ -240,9 +248,25 @@ export interface Fighter {
 
 export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braceFx', 'ban', 'frail', 'recLeft', 'rainbowCd', 'parry', 'parryLock', 'parryOrbCd'] as const;
 
-/** Meter cap for a character: the super's cost, but never below the arcade 100. */
+/** Meter cap for a character: the super's cost, but never below the arcade 100. Two forms: the dearer one. */
 export function meterCap(data: CharacterData): number {
-  return Math.max(100, data.skills[5]?.cost ?? 100);
+  return Math.max(100, data.skills[5]?.cost ?? 100, data.forms?.alt.skills[5]?.cost ?? 100);
+}
+
+/** 一人二役: the six moves of the form that is up. Every kernel read of a character's list goes through here. */
+export function skillsOf(f: Fighter): Skill[] {
+  return f.form && f.data.forms ? f.data.forms.alt.skills : f.data.skills;
+}
+
+/** The half-width hits test against: 38 for everyone, wider for a big form (FormTune.girth). */
+export function girth(f: Fighter): number {
+  return formTune(f)?.girth ?? 0;
+}
+
+/** 一人二役: the tune of the form that is up, or undefined for a one-form character. */
+export function formTune(f: Fighter): FormTune | undefined {
+  const p = f.data.forms;
+  return p ? (f.form ? p.alt : p.base) : undefined;
 }
 
 export function makeFighter(
@@ -273,6 +297,7 @@ export function makeFighter(
     recLeft: 0, recTape: [], recMove: 0,
     gauge: 0,
     heartPhase: 0, heartBeats: 0, heartRest: 0, shadowRig: 0,
+    form: 0, formCds: [0, 0, 0, 0, 0, 0],
     mods: [],
     dmgLog: [],
   };
