@@ -374,6 +374,13 @@ function veilMiss(g: FightGame, defender: Fighter, skill: Skill): boolean {
 /** 舞台装置: this share of damage taken by the device is borne by its summoner. */
 const APPARATUS_SHARE = .8;
 
+/** Result-screen ledger: actual enemy hp loss, and the hit that eliminated the team. */
+function noteBlow(g: FightGame, attacker: Fighter, defender: Fighter, move: string, lost: number): void {
+  if (lost <= 0 || !g.isEnemy(attacker, defender)) return;
+  g.dealt[attacker.team] = (g.dealt[attacker.team] ?? 0) + lost;
+  if (defender.hp <= 0 && !defender.minion && !defender.echo && !g.teamAlive(defender.team)) g.roundFin[defender.team] = move;
+}
+
 /** 状态不好，这次不算！: one line in the ledger. Only hit() calls it, so the refund sees every source once. */
 function noteDamage(g: FightGame, f: Fighter, lost: number): void {
   if (lost <= 0) return;
@@ -798,7 +805,9 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   if (defender.apparatus && defender.summoner != null) {
     const owner = g.fighterById(defender.summoner);
     if (owner && owner.hp > 0) {
+      const before = owner.hp;
       owner.hp = clamp(owner.hp - damage * APPARATUS_SHARE, 0, owner.data.hp);
+      noteBlow(g, attacker, owner, skill.name, before - owner.hp);
       deviceHpLoss = damage * (1 - APPARATUS_SHARE);
     }
   }
@@ -826,16 +835,19 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     attacker.vainDmg = 0;
     attacker.vainEnergy = 0;
   }
+  noteBlow(g, attacker, defender, skill.name, hpBefore - defender.hp);
   // 潜在表明: a quiet cut of the damage dealt comes back as healing, capped at max health.
   // 起死开战: the window's lifesteal mod rides on top of the challenge-deck field.
   const steal = attacker.lifesteal + lifestealOf(attacker);
   if (steal > 0 && damage > 0) attacker.hp = Math.min(attacker.data.hp, attacker.hp + damage * steal);
   // 竟敢无视灯: melee hits pain the attacker back — pure hp loss, no stagger, no fx, it can kill.
   const attackerFloor = has(attacker, 'undying') ? 1 : 0;
+  const beforeReflect = attacker.hp;
   if (defender.thorns > 0 && skill.type !== 'projectile' && damage > 0) attacker.hp = Math.max(attackerFloor, attacker.hp - damage * defender.thorns);
   // 我可是很脆弱的哦: every source pays back a share, projectiles and grabs included.
   const reflect = reflectAmount(defender);
   if (reflect > 0 && damage > 0) attacker.hp = Math.max(attackerFloor, attacker.hp - damage * reflect);
+  noteBlow(g, defender, attacker, '', beforeReflect - attacker.hp);
   const rawKnock = skill.knock ?? (skill.type === 'light' ? 95 : skill.super ? 340 : 235);
   const knock = blocked && !skill.knockOnBlock ? 75 : rawKnock;
   if (!quiet && !SCRIPTS[skill.fx]?.noKnock && defender.invuln <= 0 && !endured) defender.vx = dir * knock * (braced || superBrace ? .5 : 1);

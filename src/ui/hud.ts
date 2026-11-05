@@ -5,6 +5,8 @@ import { assetUrl, assignFirst } from '../assets/loader.ts';
 import { guideIndex, skillHTML } from './select.ts';
 import { applyTouchIcons } from './touchIcons.ts';
 import { CONTROLS } from '../game/constants.ts';
+import type { MatchReport } from '../game/report.ts';
+import { hideReport, showReport } from './report.ts';
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
 const elCache = new Map<string, HTMLElement>();
@@ -224,14 +226,25 @@ export function showBanner(title: string, sub = ''): void {
   $('banner').classList.toggle('super-call', sub.includes('SUPER'));
 }
 
-export function showEnd(title: string, stats: string): void {
-  $('end').hidden = false;
+/** 结算层。带 report 时画结算海报，不带时（掉线、对手离开）只写标题和一行字。 */
+export function showEnd(title: string, stats: string, report?: MatchReport | null): void {
+  const end = $('end');
+  end.classList.toggle('has-report', !!report);
   $('end-title').textContent = title;
   $('end-info').textContent = stats;
+  end.hidden = false;
+  // 结算海报清屏：触屏按键、HUD 一并收起，海报上不叠任何战斗控件。
+  document.body.classList.toggle('end-up', !!report);
+  if (report) showReport($('end-report'), report);
+  else hideReport($('end-report'));
   showBanner('');
 }
 
-export function hideEnd(): void { $('end').hidden = true; }
+export function hideEnd(): void {
+  $('end').hidden = true;
+  document.body.classList.remove('end-up');
+  hideReport($('end-report'));
+}
 
 /** Writes the battle movelist and the touch icons for one move list (一人二役: the form that is up). */
 function showGuideMoves(c: CharacterData, form: number): void {

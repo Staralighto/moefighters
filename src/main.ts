@@ -12,6 +12,9 @@ import { cycleMusicOrder, fightShuffle, musicEnabled, musicOrder, musicTitle, mu
 import { matchName, parseRosterThumb, SelectScreen, type MatchSetup } from './ui/select.ts';
 import { bestLabel, challengeName, deckLabel, foeCount, hideBuffPicker, readBest, readRun, rollEnemies, showBuffPicker, stageSetup, writeBest, writeRun, type ChallengeKind, type ChallengeRun } from './ui/challenge.ts';
 import { cycleSkillTier, hideEnd, setBattleGuide, setRoundLabel, showBanner, showEnd, updateHUD } from './ui/hud.ts';
+import { preloadReport } from './ui/report.ts';
+import { recordMatchClear, renderStampBook, setStampLayout, setStripOn, stampLayout, stampPoster, stripOn, type StampLayout } from './ui/stamps.ts';
+import { buildReport, humanTeam } from './game/report.ts';
 import { setIconBtn } from './ui/iconBtn.ts';
 import { hideVersus, showVersus, versusHeld, versusProgress, versusSides } from './ui/versusCut.ts';
 import { mountSegThumbs } from './ui/segThumb.ts';
@@ -295,6 +298,8 @@ async function startGame(setup: MatchSetup): Promise<void> {
     : matchName(setup);
   showVersus(versusSides(setup.characters, setup.mode === 'team'), setup.stage.name, versusLabel, previewViews, k => sfx.ui(k));
   const cast = withGuests(setup.characters);
+  // Result-screen faces and glyphs ride the versus load, so the end of the match shows them at once.
+  preloadReport(setup.characters);
   const srcs = fightSources(setup.characters, setup.stage);
   const lite = litePlan(cast, setup.stage);
   const need = lite?.need ?? srcs;
@@ -345,6 +350,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
   $('wide-exit').hidden = true;
   setIconBtn($('rematch'), '再来一局 ↻');
   $('rematch').hidden = false;
+  $('end-book').hidden = true;
   setIconBtn($('reselect'), setup.mode === 'challenge' ? '返回选人' : '重新选人');
 
   const lockRng = setup.lock ? new Rng(setup.lock.seed) : null;
@@ -374,17 +380,18 @@ async function startGame(setup: MatchSetup): Promise<void> {
         const f = game.fighters[me];
         noteEnd();
         showEnd(game.winnerTeam === me ? '你赢了' : '你输了',
-          f ? `${game.wins[me]} : ${game.wins[1 - me]} · ${f.data.name} 最高 ${game.maxCombo[me]} 连击 · ${game.totalHits[f.id]} 次命中` : stats);
+          f ? `${game.wins[me]} : ${game.wins[1 - me]} · ${f.data.name} 最高 ${game.maxCombo[me]} 连击 · ${game.totalHits[f.id]} 次命中` : stats,
+          buildReport(game, me, true));
         return;
       }
       // Mirror matches share a name: say who won from this seat. The guest reads its own line.
       const g = game;
       const guest = g.fighters[1];
       const guestStats = guest ? `${g.wins[1]} : ${g.wins[0]} · ${guest.data.name} 最高 ${g.maxCombo[1]} 连击 · ${g.totalHits[guest.id]} 次命中` : stats;
-      const end: NetEnd = { title, stats, win: g.winnerTeam, guestStats };
+      const end: NetEnd = { title, stats, win: g.winnerTeam, guestStats, guestReport: buildReport(g, 1, true) };
       g.netEnd = end;
       noteEnd();
-      showEnd(g.winnerTeam === 0 ? '你赢了' : g.winnerTeam === 1 ? '你输了' : title, stats);
+      showEnd(g.winnerTeam === 0 ? '你赢了' : g.winnerTeam === 1 ? '你输了' : title, stats, buildReport(g, 0, true));
     },
     onPause: paused => {
       setIconBtn($('pause'), paused ? '继续 ESC' : '暂停 ESC');
@@ -404,7 +411,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
     beginNet(setup.online, wire, {
       hud: updateHUD,
       banner: showBanner,
-      end: (title, stats) => { showEnd(title, stats); if (title === '对手已离开' || title === '连接已断开') $('rematch').hidden = true; },
+      end: (title, stats, report) => { showEnd(title, stats, report); if (title === '对手已离开' || title === '连接已断开') $('rematch').hidden = true; },
       quality: text => { $('battle-mode').textContent = text ? label + ' · ' + text : label; },
       again: (state, seed) => {
         if (state === 'go') { rematchOnline(seed); return; }
@@ -453,7 +460,10 @@ function startChallengeStage(): void {
 
 function onFightEnd(title: string, stats: string): void {
   if (!game || game.mode !== 'challenge' || !challenge) {
-    showEnd(title, stats);
+    const report = game ? buildReport(game, humanTeam(game)) : null;
+    const first = game && report ? recordMatchClear(game, report) : false;
+    $('end-book').hidden = !first;
+    showEnd(title, stats, report);
     return;
   }
   const kind = challenge.kind;
@@ -467,7 +477,7 @@ function onFightEnd(title: string, stats: string): void {
       writeBest(kind, stage);
       challenge.newBest = true;
     }
-    showEnd('第 ' + stage + ' 关 完成', record);
+    showEnd('第 ' + stage + ' 关 完成', record, { ...buildReport(game, 0), tour: { stage, best: readBest(kind), newBest: !!challenge.newBest && readBest(kind) === stage } });
     setIconBtn($('rematch'), '下一关 ▶');
     setIconBtn($('reselect'), '返回休息');
     challenge.stage = stage + 1;
@@ -477,7 +487,8 @@ function onFightEnd(title: string, stats: string): void {
     challenge.armed = false;
     writeRun(kind, challenge);
   } else {
-    showEnd('挑战结束', (challenge.newBest ? '新纪录！' : '') + `止步第 ${stage} 关 · 历史最高 ${bestLabel(readBest(kind))} 关`);
+    showEnd('挑战结束', (challenge.newBest ? '新纪录！' : '') + `止步第 ${stage} 关 · 历史最高 ${bestLabel(readBest(kind))} 关`,
+      { ...buildReport(game, 0), tour: { stage, best: readBest(kind), newBest: false } });
     setIconBtn($('rematch'), '再来一次 ↻');
     setIconBtn($('reselect'), '返回选人');
     // A dead run drops the whole deck.
@@ -497,6 +508,8 @@ let gapSum = 0;
 let gapCount = 0;
 let avgGap = 0;
 
+const endOverlay = $('end');
+
 function frame(now: number): void {
   if (!game || !renderer) return;
   const gap = lastNow ? now - lastNow : 0;
@@ -515,8 +528,11 @@ function frame(now: number): void {
       }
     }
   }
-  renderer.draw(game);
-  if (showFps) renderer.drawFps(avgGap);
+  // The result poster covers the arena: once it is up, the frozen last frame stays and the canvas rests.
+  if (game.phase !== 'finished' || !endOverlay.classList.contains('has-report') || endOverlay.hidden) {
+    renderer.draw(game);
+    if (showFps) renderer.drawFps(avgGap);
+  }
   raf = requestAnimationFrame(frame);
 }
 
@@ -580,7 +596,8 @@ function restBack(): void {
   $('battle').hidden = true;
   $('selection').hidden = false;
   selectRaf = requestAnimationFrame(selectLoop);
-  document.body.classList.remove('in-battle', 'turned');
+  document.body.classList.remove('in-battle', 'turned', 'end-up');
+  select.paintSeals();
   // The fight parked the page on its text bar (see startGame); the select screen opens at the top.
   if (!document.body.classList.contains('touch')) window.scrollTo(0, 0);
   leaveBattleFullscreen();
@@ -735,6 +752,63 @@ $('abandon').onclick = () => {
     });
 };
 
+const stampDialog = $('stamp-dialog') as HTMLDialogElement;
+function paintStampLayout(): void {
+  const layout = stampLayout();
+  for (const b of document.querySelectorAll<HTMLButtonElement>('#stamp-layout button')) b.classList.toggle('active', b.dataset.layout === layout);
+  renderStampBook($('stamp-body'), layout);
+}
+function openStamps(): void {
+  if (game && !game.paused && game.phase !== 'finished') game.togglePause(true);
+  closeStampShot();
+  paintStampLayout();
+  openDialog(stampDialog);
+}
+for (const b of document.querySelectorAll<HTMLButtonElement>('#stamp-layout button')) {
+  b.onclick = () => { setStampLayout(b.dataset.layout as StampLayout); paintStampLayout(); };
+}
+let stampShotUrl = '';
+function closeStampShot(): void {
+  $('stamp-shot').hidden = true;
+  ($('stamp-shot-img') as HTMLImageElement).removeAttribute('src');
+  if (stampShotUrl) URL.revokeObjectURL(stampShotUrl);
+  stampShotUrl = '';
+}
+/* 一览海报：电脑直接下载 PNG；触屏浏览器多数不认 download，改成整页显示图片，长按保存。 */
+$('stamp-save').onclick = async () => {
+  const btn = $('stamp-save') as HTMLButtonElement;
+  if (btn.disabled) return;
+  btn.disabled = true;
+  try {
+    const canvas = await stampPoster(formatCodename(ensureCodename()));
+    if (!canvas) return;
+    closeStampShot();
+    if (document.body.classList.contains('touch')) {
+      // data: URL rather than blob: — in-app browsers (QQ, 微信, B站) often refuse to long-press save a blob image.
+      ($('stamp-shot-img') as HTMLImageElement).src = canvas.toDataURL('image/png');
+      $('stamp-shot').hidden = false;
+    } else {
+      const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, 'image/png'));
+      if (!blob) return;
+      stampShotUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = stampShotUrl;
+      a.download = 'moefighters-stamps.png';
+      document.body.append(a);
+      a.click();
+      a.remove();
+    }
+  } finally {
+    btn.disabled = false;
+  }
+};
+$('stamp-shot-close').onclick = closeStampShot;
+stampDialog.addEventListener('close', closeStampShot);
+$('stamps').onclick = openStamps;
+$('end-book').onclick = openStamps;
+$('close-stamps').onclick = () => stampDialog.close();
+document.body.classList.toggle('no-seal-strip', !stripOn());
+
 const helpDialog = $('help-dialog') as HTMLDialogElement;
 $('help').onclick = () => { if (game && !game.paused) game.togglePause(true); openDialog(helpDialog); };
 $('close-help').onclick = () => helpDialog.close();
@@ -863,6 +937,10 @@ const syncThumbPick = bindPick('set-thumb-menu', {
 });
 // The roster title row has its own quick switch; whichever control flips it, both show the same value.
 select.onThumb = syncThumbPick;
+bindPick('set-strip-menu', {
+  get: () => stripOn() ? 'on' : 'off',
+  set: value => setStripOn(value === 'on'),
+});
 bindPick('set-nocd-menu', {
   get: () => trainPrefs().noCd ? 'on' : 'off',
   set: value => { setTrainPrefs({ noCd: value === 'on' }); select.refresh(); },

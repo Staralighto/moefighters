@@ -1,5 +1,5 @@
 /* Headless rule check: runs the fixed-step engine without DOM or canvas. `npm run check`. */
-import { FightGame } from '../src/game/game.ts';
+import { FightGame, type GameOptions } from '../src/game/game.ts';
 import { dreadMul } from '../src/game/combat.ts';
 import { heartTier, YOMOGI_BODY } from '../src/render/clips.ts';
 import { drawHeartBack, drawHeartFront, drawYomogiFx } from '../src/render/yomogiFx.ts';
@@ -34,6 +34,8 @@ import { swipeEdgeBlock, swipeEdgeHit, swipeEdgeSlide, swipeGuardPop, swipeGuard
 import { battleFrame, comboAnchor, pictureHud } from '../src/ui/battleFrame.ts';
 import { clampStick, visibleBox } from '../src/ui/stageFit.ts';
 import { onMediaChange } from '../src/ui/media.ts';
+import { buildReport, humanTeam, rankOf, sanitizeReport } from '../src/game/report.ts';
+import { miniSeal, readStamps, recordClear, recordMatchClear, renderStampBook, stampOf } from '../src/ui/stamps.ts';
 import { checkDevice } from './device-selfcheck.ts';
 import { checkSelect } from './select-selfcheck.ts';
 import { TOUCH_LAYOUT } from '../src/ui/touchLayout.data.ts';
@@ -2349,7 +2351,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const onlineGroup = dialogHtml.match(/<section class="setting-group" id="set-online-group">[\s\S]*?<\/section>/)?.[0] ?? '';
     assert.equal(onlineGroup.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(), '联机 联机代号 修改代号', 'online codename setting row has control name and button only');
     const visible = dialogHtml.replace(onlineGroup, '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-    assert.equal(visible, '设置 × 外观 主题 暗色 暗色 亮色 跟随系统 名册 名册显示 直接排开 直接排开 按乐队分组 名册卡面 全身 全身 头像 训练场 无技能冷却 开 开 关 无限大招 开 开 关 音乐 开打换曲 ? 只在随机播放时生效，其他时候不能改。 开 开 关', 'settings dialog keeps control names, plus the fight-shuffle tip (with #set-online-group exempted)');
+    assert.equal(visible, '设置 × 外观 主题 暗色 暗色 亮色 跟随系统 名册 名册显示 直接排开 直接排开 按乐队分组 名册卡面 全身 全身 头像 印章色条 显示 显示 隐藏 训练场 无技能冷却 开 开 关 无限大招 开 开 关 音乐 开打换曲 ? 只在随机播放时生效，其他时候不能改。 开 开 关', 'settings dialog keeps control names, plus the fight-shuffle tip (with #set-online-group exempted)');
     const css = readFileSync('src/style.css', 'utf8');
     assert.ok(css.includes('width: min(760px, calc(100% - 2rem))'), 'settings dialog width is reserved, not content-sized');
     assert.ok(css.includes('#start > span') && !/\.start span \{ display: inline-grid/.test(css), 'the start arrow badge does not restyle the rematch label');
@@ -5560,6 +5562,14 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   hit(dev, v2, device!, poke, { hit: new Set() });
   assert.ok(Math.abs(device!.hp - 30) < 1e-6, `the device takes one fifth of the hit, ${device!.hp}`);
   assert.ok(Math.abs(v1.hp - (before - 80)) < 1e-6, `her body bears the other four fifths, ${v1.hp}`);
+  assert.equal(Math.round(dev.dealt[v2.team]), 100, 'report includes both the device and its owner');
+  const dealtBefore = dev.dealt[v2.team];
+  v1.hp = 10;
+  v2.combo = 0; // Keep this separate hit at full damage instead of combo scaling.
+  device!.invuln = 0;
+  hit(dev, v2, device!, poke, { hit: new Set() });
+  assert.equal(Math.round(dev.dealt[v2.team] - dealtBefore), 30, 'transferred damage counts actual hp loss, not overkill');
+  assert.equal(dev.roundFin[v1.team], poke.name, 'a lethal device share credits the move that killed its owner');
   device!.hp = 0;
   run(dev, .1);
   assert.ok(!dev.fighters.some(f => f.minion), 'the broken device leaves');
@@ -8417,6 +8427,230 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
       drawHeartFront(ctx, f, i * .05);
     }
   }
+}
+
+// result screen (LIVE REPORT): the deciding K.O. hands over quickly, and the report reads the match from the viewer's seat
+{
+  const g = newGame(at('gale'), at('boulder'));
+  for (let r = 0; r < 2; r++) {
+    if (r) run(g, 2.4 + 2.3);
+    g.fighters[1].hp = 0;
+    g.step(STEP);
+    assert.equal(g.phase, 'roundend', 'a K.O. ends the round');
+  }
+  assert.equal(g.roundLog.length, 2, 'every decided round is logged');
+  run(g, 1.55);
+  assert.equal(g.phase, 'finished', 'the deciding round reaches the result in about 1.5s, not the 2.4s between rounds');
+  assert.equal(humanTeam(g), 0, 'slot 0 is the human in a CPU match');
+  const won = buildReport(g, 0);
+  assert.equal(won.win, true);
+  assert.deepEqual(won.score, [2, 0], 'winner rounds first');
+  assert.equal(won.seal, 1, 'a CPU opponent stamps its difficulty');
+  assert.equal(won.winners[0].id, 'gale');
+  assert.equal(won.losers[0].hp, 0);
+  const lost = buildReport(g, 1);
+  assert.equal(lost.win, false, 'the other seat reads it as a loss');
+  assert.equal(lost.tag, '', 'a loss carries no ribbon');
+  assert.equal(lost.rank, 'C', 'a zero-hp shutout loss reaches rank C through buildReport');
+  g.wins[1] = 1;
+  assert.equal(buildReport(g, 1).rank, 'B', 'winning one round earns B even when the last round ends at zero hp');
+  g.wins[1] = 0;
+  assert.equal(buildReport(g, 0, true).seal, 'online', 'online matches stamp 联机');
+  assert.equal(rankOf(true, 100, [2, 0], 30, 15), 'S');
+  assert.equal(rankOf(true, 8, [2, 1], 27, 15), 'A');
+  assert.equal(rankOf(false, 0, [0, 2], 5, 0), 'C');
+  assert.equal(rankOf(false, 30, [0, 2], 5, 0), 'B', 'a timeout loss with hp left tops out at B');
+
+  // online: the guest's copy survives the wire and is checked field by field; anything off drops to the text screen
+  const wired = sanitizeReport(dec(JSON.parse(JSON.stringify(enc(buildReport(g, 1, true), undefined)))));
+  assert.ok(wired && wired.win === false && wired.winners[0].id === 'gale', 'a real report survives enc/dec and sanitizing');
+  assert.equal(sanitizeReport({ ...lost, seal: 99 }), null, 'unknown seal is rejected');
+  assert.equal(sanitizeReport({ ...lost, rank: '<img>' }), null, 'rank is a closed set');
+  assert.equal(sanitizeReport({ ...lost, winners: [{ id: 'nobody', hp: 50 }] }), null, 'faces must be on the roster');
+  assert.equal(sanitizeReport({ ...lost, stage: 'x'.repeat(200) }), null, 'long text is rejected');
+  assert.equal(sanitizeReport('junk'), null);
+  assert.equal(sanitizeReport({ ...lost, combo: 1e9 })?.combo, 9999, 'numbers are clamped');
+
+  // a sliver of life reads as 1%, not 0%
+  const sliver = newGame(at('gale'), at('boulder'));
+  sliver.fighters[0].hp = sliver.fighters[0].data.hp * .003;
+  sliver.fighters[1].hp = 0;
+  sliver.winnerTeam = 0;
+  assert.equal(buildReport(sliver, 0).winHp, 1, 'a living winner never shows 0%');
+
+  // 2v2: both faces on each side, the ally CPU does not turn it into a versus, a spectated match stamps 观战
+  const team = new FightGame([ROSTER[at('gale')], ROSTER[at('boulder')], ROSTER[at('gale')], ROSTER[at('boulder')]],
+    { mode: 'team', difficulty: 2, stage: STAGES[0], audio: silent, random: rng(7) });
+  team.winnerTeam = 0;
+  const tr = buildReport(team, humanTeam(team));
+  assert.equal(tr.winners.length, 2, 'both teammates are on the poster');
+  assert.equal(tr.seal, 2, 'a CPU ally still means a CPU match');
+  for (const f of team.fighters) f.controller = null;
+  assert.equal(buildReport(team, humanTeam(team)).seal, 'watch', 'nobody at the keys is a spectated match');
+  assert.equal(buildReport(team, humanTeam(team)).win, null, 'a spectated match has no 你赢了');
+}
+
+// Finishers follow lethal hits, not roster order, and survive lockstep resyncs.
+for (const order of [[2, 3], [3, 2]]) {
+  const chars = ['gale', 'boulder', 'gale', 'boulder'].map(id => ROSTER[at(id)]);
+  const g = new FightGame(chars, { mode: 'team', difficulty: 1, stage: STAGES[0], audio: silent, controllers: [0, 0, 1, 1] });
+  run(g, 2.3);
+  const attacker = g.fighters[0];
+  for (const [i, slot] of order.entries()) {
+    const victim = g.fighters[slot];
+    victim.hp = 1;
+    hit(g, attacker, victim, { ...attacker.data.skills[0], damage: 100, name: 'KO ' + i }, { hit: new Set() });
+  }
+  const copy = new FightGame(chars, { mode: 'team', difficulty: 1, stage: STAGES[0], audio: silent });
+  loadGame(copy, new Rng(1), dumpGame(g, new Rng(7)));
+  copy.hitstop = 0;
+  copy.step(STEP);
+  assert.equal(copy.roundLog[0]?.fin, 'KO 1', 'the final KO wins attribution in either slot order, including after resync');
+  g.resetRound();
+  assert.deepEqual(g.roundFin, ['', ''], 'a new round clears finisher attribution');
+  run(g, 2.3);
+  hit(g, g.fighters[0], g.fighters[order[0]], { ...attacker.data.skills[0], damage: 9999, name: 'early KO' }, { hit: new Set() });
+  g.fighters[order[1]].hp = 0;
+  g.hitstop = 0;
+  g.step(STEP);
+  assert.equal(g.roundLog[0]?.fin, '', 'an unattributed final death never borrows an earlier teammates finisher');
+}
+
+// Both reflection paths contribute actual hp lost; surviving a lethal hit is not a KO.
+{
+  const g = newGame();
+  const defender = dummy(g), attacker = g.fighters[0];
+  defender.thorns = .5;
+  addMod(defender, 'reflect', 5, { v: .5 });
+  attacker.hp = 10;
+  hit(g, attacker, defender, attacker.data.skills[0], { hit: new Set() });
+  assert.equal(g.dealt[defender.team], 10, 'combined thorns and reflection count only the attackers remaining hp');
+  assert.equal(g.roundFin[attacker.team], '', 'reflection does not claim the attackers own move as its finisher');
+  const saved = newGame();
+  const victim = dummy(saved), source = saved.fighters[0];
+  victim.hp = 10;
+  victim.deathSave = 1;
+  hit(saved, source, victim, source.data.skills[0], { hit: new Set() });
+  assert.equal(victim.hp, 1, 'death save still leaves one hp');
+  assert.equal(saved.dealt[source.team], 9, 'damage statistics exclude the hp retained by death save');
+  assert.equal(saved.roundFin[victim.team], '', 'death save does not record a premature finisher');
+}
+
+// Stamp book: highest difficulty at which each opponent was defeated; v1 recorded the player instead.
+{
+  const store = new Map<string, string>();
+  const g = globalThis as unknown as { localStorage?: unknown };
+  const saved = g.localStorage;
+  g.localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v); } };
+  const legacy = JSON.stringify({ uika: { d: 2, rank: 'S' } });
+  store.set('mf.stamps.v1', legacy);
+  assert.equal(stampOf('uika'), -1, 'legacy player-character clears cannot prove which opponent was defeated');
+  assert.equal(stampOf('gale'), -1, 'no stamp yet');
+  assert.equal(recordClear('gale', 1, 'A'), true, 'first 标准 clear is a first');
+  assert.equal(recordClear('gale', 0, 'S'), false, 'a lower tier never replaces or celebrates');
+  assert.equal(recordClear('gale', 1, 'S'), false, 'same tier again is not a first');
+  assert.equal(readStamps().gale.rank, 'S', 'but a better rank at the same tier is kept');
+  assert.equal(recordClear('gale', 2, 'B'), true, 'a higher tier is a new first');
+  assert.equal(stampOf('gale'), 2);
+  // Another tab saves after this page cached its book. The next write must preserve its gains.
+  store.set('mf.stamps.v2', JSON.stringify({ gale: { d: 2, rank: 'S' }, tomori: { d: 2, rank: 'S' } }));
+  assert.equal(recordClear('mutsumi', 1, 'A'), true);
+  const persisted = JSON.parse(store.get('mf.stamps.v2')!);
+  assert.equal(persisted.tomori.d, 2, 'a stale page cannot erase another tabs character');
+  assert.equal(persisted.gale.rank, 'S', 'a stale page preserves another tabs improved rank');
+  assert.equal(recordClear('gale', 1, 'S'), false, 'another tabs higher tier cannot be downgraded');
+  store.set('mf.stamps.v2', JSON.stringify({ ...persisted, uika: { d: 0, rank: 'A' } }));
+  assert.equal(stampOf('uika'), 0, 'reads also refresh when another tab changes storage');
+
+  store.delete('mf.stamps.v2');
+  const match = (ids: string[], options: Partial<GameOptions> = {}) => new FightGame(ids.map(id => ROSTER[at(id)]), {
+    mode: ids.length === 4 ? 'team' : 'cpu', difficulty: 1, roundsToWin: 1, stage: STAGES[0], audio: silent, random: rng(7), ...options,
+  });
+  const finish = (m: FightGame, winner = 0) => {
+    m.phase = 'fight';
+    for (const f of m.fighters) if (f.team !== winner) f.hp = 0;
+    m.step(STEP);
+    run(m, 1.55);
+    assert.equal(m.phase, 'finished', 'the award fixture completes a real match');
+  };
+  // Use the engine's actual onEnd entry: the production award function must see a finished match.
+  let first = false;
+  const solo = match(['uika', 'tomori'], { onEnd: () => { first = recordMatchClear(solo, buildReport(solo, humanTeam(solo))); } });
+  finish(solo);
+  assert.equal(first, true, 'a first opponent clear is awarded from onEnd');
+  assert.equal(stampOf('tomori'), 1, 'playing Uika and beating Tomori stamps Tomori');
+  assert.equal(stampOf('uika'), -1, 'winning does not stamp the players selected character');
+  assert.equal(store.get('mf.stamps.v1'), legacy, 'old records remain intact in their original storage');
+  const repeat = match(['umiri', 'tomori']);
+  finish(repeat);
+  const repeated = buildReport(repeat, humanTeam(repeat));
+  assert.equal(recordMatchClear(repeat, repeated), false, 'switching the players character does not create another first clear');
+  assert.ok(!repeated.tag.startsWith('首次'), 'a repeated opponent clear has no first-clear ribbon');
+  for (const [difficulty, expectedFirst] of [[2, true], [0, false]] as const) {
+    const again = match(['umiri', 'tomori'], { difficulty });
+    finish(again);
+    const report = buildReport(again, humanTeam(again));
+    assert.equal(recordMatchClear(again, report), expectedFirst, 'only a higher difficulty renews an opponent stamp');
+    assert.equal(stampOf('tomori'), 2, 'lower difficulty cannot replace an opponents gold stamp');
+    if (expectedFirst) assert.equal(report.tag, '首次 · 大师');
+  }
+
+  const team = match(['uika', 'mutsumi', 'umiri', 'anon']);
+  finish(team);
+  for (const [id, flag] of [['soyo', 'minion'], ['taki', 'echo']] as const) {
+    team.fighters.push({ ...team.fighters[2], id: team.fighters.length, data: ROSTER[at(id)], [flag]: true });
+  }
+  assert.equal(recordMatchClear(team, buildReport(team, humanTeam(team))), true);
+  assert.equal(stampOf('umiri'), 1, '2v2 stamps the first CPU opponent');
+  assert.equal(stampOf('anon'), 1, '2v2 stamps the second CPU opponent');
+  assert.equal(stampOf('mutsumi'), -1, 'an allied CPU never receives an opponent stamp');
+  assert.equal(stampOf('uika'), -1, 'the winning player still receives no stamp for their own character');
+  assert.equal(stampOf('soyo'), -1, 'a summoned enemy never earns an extra roster stamp');
+  assert.equal(stampOf('taki'), -1, 'an enemy echo never earns an extra roster stamp');
+  const right = match(['soyo', 'taki', 'uika', 'mutsumi'], { controllers: [null, null, 0, 1] });
+  finish(right, 1);
+  assert.equal(recordMatchClear(right, buildReport(right, humanTeam(right))), true, 'two humans on the right team can earn opponent stamps');
+  assert.equal(stampOf('soyo'), 1, 'the losing left-team opponent is stamped');
+  assert.equal(stampOf('taki'), 1, 'both left-team opponents are stamped');
+  assert.equal(stampOf('mutsumi'), -1, 'the human teammate is not stamped');
+  const twins = match(['uika', 'mutsumi', 'rana', 'rana']);
+  finish(twins);
+  assert.equal(recordMatchClear(twins, buildReport(twins, humanTeam(twins))), true);
+  assert.equal(stampOf('rana'), 1, 'duplicate CPU characters share one stamp');
+  assert.equal(recordMatchClear(twins, buildReport(twins, humanTeam(twins))), false, 'duplicate CPU characters cannot create another first');
+  const mirror = match(['rana', 'rana']);
+  finish(mirror);
+  assert.equal(recordMatchClear(mirror, buildReport(mirror, humanTeam(mirror))), false, 'a mirror match still uses the defeated characters existing stamp');
+
+  const unfinished = match(['uika', 'hina']);
+  unfinished.winnerTeam = 0;
+  assert.equal(recordMatchClear(unfinished, buildReport(unfinished, 0)), false, 'an unfinished round cannot award a stamp');
+  const lost = match(['uika', 'hina']);
+  finish(lost, 1);
+  assert.equal(recordMatchClear(lost, buildReport(lost, humanTeam(lost))), false, 'losing the match awards nothing');
+  for (const options of [
+    { mode: 'training' }, { mode: 'challenge' }, { controllers: [null, null] }, { controllers: [0, 1] },
+    { netRole: 'host' }, { netRole: 'guest' }, { netRole: 'lock' },
+  ] satisfies Partial<GameOptions>[]) {
+    const excluded = match(['uika', 'hina'], options);
+    excluded.phase = 'finished';
+    excluded.winnerTeam = 0;
+    assert.equal(recordMatchClear(excluded, buildReport(excluded, 0)), false, 'training, challenge, spectating, PvP and online do not award CPU stamps');
+  }
+  assert.equal(stampOf('hina'), -1, 'all excluded match paths leave the unearned opponent unstamped');
+  const host = { innerHTML: '', querySelectorAll: () => [] } as unknown as HTMLElement;
+  for (const layout of ['flat', 'band'] as const) {
+    renderStampBook(host, layout);
+    const cells = [...host.innerHTML.matchAll(/<figure\b[^>]*>[\s\S]*?<\/figure>/g)].map(m => m[0]);
+    const cell = (id: string) => cells.find(html => html.includes(`data-id="${id}"`)) ?? '';
+    assert.ok(cell('tomori').includes('大师'), 'both stamp-book layouts show the defeated opponents highest difficulty');
+    assert.ok(cell('uika').includes('is-empty'), 'both layouts keep the players unearned character empty');
+  }
+  g.localStorage = { getItem: () => { throw Error('blocked'); }, setItem: () => { throw Error('blocked'); } };
+  assert.equal(recordClear('boulder', 2, 'S'), true, 'private mode does not break the result screen');
+  assert.equal(stampOf('boulder'), 2, 'blocked storage still keeps the stamp for this session');
+  g.localStorage = saved;
+  assert.ok(miniSeal(2).split('★').length - 1 === 3, 'a 大师 stamp carries three stars');
 }
 
 console.log('selfcheck ok');

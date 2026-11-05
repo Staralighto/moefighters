@@ -2,6 +2,7 @@
    guest acked, and replays the guest's input samples on the guest's own clock. The guest paints
    the newest complete state, eases positions between states, and runs only visual clocks. */
 
+import { sanitizeReport, type MatchReport } from '../game/report.ts';
 import { hit } from '../game/combat.ts';
 import { FLOOR, GRAVITY, X_MAX, X_MIN, clamp } from '../game/constants.ts';
 import type { Attack, Fighter } from '../game/fighter.ts';
@@ -13,12 +14,12 @@ import { LockSession, type Rng } from './lock.ts';
 import type { Pad } from './proto.ts';
 import { IdBook, applyState, captureState, diffState, partText, patchState, readPart, splitParts, type Part, type WireState } from './state.ts';
 
-export interface NetEnd { title: string; stats: string; win: number; guestStats: string }
+export interface NetEnd { title: string; stats: string; win: number; guestStats: string; guestReport?: MatchReport }
 
 export interface NetUi {
   hud: (g: FightGame) => void;
   banner: (title: string, sub: string) => void;
-  end: (title: string, stats: string) => void;
+  end: (title: string, stats: string, report?: MatchReport | null) => void;
   /** '42ms', '连接不稳', or '' while nothing is known yet. */
   quality: (text: string) => void;
   /** Rematch: 'asked' the other side wants one, 'wait' we asked, 'go' both did. */
@@ -863,7 +864,7 @@ function paintState(g: FightGame, now: number): boolean {
   const end = g.netEnd as NetEnd | null;
   if (end?.title && !endTold) {
     endTold = true;
-    ui?.end(end.win === 1 ? '你赢了' : end.win === 0 ? '你输了' : end.title, end.guestStats || end.stats);
+    ui?.end(end.win === 1 ? '你赢了' : end.win === 0 ? '你输了' : end.title, end.guestStats || end.stats, sanitizeReport(end.guestReport));
   }
   return true;
 }

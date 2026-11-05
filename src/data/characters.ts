@@ -35,7 +35,7 @@ export const ROSTER: CharacterData[] = [
     id: 'uika', name: '三角初华', title: '忠犬 / 悲伤', quote: '我毋畏悲伤。', color: '#BB9955',
     bands: ['ave-mujica', 'sumimi'],
     ...stats('rush'),
-    view: { kind: 'sprite', common: '/sprites/uika/common.png', special: '/sprites/uika/special.png', height: 181 },
+    view: { kind: 'sprite', common: '/sprites/uika/common.png', special: '/sprites/uika/special.png', height: 181, lift: 5 },
     skills: [
       skill(0, 'light', '轻唤'),
       skill(1, 'heavy', '靴踢'),
@@ -53,7 +53,7 @@ export const ROSTER: CharacterData[] = [
     bands: ['ave-mujica'],
     ...stats('focus'),
     view: {
-      kind: 'sprite', common: '/sprites/mutsumi/common.png', special: '/sprites/mutsumi/special.png', height: 181,
+      kind: 'sprite', common: '/sprites/mutsumi/common.png', special: '/sprites/mutsumi/special.png', height: 181, lift: 5, specialScale: .95,
       extras: ['/sprites/mutsumi/cucumber.png', '/sprites/mutsumi/note.png', '/sprites/mutsumi/mortis.png'],
     },
     skills: [
@@ -76,7 +76,7 @@ export const ROSTER: CharacterData[] = [
     bands: ['ave-mujica'],
     ...stats('rush'),
     view: {
-      kind: 'sprite', common: '/sprites/umiri/common.png', special: '/sprites/umiri/special.png', height: 170,
+      kind: 'sprite', common: '/sprites/umiri/common.png', special: '/sprites/umiri/special.png', height: 170, lift: 5,
       extras: ['/sprites/umiri/milk.png', '/sprites/umiri/bag.png'],
     },
     skills: [
@@ -207,7 +207,7 @@ export const ROSTER: CharacterData[] = [
     bands: ['mygo'],
     ...stats('focus'),
     view: {
-      kind: 'sprite', common: '/sprites/tomori/common.png', special: '/sprites/tomori/special.png', height: 181,
+      kind: 'sprite', common: '/sprites/tomori/common.png', special: '/sprites/tomori/special.png', height: 181, lift: 5,
       extras: ['/sprites/tomori/stone.png', '/sprites/tomori/plaster.png'],
     },
     skills: [

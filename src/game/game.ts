@@ -266,6 +266,13 @@ export class FightGame {
   onFx: ((fx: [string, ...unknown[]]) => void) | null = null;
   totalHits: number[];
   maxCombo: number[];
+  /** Result screen, per team for the whole match: hp taken off the other team, and supers cast. */
+  dealt = [0, 0];
+  ults = [0, 0];
+  /** Result screen: one entry per decided round, in order. `fin` is the finishing move, '' when unknown. */
+  roundLog: { winner: number; fin: string }[] = [];
+  /** Move that eliminated each team's last body this round; empty for unattributed deaths. */
+  roundFin = ['', ''];
   winnerTeam = -1;
   keys = new Set<string>();
 
@@ -334,6 +341,7 @@ export class FightGame {
 
   /* ---- round lifecycle ---- */
   resetRound(): void {
+    this.roundFin = ['', ''];
     const spawn = this.mode === 'team' ? TEAM_SPAWN
       : this.mode === 'challenge' ? (this.characters.length === 2 ? DUO_SPAWN : CHALLENGE_SPAWN)
       : DUO_SPAWN;
@@ -584,6 +592,7 @@ export class FightGame {
     const cdBoost = boosted ? (cfg?.cdMul ?? .6) : 1;
     f.cooldowns[slot] = skill.cd * f.cdMul * cdBoost;
     if (slot === 5) {
+      if (!f.minion && !f.echo) this.ults[f.team]++;
       // The bar covers the cost: cap == cost for every current character, so this spends it whole.
       f.energy = clamp(f.energy - (skill.cost ?? 100), 0, f.energyMax);
       f.invuln = .64;
@@ -758,8 +767,10 @@ export class FightGame {
     const winner = health[0] > health[1] ? 0 : 1;
     const draw = Math.abs(health[0] - health[1]) < .00001;
     if (!draw) this.wins[winner]++;
+    if (!draw) this.roundLog.push({ winner, fin: this.time <= 0 ? '' : this.roundFin[1 - winner] });
     this.phase = 'roundend';
-    this.phaseTime = 2.4;
+    // The deciding round hands over to the result screen sooner: the K.O. still reads, the wait does not drag.
+    this.phaseTime = this.wins.some(n => n >= this.roundsToWin) ? 1.5 : 2.4;
     this.projectiles = [];
     this.sealVolleys = [];
     for (const f of this.fighters) { f.queue = []; f.attack = null; }

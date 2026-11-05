@@ -14,6 +14,7 @@
 
 | 触碰 | 先读 | 附带测试 |
 |---|---|---|
+| 重制 sprite、重制精灵表；「重制sprite / 重制通过 / 重制归档」及 sprite 工作包「收尾 / 启用」 | `docs/sprite-remake-sop.md`（按工作包编号处理，旧成图重制优先走此流程） | 启用时 `npm run check` |
 | 新角色、精灵表、图生图提示词 | `docs/new-character-sop.md` | `npm run check` |
 | 角色头像、血条旁头像 | `docs/avatar-sop.md` | 无 |
 | 招式、受击、buff、弹道 | `docs/public/moves.md` | `npm run check` |

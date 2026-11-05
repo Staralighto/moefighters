@@ -1,4 +1,5 @@
 import { applyImageUrl, assignFirst, loadImage, stageThumbSrc } from '../assets/loader.ts';
+import { stampOf } from './stamps.ts';
 import type { CharacterData, StageData } from '../data/types.ts';
 import { BAND_BY_ID, type BandId } from '../data/bands.ts';
 import { STAGES } from '../data/stages.ts';
@@ -530,6 +531,15 @@ export class SelectScreen {
     this.observeRoster();
   }
 
+  /** 印章色条：战斗回来后按最新记录重刷，不重建名册。 */
+  paintSeals(): void {
+    this.rosterButtons.forEach((b, i) => {
+      const d = stampOf(this.roster[i].id);
+      if (d >= 0) b.dataset.seal = String(d);
+      else delete b.dataset.seal;
+    });
+  }
+
   private rosterHTML(): string {
     const group = (c: CharacterData): string => c.bands?.[0] ?? 'none';
     let html = '';
@@ -546,7 +556,8 @@ export class SelectScreen {
             : `<div class="band-head"><b>无所属</b><span>${count} 人</span></div>`;
         }
       }
-      html += `<button class="character" style="--c:${c.color}" data-index="${i}" title="${c.name} · ${c.title}" aria-label="选择${c.name}"><canvas width="96" height="96" aria-hidden="true"></canvas><span class="face" aria-hidden="true"><i class="face-cut"><img alt="" decoding="async" draggable="false"></i></span><span class="slot-tag" hidden></span><span class="char-name">${c.name}</span><span class="pick-sheen" aria-hidden="true"></span></button>`;
+      const seal = stampOf(c.id);
+      html += `<button class="character" style="--c:${c.color}" data-index="${i}"${seal >= 0 ? ` data-seal="${seal}"` : ''} title="${c.name} · ${c.title}" aria-label="选择${c.name}"><canvas width="96" height="96" aria-hidden="true"></canvas><span class="face" aria-hidden="true"><i class="face-cut"><img alt="" decoding="async" draggable="false"></i></span><span class="slot-tag" hidden></span><span class="char-name">${c.name}</span><span class="pick-sheen" aria-hidden="true"></span><span class="seal-strip" aria-hidden="true"></span></button>`;
     });
     return html;
   }
