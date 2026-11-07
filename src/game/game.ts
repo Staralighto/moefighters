@@ -8,8 +8,8 @@ import { advanceAnim } from './animState.ts';
 import { dreadMul, easeSealSwells, effectSettled, ESCAPE_INVULN, rainbowRoll, stepHeart, stepProjectiles, updateAttack } from './combat.ts';
 import { addMod, atkMul, clearMod, has, jumpMul, moveSign, regenPerSec, speedMul, tickMods } from './mods.ts';
 import { endFollow, followLeader, settleRootMark, tickStatus } from './status.ts';
-import { SCRIPTS } from './scripts.ts';
-import { stepAI } from './ai.ts';
+import { CAST_WATCHERS, SCRIPTS, STEP_WATCHERS } from './scripts.ts';
+import { stepAI, noteCast } from './ai.ts';
 import { beginDomain as openDomain, stepDomains, type Domain } from './domains.ts';
 import { COMBO_DECAY, COMBO_ESCAPE, CONTROLS, FLOOR, GRAVITY, INPUT_BUFFER, PARRY_WHIFF_LOCK, PARRY_WINDOW, SIDE, STEP, X_MAX, X_MIN, clamp } from './constants.ts';
 import { clipFor } from '../render/clips.ts';
@@ -72,6 +72,8 @@ export const RECORD_TIME = 3.5;
 const ECHO_DMG = .5;
 const ECHO_FADE = .4;
 export type SfxKind = 'light' | 'heavy' | 'hit' | 'block' | 'parry' | 'super' | 'select' | 'jump' | 'ko' | 'cast' | 'key' | 'whistle' | 'slam'
+  /** MASKING's bike: a short kick start and pull-away (死亡银河号), and two revs before the charge (银河流星踢). */
+  | 'engine' | 'engine-rev'
   /** 血月的奏鸣: the organ pedal under the performance, the i-th note of the phrase, and the closing chord.
    *  The index rides in the name, so the online echo and its dedup see each note as its own sound. */
   | 'blood-intro' | `blood-${number}` | 'blood-end';
@@ -587,7 +589,7 @@ export class FightGame {
       f.hitBySuper = false;
     }
     // 解控 always pays a short invuln, escape or not; a longer one on the skill is the extra.
-    if (skill.breakout) f.invuln = Math.max(f.invuln, skill.invuln ?? ESCAPE_INVULN);
+    if (skill.breakout) f.invuln = Math.max(f.invuln, typeof skill.invuln === 'number' ? skill.invuln : ESCAPE_INVULN);
     // Frenzy shortens the recast wait of the ground jab and kick to match the faster clock.
     const cdBoost = boosted ? (cfg?.cdMul ?? .6) : 1;
     f.cooldowns[slot] = skill.cd * f.cdMul * cdBoost;
@@ -607,7 +609,7 @@ export class FightGame {
     } else {
       this.audio.play(slot === 0 ? 'light' : slot === 1 ? 'heavy' : 'cast', f.id);
     }
-    if (skill.type === 'dash') f.invuln = skill.super ? .42 : (skill.invuln ?? 0);
+    if (skill.type === 'dash' && skill.invuln !== 'cast') f.invuln = skill.super ? .42 : (skill.invuln ?? 0);
     if (skill.type === 'upper') { f.vy = -580; f.invuln = Math.max(f.invuln, .2); }
     // A rising jump keeps its upward speed. The dive kick only adds to a fall.
     if (skill.air && skill.type === 'heavy' && f.vy >= 0) f.vy = Math.max(f.vy, 180);
@@ -618,6 +620,9 @@ export class FightGame {
     }
     // 录音: the tape captures what actually came out, wherever it started from; the super stays off the record.
     if (f.recLeft > 0 && slot < 5) f.recTape.push({ t: RECORD_TIME - f.recLeft, kind: 'atk', v: slot });
+    // 铁壁: anything but J breaks the master's jab count.
+    noteCast(this, f, skill);
+    for (const watch of CAST_WATCHERS) watch(this, f, slot, skill);
     return true;
   }
 
@@ -1083,6 +1088,7 @@ export class FightGame {
     if (comboWas > 0 && f.comboTime === 0 && f.combo >= 4) rainbowRoll(this, f);
     tickStatus(this, f, dt);
     tickMods(this, f, dt);
+    for (const watch of STEP_WATCHERS) watch(this, f, dt);
     // 心跳计: declared per character (CharacterData.heart), so no id branch here.
     if (f.data.heart) stepHeart(this, f, dt);
     if (recWas > 0 && f.recLeft === 0) this.startEchoPlayback(f);

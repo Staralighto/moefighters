@@ -1,5 +1,5 @@
 import type { FighterView, FrozenPose } from './view.ts';
-import type { Fighter } from '../game/fighter.ts';
+import { isInvulnerable, type Fighter } from '../game/fighter.ts';
 import { LITE_SCALE, liteSrc, missingImages, portraitSrc, type ImageCache } from '../assets/loader.ts';
 import { CELL, clipFor, type Clip } from './clips.ts';
 
@@ -64,7 +64,7 @@ function prescaledCell(im: HTMLImageElement, sx: number, sy: number, cs: number,
  *  and still show where canvas `filter` is unsupported (Safari before 18). */
 function spriteBoost(f: Fighter): number {
   if (f.hitFlash > 0) return 1.1;
-  if (f.invuln > .1) return .25;
+  if (isInvulnerable(f, .1)) return .25;
   return 0;
 }
 

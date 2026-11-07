@@ -1,5 +1,5 @@
 import type { FighterView } from './view.ts';
-import type { Fighter, Attack } from '../game/fighter.ts';
+import { isInvulnerable, type Fighter, type Attack } from '../game/fighter.ts';
 import { attackPhase, stateFor } from '../game/animState.ts';
 import { vowBeatTime, VOW_BEATS } from '../render/clips.ts';
 import { DIMS, NECK, torsoPoints, torsoRadii, type Build, type Dims } from './proportions.ts';
@@ -158,7 +158,7 @@ export class GeometryView implements FighterView {
       if (outline) this.glowBody(ctx, pose, hip, shoulder, bend, outline);
       const parts: string[] = [];
       if (f.hitFlash > 0) parts.push('brightness(2.1)');
-      else if (f.invuln > .1) parts.push('brightness(1.25)');
+      else if (isInvulnerable(f, .1)) parts.push('brightness(1.25)');
       if (parts.length) ctx.filter = parts.join(' ');
 
       this.limb(ctx, hip, [pose.legB[0] + bend, pose.legB[1] - bend * 2], d.thigh, d.shin, this.dark);
@@ -248,7 +248,7 @@ export class GeometryView implements FighterView {
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       if (f.hitFlash > 0) ctx.filter = 'brightness(2.1)';
-      else if (f.invuln > .1) ctx.filter = 'brightness(1.25)';
+      else if (isInvulnerable(f, .1)) ctx.filter = 'brightness(1.25)';
       const w = 14;
       const limb = (x1: number, y1: number, x2: number, y2: number, width: number, color: string) => {
         ctx.strokeStyle = color;

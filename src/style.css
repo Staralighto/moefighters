@@ -1783,7 +1783,7 @@ dialog { border-radius: 18px; }
   .vs-ghost { display: none; }
 }
 /* 竖屏手机专用的控件，桌面和横屏不出现。 */
-.stage-random, .slot-diff, .sound-inpop { display: none; }
+.select-stage > .stage-random, .slot-diff, .sound-inpop { display: none; }
 /* 竖屏手机：首屏从 6 条横带收成 4 条，信息一条不丢。
    · 「01 选择你的角色」整行不显示：标题不言自明，规则摘要和下面两条选择器重复；随机按钮挪到舞台右上角。
    · 难度条不显示：难度并进每个人机标签（人机 · 大师），点按循环，全局一个值。

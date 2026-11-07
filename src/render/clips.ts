@@ -737,6 +737,138 @@ export function soyoFrenzyFrame(kind: 'light' | 'heavy', t: number, s: { start: 
 }
 
 /** Which cell a fighter occupies this frame. Missing sheets still fall back in SpriteView. */
+/* ---- MASKING（佐藤益木） ---- */
+
+/** 死亡银河号 / 银河流星踢: the red-black bike (bike.png, side view facing right). Drawn BIKE_W wide in the
+ *  world with its wheels on the floor; the art's tyres touch BIKE_FOOT of the way down the picture.
+ *  The rider cells are drawn with her feet BIKE_PEG cell px above the foot line, so on the seat she sits
+ *  that high; BIKE_SEAT_X is where the seat sits from her origin (negative: behind her feet). */
+export const BIKE_W = 236;
+export const BIKE_FOOT = 500 / 512;
+export const BIKE_PEG = 34;
+export const BIKE_SEAT_X = -6;
+/** The nose of the bike sits this far ahead of her; a body carried on it is pinned here. */
+export const BIKE_NOSE = 104;
+/** 死亡银河号: a.mode — the kick start in the exhaust, the run, the skid, off the bike. */
+export const RIDE = { mount: 0, ride: 1, skid: 2, done: 3 } as const;
+/** Seconds of the run (or until a wall), of the skid, and of the step off. */
+export const RIDE_TIME = .5;
+export const RIDE_SKID = .22;
+export const RIDE_TAIL = .26;
+/** 可爱鉴定: a.mode — the reach, the cheeks held, done (or nobody caught). The first pinch comes
+ *  CUTE_FIRST after the catch, then one every CUTE_GAP; each holds the pinch cell for CUTE_PINCH. */
+export const CUTE = { lunge: 0, held: 1, done: 2 } as const;
+export const CUTE_LUNGE = .22;
+export const CUTE_FIRST = .14;
+export const CUTE_GAP = .2;
+export const CUTE_PINCH = .08;
+export const CUTE_TAIL = .38;
+/** 即兴加花: the fills she plays, in seconds after the start — never the same groove twice in a row,
+ *  and never on the grid. The last entry is the crash (the skill's finale). One is rolled per cast. */
+export const FILLS: readonly (readonly number[])[] = [
+  [0, .09, .25, .31, .47, .55, .82],
+  [0, .16, .22, .38, .44, .6, .86],
+  [0, .07, .14, .34, .5, .57, .8],
+];
+/** 即兴加花: each jab holds the punch cell this long; the crash cell holds through the tail. */
+export const FILL_JAB = .07;
+export const FILL_TAIL = .32;
+/** 即兴加花: a.mode — playing, the crash has landed. */
+export const FILL = { play: 0, done: 1 } as const;
+/** 银河流星踢: a.mode — revving with LOCK on the back, the charge, a body carried on the nose, the leap
+ *  off the seat and the kick, done. */
+export const METEOR = { rev: 0, charge: 1, carry: 2, leap: 3, done: 4 } as const;
+/** Charge window before she gives up on a body and leaps anyway; carry at most this long (or to a wall). */
+export const METEOR_CHARGE = .7;
+export const METEOR_CARRY = 1;
+/** The leap: up off the seat, the turn at the top, then the kick down onto the mark. */
+export const METEOR_LEAP = .58;
+export const METEOR_RISE = .42;
+export const METEOR_HIGH = 210;
+export const METEOR_TAIL = .42;
+/** LOCK, on the back seat: her official colour and height (萌娘百科《朝日六花》). */
+export const LOCK_COLOR = '#AAEE22';
+export const LOCK_CM = 155;
+export const MASKING_CM = 170;
+
+/** 即兴加花: the punch cell for a beat after each jab, the guard cell between, the crash cell after. */
+export function fillRow(mode: number | undefined, t: number, liftAt: number): number {
+  if (mode === FILL.done) return 2;
+  return liftAt > 0 && t < liftAt + FILL_JAB ? 1 : 0;
+}
+
+/* ---- 花园多惠 ---- */
+
+/** 神出鬼没: a.mode — the dig, underground (the body is hidden, the ears peek out of the far hole), the pop
+ *  out of it, done. She surfaces BURROW_WAIT after going under, on the spot the foe stood when she dug in. */
+export const BURROW = { dig: 0, under: 1, pop: 2, done: 3 } as const;
+export const BURROW_WAIT = .36;
+/** The far hole opens on the nearest foe within this reach; beyond it, this far ahead of her. */
+export const BURROW_REACH = 430;
+export const BURROW_SHORT = 260;
+/** The pop: up out of the hole and back down onto it. */
+export const BURROW_POP = .44;
+export const BURROW_HIGH = 118;
+export const BURROW_TAIL = .3;
+/** 花园警察，出动！: a.mode — the lunge, the cuffs going on, done. */
+export const POLICE = { lunge: 0, cuff: 1, done: 2 } as const;
+export const POLICE_LUNGE = .22;
+export const POLICE_CUFF = .2;
+export const POLICE_TAIL = .34;
+/** 欢迎来到兔子王国 and the rabbits everywhere: one hop takes RABBIT_HOP seconds and clears RABBIT_HIGH px;
+ *  the rabbit's feet sit on the floor between hops. The coats are 小欧 (white, odd eyes), 小紫, 团十郎,
+ *  可可亚, BB King and 小白 (萌娘百科: 家里至少 23 只兔子). */
+export const RABBIT_HOP = .34;
+export const RABBIT_HIGH = 40;
+export const RABBIT_COATS = 6;
+/** Where a hopping rabbit is in its hop: u runs 0→1 across one hop (0 and 1 on the floor), lift is the height
+ *  over the floor. Each coat hops at its own pace and height, so a line of them never moves in step. */
+export function rabbitHop(age: number, coat: number): { lift: number; u: number } {
+  const hop = RABBIT_HOP * (1 + (coat % 3) * .06);
+  const u = (Math.max(0, age) / hop) % 1;
+  return { lift: RABBIT_HIGH * (1 + ((coat * 7) % 5 - 2) * .08) * Math.sin(Math.PI * u), u };
+}
+/** 花园兔王: a.mode — pointing at the sky, the warren erupting, her own dive, the rise beside them, the kick
+ *  and the fall, done. */
+export const WARREN = { call: 0, erupt: 1, dive: 2, rise: 3, fall: 4, done: 5 } as const;
+/** Four holes round the mark (and 小欧's big one on it); the rabbits pop in this order, WARREN_GAP apart. */
+export const WARREN_HOLES: readonly number[] = [-104, -38, 38, 104];
+export const WARREN_ORDER: readonly number[] = [1, 2, 0, 3, 2, 1, 3, 0];
+export const WARREN_FIRST = .12;
+export const WARREN_GAP = .15;
+/** 小欧 comes this long after the last small rabbit; she dives as 小欧 jumps. */
+export const WARREN_BIG = .24;
+export const WARREN_DIVE = .18;
+export const WARREN_RISE = .3;
+export const WARREN_FALL = .3;
+export const WARREN_KICK_H = 210;
+/** Height 小欧 throws them to. */
+export const WARREN_TOP = 236;
+export const WARREN_TAIL = .4;
+/** A rabbit is on its way this long before its hit lands, so the kick and the damage arrive together; 小欧 a
+ *  little longer (the bigger jump). */
+export const WARREN_LEAD = .1;
+export const WARREN_BIG_LEAD = .15;
+
+/* ---- 今井莉莎 ---- */
+/** 元气辣妹☆: the slide covers its whole distance in LISA_GAL_TRAVEL, fast then braking (ease-out), so the hit cell
+ *  is never carried across the floor at a constant speed; she stops into the V-sign cell. */
+export const LISA_GAL_TRAVEL = .3;
+/** 不用说我也懂: how long the read holds, and the flick she answers with — the flick cell, then hands on hips. */
+export const LISA_READ = { cast: 0, flick: 1 } as const;
+export const LISA_READ_TIME = 4;
+export const LISA_FLICK_HIT = .22;
+export const LISA_FLICK_TIME = .5;
+/** 特制曲奇·隐藏风味: the toss cell holds this long after the active frame; the mustard goes off LISA_FUSE after
+ *  the cookie lands; then, if she is free, a cup of herbal tea for LISA_TEA. */
+export const LISA_COOKIE = { cast: 0, tea: 1 } as const;
+export const LISA_TOSS = .28;
+export const LISA_FUSE = 1.5;
+export const LISA_TEA = .8;
+/** 银猫扑脸: how long the cat clings (the 混乱 runs the same), and the cat's height off the floor as it runs. */
+export const LISA_CLING = 2;
+export const LISA_CAT_BODY = 22;
+
 export function clipFor(f: Fighter): Clip {
   if (f.attack) {
     // 狂化: ground J/K read the frenzy sheet. A king or box reskin keeps the common cells and swaps the image.
@@ -942,6 +1074,65 @@ export function clipFor(f: Fighter): Clip {
       if (mode === SHADOW.scare) return at('special', a.index - 2, 1);
       if (mode === SHADOW.done) return at('special', a.index - 2, 2);
       return at('special', 0, 1);
+    }
+    // 神出鬼没: the crouch into the hole; up out of the far one; standing, dusting off.
+    if (f.attack.skill.fx === 'tae-burrow') {
+      const a = f.attack, mode = a.mode ?? BURROW.dig;
+      return at('special', a.index - 2, mode === BURROW.done ? 2 : mode === BURROW.pop ? 1 : 0);
+    }
+    // 花园警察，出动！: cap pulled down on the lunge; the grab; the salute.
+    if (f.attack.skill.fx === 'tae-police') {
+      const a = f.attack, mode = a.mode ?? POLICE.lunge;
+      return at('special', a.index - 2, mode === POLICE.done ? 2 : mode === POLICE.cuff || a.t >= a.skill.start ? 1 : 0);
+    }
+    // 欢迎来到兔子王国: the pat on the floor; the wave while the rabbits go; standing up.
+    if (f.attack.skill.fx === 'tae-hop') {
+      const a = f.attack, s = a.skill;
+      const last = s.start + ((s.count ?? 5) - 1) * (s.interval ?? .2);
+      return at('special', a.index - 2, a.t < s.start ? 0 : a.t < last + .18 ? 1 : 2);
+    }
+    // 花园兔王: pointing at the sky through the call and the warren; rising and kicking; the landing.
+    if (f.attack.skill.fx === 'tae-warren') {
+      const a = f.attack, mode = a.mode ?? WARREN.call;
+      if (mode === WARREN.done) return at('special', a.index - 2, 2);
+      return at('special', a.index - 2, mode === WARREN.rise || mode === WARREN.fall ? 1 : 0);
+    }
+    // 元气辣妹☆: the low lean; the sweep only while she is still sliding; the V sign from the moment she stops.
+    if (f.attack.skill.fx === 'lisa-gal') {
+      const a = f.attack, s = a.skill;
+      return at('special', a.index - 2, a.t < s.start ? 0 : a.t < s.start + LISA_GAL_TRAVEL ? 1 : 2);
+    }
+    // 不用说我也懂: the flick she answers a read with, then hands on hips; the cast itself is the stock three cells.
+    if (f.attack.skill.fx === 'lisa-read' && f.attack.mode === LISA_READ.flick) {
+      return at('special', f.attack.index - 2, f.attack.t < LISA_FLICK_HIT ? 1 : 2);
+    }
+    // 特制曲奇·隐藏风味: the cookie held up; the toss; hands at her mouth after — and the cup through the tea.
+    if (f.attack.skill.fx === 'lisa-cookie') {
+      const a = f.attack, s = a.skill;
+      if (a.mode === LISA_COOKIE.tea) return at('special', a.index - 2, 2);
+      return at('special', a.index - 2, a.t < s.start ? 0 : a.t < s.start + LISA_TOSS ? 1 : 2);
+    }
+    // 死亡银河号: the kick start; the run and the skid lean over the tank; off the bike.
+    if (f.attack.skill.fx === 'galaxy-ride') {
+      const a = f.attack, mode = a.mode ?? RIDE.mount;
+      return at('special', a.index - 2, mode === RIDE.mount ? 0 : mode === RIDE.done ? 2 : 1);
+    }
+    // 可爱鉴定: the reach; hands on their cheeks, the pinch cell on every squeeze; the pat on the head.
+    if (f.attack.skill.fx === 'cute-check') {
+      const a = f.attack, mode = a.mode ?? CUTE.lunge;
+      if (mode === CUTE.lunge) return at('special', a.index - 2, 0);
+      if (mode === CUTE.held) return at('special', a.index - 2, a.liftAt > 0 && a.t < a.liftAt + CUTE_PINCH ? 1 : 0);
+      return at('special', a.index - 2, 2);
+    }
+    // 即兴加花: guard and jab trade off the fill's own (off-grid) clock; the crash closes it.
+    if (f.attack.skill.fx === 'fill-in') {
+      const a = f.attack;
+      return at('special', a.index - 2, fillRow(a.mode, a.t, a.liftAt));
+    }
+    // 银河流星踢: on the bike through the rev, the charge and the carry; the kick through the leap; the landing.
+    if (f.attack.skill.fx === 'meteor-kick') {
+      const a = f.attack, mode = a.mode ?? METEOR.rev;
+      return at('special', a.index - 2, mode === METEOR.done ? 2 : mode === METEOR.leap ? 1 : 0);
     }
     // 我背你！: the dash, then the run with them on her back trades the two carry cells.
     if (f.attack.skill.fx === 'piggyback') {

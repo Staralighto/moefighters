@@ -23,7 +23,13 @@ export type ModKind =
   | 'recruit'
   /** 独占欢呼 (千樱梨登场): every bit of energy this body would gain goes to `thief` instead. acc collects
    *  what was taken since the last pulse, for the graphic. */
-  | 'cheer';
+  | 'cheer'
+  /** 银猫扑脸: the cat clinging to this face. from is who sent it, acc its seconds left, v the scratches so far (game/lisa.ts). */
+  | 'cling'
+  /** 不用说我也懂: on her, acc its seconds left. The first U / I / O a foe starts while it holds is cut off (game/lisa.ts). */
+  | 'read'
+  /** 特制曲奇·隐藏风味: the mustard eaten. from is who baked it; it goes off when acc runs out (game/lisa.ts). */
+  | 'mustard';
 
 /**
  * One running buff.

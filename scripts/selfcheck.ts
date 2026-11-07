@@ -1,9 +1,9 @@
 /* Headless rule check: runs the fixed-step engine without DOM or canvas. `npm run check`. */
 import { FightGame, type GameOptions } from '../src/game/game.ts';
 import { dreadMul } from '../src/game/combat.ts';
-import { heartTier, YOMOGI_BODY } from '../src/render/clips.ts';
+import { heartTier, YOMOGI_BODY, FILLS, METEOR, BURROW, WARREN } from '../src/render/clips.ts';
 import { drawHeartBack, drawHeartFront, drawYomogiFx } from '../src/render/yomogiFx.ts';
-import { BUSHIDO_CREEP, BUSHIDO_LUNGE, BUSHIDO_SPAN, VEIL_NORMAL, VEIL_SHOT, clockRings, drumShotTime, hit, holdNoteSpan, outshines, violetHidden, withGuard } from '../src/game/combat.ts';
+import { BUSHIDO_CREEP, BUSHIDO_LUNGE, BUSHIDO_SPAN, VEIL_NORMAL, VEIL_SHOT, clockRings, drumShotTime, escapePulse, hit, holdNoteSpan, outshines, violetHidden, withGuard } from '../src/game/combat.ts';
 import { FLIGHT_HOP, vowBeatTime, VOW_BEATS, PRACTICE_GAP1, PRACTICE_HITS, practiceBeat, practiceGap, practiceRow, practiceStrums, FAMILY_MEMBERS, familyLife, PUFF_STOP, PLAY, PLAY_BYE, PLAY_DRAW, PLAY_FIGURES, PLAY_HOUSE, PLAY_PASS, PLAY_SLASHES, RARE_TIME, EAR, WIDE, WIDE_DROPS, WIDE_POP } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
 import { PLAYABLE, ROSTER, bandMembers, guestsFor } from '../src/data/characters.ts';
@@ -13,7 +13,8 @@ import { STAGES } from '../src/data/stages.ts';
 import { CONTROLS, FLOOR, COMBO_DECAY, STEP, W, X_MAX, X_MIN } from '../src/game/constants.ts';
 import { ASSEMBLE, ASSEMBLE_STOP, BUSHIDO_TAIL, bushidoClip, clipFor, crashRow, DRUM_SLUMP, drumRow, ROLL, ROLL_BEATS, ROLL_MAX, rollGap, flameFrame, IAIDO_DECIDE, IAIDO_GAP, IAIDO_RECOVER, riotCell, BLOOD, OBLIVION, TWIN_MOON } from '../src/render/clips.ts';
 import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
-import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell, shouldGoLite } from '../src/render/fx.ts';
+import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell } from '../src/render/fx.ts';
+import { shouldGoLite } from '../src/render/fxQuality.ts';
 import { backingScale, portraitBodyScale, superZoom, teamGlowOn } from '../src/render/renderer.ts';
 import { previewFighter, gainEnergy, skillsOf } from '../src/game/fighter.ts';
 import { addMod, atkMul, clearMod, incomingMul, jumpMul, moveSign, speedMul } from '../src/game/mods.ts';
@@ -48,6 +49,7 @@ import { cycleMusicOrder, nextTrack, resolveMusicPrefs, shouldShuffleOnFight, sh
 import { migrateLinearSlider, musicGain, MUSIC_CAP } from '../src/audio/mix.ts';
 import { POOL, aggregatePicks, bestLabel, drawThree, readBest, rollEnemies, stageSetup } from '../src/ui/challenge.ts';
 import { checkSpriteGuard } from './sprite-guard.ts';
+import { noteJab } from '../src/game/ai.ts';
 
 /* `npm run check` runs this file through node's type stripping: no bundler, and no @types/node to type
    `import 'node:fs'` with. `process.getBuiltinModule` reaches the same builtin without an import. */
@@ -119,11 +121,11 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const breaksAt: Record<string, number> = {
     nyamu: 4, sakiko: 10, anon: 5, rana: 10, soyo: 3, kokoro: 3, miyako: 5,
-    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5,
+    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6,
   };
   const segments: Record<string, number> = {
     nyamu: 4, sakiko: 16, anon: 6, rana: 22, soyo: 3, kokoro: 3, miyako: 6,
-    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11,
+    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8,
   };
   for (const [id, breakAt] of Object.entries(breaksAt)) {
     const s = ROSTER[at(id)].skills[5];
@@ -374,6 +376,62 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
   assert.ok(bank(0) > 0, 'easy keeps waiting through hitstun');
   assert.equal(bank(2), 0, 'master banks the wakeup frame');
+}
+
+// 铁壁: four J contacts in a row open a hidden window on master. Inside it a jab that lands on a master
+// stuck in hitstun is guarded anyway, nothing but the guard's own text shows, the master swings back
+// at once and a jab does not flinch that counter. Any other move resets the count; it closes into a cooldown.
+{
+  const make = (difficulty: number) => {
+    const g = new FightGame([ROSTER[at('gale')], ROSTER[at('ember')]], {
+      mode: 'cpu', difficulty, stage: STAGES[0], audio: silent, random: () => 0, controllers: [0, null],
+    });
+    g.phase = 'fight';
+    const [human, cpu] = g.fighters;
+    human.x = 400; cpu.x = 460;
+    return { g, human, cpu, jab: g.skillFor(human, 0) };
+  };
+  const easy = make(0);
+  for (let n = 0; n < 6; n++) noteJab(easy.g, easy.cpu, easy.human, easy.jab);
+  assert.equal(easy.cpu.ai.wall, 0, 'only master has the wall');
+
+  const w = make(2);
+  for (let n = 0; n < 5; n++) { w.human.cooldowns[0] = 0; w.human.attack = null; w.g.attack(w.human, 0); }
+  w.human.attack = null;
+  assert.equal(w.cpu.ai.wall, 0, 'presses alone never arm the wall');
+  for (let n = 0; n < 3; n++) noteJab(w.g, w.cpu, w.human, w.jab);
+  assert.equal(w.cpu.ai.wall, 0, 'three J contacts are not enough');
+  w.human.cooldowns[1] = 0;
+  assert.ok(w.g.attack(w.human, 1), 'one K');
+  w.human.attack = null;
+  noteJab(w.g, w.cpu, w.human, w.jab);
+  assert.equal(w.cpu.ai.wall, 0, 'a K in between resets the count');
+  for (let n = 0; n < 3; n++) noteJab(w.g, w.cpu, w.human, w.jab);
+  assert.ok(w.cpu.ai.wall > 0, 'four J contacts in a row open the wall');
+
+  w.cpu.stun = .25;
+  const said: string[] = [];
+  const say = w.g.text.bind(w.g);
+  (w.g as { text: typeof w.g.text }).text = (t: string, ...r: Parameters<typeof w.g.text> extends [string, ...infer R] ? R : never) => { said.push(t); return say(t, ...r); };
+  const hp0 = w.cpu.hp;
+  w.human.cooldowns[0] = 0;
+  assert.ok(w.g.attack(w.human, 0), 'jab into the stunned master');
+  for (let i = 0; i < 30 && w.human.attack; i++) w.g.step(STEP);
+  assert.ok(w.cpu.hp >= hp0 - 5, 'the stunned master still guards the mashed jab');
+  assert.ok(!said.some(t => t.includes('霸体')), 'nothing announces the wall');
+  for (let i = 0; i < 30 && !w.cpu.attack; i++) w.g.step(STEP);
+  assert.ok(!!w.cpu.attack, 'the master answers straight away');
+  const swing = w.cpu.attack!.serial;
+  w.human.cooldowns[0] = 0; w.human.attack = null; w.human.stun = 0; w.human.parried = 0;
+  w.g.attack(w.human, 0);
+  for (let i = 0; i < 20; i++) w.g.step(STEP);
+  assert.ok(w.cpu.attack?.serial === swing || w.cpu.stun <= 0, 'a jab into the counter does not flinch it');
+
+  w.cpu.ai.wall = STEP / 2;
+  w.g.step(STEP);
+  assert.ok(w.cpu.ai.wall === 0 && w.cpu.ai.wallCd > 0, 'the wall closes into a cooldown');
+  for (let n = 0; n < 4; n++) noteJab(w.g, w.cpu, w.human, w.jab);
+  assert.equal(w.cpu.ai.wall, 0, 'no wall during the cooldown');
 }
 
 // a recovering swing is a jab, not an invincible super
@@ -1116,9 +1174,13 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(shot.returned && shot.vx === -outbound, '回旋黄瓜 turns around once');
 
   const superGame = newGame(mutsumi, at('boulder')); const [s1, s2] = superGame.fighters; dummy(superGame);
-  s1.energy = s1.energyMax;
+  assert.equal(s1.energyMax, 180, '墨缇丝 meter caps at 180');
+  s1.energy = 179;
+  assert.ok(!superGame.attack(s1, 5), '墨缇丝 needs the full 180 energy');
+  s1.energy = 180;
   s2.x = s1.x + 110; s2.facing = -1;
-  superGame.keyDown('KeyL');
+  assert.ok(superGame.attack(s1, 5), '墨缇丝 casts at 180 energy');
+  assert.equal(s1.energy, 0, '墨缇丝 spends 180 energy');
   run(superGame, 1.2);
   assert.equal(s1.combo, 4, '墨缇丝 hits four times');
   assert.deepEqual(mortisAfterimage(0.4), [1, 1], '墨缇丝 first hit keeps the previous pose');
@@ -2177,6 +2239,8 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(fitSrc.includes('devicePixelRatio'), 'canvas backing stores follow the display scale');
   assert.ok(selectSrc.includes('fitCanvas') && readFileSync('src/ui/challenge.ts', 'utf8').includes('fitCanvas'), 'select portraits and buff-picker foes use the device-resolution fit');
   const uiCss = readFileSync('src/style.css', 'utf8');
+  const hiddenSelectors = [...uiCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{[^{}]*\bdisplay:\s*none\b[^{}]*\}/g)];
+  assert.ok(hiddenSelectors.every(([, selectors]) => !selectors.split(',').some(s => s.trim() === '.stage-random')), 'the portrait-only character shortcut must not hide the random scene card');
   assert.ok(!/\.fighter-preview canvas \{[^}]*image-rendering/.test(uiCss) && !/\.buff-foe canvas \{[^}]*image-rendering/.test(uiCss), 'a device-sized canvas is never handed a nearest-neighbour filter');
   assert.equal(easeLoad(0, 0, 0), 0, 'an empty load stays at the start');
   assert.ok(easeLoad(0, 0, 3000) > 0 && easeLoad(0, 0, 3000) <= 0.96, 'the bar creeps before the first file arrives');
@@ -3767,18 +3831,28 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     g.keyDown('KeyI'); run(g, .4);
     assert.ok(violetHidden(p1), 'she is gone mid-warp');
   }
-  // The flat cast timer used to run out before the warp did, so the tail was hittable.
+  // I: wind-up, warp, and visible recovery all reject ordinary hits and reversals.
   {
     const g = newGame(viola, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
     p2.x = p1.x + 40; p2.facing = -1;
-    g.keyDown('KeyI');
-    run(g, .6);
-    assert.ok(violetHidden(p1), 'she is still hidden late in the warp');
-    assert.ok(p1.invuln > 0, 'the late warp is still invulnerable');
+    assert.ok(g.attack(p1, 3), 'violet casts');
     const hp = p1.hp;
-    assert.equal(hit(g, p2, p1, p2.data.skills[0], { hit: new Set() }), false, 'a jab does not land during the warp');
-    assert.equal(p1.hp, hp, 'the late warp takes no damage');
-    assert.equal(p1.attack?.skill.fx, 'violet', 'the warp is not cancelled');
+    for (const [time, hidden] of [[0, false], [.6, true], [.75, false]] as const) {
+      for (let i = 0; i < 240 && p1.attack && p1.attack.t < time; i++) g.step(STEP);
+      assert.equal(p1.attack?.skill.fx, 'violet', 'violet is still casting at ' + time);
+      assert.equal(violetHidden(p1), hidden, 'violet visibility at ' + time);
+      assert.ok(!hit(g, p2, p1, p2.data.skills[0], { hit: new Set() }), 'a jab misses at ' + time);
+      assert.ok(!hit(g, p2, p1, p2.data.skills[5], { hit: new Set(), pierce: true }), 'a piercing reversal misses at ' + time);
+    }
+    assert.equal(p1.hp, hp, 'the cast takes no damage');
+    p2.x = p1.x - 40;
+    assert.ok(g.attack(p2, 0), 'the opponent starts a reversal source');
+    p2.attack!.pierce = true;
+    escapePulse(g, p2);
+    p2.attack = null;
+    assert.ok(p1.attack && p1.stun === 0, 'a reversal shockwave cannot interrupt the recovery');
+    for (let i = 0; i < 240 && p1.attack; i++) g.step(STEP);
+    assert.ok(!p1.attack && hit(g, p2, p1, p2.data.skills[0], { hit: new Set() }), 'a jab can land as soon as violet ends');
   }
   // O: cast, walk, jab — the echo replays the walk and the jab, and nothing can touch it
   {
@@ -6312,12 +6386,15 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     const g = new FightGame([PLAYABLE[a], PLAYABLE[b]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: r.next, controllers: [0, 1], netRole: 'lock' });
     return { g, r, p: [new RemotePad(0), new RemotePad(1)] };
   };
-  let resumed = 0;
+  let resumed = 0, exactPairs = 0;
   for (let a = 0; a < PLAYABLE.length; a++) {
     const b = (a + 3) % PLAYABLE.length;
     const x = make(a, b, 1000 + a), y = make(a, b, 1000 + a);
     const p0 = pads(a * 7 + 1), p1 = pads(a * 7 + 2);
     let z: ReturnType<typeof make> | null = null;
+    // Mod closures (onExpire / pulse) cannot travel (lock.ts dumpGame); a pair with one live at the dump is not
+    // expected to resume, so it is left out of the count rather than diluting it.
+    let exact = false;
     for (let t = 0; t < 1800; t++) {
       const i0 = p0(), i1 = p1();
       for (const w of z ? [x, y, z] : [x, y]) {
@@ -6326,16 +6403,19 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
       }
       const hx = hashGame(x.g, x.r);
       assert.equal(hashGame(y.g, y.r), hx, PLAYABLE[a].id + ' vs ' + PLAYABLE[b].id + ': same seed and pads, same sim at tick ' + t);
-      if (z && hashGame(z.g, z.r) === hx) resumed++;
+      if (z && exact && hashGame(z.g, z.r) === hx) resumed++;
       if (t === 600) {
+        exact = !x.g.fighters.some(f => f.mods.some(m => m.left > 0 && (!!m.onExpire || !!m.pulse)));
+        if (exact) exactPairs++;
         z = make(a, b, 1);
         loadGame(z.g, z.r, dumpGame(x.g, x.r));
         z.p[0].taps = x.p[0].taps.slice(); z.p[1].taps = x.p[1].taps.slice();
       }
     }
   }
-  // A resync is exact when no closure-carrying mod is live; most pairs stay in step for the whole 20s after.
-  assert.ok(resumed > PLAYABLE.length * 1199 * .9, 'an exact dump resumes the sim in step (' + resumed + ' of ' + PLAYABLE.length * 1199 + ' ticks)');
+  // A resync is exact when no closure-carrying mod is live: those pairs stay in step for the whole 20s after.
+  assert.ok(exactPairs > PLAYABLE.length * .7, 'most pairs dump with no closure-carrying mod live (' + exactPairs + ' of ' + PLAYABLE.length + ')');
+  assert.ok(resumed > exactPairs * 1199 * .98, 'an exact dump resumes the sim in step (' + resumed + ' of ' + exactPairs * 1199 + ' ticks)');
 }
 
 // lockstep sessions over a lossy, laggy link: in step, a forced desync resyncs, repeated ones fall back
@@ -6518,9 +6598,18 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.ok(guestGame.effects.some(e => e.local), 'guest local hit spawns immediate local hit sparks');
 
   // Host receives guest's attack + position + hit claim and honors it once (no double damage)
+  const [slot, gx, hx] = lastClaim!;
+  const hostGuest = hostGame.fighters[1];
+  assert.ok(!applyClaimHit(hostGame, 5, gx, hx), 'a claim cannot cast an unpaid super');
+  assert.ok(!hostGuest.attack, 'a claim cannot start any attack');
+  assert.ok(hostGame.attack(hostGuest, slot), 'the host processes the actual attack input');
+  assert.ok(!applyClaimHit(hostGame, slot, gx, hx), 'a claim cannot land during wind-up');
+  run(hostGame, hostGuest.attack!.skill.start + STEP);
+  assert.equal(hostGame.fighters[0].hp, hpBefore, 'the stock swing misses at the initial host spacing');
+  assert.ok(!applyClaimHit(hostGame, slot, NaN, NaN), 'malformed positions cannot bypass host range');
+  assert.ok(!applyClaimHit(hostGame, 5, gx, hx), 'a claim cannot change the attack slot');
   syncHostGuestPos(hostGame, Math.round(guestGame.fighters[1].x));
   assert.ok(hostGame.fighters[1].x < 585, 'syncHostGuestPos pulls host p2 smoothly toward guest x');
-  const [slot, gx, hx] = lastClaim!;
   assert.ok(applyClaimHit(hostGame, slot, gx, hx), 'applyClaimHit returns true for valid hit claim');
   const hpAfterOneClaim = hostGame.fighters[0].hp;
   assert.ok(hpAfterOneClaim < hpBefore, 'host honors guest lenient hit claim within drift tolerance');
@@ -7021,18 +7110,25 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   // L: in the coffin she is untouchable and unseen; seven small rings chip the foe without a stagger,
   // then the big ring's burst knocks down whoever is still inside; running clear or a timed dodge gets out
   {
-    const g = newGame(ho, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
-    p1.x = 300; p2.x = 520; p1.facing = 1; p1.energy = p1.energyMax;
-    g.keyDown('KeyL'); g.step(STEP); g.keyUp('KeyL'); run(g, .6);
+    const g = newGame(ho, at('gale')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 520; p1.facing = 1;
+    assert.equal(p1.energyMax, 180, 'the coffin meter caps at 180');
+    p1.energy = 179;
+    assert.ok(!g.attack(p1, 5), 'the coffin needs the full 180 energy');
+    p1.energy = 180;
+    assert.ok(g.attack(p1, 5), 'the coffin casts at 180 energy');
+    assert.equal(p1.energy, 0, 'the coffin spends 180 energy');
+    run(g, .6);
     assert.ok(violetHidden(p1) && p1.invuln > 0, 'she is inside the coffin, untouchable');
     let staggered = false;
     for (let i = 0; i < Math.round(2 / STEP); i++) { g.step(STEP); if (p2.stun > 0 || p2.knocked > 0) staggered = true; }
     const chip = p2.data.hp - p2.hp;
-    assert.ok(chip > 55 && chip < 80, 'seven small rings chip about 70: ' + chip);
+    assert.equal(chip, 70, 'seven small rings hit for 10 each');
     assert.ok(!staggered, 'the small rings never stagger');
     run(g, .5);
     const lost = p2.data.hp - p2.hp - chip;
-    assert.ok(lost > 90 && lost < 120 && p2.knocked > 0, 'the big ring hits once and knocks down: ' + lost);
+    assert.equal(lost, 85, 'the big ring hits once for 85');
+    assert.ok(p2.knocked > 0, 'the big ring knocks down');
     run(g, .6);
     assert.ok(!violetHidden(p1), 'she steps out again');
   }
@@ -8651,6 +8747,376 @@ for (const order of [[2, 3], [3, 2]]) {
   assert.equal(stampOf('boulder'), 2, 'blocked storage still keeps the stamp for this session');
   g.localStorage = saved;
   assert.ok(miniSeal(2).split('★').length - 1 === 3, 'a 大师 stamp carries three stars');
+}
+
+// masking: RAS 的鼓手 MASKING。U rides the bike through bodies and skids; I pinches cheeks and leaves them
+// blushing (混乱, the 'blush' look); O plays an off-grid fill and a crash; L carries a body on the bike's nose
+// to the wall and kicks it from the seat — no guard holds it, a jump clears it.
+{
+  const ma = at('masking');
+  const data = ROSTER[ma];
+  assert.ok(ma === at('chuchu') + 1, 'MASKING sits right after CHU² in RAS');
+  assert.equal(data.name, 'MASKING', 'RAS members go by their code names');
+  assert.equal(data.title, '鼓手 / mas王', 'title from the B 站 mas王 edits');
+  assert.equal(data.trait, 'beat', 'a drummer keeps the beat');
+  assert.ok(!data.skills.some(s => s.name.includes('狂犬')), '狂犬 stays out of the move names');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/masking/bike.png') && data.view.extras.includes('/sprites/masking/lock.png'), 'bike and LOCK preload');
+  const fresh = (p1x = 300, p2x = 480) => {
+    const g = newGame(ma, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = p1x; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  // U: through the body, the skid behind it, the bike gone afterwards
+  {
+    const { g, p1, p2 } = fresh(300, 480);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    let rode = false;
+    for (let i = 0; i < 240 && p1.attack; i++) { g.step(STEP); if (g.effects.some(e => e.type === 'masking-bike')) rode = true; }
+    assert.ok(rode, 'U puts her on the bike');
+    assert.ok(p1.x > p2.x, 'U goes through them: ' + p1.x.toFixed(0) + ' vs ' + p2.x.toFixed(0));
+    assert.ok(hp - p2.hp > 60, 'clipped on the way and swept by the skid: ' + (hp - p2.hp));
+    run(g, .3);
+    assert.ok(!g.effects.some(e => e.type === 'masking-bike'), 'the bike leaves with the move');
+  }
+  {
+    const { g, p1, p2 } = fresh(300, 480);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    for (let i = 0; i < 240 && p1.attack; i++) { p2.y = FLOOR - 160; p2.vy = 0; g.step(STEP); }
+    assert.equal(p2.hp, hp, 'U rides under a jump');
+  }
+  // I: three pinches and the pat; they are left 混乱 in the blush look
+  {
+    const { g, p1, p2 } = fresh(300, 380);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    run(g, 1.6);
+    assert.ok(hp - p2.hp > 50, 'I pinches and pats: ' + (hp - p2.hp));
+    assert.ok(hasStatus(p2, 'confuse'), 'I leaves them 混乱');
+    assert.ok(p2.mods.some(m => m.kind === 'confuse' && m.mark === 'blush'), 'worn as a blush');
+    assert.ok(!!STATUS_MARKS.blush, 'the blush look is registered');
+  }
+  // O: six jabs off the grid and the crash; the fills are never evenly spaced
+  {
+    const { g, p1, p2 } = fresh(300, 390);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    run(g, 1.6);
+    assert.ok(hp - p2.hp > 70, 'O lands the fill and the crash: ' + (hp - p2.hp));
+    assert.ok(g.effects.some(e => e.type === 'masking-crash') || p2.knocked > 0 || p2.y < FLOOR, 'the crash goes off');
+    for (const fill of FILLS) {
+      const gaps = fill.slice(1).map((t, i) => +(t - fill[i]).toFixed(3));
+      assert.ok(new Set(gaps).size > 2, 'a fill is syncopated, not a steady beat: ' + gaps);
+    }
+  }
+  // L: through a guard, carried to the wall, kicked from the seat
+  {
+    const { g, p1, p2 } = fresh(300, 460);
+    p1.energy = 200;
+    p2.blocking = true;
+    const hp = p2.hp;
+    assert.ok(g.attack(p1, 5), 'L casts at 180');
+    let leapt = false, lock = false;
+    for (let i = 0; i < 480 && p1.attack; i++) {
+      p2.blocking = true;
+      g.step(STEP);
+      if (p1.attack?.mode === METEOR.leap) leapt = true;
+      if (g.effects.some(e => e.type === 'masking-lock')) lock = true;
+    }
+    assert.ok(lock, 'LOCK rides on the back seat');
+    assert.ok(leapt, 'she leaps off the seat');
+    assert.ok(p2.x > X_MAX - 40, 'carried to the wall: ' + p2.x.toFixed(0));
+    assert.ok(hp - p2.hp > 180, 'the guard does not hold the bike: ' + (hp - p2.hp));
+    assert.equal(p1.y, FLOOR, 'she lands');
+    run(g, .3);
+    assert.ok(!g.effects.some(e => e.type === 'masking-bike' || e.type === 'masking-lock'), 'bike and LOCK go with the move');
+  }
+  {
+    const { g, p1, p2 } = fresh(300, 460);
+    p1.energy = 200;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    for (let i = 0; i < 480 && p1.attack; i++) { p2.y = FLOOR - 170; p2.vy = 0; g.step(STEP); }
+    assert.ok(hp - p2.hp === 0, 'a jump clears the bike and the kick lands on empty floor: ' + (hp - p2.hp));
+  }
+}
+
+// tae: 花园多惠。U goes down a rabbit hole and comes up under the foe (step off it to dodge, no guard holds it);
+// I cuffs them (定身, the 'cuffs' look), longer when caught mid-move; O sends five hopping rabbits along the floor
+// (a jump clears them); L opens a warren round them — the rabbits carry them up, 小欧 throws them to the top and
+// her rabbit kick knocks them down; a guard holds the rabbits until it breaks, never 小欧 or the kick.
+{
+  const ta = at('tae');
+  const data = ROSTER[ta];
+  assert.ok(ta === at('arisa') + 1, '花园多惠 sits with Poppin\'Party, after 有咲');
+  assert.equal(data.title, '吉他 / 花园警察', 'title from the 花园警察 meme');
+  assert.equal(data.quote, '喜欢就没问题，吉他是给喜欢弹的人弹的。', 'quote from her 萌娘百科 header');
+  assert.equal(data.trait, 'rush', 'she runs every morning');
+  assert.ok(data.view.kind === 'sprite' && !data.view.extras?.length, 'every rabbit is drawn in code: no prop pictures');
+  assert.ok(!!STATUS_MARKS.cuffs, 'the cuffs look is registered');
+  const fresh = (p1x = 300, p2x = 480) => {
+    const g = newGame(ta, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = p1x; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  // U: under the floor and up out of a hole on the foe; hidden while under; no guard holds it
+  {
+    const { g, p1, p2 } = fresh(300, 520);
+    const hp = p2.hp;
+    p2.blocking = true;
+    g.attack(p1, 2);
+    let hidden = false, flew = false;
+    for (let i = 0; i < 240 && p1.attack; i++) {
+      p2.blocking = p2.stun <= 0 && p2.y >= FLOOR;
+      g.step(STEP);
+      if (violetHidden(p1)) hidden = true;
+      if (p2.y < FLOOR - 40) flew = true;
+    }
+    assert.ok(hidden, 'U hides her underground');
+    assert.ok(Math.abs(p1.x - 520) < 40, 'she comes up where they stood: ' + p1.x.toFixed(0));
+    assert.ok(hp - p2.hp > 30, 'the pop lands through a guard: ' + (hp - p2.hp));
+    assert.ok(flew, 'and throws them into the air');
+  }
+  {
+    const { g, p1, p2 } = fresh(300, 520);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    for (let i = 0; i < 240 && p1.attack; i++) {
+      g.step(STEP);
+      if (p1.attack?.mode === BURROW.under) p2.x = 760;
+    }
+    assert.equal(p2.hp, hp, 'stepping off the ears dodges U');
+  }
+  // I: cuffed (定身, 'cuffs'); caught mid-move is longer
+  {
+    const { g, p1, p2 } = fresh(300, 390);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    let root = 0;
+    for (let i = 0; i < 160 && p1.attack; i++) { g.step(STEP); root = Math.max(root, p2.root); }
+    assert.ok(hp - p2.hp > 20, 'I lands: ' + (hp - p2.hp));
+    assert.ok(root > 1.8 && root <= 2.01, 'a plain catch roots 2 s: ' + root.toFixed(2));
+    assert.equal(p2.rootMark, 'cuffs', 'worn as cuffs');
+  }
+  {
+    const { g, p1, p2 } = fresh(300, 390);
+    g.attack(p1, 3);
+    let root = 0;
+    for (let i = 0; i < 160 && p1.attack; i++) {
+      // Swinging the other way, so the swing never reaches her: only the timing is tested.
+      p2.facing = 1;
+      if (!p2.attack && p2.root <= 0) g.attack(p2, 1);
+      g.step(STEP);
+      root = Math.max(root, p2.root);
+    }
+    assert.ok(root > 2.8, '现行犯: caught mid-move roots longer: ' + root.toFixed(2));
+  }
+  // O: five rabbits along the floor; a jump clears them
+  {
+    const { g, p1, p2 } = fresh(300, 620);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    let most = 0;
+    for (let i = 0; i < 300; i++) { g.step(STEP); most = Math.max(most, g.projectiles.filter(q => q.fx === 'tae-rabbit').length); }
+    assert.ok(most >= 3, 'the rabbits hop out one after another: ' + most);
+    assert.ok(hp - p2.hp > 40, 'they land: ' + (hp - p2.hp));
+  }
+  {
+    const { g, p1, p2 } = fresh(300, 620);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    for (let i = 0; i < 300; i++) { p2.y = FLOOR - 170; p2.vy = 0; g.step(STEP); }
+    assert.equal(p2.hp, hp, 'a jump clears the rabbits');
+  }
+  // L: the warren carries them up, 小欧 and the kick; through a guard once it breaks
+  {
+    const { g, p1, p2 } = fresh(300, 520);
+    p1.energy = 200;
+    const hp = p2.hp;
+    assert.ok(g.attack(p1, 5), 'L casts at 130');
+    let top = 0, dived = false;
+    for (let i = 0; i < 600 && p1.attack; i++) {
+      g.step(STEP);
+      top = Math.max(top, FLOOR - p2.y);
+      if (p1.attack?.mode === WARREN.dive) dived = true;
+    }
+    assert.ok(dived, 'she goes down a hole of her own');
+    assert.ok(top > 180, '小欧 throws them up high: ' + top.toFixed(0));
+    assert.ok(hp - p2.hp > 170, 'the warren, 小欧 and the kick: ' + (hp - p2.hp));
+    assert.equal(p1.y, FLOOR, 'she lands');
+    run(g, .5);
+    assert.ok(!g.effects.some(e => e.fighter === p1.id && (e.type === 'tae-warren' || e.type === 'tae-moon' || e.type === 'tae-crown')), 'the warren, the moon and the crown go with the move');
+  }
+  {
+    const { g, p1 } = fresh(300, 520);
+    const { g: copy } = fresh(300, 520);
+    const rng1 = new Rng(7), rng2 = new Rng(7);
+    p1.energy = p1.energyMax;
+    assert.ok(g.attack(p1, 5), 'the warren starts before a resync');
+    for (let i = 0; i < 400 && p1.attack?.shots !== 3; i++) g.step(STEP);
+    assert.equal(p1.attack?.shots, 3, 'the resync arrives on the third rabbit');
+    loadGame(copy, rng2, dumpGame(g, rng1));
+    for (let i = 0; i < 400 && p1.attack; i++) {
+      g.step(STEP); copy.step(STEP);
+      assert.equal(hashGame(copy, rng2), hashGame(g, rng1), 'the resumed warren matches at step ' + i);
+    }
+    assert.ok(!p1.attack && !copy.fighters[0].attack, 'both warrens finish');
+  }
+  {
+    const { g, p1, p2 } = fresh(300, 520);
+    p1.energy = 200;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    for (let i = 0; i < 600 && p1.attack; i++) {
+      p2.blocking = p2.stun <= 0 && p2.y >= FLOOR && p2.root <= 0;
+      g.step(STEP);
+    }
+    assert.ok(hp - p2.hp > 120, 'a guard holds the rabbits only until it breaks; 小欧 and the kick go through: ' + (hp - p2.hp));
+  }
+  // Kept effects: the crown leaves her when she goes down the hole; a cut-short L or I leaves nothing behind.
+  {
+    const { g, p1 } = fresh(300, 520);
+    p1.energy = 200;
+    g.attack(p1, 5);
+    let crownWhileUp = false;
+    for (let i = 0; i < 600 && p1.attack; i++) {
+      g.step(STEP);
+      if (p1.attack?.mode === WARREN.rise && g.effects.some(e => e.type === 'tae-crown' && e.fighter === p1.id)) crownWhileUp = true;
+    }
+    assert.ok(!crownWhileUp, 'the crown is gone by the time she comes up out of her hole');
+  }
+  {
+    const { g, p1 } = fresh(300, 520);
+    p1.energy = 200;
+    g.attack(p1, 5);
+    run(g, 1.2);
+    assert.ok(g.effects.some(e => e.type === 'tae-warren' && e.fighter === p1.id), 'the warren is open mid-move');
+    p1.attack = null;
+    run(g, .6);
+    assert.ok(!g.effects.some(e => e.fighter === p1.id && e.type.startsWith('tae-')), 'a cut-short L takes its warren, moon and crown with it');
+  }
+  {
+    const { g, p1 } = fresh(300, 700);
+    g.attack(p1, 3);
+    run(g, .15);
+    p1.attack = null;
+    run(g, .3);
+    assert.ok(!g.effects.some(e => e.type === 'tae-siren'), 'a cut-short I takes its siren with it');
+  }
+}
+
+// lisa: 今井莉莎。U is the stock dash with a star trail; I sends a silver cat that clings to the face it reaches
+// (混乱 in the 'lisa-cat' look, a scratch every 0.4 s, gone on a knockdown; a jump clears it); O puts a read on her —
+// the first U / I / O a foe starts is cut off, cooled down anyway, and answered with a flick from in front of
+// them; L lobs a cookie into the nearest mouth, and the mustard goes off LISA_FUSE later through anything, 烧焦.
+{
+  const li = at('lisa');
+  const data = ROSTER[li];
+  assert.ok(li === at('sayo') + 1, '今井莉莎 sits with Roselia, after 纱夜');
+  assert.equal(data.trait, 'beat', 'the bass keeps the beat');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/lisa/cat.png'), 'the cat is its own picture');
+  assert.ok(!!STATUS_MARKS['lisa-cat'] && !!STATUS_MARKS['lisa-wasabi']?.body, 'both of her status looks are registered');
+  const fresh = (foe = 'boulder', p2x = 600) => {
+    const g = newGame(li, at(foe)); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  const live = (f: { mods: { kind: string; left: number; mark?: string }[] }, kind: string, mark?: string) =>
+    f.mods.some(m => m.kind === kind && m.left > 0 && (mark == null || m.mark === mark));
+  // I: the cat clings, confuses and scratches four times, then lets go
+  {
+    const { g, p1, p2 } = fresh();
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    let held = 0, confused = 0;
+    for (let i = 0; i < 480; i++) { g.step(STEP); if (live(p2, 'cling')) held += STEP; if (live(p2, 'confuse', 'lisa-cat')) confused += STEP; }
+    assert.ok(held > 1.9 && held < 2.2, 'the cat holds on about 2 s: ' + held.toFixed(2));
+    assert.ok(confused > 1.9 && confused < 2.2, 'and the 混乱 lasts as long: ' + confused.toFixed(2));
+    assert.ok(hp - p2.hp > 35, 'the pounce plus four scratches: ' + (hp - p2.hp).toFixed(1));
+    assert.ok(!live(p2, 'cling') && !live(p2, 'confuse'), 'both go when it lets go');
+  }
+  {
+    const { g, p1, p2 } = fresh();
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    for (let i = 0; i < 300; i++) { if (i === 60) p2.vy = -700; g.step(STEP); }
+    assert.equal(p2.hp, hp, 'a jump clears the cat');
+  }
+  // O: a foe's U is cut off, cooled down anyway, and answered from in front of them
+  {
+    const { g, p1, p2 } = fresh('tae', 700);
+    g.attack(p1, 4);
+    for (let i = 0; i < 90; i++) g.step(STEP);
+    assert.ok(live(p1, 'read'), 'the read is on her');
+    assert.ok(!p1.attack, 'and she is free to act');
+    const hp = p2.hp;
+    assert.ok(g.attack(p2, 2), 'the foe starts a U');
+    assert.ok(!p2.attack, 'it never comes out');
+    assert.ok(p2.cooldowns[2] > 0, 'but it cools down');
+    assert.ok(Math.abs(p1.x - (p2.x + p2.facing * 62)) < 1, 'she is in front of them');
+    assert.ok(hp - p2.hp > 25 && p2.stun > .5, 'the flick lands and holds them');
+    assert.ok(!live(p1, 'read'), 'one read, spent');
+  }
+  {
+    const { g, p1, p2 } = fresh('viola', 520);
+    assert.ok(g.attack(p1, 4), 'Lisa starts reading the next cast');
+    run(g, .6);
+    const hp = p2.hp;
+    assert.ok(g.attack(p2, 3) && p2.attack?.skill.invuln === 'cast', 'the read cannot interrupt Violet');
+    assert.equal(p2.hp, hp, 'the read cannot damage Violet');
+    assert.ok(live(p1, 'read'), 'Lisa keeps the read for an interruptible cast');
+  }
+  {
+    const { g, p1 } = fresh();
+    g.attack(p1, 4);
+    let t = 0;
+    for (let i = 0; i < 720; i++) { g.step(STEP); if (live(p1, 'read')) t += STEP; }
+    assert.ok(t > 3.8 && t < 4.3, 'an unused read runs out in about 4 s: ' + t.toFixed(2));
+    assert.ok(!g.effects.some(e => e.type === 'lisa-thread' && e.life > .2), 'and its thread with it');
+  }
+  // L: the cookie, the fuse, the mustard (through a guard), 烧焦; a jump gets out from under the cookie
+  {
+    const { g, p1, p2 } = fresh();
+    p1.energy = 200;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    let fuse = 0, burnt = false, hpAtFuse = 0;
+    for (let i = 0; i < 960; i++) {
+      p2.blocking = p2.stun <= 0 && p2.knocked <= 0;
+      g.step(STEP);
+      if (live(p2, 'mustard')) { fuse += STEP; hpAtFuse = p2.hp; }
+      if (live(p2, 'burn', 'lisa-wasabi')) burnt = true;
+    }
+    assert.ok(fuse > 1.4 && fuse < 1.7, 'the mustard waits about 1.5 s: ' + fuse.toFixed(2));
+    assert.ok(hpAtFuse - p2.hp > 90, 'and goes off through a guard: ' + (hpAtFuse - p2.hp).toFixed(1));
+    assert.ok(burnt, 'it burns after');
+    assert.ok(hp - p2.hp > 140, 'the whole super: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh('viola', 520);
+    p1.energy = p1.energyMax;
+    assert.ok(g.attack(p1, 5), 'Lisa lobs the cookie at Viola');
+    for (let i = 0; i < 480 && !p2.mods.some(m => m.kind === 'mustard' && m.left > 0 && (m.acc ?? 0) < .16); i++) g.step(STEP);
+    assert.ok(live(p2, 'mustard'), 'Viola ate the cookie');
+    assert.ok(g.attack(p2, 3), 'Viola is invulnerable when the fuse expires');
+    const hp = p2.hp;
+    run(g, .3);
+    assert.equal(p2.hp, hp, 'mustard damage waits for Violet to end');
+    assert.ok(live(p2, 'mustard'), 'the delayed blast is still armed');
+    for (let i = 0; i < 240 && live(p2, 'mustard'); i++) g.step(STEP);
+    assert.equal(hp - p2.hp, 95, 'the blast goes off after Violet with armor reduction');
+    assert.ok(live(p2, 'burn', 'lisa-wasabi'), 'the deferred blast applies burn');
+  }
+  {
+    const { g, p1, p2 } = fresh();
+    p1.energy = 200;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    for (let i = 0; i < 500; i++) { if (i === 70) p2.vy = -750; g.step(STEP); }
+    assert.equal(p2.hp, hp, 'a jump gets out from under the cookie');
+    assert.ok(!live(p2, 'mustard'), 'and there is no mustard');
+  }
 }
 
 console.log('selfcheck ok');

@@ -182,6 +182,11 @@ export default defineConfig(({ command }) => ({
   define: { __NET_HASH__: JSON.stringify(sourceHash()) },
   // Toy hosts the built page under /toy/<slug>/. Dev stays at the site root.
   base: command === 'build' ? './' : '/',
+  build: {
+    rolldownOptions: {
+      output: { codeSplitting: { groups: [{ name: 'roster', test: /[\\/]src[\\/]data[\\/]/ }] } },
+    },
+  },
   plugins: [themeLight(), idlePortraits(), propLayout(), touchLayout()],
   server: { host: true },
   preview: { host: true },

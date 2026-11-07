@@ -1,11 +1,18 @@
 import type { HeartSpec, HitReact, Op, Skill } from '../data/types.ts';
-import { formTune, gainEnergy, gainGauge, girth, skillsOf, type Attack, type Fighter } from './fighter.ts';
+import { formTune, gainEnergy, gainGauge, girth, isInvulnerable, skillsOf, type Attack, type Fighter } from './fighter.ts';
 import { addDebt, addMod, cheerThief, clearMod, dmgDealtMul, dmgTakenMul, has, incomingMul, lifestealOf, moveSign, reflectAmount, type Mod } from './mods.ts';
 import type { Effect, FightGame, Projectile, SealVolley } from './game.ts';
 import { CONTROLS, FLOOR, GRAVITY, H, SIDE, W, X_MAX, X_MIN, clamp } from './constants.ts';
 import { attackPhase } from './animState.ts';
 import { BUSHIDO_TAIL, clipFor, DRUM_SLUMP, drumRow, PAW, PAW_FAIL, PAW_HITS, pawRow, pawTime, ROLL, ROLL_BEATS, ROLL_MAX, ROLL_MIN, ROLL_SLUMP, ROLL_THROW, rollGap, SELFIE, SELFIE_HOLD, SELFIE_LUNGE, SELFIE_SNAP, SELFIE_TAIL, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS, PRACTICE_HITS, practiceBeat, SKIP_HOP, SKIP_MAX, SKIP_MIN, SKIP_TAIL, MINE_FUSE, ENCORE, ENCORE_FACE, ENCORE_GONE, BURDEN_Y, UNBOWED_STEP, UNBOWED_MAX, PIGGY, PIGGY_DASH, PIGGY_CARRY, PIGGY_TAIL, PIGGY_BACK_X, PIGGY_BACK_Y, HUG, HUG_LUNGE, HUG_FIRST, HUG_GAP, HUG_TAIL, MEAL_GRACE, FAMILY, FAMILY_MEMBERS, FAMILY_LUNGE, FAMILY_FINALE, FAMILY_ZONE_AHEAD, FAMILY_ZONE_R, FAMILY_TAIL, familyLife, BLOOD, OBLIVION, TWIN_MOON, TWIN_PHASE, PUFF, PUFF_BLINK, PUFF_ARRIVE, PUFF_REACH, PUFF_STOP, PUFF_HOP, PUFF_BEAT, PUFF_CUT, PUFF_TAIL, EAR, EAR_DECIDE, EAR_PALM_HITS, EAR_PALM_GAP, EAR_PALM, EAR_KNEE, EAR_TAIL, EAR_GLINT, MIKU_EYE, PLAY, PLAY_DASH, PLAY_PASS, PLAY_THROUGH, PLAY_SLASHES, PLAY_BYE, PLAY_THOUGHT, PLAY_EAR_AT, PLAY_EAR_HOLD, PLAY_FIGURES, PLAY_CURTAIN, WIDE, WIDE_DASH, WIDE_DROPS, WIDE_BLAST, WIDE_POP, WIDE_TAIL, WIDE_APPLIANCE_LIFE, WIDE_SLOT, WIDE_ZONE_AHEAD, WIDE_ZONE_R, ENTRANCE, ENTRANCE_VY, ENTRANCE_REACH, ENTRANCE_HOP, ENTRANCE_TAIL, ENTRANCE_CHEER, CHERRY_MAX, CHERRY_R0, CHERRY_R_STEP, CHERRY_HOLD_MAX, CHERRY_TAIL, CHIERI_BUN, ASSEMBLE, ASSEMBLE_PULL, ASSEMBLE_BEAT, ASSEMBLE_FINALE, ASSEMBLE_STOP, ASSEMBLE_TAIL, ASSEMBLE_WHIFF, LEAGUE_BOARD_Y, HEART_TIERS, HEART_GAP, heartTier, YOMOGI_CHEST, YOMOGI_EYE, HIDE, HIDE_REACH, HIDE_GAP, HIDE_HOP, HIDE_TRAVEL, HIDE_WAIT, HIDE_PUNCH, HIDE_TAIL, PALM_FIST, RADAR, RADAR_WAIT, RADAR_BURST, RADAR_TAIL, SHADOW, SHADOW_SCARE, SHADOW_DASH, SHADOW_BEATS, SHADOW_PAUSE, SHADOW_TAIL, SHADOW_SCALE, SHADOW_OFF, SHADOW_GAP, SHADOW_LET, SHADOW_POSE, FLIGHT, FLIGHT_CARRY, FLIGHT_WHIFF, FLIGHT_TAIL, FLIGHT_RISE, FLIGHT_TRAVEL, FLIGHT_HOP, WITHDRAW, WITHDRAW_LUNGE, WITHDRAW_FIRST, WITHDRAW_GAP, WITHDRAW_YANKS, WITHDRAW_TAIL, SUITS_REVEAL } from '../render/clips.ts';
 import { SCRIPTS } from './scripts.ts';
+import { noteJab, walled } from './ai.ts';
+// MASKING's four moves register themselves on SCRIPTS (after scripts.ts, which this line follows).
+import './masking.ts';
+// 花园多惠 too.
+import './tae.ts';
+// 今井莉莎 too.
+import './lisa.ts';
 import { applyStatus, applyStatusBlocked, extendStatus, isRecruit, statusMask } from './status.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
@@ -344,9 +351,9 @@ export function retainEscape(f: Fighter, superHit = false): void {
   f.queue = f.queue.filter(q => skillsOf(f)[q.index]?.breakout);
 }
 
-/** A reversal reaches the swing that is on us. A dodge, and the other person's reversal, stay up. */
+/** A reversal cuts into ordinary attacks, even ones with timed invuln. */
 function cuts(blow: { pierce?: boolean } | undefined, defender: Fighter): boolean {
-  return !!blow?.pierce && !!defender.attack && !defender.attack.pierce;
+  return !!blow?.pierce && !!defender.attack && !defender.attack.pierce && defender.attack.skill.invuln !== 'cast';
 }
 
 /** 减速: one writer, so a block and a clean hit cannot drift apart. */
@@ -435,7 +442,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   // friendly is the one blast that reads everyone on the field (火的故事).
   const blast = !!skill.friendly;
   if ((!g.isEnemy(attacker, defender) && !blast) || defender.echo || defender.hp <= 0 || source.hit.has(defender.id)) return false;
-  if (defender.invuln > 0 && !cuts(source, defender)) return false;
+  if (isInvulnerable(defender) && !cuts(source, defender)) return false;
   if (g.netRole === 'guest') {
     // Guest local pre-animation: play contact feel and send a hit claim, while the host arbitrates hp and knockback.
     source.hit.add(defender.id);
@@ -459,6 +466,20 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     return false;
   }
   source.hit.add(defender.id);
+  // 铁壁 (ai.ts): a mashed jab meets a guard that should not be up yet. Out of hitstun, turned
+  // to face it, guard topped so it cannot break; mid-counter it is a silent armour instead (below).
+  const wall = walled(g, defender, attacker, skill) && defender.knocked <= 0 && defender.y >= FLOOR - .1;
+  const wallGuard = wall && !defender.attack;
+  const wallArmour = wall && !!defender.attack;
+  // Counted after the wall check, so the contact that arms it still lands as it would have.
+  noteJab(g, defender, attacker, skill);
+  if (wallGuard) {
+    defender.stun = 0;
+    defender.facing = originX > defender.x ? 1 : -1;
+    defender.blocking = true;
+    defender.ai.block = Math.max(defender.ai.block, .12);
+    defender.guard = Math.max(defender.guard, 40);
+  }
   // 我会保护小睦: every hitstun this defender takes runs through the stack multiplier.
   const hitStun = (v: number) => v * defender.stunMul;
   const wasRooted = defender.root > 0;
@@ -507,7 +528,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   const braced = !blocked && has(defender, 'brace') && !isGrab && !skill.super;
   // 秋叶原马拉松: same no-flinch as the plaster, without the damage cut or the halved knockback.
   // 全力碰撞 wears that for the pose itself, not as a buff that outlives the move.
-  const poised = !blocked && (has(defender, 'poise') || !!armour && !!SCRIPTS[armour.skill.fx]?.poise) && !isGrab && !skill.super;
+  const poised = !blocked && (wallArmour || has(defender, 'poise') || !!armour && !!SCRIPTS[armour.skill.fx]?.poise) && !isGrab && !skill.super;
   // 梦想即力量！: the frenzy brace is true super armour — only the control set (grabs, the
   // roots, the ban) staggers her. Supers lose their pierce and the combo escape never fires.
   // 满月嚎叫 wears the same brace for the howl itself, and it ends when the howl does.
@@ -570,6 +591,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     // 远程反制：挡下投掷物按其伤害削减对方的气，静默结算，不跳字。
     // 剪 is a trap and 火的故事 is her own blast: neither siphons meter for being blocked.
     if (skill.type === 'projectile' && !skill.noSiphon) attacker.energy = clamp(attacker.energy - fullHit * (perfect ? PARRY_SIPHON : GUARD_DRAIN), 0, attacker.energyMax);
+    if (wallGuard) { defender.ai.block = 0; defender.ai.wait = 0; defender.stun = Math.min(defender.stun, .03); }
     if (perfect) {
       defender.parry = 0;
       defender.parryLock = 0;
@@ -649,7 +671,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       if (superBrace) {
         if (defender.braceFx <= 0) g.text('霸体', defender.x, defender.y - 195, '#ffd27a', .5, 18);
         defender.braceFx = .3;
-      } else if (attacker.combo >= defender.escapeCombo) {
+      } else if (!wallArmour && attacker.combo >= defender.escapeCombo) {
         defender.invuln = .48;
         defender.vx = dir * 470;
         defender.stun = hitStun(.24);
@@ -863,9 +885,21 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
  *  hit() never calls back into melee code. */
 const meleeSweep: Fighter[] = [];
 
+// Snapshot hosts can reconcile a guest's contact only after the host sim has attempted that melee swing.
+const hostMelee = new WeakMap<Attack, { t: number; skill: Skill; hit: Set<number> }>();
+export function claimableMelee(a: Attack): Skill | undefined {
+  const attempt = hostMelee.get(a);
+  return attempt && attempt.hit === a.hit && a.t >= attempt.t && a.t - attempt.t <= .10 ? attempt.skill : undefined;
+}
+
 export function applyMelee(g: FightGame, f: Fighter, a: Attack): void {
   if (f.hp <= 0 || f.stun > 0) return;
   const s = a.skill;
+  if (g.netRole === 'host' && f.id === 1) {
+    const attempt = hostMelee.get(a);
+    if (attempt) { attempt.t = a.t; attempt.skill = s; attempt.hit = a.hit; }
+    else hostMelee.set(a, { t: a.t, skill: s, hit: a.hit });
+  }
   meleeSweep.length = 0;
   for (const o of g.fighters) if (g.isEnemy(f, o) && o.hp > 0 && !o.echo) meleeSweep.push(o);
   // Insertion sort by |x - f.x|: the sweep holds at most a handful of fighters and must
@@ -1123,7 +1157,7 @@ export function effectSettled(a: Attack): boolean {
 function violetBurst(g: FightGame, f: Fighter, s: Skill): void {
   g.effect('violet', f.x, f.y - 85, f.data.color, .55, { radius: s.range });
   for (const o of g.opponents(f)) {
-    if (o.hp <= 0 || o.invuln > 0) continue;
+    if (o.hp <= 0 || isInvulnerable(o)) continue;
     if (Math.abs(o.x - f.x) < s.range && Math.abs((o.y - 83) - (f.y - 85)) < 90) {
       hit(g, f, o, s, { hit: new Set() });
     }
@@ -1158,7 +1192,7 @@ function wishBurst(g: FightGame, p: Projectile, owner: Fighter | undefined): voi
   if (!owner || owner.hp <= 0) return;
   const sk = { ...p.skill, knock: 0 };
   for (const o of g.opponents(owner)) {
-    if (o.hp <= 0 || o.invuln > 0) continue;
+    if (o.hp <= 0 || isInvulnerable(o)) continue;
     if (Math.abs(o.x - p.x) < WISH_RADIUS && Math.abs((o.y - 83) - (FLOOR - 60)) < 150) {
       hit(g, owner, o, sk, { hit: p.hit }, p.x);
     }
@@ -1169,7 +1203,7 @@ function wishBurst(g: FightGame, p: Projectile, owner: Fighter | undefined): voi
 function repel(g: FightGame, f: Fighter, range: number, push: number, stun = .2): void {
   for (const o of g.opponents(f)) {
     const open = cuts(f.attack ?? undefined, o);
-    if (o.hp <= 0 || (o.invuln > 0 && !open)) continue;
+    if (o.hp <= 0 || (isInvulnerable(o) && !open)) continue;
     const dx = o.x - f.x;
     if (Math.abs(dx) < range) {
       o.vx = (Math.sign(dx) || f.facing) * push;
@@ -1332,7 +1366,7 @@ function stepHold(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   if (a.hold < 0 && a.t >= s.start && a.t < s.start + h.lunge) {
     let caught: Fighter | undefined;
     for (const o of g.opponents(f)) {
-      if (o.hp <= 0 || o.invuln > 0) continue;
+      if (o.hp <= 0 || isInvulnerable(o)) continue;
       const front = (o.x - f.x) * f.facing >= -20;
       if (!front || Math.abs(o.y - f.y) >= 112) continue;
       if ((o.x - f.x) * f.facing < 70) { caught = o; break; }
@@ -1644,7 +1678,7 @@ function stepSmileShip(g: FightGame, p: Projectile): boolean {
   const owner = g.fighterById(p.owner);
   if (owner) {
     for (const o of g.opponents(owner)) {
-      if (o.hp <= 0 || o.invuln > 0) continue;
+      if (o.hp <= 0 || isInvulnerable(o)) continue;
       if (o.x > hi + 38 || o.x < lo - 38 || Math.abs(p.y - (o.y - 83)) >= 72) continue;
       if (!o.blocking) o.vx = dir * SHIP_PUSH;
       const mark = p.marks?.get(o.id);
@@ -1676,7 +1710,7 @@ function stepFuga(g: FightGame, p: Projectile, dt: number): boolean {
   if (p.age >= FUGA_FUSE) {
     if (owner) {
       for (const o of g.opponents(owner)) {
-        if (o.hp <= 0 || o.invuln > 0) continue;
+        if (o.hp <= 0 || isInvulnerable(o)) continue;
         if (Math.abs(p.x - o.x) < 38 + p.radius && Math.abs(p.y - (o.y - 83)) < 72) { boom = true; break; }
       }
     }
@@ -1720,7 +1754,7 @@ function stepFirebird(g: FightGame, p: Projectile): boolean {
   if (!owner) return true;
   if (!p.marks) p.marks = new Map();
   for (const o of g.opponents(owner)) {
-    if (o.hp <= 0 || o.invuln > 0) continue;
+    if (o.hp <= 0 || isInvulnerable(o)) continue;
     const mark = p.marks.get(o.id);
     if (mark && (mark.n >= 2 || p.age < mark.next)) continue;
     if (Math.abs(o.x - p.x) >= 30 + p.radius || o.y < FLOOR - 250) continue;
@@ -1735,7 +1769,7 @@ function stepBlackhole(g: FightGame, p: Projectile): boolean {
   const owner = g.fighterById(p.owner);
   if (!owner) return true;
   for (const o of g.opponents(owner)) {
-    if (o.hp <= 0 || o.invuln > 0) continue;
+    if (o.hp <= 0 || isInvulnerable(o)) continue;
     const dx = p.x - o.x;
     if (Math.abs(dx) < BLACKHOLE_RADIUS) o.vx = Math.sign(dx) * BLACKHOLE_PULL * (o.y < FLOOR - .5 ? .4 : 1);
   }
@@ -1754,7 +1788,7 @@ function stepMega(g: FightGame, p: Projectile): boolean {
   const owner = g.fighterById(p.owner);
   if (!owner) return false;
   for (const o of g.opponents(owner)) {
-    if (o.hp <= 0 || o.invuln > 0 || o.blocking) continue;
+    if (o.hp <= 0 || isInvulnerable(o) || o.blocking) continue;
     if (Math.abs(o.x - p.x) < 38 + p.radius && Math.abs(p.y - (o.y - 83)) < 72) o.vx = Math.sign(p.vx || 1) * MEGA_PUSH;
   }
   return false;
@@ -1845,7 +1879,7 @@ function repelPulse(g: FightGame, f: Fighter, power: number, range = DRUM_REPEL_
   let pushed = false;
   // In-place scan: this runs every 0.1s through the war pose, so no opponents() array per tick.
   for (const o of g.fighters) {
-    if (!g.isEnemy(f, o) || o.hp <= 0 || o.echo || o.invuln > 0) continue;
+    if (!g.isEnemy(f, o) || o.hp <= 0 || o.echo || isInvulnerable(o)) continue;
     const dx = o.x - f.x;
     const reach = dx * f.facing >= 0 ? ahead : range;
     if (Math.abs(dx) < reach) {
@@ -1982,7 +2016,7 @@ function step_poem(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   if (a.shots === 0) {
     a.shots = 1;
     for (const o of g.opponents(f)) {
-      if (o.hp <= 0 || o.invuln > 0) continue;
+      if (o.hp <= 0 || isInvulnerable(o)) continue;
       const dx = o.x - f.x;
       if (Math.abs(dx) < POEM_REPEL_RANGE) {
         o.vx = (Math.sign(dx) || f.facing) * POEM_REPEL_PUSH;
@@ -2004,13 +2038,10 @@ function step_wind(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   }
 }
 
-function step_violet(g: FightGame, f: Fighter, a: Attack, dt: number): void {
+function step_violet(g: FightGame, f: Fighter, a: Attack): void {
   const s = a.skill;
   if (!a.emitted && a.t >= s.start) {
     a.emitted = true;
-    // Cast invuln is a flat 0.5s from frame 0, but the body stays gone until start + VIOLET_WARP.
-    // Stamp the remainder once; both clocks then decay by the same dt, so the tail stays closed.
-    f.invuln = Math.max(f.invuln, s.start + VIOLET_WARP - a.t);
     violetBurst(g, f, s);
   }
   if (a.emitted && a.shots === 0 && a.t >= s.start + VIOLET_WARP) {
@@ -2074,7 +2105,7 @@ function emit_lifedraw(g: FightGame, f: Fighter, a: Attack): void {
   g.effect('lifedraw-burst', x, FLOOR - 82, '#eafff2', .5, { radius: r });
   g.shake = Math.max(g.shake, 7);
   for (const o of g.opponents(f)) {
-    if (o.invuln > 0) continue;
+    if (isInvulnerable(o)) continue;
     // The drawn circle is the hitbox: r across, and 88px of air above the floor.
     if (Math.abs(o.x - x) >= r) continue;
     if (Math.abs(o.y - FLOOR) >= LIFEDRAW_BAND_Y) continue;
@@ -2168,7 +2199,7 @@ function step_riot(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   if (a.t < s.start) return;
   const stepMax = s.speed ?? 55;
   const reach = (o: Fighter) => {
-    if (o.hp <= 0 || o.invuln > 0) return false;
+    if (o.hp <= 0 || isInvulnerable(o)) return false;
     const gap = (o.x - f.x) * f.facing;
     return gap >= -20 && gap < s.range && Math.abs(o.y - f.y) < 112;
   };
@@ -2260,7 +2291,7 @@ function step_crash(g: FightGame, f: Fighter, a: Attack, _dt: number): void {
   const catchEnd = s.start + .12;
   if (a.hold < 0 && a.tossAt === 0 && a.t >= s.start && a.t < catchEnd) {
     for (const o of g.opponents(f)) {
-      if (o.hp <= 0 || o.invuln > 0) continue;
+      if (o.hp <= 0 || isInvulnerable(o)) continue;
       const radial = s.hitbox !== 'front';
       const front = (o.x - f.x) * f.facing >= -20;
       if ((radial || front) && Math.abs(o.x - f.x) < s.range && Math.abs(o.y - f.y) < 112) {
@@ -2314,7 +2345,7 @@ function step_slam(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   if (a.hold < 0 && a.t >= s.start && a.t < s.start + .45) {
     f.x += f.facing * (s.speed ?? 220) * dt;
     for (const o of g.opponents(f)) {
-      if (o.hp <= 0 || o.invuln > 0) continue;
+      if (o.hp <= 0 || isInvulnerable(o)) continue;
       const front = (o.x - f.x) * f.facing >= -20;
       if (Math.abs(o.x - f.x) < s.range && front && Math.abs(o.y - f.y) < 112) {
         a.hold = o.id;
@@ -2361,7 +2392,7 @@ function step_onegai(g: FightGame, f: Fighter, a: Attack, dt: number): void {
       g.effect('ghost', f.x - f.facing * 24, f.y, f.data.color, .3, { fighter: f.id, alpha: .35 });
     }
     for (const o of g.opponents(f)) {
-      if (o.hp <= 0 || o.invuln > 0) continue;
+      if (o.hp <= 0 || isInvulnerable(o)) continue;
       const front = (o.x - f.x) * f.facing >= -20;
       if (Math.abs(o.x - f.x) < s.range && front && Math.abs(o.y - f.y) < 112) {
         a.hold = o.id;
@@ -2663,7 +2694,7 @@ function step_change(g: FightGame, f: Fighter, a: Attack, dt: number): void {
       g.audio.play('hit', f.id);
       mark.snd = a.t + gap;
     }
-    if (guarded || o.invuln > 0 || mark.n >= cap || a.t < mark.next) continue;
+    if (guarded || isInvulnerable(o) || mark.n >= cap || a.t < mark.next) continue;
     // An early press is still held, but it does not count: drop the pose so the hit goes through.
     const cover = o.blocking;
     if (mark.early) o.blocking = false;
@@ -2870,7 +2901,7 @@ function emit_summit(g: FightGame, f: Fighter, a: Attack): void {
       g.effect('summit', f.x, f.y - 80, f.data.color, .6, { radius: 560 });
       g.shake = Math.max(g.shake, 8);
       for (const o of g.opponents(f)) {
-        if (o.hp <= 0 || o.invuln > 0) continue;
+        if (o.hp <= 0 || isInvulnerable(o)) continue;
         const dir = Math.sign(o.x - f.x) || f.facing;
         o.vx = dir * SUMMIT_VX;
         o.vy = SUMMIT_VY;
@@ -3802,7 +3833,7 @@ SCRIPTS['coffin'] = Object.assign(SCRIPTS['coffin'] ?? {}, {
 
 /** Nearest living foe in front of her, closer than `reach`. One pass and no allocation: 打水漂 asks
  *  every step, where g.opponents() would build a fresh array 120 times a second. */
-function foeAhead(g: FightGame, f: Fighter, reach = Infinity): Fighter | undefined {
+export function foeAhead(g: FightGame, f: Fighter, reach = Infinity): Fighter | undefined {
   let best: Fighter | undefined;
   let bestGap = reach;
   for (const o of g.fighters) {
@@ -4343,7 +4374,7 @@ function step_piggyback(g: FightGame, f: Fighter, a: Attack, dt: number): void {
     const bucket = Math.floor(a.t * 30);
     if (bucket % 3 === 0 && bucket !== Math.floor((a.t - dt) * 30)) g.effect('ghost', f.x - f.facing * 18, f.y, f.data.color, .18, { fighter: f.id, alpha: .3 });
     const o = foeAhead(g, f, s.range);
-    if (o && Math.abs(o.y - f.y) < 112 && o.invuln <= 0) {
+    if (o && Math.abs(o.y - f.y) < 112 && !isInvulnerable(o)) {
       const before = g.totalHits[f.id];
       a.hit = new Set();
       hit(g, f, o, piggyPick(s), a);
@@ -4426,7 +4457,7 @@ function step_bear_hug(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   if (mode === HUG.lunge) {
     if (a.t < s.start) return;
     const o = foeAhead(g, f, s.range);
-    if (o && Math.abs(o.y - f.y) < 112 && o.invuln <= 0) {
+    if (o && Math.abs(o.y - f.y) < 112 && !isInvulnerable(o)) {
       a.mode = HUG.held;
       a.hold = o.id;
       a.tossAt = a.t;
@@ -4603,7 +4634,7 @@ function step_family(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   if (mode === FAMILY.lunge) {
     if (a.t < s.start) return;
     const o = foeAhead(g, f, s.range);
-    if (o && Math.abs(o.y - f.y) < 170 && o.invuln <= 0) {
+    if (o && Math.abs(o.y - f.y) < 170 && !isInvulnerable(o)) {
       a.mode = FAMILY.held;
       a.hold = o.id;
       a.tossAt = a.t;
@@ -4770,7 +4801,7 @@ function step_puff(g: FightGame, f: Fighter, a: Attack): void {
     }
     if (a.t < s.start + PUFF_BLINK + PUFF_ARRIVE) return;
     const o = foeAhead(g, f, s.range);
-    if (o && Math.abs(o.y - f.y) < 112 && o.invuln <= 0) {
+    if (o && Math.abs(o.y - f.y) < 112 && !isInvulnerable(o)) {
       const before = g.totalHits[f.id];
       a.hit = new Set();
       hit(g, f, o, puffOf(s).pat, a);
@@ -5011,7 +5042,7 @@ function step_playhouse(g: FightGame, f: Fighter, a: Attack, dt: number): void {
     const bucket = Math.floor(a.t * 30);
     if (bucket % 3 === 0 && bucket !== Math.floor((a.t - dt) * 30)) g.effect('ghost', f.x - f.facing * 18, f.y, f.data.color, .2, { fighter: f.id, alpha: .3 });
     const o = foeAhead(g, f, s.range);
-    if (o && Math.abs(o.y - f.y) < 170 && o.invuln <= 0) {
+    if (o && Math.abs(o.y - f.y) < 170 && !isInvulnerable(o)) {
       const before = g.totalHits[f.id];
       a.hit = new Set();
       hit(g, f, o, playOf(s).cut, a);
@@ -5372,11 +5403,10 @@ function step_assemble(g: FightGame, f: Fighter, a: Attack): void {
     if (a.t < s.start) return;
     const o = g.nearestEnemyTo(f, f.x);
     const recruit = !!o && isRecruit(o, f.id);
-    // A foe who is mid-dodge or invulnerable slips the call half the time; a 部下 never does.
+    // Dodge and timed invuln have a chance to slip, except for a 部下.
     // The rate is fixed here: a badge that runs out between drum hits does not change the rest of the super.
-    const slipped = !!o && !recruit && (o.invuln > 0 || o.dodge > 0) && g.random() < ASSEMBLE_SLIP;
     if (recruit) a.burst |= ASSEMBLE_RECRUITED;
-    if (!o || slipped) {
+    if (!o || o.attack?.skill.invuln === 'cast' || (!recruit && (isInvulnerable(o) || o.dodge > 0) && g.random() < ASSEMBLE_SLIP)) {
       a.mode = ASSEMBLE.whiff;
       a.tossAt = a.t;
       setBoard(a, -1);
@@ -5967,7 +5997,7 @@ function step_flight(g: FightGame, f: Fighter, a: Attack): void {
     a.tossAt = a.t;
     a.anchor = f.x;
     const o = foeAhead(g, f, s.range);
-    if (o && Math.abs(o.y - f.y) < 140 && o.invuln <= 0) {
+    if (o && Math.abs(o.y - f.y) < 140 && !isInvulnerable(o)) {
       a.mode = FLIGHT.carry;
       a.hold = o.id;
       o.vx = 0;
@@ -6356,7 +6386,7 @@ function step_withdrawal(g: FightGame, f: Fighter, a: Attack, dt: number): void 
       g.effect('misaki-bagdash', f.x, f.y, '#ffffff', WITHDRAW_LUNGE + .15, { follow: f.id, ox: 0, oy: 0, dir: f.facing });
     }
     const o = foeAhead(g, f, s.range);
-    if (o && Math.abs(o.y - f.y) < 112 && o.invuln <= 0) {
+    if (o && Math.abs(o.y - f.y) < 112 && !isInvulnerable(o)) {
       a.mode = WITHDRAW.held;
       a.hold = o.id;
       a.tossAt = a.t;
@@ -6509,7 +6539,7 @@ function afterWhale(g: FightGame, p: Projectile): boolean {
   const cap = p.skill.count ?? 4;
   const gap = p.skill.interval ?? .14;
   for (const o of g.opponents(owner)) {
-    if (o.hp <= 0 || o.invuln > 0) continue;
+    if (o.hp <= 0 || isInvulnerable(o)) continue;
     const mark = p.marks.get(o.id);
     if (mark && (mark.n >= cap || p.age < mark.next)) continue;
     const dx = o.x - p.x;
@@ -6716,7 +6746,7 @@ function step_stick_roll(g: FightGame, f: Fighter, a: Attack, dt: number): void 
   const i = a.shots++;
   const side = i % 2 ? -1 : 1;
   let o = a.hold >= 0 ? g.fighterById(a.hold) : undefined;
-  if (o && (o.hp <= 0 || o.invuln > 0 || Math.abs(o.x - f.x) > s.range + ROLL_SLIP || Math.abs(o.y - f.y) >= 112)) {
+  if (o && (o.hp <= 0 || isInvulnerable(o) || Math.abs(o.x - f.x) > s.range + ROLL_SLIP || Math.abs(o.y - f.y) >= 112)) {
     a.hold = -1;
     o = undefined;
   }
@@ -6776,7 +6806,7 @@ function step_selfie(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   if (mode === SELFIE.lunge) {
     if (a.t < s.start) return;
     const o = foeAhead(g, f, s.range);
-    if (o && Math.abs(o.y - f.y) < 112 && o.invuln <= 0) {
+    if (o && Math.abs(o.y - f.y) < 112 && !isInvulnerable(o)) {
       a.hit = new Set();
       // Read the bar before the hit pays them their own little bit of meter.
       const had = o.energy;
@@ -7218,7 +7248,7 @@ function step_smile(g: FightGame, f: Fighter, a: Attack): void {
   a.shots = 1;
   g.effect('curtsy-ring', f.x + f.facing * s.range * .5, FLOOR, f.data.color, .4, { dir: f.facing, radius: s.range * .6 });
   for (const o of g.opponents(f)) {
-    if (o.hp <= 0 || o.invuln > 0 || o.echo) continue;
+    if (o.hp <= 0 || isInvulnerable(o) || o.echo) continue;
     const gap = (o.x - f.x) * f.facing;
     if (gap < -20 || gap > s.range || Math.abs(o.y - f.y) > 110) continue;
     o.vx = f.facing * (s.knock ?? 220);
@@ -7280,7 +7310,7 @@ function fillWide(g: FightGame, f: Fighter, a: Attack, run: WideRun): void {
   if (!seen) run.seen = seen = new Map();
   wideHits.length = 0;
   for (const o of g.opponents(f)) {
-    if (o.hp <= 0 || o.echo || o.invuln > 0) continue;
+    if (o.hp <= 0 || o.echo || isInvulnerable(o)) continue;
     if (Math.abs(o.x - a.anchor) > WIDE_ZONE_R || Math.abs(o.y - FLOOR) > 170) continue;
     if (!seen.has(o.id)) seen.set(o.id, statusMask(o));
     wideHits.push(o);
@@ -7321,7 +7351,7 @@ function step_wideWorld(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   if (mode === WIDE.dash) {
     f.x = clamp(f.x + f.facing * (s.speed ?? 820) * dt, X_MIN, X_MAX);
     const o = foeAhead(g, f, s.range);
-    if (o && Math.abs(o.y - f.y) < 170 && o.invuln <= 0) {
+    if (o && Math.abs(o.y - f.y) < 170 && !isInvulnerable(o)) {
       a.mode = WIDE.held;
       a.hold = o.id;
       a.tossAt = a.t;
@@ -7421,3 +7451,9 @@ function step_wideWorld(g: FightGame, f: Fighter, a: Attack, dt: number): void {
 SCRIPTS['wide-world'] = Object.assign(SCRIPTS['wide-world'] ?? {}, {
   update: step_wideWorld, noMelee: true, skipCount: true, poise: true,
 });
+
+/* ---- MASKING（佐藤益木）: src/game/masking.ts ---- */
+
+/* ---- 花园多惠: src/game/tae.ts ---- */
+
+/* ---- 今井莉莎: src/game/lisa.ts ---- */

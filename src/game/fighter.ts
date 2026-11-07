@@ -31,7 +31,7 @@ export interface Attack {
   hold: number;
   /** World x where 高性能作曲AI planted its lane. */
   anchor: number;
-  /** This cast cut in (escape or ahead of another input). Its hit ignores invuln and armour. */
+  /** This cast cut in (escape or ahead of another input). Its hit ignores timed invuln and armour. */
   pierce?: boolean;
   /** 一人二役: the form the move was cast in, so its cells stay on that form's sheet after a swap. */
   form?: number;
@@ -39,6 +39,8 @@ export interface Attack {
   whiffed?: boolean;
   /** Per-move phase. 剑道三连: 0 pending, 1 tap, 2 stance, 3 waves. 请你喝茶: 0 lunge, 1 caught, 2 whiff. */
   mode?: number;
+  /** 花园兔王: the eruption clock, rabbits already shown, and the carried body's lift. */
+  warren?: { open: number; shown: number; from: number; base: number };
 }
 
 export interface QueuedInput { index: number; ttl: number }
@@ -153,7 +155,8 @@ export interface Fighter {
   combo: number; hitCount: number;
   walk: number;
   animState: AnimState; animTime: number; animSerial: number;
-  ai: { wait: number; move: number; block: number; facing: 1 | -1; press: number };
+  /** clock/wall/wallCd/jabs: 铁壁 — master CPU's hidden answer to a J mash (see ai.ts). */
+  ai: { wait: number; move: number; block: number; facing: 1 | -1; press: number; clock: number; wall: number; wallCd: number; jabs: number[] };
   /** 诗超绊 teammate: a real Fighter on loan. Never counts toward the round, never gets the CPU brain. */
   minion?: boolean;
   /** Seconds before a summoned teammate bows out. Only minions carry it; kept out of DECAY_TIMERS on purpose. */
@@ -248,6 +251,11 @@ export interface Fighter {
 
 export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braceFx', 'ban', 'frail', 'recLeft', 'rainbowCd', 'parry', 'parryLock', 'parryOrbCd'] as const;
 
+/** Full-cast protection follows the live attack and ends with it. */
+export function isInvulnerable(f: Fighter, minTime = 0): boolean {
+  return f.invuln > minTime || f.attack?.skill.invuln === 'cast';
+}
+
 /** Meter cap for a character: the super's cost, but never below the arcade 100. Two forms: the dearer one. */
 export function meterCap(data: CharacterData): number {
   return Math.max(100, data.skills[5]?.cost ?? 100, data.forms?.alt.skills[5]?.cost ?? 100);
@@ -288,7 +296,7 @@ export function makeFighter(
     jumpRequest: false, jumpBuffer: 0,
     combo: 0, hitCount: 0, walk: 0,
     animState: 'idle', animTime: 0, animSerial: 0,
-    ai: { wait: .5, move: 0, block: 0, facing: init.facing, press: 0 },
+    ai: { wait: .5, move: 0, block: 0, facing: init.facing, press: 0, clock: 0, wall: 0, wallCd: 0, jabs: [] },
     dmgMul: 1, baseDmgMul: 1, regen: 0,
     critChance: 0, comboTimeBonus: 0, comboDecay: COMBO_DECAY, energyMul: 1,
     moveMul: 1, dodgeCdMul: 1, cdMul: 1,

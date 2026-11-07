@@ -1,6 +1,5 @@
 import type { Skill } from '../data/types.ts';
-import type { Attack } from './fighter.ts';
-import type { Fighter } from './fighter.ts';
+import { isInvulnerable, type Attack, type Fighter } from './fighter.ts';
 import type { FightGame } from './game.ts';
 import { FLOOR, X_MAX, X_MIN, clamp } from './constants.ts';
 import { VOW_BEATS, vowBeatTime } from '../render/clips.ts';
@@ -120,6 +119,14 @@ export interface MoveScript {
   hue?: (g: FightGame) => number;
 }
 
+/** Called at the end of every successful cast (FightGame.attack), with the slot and the skill it resolved to.
+ *  A character module pushes one here when a move of hers has to see someone else start a move (不用说我也懂). */
+export const CAST_WATCHERS: ((g: FightGame, f: Fighter, slot: number, skill: Skill) => void)[] = [];
+/** Called once per fighter per step, right after its mods tick. A character module pushes one here to run a
+ *  mod of hers that has to act over time (a scratch, a fuse). The mod's own fields carry the clock, so a lockstep
+ *  dump resumes it exactly — no closures on the mod. */
+export const STEP_WATCHERS: ((g: FightGame, f: Fighter, dt: number) => void)[] = [];
+
 /**
  * Keyed by fx, which stays the render key. Rules live here once src/game stops branching on the name.
  * ponytail: the registry is a plain record. A second lookup table would only exist to hide this one.
@@ -153,7 +160,7 @@ export const SCRIPTS: Record<string, MoveScript> = {
           g.effect('ghost', f.x - f.facing * 24, f.y, f.data.color, .3, { fighter: f.id, alpha: .35 });
         }
         for (const o of g.opponents(f)) {
-          if (o.hp <= 0 || o.invuln > 0) continue;
+          if (o.hp <= 0 || isInvulnerable(o)) continue;
           const front = (o.x - f.x) * f.facing >= -20;
           if (Math.abs(o.x - f.x) < s.range && front && Math.abs(o.y - f.y) < 112) {
             a.hold = o.id;

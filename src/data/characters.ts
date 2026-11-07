@@ -66,7 +66,7 @@ export const ROSTER: CharacterData[] = [
         brief: '向前连发三枚', detail: '向前连发三枚',
       }),
       skill(5, 'grab', '墨缇丝', {
-        cost: 105, damage: 48, range: 280, start: .34, duration: 1.35, count: 4, interval: .12, fx: 'mortis',
+        cost: 180, damage: 48, range: 280, start: .34, duration: 1.35, count: 4, interval: .12, fx: 'mortis',
         brief: '前冲抓取，连打四下', detail: '前冲抓取，连打四下',
       }),
     ],
@@ -668,6 +668,49 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'tae', name: '花园多惠', title: '吉他 / 花园警察', quote: '喜欢就没问题，吉他是给喜欢弹的人弹的。', color: '#0077DD',
+    bands: ['poppin-party'],
+    ...stats('rush'),
+    view: { kind: 'sprite', common: '/sprites/tae/common.png', special: '/sprites/tae/special.png', height: 174, specialScale: 1.07 },
+    // 花园多惠（萌娘百科）: Poppin'Party 的主音吉他，天然、电波，黑长直，每天晨跑；家里至少 23 只兔子，最爱异色瞳的小欧。
+    // 称号取别号「花园警察」（官方四格「花园 land」）。全部空手；兔子都由代码画（taeFx.ts），没有外置图。
+    skills: [
+      // 天然 (萌娘百科: 天然、电波).
+      skill(0, 'light', '天然'),
+      // 兔子蹬: a rabbit's kick with the hind legs.
+      skill(1, 'heavy', '兔子蹬'),
+      // 神出鬼没 (combat.ts step_burrow): 「瞬移怪」 — down a rabbit hole, up out of one under the foe.
+      skill(2, 'launch', '神出鬼没', {
+        damage: 52, range: 110, start: .22, duration: 1.35, cd: 7, knock: 30, noBlock: true, fx: 'tae-burrow',
+        brief: '钻地无敌从脚下挑空；不能格挡，兔耳冒头时走开可躲',
+        detail: '钻进兔子洞消失并无敌 0.36 秒，从出手时最近对手所站位置的洞里冒出挑空；兔耳先冒头预警，走开或跳起可躲，不能格挡',
+      }),
+      // 花园警察，出动！ (combat.ts step_police): the cap, the lunge, the cuffs; caught mid-move is 现行犯.
+      skill(3, 'grab', '花园警察，出动！', {
+        damage: 30, range: 96, speed: 560, start: .2, duration: 1, cd: 9, knock: 0, fx: 'tae-police',
+        root: 2, rootPin: true,
+        brief: '戴上警帽短冲抓人定身；抓到正在出招的人定身更久',
+        detail: '戴上警帽短冲抓取，命中定身 2 秒，受击两次解除；抓到正在出招的对手定身 3 秒',
+      }),
+      // 欢迎来到兔子王国 (combat.ts step_hop): five rabbits hop out of a hole at her feet, 小欧 last.
+      skill(4, 'projectile', '欢迎来到兔子王国', {
+        damage: 12, count: 5, interval: .2, speed: 380, size: 60, start: .3, duration: 1.3, cd: 8, life: 2, knock: 40,
+        fx: 'tae-hop', solid: false,
+        finale: { damage: 28, knock: 260, react: { kind: 'knockdown', vy: -180, knocked: .6 } },
+        brief: '五只兔子贴地冲向对手，末只击倒；可格挡，跳起可躲',
+        detail: '身前的洞里依次蹦出五只兔子贴地冲向对手，末只是小欧并击倒；只打地面附近，跳起可躲，每只可格挡',
+      }),
+      // 花园兔王 (combat.ts step_warren): the warren erupts round the foe, 小欧 throws them up, her rabbit kick.
+      skill(5, 'launch', '花园兔王', {
+        cost: 130, damage: 10, range: 200, start: .55, duration: 3.2, knock: 0, gain: 2, fx: 'tae-warren',
+        guardPlan: [5, 6, 10, 16, 26, 40],
+        finale: { damage: 100, knock: 480, react: { kind: 'knockdown', vy: -280, knocked: 1 } },
+        brief: '兔群上托，小欧接兔子蹬击倒；霸体，只有兔群能格挡',
+        detail: '在最近对手脚下开出兔子洞，八只兔子依次蹦出，第一只顶中 14 伤害后其余每只上托 10 伤害；格挡可挡兔群但会被削防；随后小欧从正中大洞蹦出 30 伤害把人顶到高处，多惠钻地从旁冒出，空中兔子蹬 100 伤害并击倒；全程霸体，小欧和兔子蹬不能格挡',
+      }),
+    ],
+  },
+  {
     id: 'yukina', name: '凑友希那', title: '主唱 / 顶点', quote: '目标只有一个，就是顶点。', color: '#4455BB',
     bands: ['roselia'],
     ...stats('rush'),
@@ -753,6 +796,50 @@ export const ROSTER: CharacterData[] = [
         contact: 'pass', solid: false, noBlock: true,
         brief: '贴地火舌；无法格挡，跳起可躲，命中击倒',
         detail: '一道贴地火舌向前烧过身前，无法格挡，跳起躲过；每人只烧一次，命中击倒',
+      }),
+    ],
+  },
+  {
+    id: 'lisa', name: '今井莉莎', title: '贝斯 / 慈母', quote: '有我在呢，交给莉莎姐吧☆', color: '#DD2200',
+    bands: ['roselia'],
+    ...stats('beat'),
+    view: {
+      kind: 'sprite', common: '/sprites/lisa/common.png', special: '/sprites/lisa/special.png', height: 177,
+      extras: ['/sprites/lisa/cat.png'],
+    },
+    // 今井莉莎（萌娘百科）: Roselia 的贝斯，外表辣妹、内里人妻，R 团的精神支柱；理解力满级，友希那不开口她也全懂。
+    // 称号取注释「R 组慈母」。全部空手；猫是外置图 cat.png，曲奇、花草茶、线和星星都由代码画（lisaFx.ts）。
+    skills: [
+      // 贴心 (萌娘百科: 会照顾人).
+      skill(0, 'light', '贴心'),
+      // 辣妹踢 (萌娘百科萌点: 辣妹).
+      skill(1, 'heavy', '辣妹踢'),
+      // 元气辣妹☆ (lisa.ts step_gal): the stock dash, a trail of little stars, a hair flick on the hit.
+      skill(2, 'dash', '元气辣妹☆', {
+        damage: 38, range: 100, start: .12, duration: .72, cd: 5, speed: 880, knock: 240, fx: 'lisa-gal',
+        brief: '滑步突进约半屏，甩发扫击并击退',
+        detail: '滑步突进约半屏，到点甩发横扫并击退',
+      }),
+      // 银猫扑脸 (lisa.ts, PICO Fever 第 18 话): a silver cat runs along the floor and clings to the face it reaches.
+      skill(3, 'projectile', '银猫扑脸', {
+        damage: 16, speed: 460, size: 56, life: 1.6, start: .28, duration: .8, cd: 9, knock: 0, fx: 'lisa-cat',
+        status: [{ kind: 'confuse', time: 2, mark: 'lisa-cat' }],
+        react: { kind: 'stand', stun: .3 },
+        brief: '银猫贴地扑脸，挂头上挠并混乱；可挡可跳',
+        detail: '银猫贴地冲出，扑脸 2 秒并混乱 2 秒，期间再挠 4 下各 6 伤害；被击倒则提前跳开；可格挡，跳起可躲',
+      }),
+      // 不用说我也懂 (lisa.ts, PICO Fever 第 24 话): a read on her; the first U / I / O a foe starts is cut off.
+      skill(4, 'endure', '不用说我也懂', {
+        damage: 30, range: 0, start: .2, duration: .45, cd: 14, knock: 70, fx: 'lisa-read',
+        brief: '弹额打断 U、I、O，解控和全程无敌除外',
+        detail: '4 秒内读招打断对手第一次放出的 U、I、O，对手照样进冷却。莉莎瞬移弹额头，造成 0.8 秒硬直。解控和全程无敌的招式除外，期间照常行动',
+      }),
+      // 特制曲奇·隐藏风味 (lisa.ts, 萌娘百科名场面「莉莎在饼干里加芥末」): a cookie into the mouth; the mustard goes off later.
+      skill(5, 'projectile', '特制曲奇·隐藏风味', {
+        cost: 120, damage: 20, count: 1, start: .5, duration: 1.1, knock: 0, gain: 2, fx: 'lisa-cookie', solid: false,
+        finale: { damage: 100, knock: 380, react: { kind: 'knockdown', vy: -300, knocked: 1 } },
+        brief: '曲奇抛进嘴里，稍后爆辣击倒并烧焦；跳起可躲',
+        detail: '向最近对手抛出心形曲奇，入口 20 伤害。1.5 秒后芥末发作，造成 100 伤害、击倒并烧焦 4 秒。不能格挡，跳起可躲。遇到全程无敌的招式，芥末在无敌结束后发作',
       }),
     ],
   },
@@ -1182,6 +1269,53 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'masking', name: 'MASKING', title: '鼓手 / mas王', quote: '你……挺可爱的嘛。', color: '#EEBB44',
+    bands: ['raise-a-suilen'],
+    ...stats('beat'),
+    view: {
+      kind: 'sprite', common: '/sprites/masking/common.png', special: '/sprites/masking/special.png', height: 180, lift: 0,
+      extras: ['/sprites/masking/bike.png', '/sprites/masking/lock.png'],
+    },
+    // 佐藤益木（萌娘百科）: 凶脸金发、可爱控、料理达人，骑一辆叫「死亡银河号」的红黑摩托。称号取 B 站「mas王」二创
+    // （护六狂魔 mas王 等）；「狂犬」不吉利，不进招名。全部空手，摩托（bike.png）和后座的 LOCK（lock.png）是仅有的外置图。
+    skills: [
+      // 只是近视 (社区吐槽: 凶脸其实只是近视看不清).
+      skill(0, 'light', '只是近视'),
+      // 人情派 (萌娘百科别号「无赖鼓手人情派」).
+      skill(1, 'heavy', '人情派'),
+      // 死亡银河号 (combat.ts step_galaxy_ride): kick start, flat out across the screen through bodies, the skid.
+      skill(2, 'dash', '死亡银河号', {
+        damage: 42, range: 80, speed: 760, start: .22, duration: 1.2, cd: 7, fx: 'galaxy-ride', superArmor: true, noSparks: true,
+        finale: { damage: 40, knock: 380, react: { kind: 'knockdown', vy: -240, knocked: .7 } },
+        brief: '骑摩托穿过对手，急刹甩尾击倒；霸体，跳起可躲',
+        detail: '骑上摩托全速横冲，路上每人被撞一次并穿过；冲过第一个人后急刹甩尾（没撞到人则跑完再甩），扫中前后的人 40 伤害并击倒；全程霸体，跳起可躲',
+      }),
+      // 可爱鉴定 (combat.ts step_cute_check): 「你……挺可爱的嘛。」 — she pinches their cheeks, pats their head, and they wander off blushing.
+      skill(3, 'grab', '可爱鉴定', {
+        damage: 12, count: 3, range: 84, speed: 420, start: .2, duration: 1.45, cd: 8, fx: 'cute-check', knock: 0, gain: 4,
+        finale: { damage: 34, knock: 220, react: { kind: 'stand', stun: .3 } },
+        status: [{ kind: 'confuse', time: 1.5, mark: 'blush' }],
+        brief: '前扑捏住对方的脸，摸头推开，对方混乱',
+        detail: '前扑抓取，捏脸三下，末下摸头推开 34 伤害并让对方混乱 1.5 秒',
+      }),
+      // 即兴加花 (combat.ts step_fill): an off-grid string of jabs and a crash on the floor.
+      skill(4, 'light', '即兴加花', {
+        damage: 13, count: 6, range: 124, start: .16, duration: 1.4, cd: 8, fx: 'fill-in', knock: 30, gain: 3,
+        react: { kind: 'stand', stun: .3 },
+        finale: { damage: 46, range: 150, knock: 420, react: { kind: 'knockdown', vy: -220, knocked: .7 } },
+        brief: '切分节奏乱打难抓格挡；末下砸地击倒并霸体',
+        detail: '六拳按随机的切分节奏打出，格挡时机难以抓准；末下双拳砸地 46 伤害并击倒，砸地前 0.14 秒起霸体',
+      }),
+      // 银河流星踢 (combat.ts step_meteor): LOCK on the back, the bike carries them to the wall, then the kick from the seat.
+      skill(5, 'dash', '银河流星踢', {
+        cost: 180, damage: 30, range: 124, start: .5, duration: 3.3, fx: 'meteor-kick', knock: 0, gain: 2, noBlock: true, noSparks: true,
+        finale: { damage: 140, knock: 460, react: { kind: 'knockdown', vy: -300, knocked: 1 } },
+        brief: '摩托把人顶到版边再飞踢击倒；不能格挡，跳起可躲',
+        detail: '起步后摩托冲锋，撞上第一个人并顶着一路推到画面边缘，途中每 0.13 秒 10 伤害；到边后跃起飞踢 140 伤害并击倒；没撞到人则在前方踢地 77 伤害；不能格挡，跳起可躲',
+      }),
+    ],
+  },
+  {
     id: 'mashiro', name: '仓田真白', title: '主唱 / 幻视', quote: '如果平凡的我也能找到属于我的“特别”就好了', color: '#6677CC',
     bands: ['morfonica'],
     ...stats('focus'),
@@ -1449,7 +1583,7 @@ export const ROSTER: CharacterData[] = [
       // The rings' clocks live in clips.ts (RING_SMALL / RING_BIG). `damage` is the big ring; each
       // small ring chips RING_CHIP (combat.ts). The coffin holds until 3.0s.
       skill(5, 'endure', '康乃馨盛开之日', {
-        cost: 150, damage: 105, range: 460, start: .15, duration: 3.5, fx: 'coffin', noBlock: true, control: true,
+        cost: 180, damage: 85, range: 460, start: .15, duration: 3.5, fx: 'coffin', noBlock: true, control: true,
         knock: 380, react: { kind: 'knockdown', vy: -320, knocked: .9 },
         brief: '入棺无敌；对手身边落七小圈一大圈，大圈可闪避',
         detail: '躲进自己的棺材，期间无敌；对手所在处接连落下七个小粉圈和一个大粉圈，各自收缩到最小后炸开；小圈伤害低、不打断对手，大圈打中即击倒；无法格挡，跑出圈外或抓准时机闪避可躲',
@@ -1796,8 +1930,9 @@ export const ROSTER: CharacterData[] = [
         brief: '锁定脚下连剪并钉住；离开标记，早跳或格挡可解', detail: '锁定全场敌人脚下，半秒后连剪四段并钉住，末段击退；抬手期离开标记，早跳或格挡可解；被挡不削气',
       }),
       skill(3, 'dash', '哭泣的紫罗兰', {
-        damage: 45, range: 175, start: .22, duration: .8, cd: 13, invuln: .5, knock: 280, fx: 'violet',
-        brief: '消失重现，两侧各爆开一次；消失期间无敌', detail: '化作花瓣消失并爆开一次，于战场另一侧边缘重现再爆一次；消失期间无敌',
+        damage: 45, range: 175, start: .22, duration: .8, cd: 13, invuln: 'cast', knock: 280, fx: 'violet',
+        brief: '消失重现，两侧各爆开一次。起手到收招全程无敌',
+        detail: '化作花瓣消失并爆开一次，于战场另一侧边缘重现再爆一次。起手到收招全程无敌，持续 0.8 秒',
       }),
       skill(4, 'heavy', '录音', {
         damage: 0, range: 0, start: .2, duration: .45, cd: 13, fx: 'record',

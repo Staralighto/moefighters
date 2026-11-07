@@ -11,7 +11,11 @@ import { drawMikuFx } from './mikuFx.ts';
 import { drawChieriFx } from './chieriFx.ts';
 import { drawYomogiFx } from './yomogiFx.ts';
 import { drawMisakiFx, drawMisakiShot } from './misakiFx.ts';
+import { drawMaskingFx } from './maskingFx.ts';
+import { drawTaeFx, drawTaeShot } from './taeFx.ts';
+import { drawLisaFx, drawLisaShot } from './lisaFx.ts';
 import { drawStatusEffect } from './statusMarks.ts';
+import { isLiteFx, liteFx } from './fxQuality.ts';
 import { drawShizukuFx, drawShizukuShot } from './shizukuFx.ts';
 
 const CUCUMBER_SRC = '/sprites/mutsumi/cucumber.png';
@@ -95,17 +99,6 @@ const MC_FLAME_INK = ['#1a3a8a', '#3d7cff', '#e8f7ff'];
 /** Phones skip canvas filters and high-quality resamples. `body.touch` comes from device.ts. */
 function phoneRaster(): boolean {
   return typeof document !== 'undefined' && !!document.body?.classList.contains('touch');
-}
-
-/** ponytail: one lite tier, switched on once and kept for the session — it never steps back up,
- *  so it cannot oscillate. More tiers or recovery would need hysteresis between bands. */
-let liteFx = false;
-export function isLiteFx(): boolean { return liteFx; }
-export function setLiteFx(on: boolean): void { liteFx = on; }
-/** Average frame gap that trips the lite tier: roughly 42fps or worse, sustained. */
-export const LITE_MS = 24;
-export function shouldGoLite(avgMs: number, touch: boolean): boolean {
-  return touch && avgMs > LITE_MS;
 }
 
 /** ponytail: one 36-slot scratch for jewel-ring. Rings draw one after another, so the next call refills it. */
@@ -997,6 +990,12 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
   if (drawYomogiFx(ctx, e, liteFx, images)) return;
   // 奥泽美咲 / 米歇尔 too.
   if (drawMisakiFx(ctx, e, liteFx, images)) return;
+  // MASKING too.
+  if (drawMaskingFx(ctx, e, liteFx, images)) return;
+  // 花园多惠 too.
+  if (drawTaeFx(ctx, e, liteFx)) return;
+  // 今井莉莎 too.
+  if (drawLisaFx(ctx, e, liteFx, images)) return;
   // 异常: `<mark>@apply` / `<mark>@expire`, drawn by the status table.
   if (drawStatusEffect(ctx, e)) return;
   // 四宫宁月's accidents keep their own module too.
@@ -6162,6 +6161,8 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   if (p.fx === 'parfait') return;
   if (drawShizukuShot(ctx, p, images, liteFx)) return;
   if (drawMisakiShot(ctx, p, images, liteFx)) return;
+  if (drawTaeShot(ctx, p, liteFx)) return;
+  if (drawLisaShot(ctx, p, liteFx, images)) return;
   ctx.save();
   // 火的故事: the arrow art rides ten pixels above its flight band so the flame head reads on the body.
   if (p.fx === 'fuga') ctx.translate(0, -10);

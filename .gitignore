@@ -8,6 +8,7 @@ dist
 *.key
 *.p12
 *.pfx
+*.jks
 id_rsa
 id_ed25519
 credentials.json
@@ -15,6 +16,10 @@ secrets.json
 .DS_Store
 Thumbs.db
 *.log
+*.bak
+*.orig
+*.swp
+*~
 # 开发文档默认留本地，只有 docs/public/ 可公开
 docs/*
 !docs/public/

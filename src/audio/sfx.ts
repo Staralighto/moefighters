@@ -5,7 +5,16 @@ import type { SfxKind } from '../game/game.ts';
 const TONES: Record<Exclude<SfxKind, `blood-${string}`>, [number, number]> = {
   light: [380, .07], heavy: [140, .18], hit: [180, .1], block: [680, .055], parry: [430, .1], super: [780, .55],
   select: [650, .06], jump: [260, .12], ko: [105, .65], cast: [470, .17], key: [880, .05],
-  whistle: [310, .55], slam: [95, .16],
+  whistle: [310, .55], slam: [95, .16], engine: [60, 1], 'engine-rev': [60, 1.5],
+};
+
+/** MASKING's bike, kept under the fight: a quiet rumble, felt more than heard. */
+const ENGINE_GAIN = .035;
+/** Engine pitch over the sound, [seconds, Hz]: the kick start, a blip, then pulling away. The rev
+ *  version blips twice before it goes, timed to the 0.5 s rev of 银河流星踢. */
+const ENGINE_CURVE: Record<'engine' | 'engine-rev', readonly (readonly [number, number])[]> = {
+  engine: [[0, 34], [.1, 68], [.2, 50], [.32, 92], [.95, 122]],
+  'engine-rev': [[0, 32], [.12, 74], [.24, 48], [.36, 88], [.48, 56], [.6, 104], [1.5, 132]],
 };
 
 /** 微笑号的汽笛: a real recording, not a synth — qubodup's "Fog Horn" from Freesound,
@@ -54,6 +63,7 @@ export class Sfx {
     if (kind.startsWith('blood-')) { this.blood(kind); return; }
     if (kind === 'whistle') { this.whistle(); return; }
     if (kind === 'slam') { this.slam(); return; }
+    if (kind === 'engine' || kind === 'engine-rev') { this.engine(kind); return; }
     if (kind === 'parry') { this.parry(); return; }
     const [freq, duration] = TONES[kind as keyof typeof TONES];
     const t = this.ctx.currentTime, o = this.ctx.createOscillator(), g = this.ctx.createGain();
@@ -158,6 +168,69 @@ export class Sfx {
   }
 
   /** 燃尽: a click over a dropping thud, so the impact does not sound like the cast swoop. */
+  /** MASKING's bike: a sawtooth and a square an octave down, chopped by a firing-rate pulse, through a
+   *  resonant low-pass, with a breath of filtered noise for the exhaust. Self-scheduled; no state. */
+  private engine(kind: 'engine' | 'engine-rev'): void {
+    const ctx = this.ctx!;
+    const t = ctx.currentTime;
+    const curve = ENGINE_CURVE[kind];
+    const dur = curve[curve.length - 1][0];
+    // Louder as it revs: each pitch point carries its own level, idle about half of full throttle.
+    const lo = Math.min(...curve.map(c => c[1])), hi = Math.max(...curve.map(c => c[1]));
+    const level = (hz: number) => ENGINE_GAIN * (.5 + .5 * (hz - lo) / Math.max(1, hi - lo));
+    const out = ctx.createGain();
+    out.gain.setValueAtTime(.0001, t);
+    out.gain.exponentialRampToValueAtTime(level(curve[0][1]), t + .05);
+    for (const [at, hz] of curve) if (at > .05 && at < dur - .4) out.gain.linearRampToValueAtTime(level(hz), t + at);
+    out.gain.linearRampToValueAtTime(ENGINE_GAIN, t + dur - .4);
+    out.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.Q.value = 3;
+    const pulse = ctx.createGain();
+    pulse.gain.value = .55;
+    const depth = ctx.createGain();
+    depth.gain.value = .45;
+    const body = ctx.createOscillator(), sub = ctx.createOscillator(), fire = ctx.createOscillator();
+    body.type = 'sawtooth';
+    sub.type = 'square';
+    fire.type = 'square';
+    const subGain = ctx.createGain();
+    subGain.gain.value = .5;
+    for (const [at, hz] of curve) {
+      const when = t + at;
+      if (at === 0) {
+        body.frequency.setValueAtTime(hz, when);
+        sub.frequency.setValueAtTime(hz / 2, when);
+        fire.frequency.setValueAtTime(hz / 2, when);
+        lp.frequency.setValueAtTime(hz * 6, when);
+      } else {
+        body.frequency.linearRampToValueAtTime(hz, when);
+        sub.frequency.linearRampToValueAtTime(hz / 2, when);
+        fire.frequency.linearRampToValueAtTime(hz / 2, when);
+        lp.frequency.linearRampToValueAtTime(hz * 6, when);
+      }
+    }
+    fire.connect(depth).connect(pulse.gain);
+    body.connect(pulse);
+    sub.connect(subGain).connect(pulse);
+    pulse.connect(lp).connect(out).connect(ctx.destination);
+    // Exhaust breath: band-passed noise riding the same envelope, a little quieter.
+    // The shared 0.6 s noise, looped: no new buffer per rev.
+    const noise = ctx.createBufferSource();
+    noise.buffer = this.noiseBuffer();
+    noise.loop = true;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 260;
+    bp.Q.value = .8;
+    const ng = ctx.createGain();
+    ng.gain.value = .35;
+    noise.connect(bp).connect(ng).connect(out);
+    for (const o of [body, sub, fire]) { o.start(t); o.stop(t + dur); }
+    noise.start(t); noise.stop(t + dur);
+  }
+
   private slam(): void {
     const ctx = this.ctx!;
     const t = ctx.currentTime;

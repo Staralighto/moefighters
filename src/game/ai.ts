@@ -1,5 +1,6 @@
 import type { FightGame } from './game.ts';
 import { FLOOR, INPUT_BUFFER, X_MAX, X_MIN } from './constants.ts';
+import type { Skill } from '../data/types.ts';
 import type { Fighter } from './fighter.ts';
 import { has } from './mods.ts';
 import { SCRIPTS } from './scripts.ts';
@@ -33,6 +34,50 @@ const WALL = 72;
 const SUPER_INVULN = .64;
 /** One decision, two slots in the priority list. `now` beats a meaty; `later` waits out the jab and the corner jump. */
 type SuperWhen = 'now' | 'later' | 'no';
+
+/** 铁壁: master's one hidden edge, against a J mash. WALL_JABS J contacts in a row (hit or guarded) on the master inside WALL_SPAN,
+ *  with no other move cast in between, opens a hidden window of WALL_TIME
+ *  (not refreshed). Inside it a jab that reaches the master is guarded even out of hitstun, the
+ *  guard hands the turn straight back, and the counter cannot be flinched (combat.ts).
+ *  When it closes, WALL_CD of breather with no wall, so jab pressure works again for a while. The tide turns back and forth — mashing stops paying, but the CPU does not
+ *  answer every jab forever (touch players without an easy heavy would just be smothered).
+ *  Contacts, not presses: plenty of players hold J from across the screen, and those whiffs must
+ *  not arm a wall that meets them the moment they walk in. Only a jab-only string that keeps
+ *  touching the master is punished; one K (or anything else) resets the count.
+ *  Nothing marks it: no text, no tint. On screen it reads as a fast guard and a fast answer. */
+const WALL_JABS = 4;
+const WALL_SPAN = 2;
+const WALL_TIME = 2.5;
+const WALL_CD = 4;
+
+/** The tier with the wall: master, a real CPU (not a summoned teammate), outside training. */
+export function reader(g: FightGame, f: Fighter): boolean {
+  return f.controller === null && !f.minion && !f.echo && g.difficulty === 2 && g.mode !== 'training';
+}
+
+/** game.attack(): any human move other than J breaks a jab-only string. Supers too. */
+export function noteCast(g: FightGame, f: Fighter, skill: Skill): void {
+  if (f.controller === null || skill.key === 'J') return;
+  for (const r of g.fighters) if (reader(g, r) && g.isEnemy(r, f)) r.ai.jabs.length = 0;
+}
+
+/** combat.ts: a human J touched this master (landed or guarded). The WALL_JABS-th contact in WALL_SPAN opens the wall. */
+export function noteJab(g: FightGame, defender: Fighter, attacker: Fighter, skill: Skill): void {
+  if (skill.key !== 'J' || skill.super || attacker.controller === null || !reader(g, defender)) return;
+  const jabs = defender.ai.jabs;
+  jabs.push(defender.ai.clock);
+  while (jabs.length && defender.ai.clock - jabs[0] > WALL_SPAN) jabs.shift();
+  if (jabs.length >= WALL_JABS && defender.ai.wall <= 0 && defender.ai.wallCd <= 0) {
+    defender.ai.wall = WALL_TIME;
+    jabs.length = 0;
+  }
+}
+
+/** combat.ts: is this hit one the hidden wall eats? Human normals and skills; supers and grabs stay honest. */
+export function walled(g: FightGame, defender: Fighter, attacker: Fighter, skill: Skill): boolean {
+  return defender.ai.wall > 0 && attacker.controller !== null && reader(g, defender)
+    && !skill.super && skill.type !== 'grab' && !skill.noBlock;
+}
 
 /** Swing has connected (or the shot has left) and no further hit is scheduled.
  *  ponytail: inferred from start/count/type, not a real active-frame field.
@@ -139,6 +184,14 @@ export function stepAI(g: FightGame, dt: number): void {
     if (!o) continue;
     f.ai.block = Math.max(0, f.ai.block - dt);
     f.ai.press = Math.max(0, f.ai.press - dt * 2);
+    const walls = reader(g, f);
+    if (walls) {
+      f.ai.clock += dt;
+      if (f.ai.wall > 0) {
+        f.ai.wall = Math.max(0, f.ai.wall - dt);
+        if (f.ai.wall === 0) f.ai.wallCd = WALL_CD;
+      } else f.ai.wallCd = Math.max(0, f.ai.wallCd - dt);
+    }
     // Hitstun, knockdown, dodge. Easy keeps paying reaction after it ends.
     // Standard and master bank the first free frame: a true combo refreshes stun
     // before that frame exists, so this does not cut a real string.
@@ -175,6 +228,19 @@ export function stepAI(g: FightGame, dt: number): void {
     const safe = !threatened && !incoming;
     const slot = superWhen(g, f, o, dist, hard, pressed, safe);
     if (slot === 'now') { useSuper(f, dir); continue; }
+
+    if (walls && f.ai.wall > 0 && f.y >= FLOOR - .1 && !f.attack) {
+      // 铁壁 answer: whatever is fastest and reaches, now. The armour in combat.ts carries it through the next jab.
+      const pick = [0, 1, 2, 3, 4]
+        .filter(i => { const s = g.skillFor(f, i); return g.canAttack(f, i) && !s.breakout && s.type !== 'projectile' && dist < s.range + 20; })
+        .sort((a, b) => g.skillFor(f, a).start - g.skillFor(f, b).start)[0];
+      if (pick != null) {
+        f.ai.facing = dir; f.facing = dir; f.ai.move = 0; f.ai.block = 0;
+        pushAttack(f, pick);
+        f.ai.wait = .05;
+        continue;
+      }
+    }
 
     // Grabs cannot be blocked. Out in the open the answer is a dodge; on the wall a dodge
     // travels backward, into the wall, so jump over the grab instead.

@@ -10,7 +10,7 @@
 import type { Effect } from '../game/game.ts';
 import type { Fighter } from '../game/fighter.ts';
 import { TAU, burst, cycle, dot, flame, glow, glyph, hash, snowflake, sparkle, stampText, streak, tri } from './fxParticles.ts';
-import { isLiteFx } from './fx.ts';
+import { isLiteFx } from './fxQuality.ts';
 
 /** A status that changes the body itself, painted by the renderer with the view's own outline and tint:
  *  the outline replaces the team rim, each wash is the sprite's silhouette in one colour laid over it, and the
@@ -361,6 +361,175 @@ function auraBadge(ctx: CanvasRenderingContext2D, f: Fighter, left: number, t: n
   ctx.restore();
 }
 
+/* ---------- 混乱 · 害羞 (MASKING 可爱鉴定): cheeks gone pink, a slow puff of pink motes, two small gold hearts
+   drifting round the head — the same 混乱, worn as a blush instead of stars and question marks ---------- */
+const BLUSH = ['#ff9ec4', '#ffc2da', '#ffffff'] as const;
+function auraBlush(ctx: CanvasRenderingContext2D, f: Fighter, left: number, t: number): void {
+  const h = bodyH(f);
+  const fade = Math.min(1, left / .3);
+  ctx.save();
+  // The cheeks: two soft pink glows on the face, breathing.
+  ctx.globalAlpha = fade * (.42 + .1 * Math.sin(t * 6));
+  const fy = f.y - h * .845;
+  glow(ctx, f.x + f.facing * 9, fy, 9, '255,128,170');
+  glow(ctx, f.x - f.facing * 3, fy + 1, 7, '255,128,170');
+  // Pink motes rising off the head, slow.
+  for (let i = 0, m = n(8); i < m; i++) {
+    const k = cycle(t, .7, i, 21);
+    ctx.globalAlpha = fade * (1 - k) * .8;
+    ctx.fillStyle = BLUSH[i % 3];
+    const x = f.x + (hash(i, 22) - .5) * 40 + Math.sin(t * 2 + i) * 5;
+    const y = f.y - h * (.78 + .2 * hash(i, 23)) - k * 40;
+    if (i % 3 === 2) sparkle(ctx, x, y, 4.5 * (1 - k * .5)); else dot(ctx, x, y, 2.2);
+  }
+  // Two gold hearts drifting round the head.
+  for (let i = 0; i < 2; i++) {
+    const a = t * 1.8 + i * Math.PI;
+    const depth = Math.sin(a);
+    ctx.globalAlpha = fade * (.6 + depth * .3);
+    ctx.fillStyle = '#EEBB44';
+    followHeart(ctx, f.x + Math.cos(a) * 26, f.y - h - 6 + depth * 6, 5.5 + depth);
+  }
+  ctx.restore();
+}
+function applyBlush(ctx: CanvasRenderingContext2D, e: Effect, age: number): void {
+  // The moment it lands: a puff of pink and gold hearts off the head.
+  ctx.save();
+  burst(age, 27, { n: n(14), speed: [60, 170], life: .55, gravity: -60, drag: .3 }, (x, y, k, i) => {
+    ctx.globalAlpha = 1 - k;
+    ctx.fillStyle = i % 3 === 0 ? '#EEBB44' : BLUSH[i % 2];
+    if (i % 3 === 0) followHeart(ctx, x, y, 6 * (1 - k * .4)); else dot(ctx, x, y, 2.4);
+  }, e.x, e.y - 178);
+  ctx.restore();
+}
+
+/* ---------- 定身 · 手铐 (花园多惠 花园警察，出动！): a pair of silver cuffs with little rabbit ears on the wrists,
+   and the red and blue of the police lights taking turns over the head — the same 定身, worn as an arrest ---------- */
+function cuffRing(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  ctx.lineWidth = 4.4;
+  ctx.strokeStyle = '#3a3f4c';
+  ctx.beginPath(); ctx.ellipse(x, y, 6.2, 7.2, 0, 0, TAU); ctx.stroke();
+  ctx.lineWidth = 2.4;
+  ctx.strokeStyle = '#e4e8f0';
+  ctx.beginPath(); ctx.ellipse(x, y, 6.2, 7.2, 0, 0, TAU); ctx.stroke();
+  // Two rabbit ears on top of each cuff.
+  ctx.fillStyle = '#e4e8f0';
+  for (const k of [-1, 1]) { ctx.beginPath(); ctx.ellipse(x + k * 2.6, y - 10.5, 1.7, 3.8, k * .25, 0, TAU); ctx.fill(); }
+}
+function auraCuffs(ctx: CanvasRenderingContext2D, f: Fighter, left: number, t: number): void {
+  const h = bodyH(f);
+  const fade = Math.min(1, left / .25);
+  ctx.save();
+  ctx.globalAlpha = fade;
+  const y = f.y - h * .47, x = f.x + f.facing * 8;
+  // The chain, then the two cuffs.
+  ctx.fillStyle = '#c9ced8';
+  for (let i = 1; i < 4; i++) dot(ctx, x + f.facing * (3 + i * 3.2), y + 1 + Math.sin(i * 1.3 + t * 3) * .6, 1.3);
+  cuffRing(ctx, x, y);
+  cuffRing(ctx, x + f.facing * 16, y + 1.5);
+  ctx.fillStyle = '#ffffff';
+  if (Math.floor(t * 2) % 2 === 0) sparkle(ctx, x + f.facing * 20, y - 6, 3);
+  // The lights over the head.
+  const red = Math.floor(t * 6) % 2 === 0;
+  const hy = f.y - h - 10;
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = fade * .7;
+  glow(ctx, f.x - 8, hy, red ? 13 : 6, '255,58,74');
+  glow(ctx, f.x + 8, hy, red ? 6 : 13, '58,120,255');
+  ctx.restore();
+}
+function applyCuffs(ctx: CanvasRenderingContext2D, e: Effect, age: number): void {
+  // Click: a red and blue flash at the wrists and a burst of glints.
+  const y = e.y - 190 * .47;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const k = Math.min(1, age / .5);
+  ctx.globalAlpha = (1 - k) * .8;
+  glow(ctx, e.x - 10, y, 22 + k * 30, '255,58,74');
+  glow(ctx, e.x + 10, y, 22 + k * 30, '58,120,255');
+  ctx.globalCompositeOperation = 'source-over';
+  burst(age, 61, { n: n(10), speed: [60, 180], life: .45, drag: .3 }, (x, yy, q, i) => {
+    ctx.globalAlpha = 1 - q;
+    ctx.fillStyle = i % 2 ? '#ffffff' : '#c9ced8';
+    if (i % 3 === 0) sparkle(ctx, x, yy, 5 * (1 - q)); else dot(ctx, x, yy, 2);
+  }, e.x, y);
+  ctx.restore();
+}
+function expireCuffs(ctx: CanvasRenderingContext2D, e: Effect, age: number): void {
+  // Released: the two cuffs spring apart and fade.
+  const y = e.y - 190 * .47;
+  const k = Math.min(1, age / .5);
+  ctx.save();
+  ctx.globalAlpha = 1 - k;
+  cuffRing(ctx, e.x - k * 30, y - k * 18 + k * k * 40);
+  cuffRing(ctx, e.x + k * 30, y - k * 14 + k * k * 40);
+  ctx.restore();
+}
+
+/* ---------- 今井莉莎's two looks ----------
+   'lisa-cat' (混乱 from 银猫扑脸): the cat itself is an effect on the head (render/lisaFx.ts lisa-cling); this is
+   the mess it makes — silver fur tufts drifting off the head and two little gold stars wheeling round it.
+   'lisa-wasabi' (烧焦 from 特制曲奇·隐藏风味): the body washed pale green, curls of green steam off the head and
+   a cold tear now and then — mustard, not fire. */
+const FUR = ['#c9c6d6', '#ece9f4', '#a8a4ba'] as const;
+function auraCatMess(ctx: CanvasRenderingContext2D, f: Fighter, left: number, t: number): void {
+  const h = bodyH(f);
+  const fade = Math.min(1, left / .2);
+  ctx.save();
+  for (let i = 0, m = n(7); i < m; i++) {
+    const k = cycle(t, .9, i, 31);
+    ctx.globalAlpha = fade * (1 - k) * .85;
+    ctx.fillStyle = FUR[i % 3];
+    const x = f.x + (hash(i, 32) - .5) * 50 + Math.sin(t * 3 + i) * 8;
+    const y = f.y - h * (.8 + .15 * hash(i, 33)) + k * 30;
+    dot(ctx, x, y, 2.6 * (1 - k * .4));
+  }
+  for (let i = 0; i < 2; i++) {
+    const a = t * 3.2 + i * Math.PI;
+    ctx.globalAlpha = fade * (.55 + Math.sin(a) * .3);
+    ctx.fillStyle = '#ffd56a';
+    sparkle(ctx, f.x + Math.cos(a) * 30, f.y - h * .9 + Math.sin(a) * 6, 5);
+  }
+  ctx.restore();
+}
+function applyCatMess(ctx: CanvasRenderingContext2D, e: Effect, age: number): void {
+  // The pounce: a puff of fur off the head.
+  ctx.save();
+  burst(age, 35, { n: n(10), speed: [60, 180], life: .5, gravity: 160, drag: .3 }, (x, y, q, i) => {
+    ctx.globalAlpha = 1 - q;
+    ctx.fillStyle = FUR[i % 3];
+    dot(ctx, x, y, 3.2 * (1 - q * .5));
+  }, e.x, e.y - 165);
+  ctx.restore();
+}
+const WASABI_BODY: BodyLook = { washes: [{ tint: '#9fdc5a', alpha: .3 }] };
+function auraWasabi(ctx: CanvasRenderingContext2D, f: Fighter, left: number, t: number): void {
+  const h = bodyH(f);
+  const fade = Math.min(1, left / .3);
+  ctx.save();
+  // Steam curling up off the head and out of the ears.
+  for (let i = 0, m = n(8); i < m; i++) {
+    const k = cycle(t, 1.1, i, 41);
+    const side = i % 2 ? 1 : -1;
+    ctx.globalAlpha = fade * Math.sin(k * Math.PI) * .45;
+    glow(ctx, f.x + side * (10 + k * 22) + Math.sin(t * 4 + i) * 4, f.y - h * .86 - k * 46, 7 + k * 12, '143,209,79');
+  }
+  // Now and then a tear.
+  const k = cycle(t, .8, 0, 43);
+  ctx.globalAlpha = fade * (1 - k) * .9;
+  ctx.fillStyle = '#bfe6ff';
+  dot(ctx, f.x + f.facing * 10 + f.facing * k * 16, f.y - h * .83 + k * 10, 2.6);
+  ctx.restore();
+}
+function applyWasabi(ctx: CanvasRenderingContext2D, e: Effect, age: number): void {
+  // The green rush: one quick puff over the whole body.
+  ctx.save();
+  const k = Math.min(1, age / .5);
+  ctx.globalAlpha = (1 - k) * .5;
+  glow(ctx, e.x, e.y - 100, 60 + k * 50, '143,209,79');
+  ctx.restore();
+}
+
 export const STATUS_MARKS: Record<string, MarkDrawer> = {
   'follow-flag': { aura: auraFollow, apply: applyFollow, expire: expireFollow },
   'recruit-badge': { aura: auraBadge },
@@ -368,6 +537,10 @@ export const STATUS_MARKS: Record<string, MarkDrawer> = {
   frost: { aura: auraFrost, apply: applyFrost },
   'ice-block': { aura: auraIce, apply: applyIce, expire: expireIce, body: ICE_BODY },
   'dizzy-q': { aura: auraDizzy, apply: applyDizzy },
+  blush: { aura: auraBlush, apply: applyBlush },
+  cuffs: { aura: auraCuffs, apply: applyCuffs, expire: expireCuffs },
+  'lisa-cat': { aura: auraCatMess, apply: applyCatMess },
+  'lisa-wasabi': { aura: auraWasabi, apply: applyWasabi, body: WASABI_BODY },
 };
 
 /** Live marks this body wears that the table knows. Older looks (摩卡's bubble, the petals) are not in the

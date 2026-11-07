@@ -3,9 +3,9 @@
    the newest complete state, eases positions between states, and runs only visual clocks. */
 
 import { sanitizeReport, type MatchReport } from '../game/report.ts';
-import { hit } from '../game/combat.ts';
+import { claimableMelee, hit } from '../game/combat.ts';
 import { FLOOR, GRAVITY, X_MAX, X_MIN, clamp } from '../game/constants.ts';
-import type { Attack, Fighter } from '../game/fighter.ts';
+import { isInvulnerable, type Attack, type Fighter } from '../game/fighter.ts';
 import type { Effect, FightGame, SfxKind } from '../game/game.ts';
 import { SILENT_MS } from './config.ts';
 import { InputClock, RemotePad, TAP_SLOTS, packBits, readEvents, tapSlot, type PadEvent } from './proto.ts';
@@ -98,7 +98,7 @@ let pingAt = 0;
 let pingLag = 0;
 let lastClaimSeq = 0;
 let pendingGuestX: number | null = null;
-let pendingClaim: [number, number, number, number] | null = null;
+let pendingClaim: { slot: number; gx: number; hx: number; expires: number; serial?: number } | null = null;
 
 // guest
 let states = new Map<number, WireState>();
@@ -413,7 +413,7 @@ function onFast(msg: Record<string, unknown>): void {
     lock.onMessage(msg, now);
     return;
   }
-  if (msg.t === 'i' && role === 'host') {
+  if (msg.t === 'i' && role === 'host' && !lock) {
     lastHeard = now;
     if (typeof msg.a === 'number' && msg.a > snapAck && sent.has(msg.a)) snapAck = msg.a;
     if (typeof msg.e === 'number' && msg.e > eventAck) eventAck = msg.e;
@@ -423,9 +423,12 @@ function onFast(msg: Record<string, unknown>): void {
       rtt = rtt ? rtt * .8 + sample * .2 : sample;
     }
     if (typeof msg.gx === 'number' && Number.isFinite(msg.gx)) pendingGuestX = msg.gx;
-    if (Array.isArray(msg.ch) && msg.ch.length >= 4 && typeof msg.ch[0] === 'number' && msg.ch[0] > lastClaimSeq) {
-      lastClaimSeq = msg.ch[0];
-      pendingClaim = [msg.ch[0], Number(msg.ch[1]), Number(msg.ch[2]), Number(msg.ch[3])];
+    if (Array.isArray(msg.ch) && msg.ch.length === 4) {
+      const [seq, slot, gx, hx] = msg.ch;
+      if (Number.isSafeInteger(seq) && seq > lastClaimSeq && claimSlot(slot) && Number.isFinite(gx) && Number.isFinite(hx)) {
+        lastClaimSeq = seq;
+        pendingClaim = { slot, gx, hx, expires: now + 250 };
+      }
     }
     clock.push(readEvents(msg.q), now);
     return;
@@ -534,30 +537,35 @@ export function syncHostGuestPos(g: FightGame, gx: number): void {
 }
 
 /** Host: honor a guest's local melee hit claim when the guest was not countered and the host is within drift reach. */
+function claimSlot(slot: number): boolean {
+  return Number.isInteger(slot) && slot >= 0 && slot < 6;
+}
+
 export function applyClaimHit(g: FightGame, slot: number, claimGx: number, claimHx: number): boolean {
   if (g.phase !== 'fight' || g.paused || g.timeStop !== null) return false;
+  if (!claimSlot(slot) || !Number.isFinite(claimGx) || !Number.isFinite(claimHx)) return false;
   const p1 = g.fighters[0];
   const p2 = g.fighters[1];
   if (!p1 || !p2 || p1.hp <= 0 || p2.hp <= 0) return false;
   if (p2.stun > 0 || p2.knocked > 0 || p2.ban > 0) return false;
-  if (p1.invuln > 0 || p1.dodge > 0) return false;
-  const idx = Math.max(0, Math.min(5, Math.trunc(slot)));
-  const skill = p2.attack?.index === idx ? p2.attack.skill : g.skillFor(p2, idx);
-  if (!skill || skill.type === 'projectile') return false;
-  const reach = (skill.range || 100) * 1.4 + 65;
+  if (isInvulnerable(p1) || p1.dodge > 0) return false;
+  const attack = p2.attack;
+  if (!attack || attack.index !== slot) return false;
+  const skill = claimableMelee(attack);
+  if (!skill || skill.type === 'projectile' || skill.range <= 0) return false;
+  const reach = skill.range * 1.4 + 65;
   const distNow = Math.abs(p1.x - p2.x);
   const distClaim = Math.abs(claimHx - claimGx);
   if (Math.abs(claimGx - p2.x) > 180 || Math.abs(claimHx - p1.x) > 180) return false;
-  if (Math.min(distNow, distClaim) > reach || Math.abs(p1.y - p2.y) > 175) return false;
-  if (p2.attack && p2.attack.index === idx) {
-    return hit(g, p2, p1, skill, p2.attack);
-  }
-  if (p2.cooldowns[idx] > 0 || p1.stun > 0 || p1.knocked > 0 || p1.hitFlash > 0) return false;
-  if (!p2.attack) {
-    g.attack(p2, idx);
-  }
-  const src = p2.attack ?? { hit: new Set<number>() };
-  return hit(g, p2, p1, skill, src);
+  if (distNow > reach || distClaim > reach) return false;
+  const radial = skill.hitbox === 'disc' || skill.hitbox === 'radial' || (skill.hitbox !== 'front' && skill.type === 'grab');
+  if (!radial && (p1.x - p2.x) * p2.facing < -20) return false;
+  const dy = Math.abs(p1.y - p2.y);
+  if (skill.hitbox === 'disc') {
+    if (Math.hypot(distNow, dy) > reach) return false;
+  } else if (skill.reach === 'ground' || skill.type === 'sweep' ? p1.y <= FLOOR - 40
+    : dy >= (skill.reach === 'low' ? 48 : skill.super ? 170 : skill.air || skill.type === 'upper' ? 150 : 112)) return false;
+  return hit(g, p2, p1, skill, attack);
 }
 
 /** Host only: play the guest's samples that are due, before this frame's step. */
@@ -566,16 +574,25 @@ export function netBefore(g: FightGame): void {
   if (role !== 'host') return;
   const now = performance.now();
   // If a hit claim arrived with this batch, flush due samples slightly ahead so the attack is live.
-  const due = clock.due(pendingClaim ? now + 80 : now);
+  const due = clock.due(pendingClaim && pendingClaim.serial === undefined ? now + 80 : now);
   for (const [, , bits, t] of due) remote.apply(g, { bits, taps: t });
   if (pendingGuestX !== null) {
     syncHostGuestPos(g, pendingGuestX);
     pendingGuestX = null;
   }
   if (pendingClaim) {
-    const [, slot, gx, hx] = pendingClaim;
-    pendingClaim = null;
-    applyClaimHit(g, slot, gx, hx);
+    const guest = g.fighters[1];
+    const attack = guest.attack;
+    const claim = pendingClaim;
+    // Input and contact may arrive together, before the host has stepped the queued input.
+    claim.serial ??= attack?.serial ?? guest.attackSerial + 1;
+    if (now >= claim.expires || guest.attackSerial > claim.serial ||
+        (guest.attackSerial === claim.serial && attack?.index !== claim.slot)) {
+      pendingClaim = null;
+    } else if (attack?.serial === claim.serial && claimableMelee(attack)) {
+      pendingClaim = null;
+      applyClaimHit(g, claim.slot, claim.gx, claim.hx);
+    }
   }
   if (due.length) stale = false;
   else if (!stale && now - lastHeard > STALE_MS) {

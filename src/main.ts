@@ -3,8 +3,8 @@ import { STAGES } from './data/stages.ts';
 import type { CharacterData, StageData } from './data/types.ts';
 import { FightGame, MINION_BAND } from './game/game.ts';
 import { KeyboardInput, TouchInput } from './game/input.ts';
-import { Renderer } from './render/renderer.ts';
-import { isLiteFx, setLiteFx, shouldGoLite } from './render/fx.ts';
+import type { Renderer } from './render/renderer.ts';
+import { isLiteFx, setLiteFx, shouldGoLite } from './render/fxQuality.ts';
 import { createViews } from './render/view.ts';
 import { assetsFor, easeLoad, imageQueue, liteFight, loadInto, loadKujiFont, missingImages, portraitSrc, preload, slowLink, stageThumbSrc, supportsWebp, type ImageCache } from './assets/loader.ts';
 import { Sfx } from './audio/sfx.ts';
@@ -309,18 +309,21 @@ async function startGame(setup: MatchSetup): Promise<void> {
   // "开打" wait is not competing with 2-at-a-time prefetch for the same bandwidth.
   queue.pause();
   let missing: string[];
+  let render: typeof import('./render/renderer.ts');
   try {
     // Online starts the instant it is ready: the cut only covers the load, it never holds a live match.
-    [missing] = await Promise.all([preload(images, need), loadKujiFont(), setup.online ? Promise.resolve() : versusHeld()]);
+    [missing, render] = await Promise.all([
+      preload(images, need), import('./render/renderer.ts'), loadKujiFont(), setup.online ? Promise.resolve() : versusHeld(),
+    ]);
   } catch (err) {
     hideVersus();
     throw err;
   } finally {
     queue.resume();
+    $('start').removeAttribute('disabled');
   }
   // Lite form sheets first (an ultimate can come early), then the full set replaces the soft one.
   if (lite) queue.soon([...lite.rest, ...srcs]);
-  $('start').removeAttribute('disabled');
   if (missing.length) console.warn('缺图，已回退色块人形：' + missing.join(', '));
   lastSetup = setup;
 
@@ -437,7 +440,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
   localPad = setup.lock && game ? new LocalPad(game) : null;
   hostTicker(setup.online === 'host' || !!setup.lock);
   // previewViews covers the whole roster: a 诗超绊 bandmate borrows their sheets mid-match.
-  renderer = new Renderer($('game') as HTMLCanvasElement, previewViews, setup.stage, images);
+  renderer = new render.Renderer($('game') as HTMLCanvasElement, previewViews, setup.stage, images);
   lastNow = gapSum = gapCount = 0;
   raf = requestAnimationFrame(frame);
   if (!document.body.classList.contains('touch')) {

@@ -92,8 +92,8 @@ export interface Skill {
   interval?: number;
   size?: number;
   life?: number;
-  /** Startup invuln for dashes; for breakout skills, a longer invuln than the shared escape default. */
-  invuln?: number;
+  /** Timed protection for a dash or breakout. 'cast' protects the entire move, including against reversals. */
+  invuln?: number | 'cast';
   /** 解控 (e.g. 恐湖, 轮奏). Castable out of any control state — hitstun, knockdown, root, lock —
    *  and the press cuts earlier inputs. The kernel grants the shared short invuln on every cast and
    *  fires the shared shockwave (combat.ts escapePulse) at the active frame. Damage, brace, veil
