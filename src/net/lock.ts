@@ -10,7 +10,7 @@ import { STEP } from '../game/constants.ts';
 import { makeFighter, type Fighter } from '../game/fighter.ts';
 import type { FightGame } from '../game/game.ts';
 import { RemotePad, TAP_SLOTS, readPad, type Pad } from './proto.ts';
-import { dec, enc } from './state.ts';
+import { dec, enc, isWireField } from './state.ts';
 
 export const TICK_STEPS = 2;
 export const TICK_MS = 1000 * STEP * TICK_STEPS;
@@ -72,7 +72,7 @@ export function loadGame(g: FightGame, rng: Rng, text: string): Record<string, u
   const rec = g as unknown as Record<string, unknown>;
   rng.s = Number(data.$rng) >>> 0;
   for (const [k, v] of Object.entries(data)) {
-    if (k.startsWith('$') || GAME_SKIP.has(k) || !(k in g)) continue;
+    if (k.startsWith('$') || !isWireField(k) || GAME_SKIP.has(k) || !Object.hasOwn(g, k)) continue;
     if (k === 'fighters') {
       const list: Fighter[] = [];
       for (const raw of v as Record<string, unknown>[]) {
@@ -82,7 +82,10 @@ export function loadGame(g: FightGame, rng: Rng, text: string): Record<string, u
         const sheet = hp === charData.hp ? charData : { ...charData, hp };
         const id = Number(raw.id);
         const f = g.fighters.find(x => x.id === id && x.data === sheet) ?? makeFighter(sheet, id, { x: 0, facing: 1, controller: null, energy: 0, team: 0 });
-        for (const [fk, fv] of Object.entries(raw)) if (fk !== '$char' && fk !== '$hp') (f as unknown as Record<string, unknown>)[fk] = dec(fv);
+        // Character data comes from the local roster, including the text rendered in the movelist.
+        for (const [fk, fv] of Object.entries(raw)) {
+          if (fk !== 'data' && !fk.startsWith('$') && isWireField(fk)) (f as unknown as Record<string, unknown>)[fk] = dec(fv);
+        }
         list.push(f);
       }
       g.fighters = list;
@@ -253,13 +256,15 @@ export class LockSession {
     if (this.fallen) return;
     if (msg.t === 'L') {
       const from = Number(msg.f);
-      if (Number.isInteger(from) && Array.isArray(msg.q)) {
-        msg.q.forEach((raw, i) => {
+      if (Number.isSafeInteger(from) && from <= this.tick + KEEP && Array.isArray(msg.q)) {
+        for (let i = 0; i < Math.min(SEND_MAX, msg.q.length); i++) {
+          const raw = msg.q[i];
           const t = from + i;
-          if (t <= this.iHave || this.remote.has(t) || !Array.isArray(raw)) return;
+          if (t > this.tick + KEEP) break;
+          if (t <= this.iHave || this.remote.has(t) || !Array.isArray(raw)) continue;
           const pad = readPad({ bits: raw[0], taps: raw[1] });
           if (pad) this.remote.set(t, pad);
-        });
+        }
         while (this.remote.has(this.iHave + 1)) this.iHave++;
       }
       if (typeof msg.a === 'number' && msg.a > this.remoteHas) this.remoteHas = msg.a;
@@ -282,7 +287,8 @@ export class LockSession {
       }
       return;
     }
-    if (msg.t === 'H' && typeof msg.k === 'number' && typeof msg.h === 'number') {
+    if (msg.t === 'H' && typeof msg.k === 'number' && Number.isSafeInteger(msg.k) &&
+      msg.k >= Math.max(0, this.tick - KEEP) && msg.k <= this.tick + KEEP && typeof msg.h === 'number') {
       this.theirHash.set(msg.k, msg.h);
       this.check(msg.k);
       return;

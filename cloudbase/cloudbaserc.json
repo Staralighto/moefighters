@@ -8,7 +8,7 @@
       "memorySize": 256,
       "runtime": "Nodejs20.19",
       "handler": "index.main",
-      "installDependency": true
+      "installDependency": false
     }
   ]
 }

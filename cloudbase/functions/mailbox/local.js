@@ -35,14 +35,43 @@ function collection(name) {
     },
     where(match) {
       let order = null;
+      const matches = (id, row) => Object.entries(match).every(([k, v]) => {
+        const actual = k === '_id' ? id : pathOf(row, k);
+        if (v && typeof v === 'object') {
+          if ('$gt' in v) return actual > v.$gt;
+          if ('$lte' in v) return actual <= v.$lte;
+        }
+        return actual === v;
+      });
       const query = {
         orderBy(key, dir) { order = [key, dir === 'desc' ? -1 : 1]; return query; },
+        async update(patch) {
+          let updated = 0;
+          for (const [id, row] of rows) {
+            if (!matches(id, row)) continue;
+            for (const [path, value] of Object.entries(patch)) {
+              const at = path.lastIndexOf('.');
+              const target = at < 0 ? row : pathOf(row, path.slice(0, at));
+              if (value?.$unset) delete target[path.slice(at + 1)];
+              else target[path.slice(at + 1)] = clone(value);
+            }
+            updated++;
+          }
+          return { updated };
+        },
+        async remove() {
+          let deleted = 0;
+          for (const [id, row] of rows) {
+            if (matches(id, row) && rows.delete(id)) deleted++;
+          }
+          return { deleted };
+        },
         limit(n) {
           return {
             async get() {
               let out = [];
               for (const [id, row] of rows) {
-                if (Object.entries(match).every(([k, v]) => pathOf(row, k) === v)) out.push({ _id: id, ...clone(row) });
+                if (matches(id, row)) out.push({ _id: id, ...clone(row) });
               }
               if (order) out.sort((a, b) => (pathOf(a, order[0]) - pathOf(b, order[0])) * order[1]);
               return { data: out.slice(0, n) };
@@ -55,11 +84,18 @@ function collection(name) {
   };
 }
 
+let transactions = Promise.resolve();
 const fakeSdk = {
   SYMBOL_CURRENT_ENV: Symbol('env'),
   init: () => ({
     database: () => ({
       collection,
+      command: { gt: value => ({ $gt: value }), lte: value => ({ $lte: value }), remove: () => ({ $unset: true }) },
+      runTransaction(work) {
+        const job = transactions.then(() => work({ collection }));
+        transactions = job.catch(() => {});
+        return job;
+      },
       // One process, one event loop: writes go straight through, rollback is best effort.
       async startTransaction() { return { collection, async commit() {}, async rollback() {} }; },
     }),
@@ -79,6 +115,7 @@ const { EventEmitter } = require('events');
 const { main } = require('./index.js');
 
 async function check() {
+  const guestKey = 'test-guest-room-proof';
   const validSdp = 'v=0\r\na=ice-ufrag:ufrag1\r\na=ice-pwd:pwd12345678901234567890\r\na=candidate:1 1 UDP 2122260223 192.168.1.2 50000 typ host\r\n';
   let simNow = Date.parse('2026-10-18T12:00:00Z');
   let cfDayBytes = 10 * 1000 * 1000;
@@ -100,11 +137,6 @@ async function check() {
     req.write = chunk => { reqBody += String(chunk); };
     req.destroy = err => { if (err) req.emit('error', err); };
     req.end = () => {
-      // Only respond on the primary hostname leg of postJsonIpv4 so counts are exact (1 per postJsonIpv4 call).
-      if (opts.host !== opts.servername) {
-        setImmediate(() => req.emit('error', new Error('skip-backup-leg')));
-        return;
-      }
       const res = new EventEmitter();
       const path = String(opts.path || '');
       let status = 200;
@@ -203,14 +235,19 @@ async function check() {
       // Inject dead rows across 10 DIFFERENT builds to verify cross-build corpse sweeping
       rows.set('old' + i + 'xxxx', { data: { build: i + ':dead', at: i, seen: 1, expireAt: 2, status: 'wait' } });
     }
-    const first = await post({ op: 'queue', ticket: 'live1111', build: 9, hash: 'dead' });
-    const second = await post({ op: 'queue', ticket: 'live2222', build: 9, hash: 'dead' });
-    const host = await post({ op: 'queue', ticket: 'live1111', build: 9, hash: 'dead' });
+    rows.set('expired-pair', { data: { expireAt: simNow - 1, status: 'gone' } });
+    table('rooms').set('expired-room', { data: { expireAt: simNow - 1, joined: true } });
+    const first = await post({ op: 'queue', ticket: 'live1111', build: 9, hash: 'dead', guestAuth: true });
+    const second = await post({ op: 'queue', ticket: 'live2222', build: 9, hash: 'dead', guestAuth: true });
+    const host = await post({ op: 'queue', ticket: 'live1111', build: 9, hash: 'dead', guestAuth: true });
     const other = await post({ op: 'queue', ticket: 'live3333', build: 9, hash: 'else' });
     const gone = [...Array(10).keys()].filter(i => !rows.has('old' + i + 'xxxx')).length;
     if (first.wait !== true) throw new Error('first ticket should wait');
     if (second.role !== 'guest' || typeof second.code !== 'string') throw new Error('second ticket should pair');
     if (host.role !== 'host' || host.code !== second.code || typeof host.key !== 'string') throw new Error('first ticket should become host with key');
+    if (rows.has('expired-pair') || table('rooms').has('expired-room')) throw new Error('new matches must clear abandoned matched rooms and unread tickets');
+    const matchedTake = await rawPost({ op: 'take', code: second.code, guestKey: 'live2222' });
+    if (matchedTake.status !== 200 || !matchedTake.body.wait) throw new Error('the matched guest can use its original ticket');
     const initialSeen = rows.get('live3333')?.data?.seen;
     const pollAgain = await post({ op: 'queue', ticket: 'live3333', build: 9, hash: 'else' });
     if (pollAgain.wait !== true) throw new Error('subsequent poll should keep waiting');
@@ -254,8 +291,8 @@ async function check() {
     // 4. Attack simulation: Single-player `open` -> `turn` farming & fake SDP injection
     const bareTurn = await rawPost({ op: 'turn' });
     if (bareTurn.status !== 403) throw new Error('bare turn without room must be rejected');
-    const opened = await post({ op: 'open' });
-    if ((await rawPost({ op: 'answer', code: opened.code, sdp: validSdp })).status !== 403) throw new Error('answer before offer must be rejected');
+    const opened = await post({ op: 'open', guestAuth: true });
+    if ((await rawPost({ op: 'answer', code: opened.code, guestKey, sdp: validSdp })).status !== 403) throw new Error('answer before offer must be rejected');
     if ((await rawPost({ op: 'offer', code: opened.code, sdp: validSdp })).status !== 403) throw new Error('offer without key must be rejected');
     if ((await rawPost({ op: 'offer', code: opened.code, key: opened.key, sdp: 'v=0\r\nfake' })).status !== 400) {
       throw new Error('malformed SDP without candidate/ufrag/pwd must be rejected with 400');
@@ -266,13 +303,13 @@ async function check() {
     if (prematureTurn.status !== 403 || cfMintCalls !== 0) {
       throw new Error('single-player host turn before guest take must be rejected with 403');
     }
-    const pollBeforeJoin = await post({ op: 'poll', code: opened.code });
+    const pollBeforeJoin = await post({ op: 'poll', code: opened.code, key: opened.key });
     if (pollBeforeJoin.joined) throw new Error('room must not be marked joined before guest takes');
 
     // Guest knocks via `take` -> marks room joined
-    const firstTake = await post({ op: 'take', code: opened.code });
+    const firstTake = await post({ op: 'take', code: opened.code, guestKey });
     if (firstTake.wait !== true || firstTake.joined !== true) throw new Error('first take before offer should mark room joined');
-    const pollAfterJoin = await post({ op: 'poll', code: opened.code });
+    const pollAfterJoin = await post({ op: 'poll', code: opened.code, key: opened.key });
     if (pollAfterJoin.joined !== true) throw new Error('host poll must observe joined: true after guest take');
 
     // Now host turn with key passes, strips port 53, preserves UDP/TCP/TURNS, and caches credentials on room
@@ -289,31 +326,52 @@ async function check() {
       throw new Error('TCP and TLS (turns:) TURN URLs must be preserved for VPN/proxy players');
     }
 
-    const offered = await post({ op: 'offer', code: opened.code, key: opened.key, sdp: validSdp });
+    const offers = await Promise.all([validSdp, validSdp + 'a=one\r\n'].map(sdp =>
+      rawPost({ op: 'offer', code: opened.code, key: opened.key, sdp })));
+    if (offers.map(r => r.status).join(',') !== '200,403') throw new Error('concurrent offers must only accept the first write');
     if ((await rawPost({ op: 'offer', code: opened.code, key: opened.key, sdp: validSdp })).status !== 403) throw new Error('second offer must be rejected');
     // Guest on the SAME IP (same Wi-Fi) gets the cached room TURN credentials without triggering a 2nd mint or hitting IP cooldown!
-    const guestTurn = await rawPost({ op: 'turn', code: opened.code }, {}, '198.51.100.1');
+    const guestTurn = await rawPost({ op: 'turn', code: opened.code, guestKey }, {}, '198.51.100.1');
     if (guestTurn.status !== 200 || guestTurn.body.iceServers.length !== 2 || cfMintCalls !== 1) {
       throw new Error('guest turn after offer must reuse room cache without extra Cloudflare call');
     }
-    const taken = await post({ op: 'take', code: opened.code });
-    if (offered.ok !== true || taken.sdp !== validSdp) throw new Error('offer did not round-trip');
-    if ((await rawPost({ op: 'answer', code: opened.code, sdp: validSdp })).status !== 200) throw new Error('first answer must pass');
-    if ((await rawPost({ op: 'answer', code: opened.code, sdp: validSdp })).status !== 403) throw new Error('second answer must be rejected');
+    const taken = await post({ op: 'take', code: opened.code, guestKey });
+    if (taken.sdp !== validSdp) throw new Error('offer did not round-trip');
+    for (const body of [
+      { op: 'take', guestKey: 'different-guest' },
+      { op: 'answer', sdp: validSdp },
+      { op: 'turn' },
+      { op: 'poll' },
+    ]) {
+      const denied = await rawPost({ code: opened.code, ...body });
+      if (denied.status !== 403) throw new Error(body.op + ' must reject a party that only knows the room code');
+    }
+    const answers = await Promise.all([validSdp, validSdp + 'a=two\r\n'].map(sdp =>
+      rawPost({ op: 'answer', code: opened.code, guestKey, sdp })));
+    if (answers.map(r => r.status).join(',') !== '200,403') throw new Error('concurrent answers must only accept the first write');
+    if ((await post({ op: 'poll', code: opened.code, key: opened.key })).sdp !== validSdp) throw new Error('the second answer must not replace the first');
+    if ((await rawPost({ op: 'answer', code: opened.code, guestKey, sdp: validSdp })).status !== 403) throw new Error('second answer must be rejected');
     if ((await rawPost({ op: 'turn', code: opened.code })).status !== 403) throw new Error('guest turn after answer must be rejected');
+    if ((await rawPost({ op: 'turn', code: opened.code, key: opened.key })).status !== 403) throw new Error('host turn after answer must be rejected');
     if ((await rawPost({ op: 'drop', code: opened.code })).status !== 403) throw new Error('drop without key must be rejected');
     if ((await rawPost({ op: 'drop', code: opened.code, key: opened.key })).status !== 200) throw new Error('drop with key must pass');
+
+    const legacy = await post({ op: 'open' });
+    if (!(await post({ op: 'take', code: legacy.code })).joined) throw new Error('the currently deployed client can still join');
+    await post({ op: 'offer', ...legacy, sdp: validSdp });
+    await post({ op: 'answer', code: legacy.code, sdp: validSdp });
+    if ((await post({ op: 'poll', code: legacy.code })).sdp !== validSdp) throw new Error('legacy answer round trip failed');
+    await post({ op: 'drop', ...legacy });
 
     // 5. Attack simulation: `open` room flood hits OPEN_MAX (30) -> 429 busy, and expired open rooms are swept
     const roomRows = table('rooms');
     for (let i = 0; i < 5; i++) {
       roomRows.set('EXP' + i, { data: { offer: '', answer: '', key: 'k', joined: false, expireAt: simNow - 1000 } });
     }
-    const openBatch = [];
-    for (let i = 0; i < 30; i++) {
-      const r = await rawPost({ op: 'open' });
-      if (r.status !== 200) throw new Error('open #' + (i + 1) + ' should succeed');
-      openBatch.push(r.body);
+    const openResults = await Promise.all(Array.from({ length: 40 }, () => rawPost({ op: 'open' })));
+    const openBatch = openResults.filter(r => r.status === 200).map(r => r.body);
+    if (openBatch.length !== 30 || openResults.filter(r => r.status === 429).length !== 10) {
+      throw new Error('40 concurrent opens must admit 30 and reject 10');
     }
     if ([0, 1, 2, 3, 4].some(i => roomRows.has('EXP' + i))) {
       throw new Error('expired unjoined rooms must be garbage-collected on open');
@@ -322,13 +380,20 @@ async function check() {
     if (open31.status !== 429 || open31.body.error !== 'busy') {
       throw new Error('31st unjoined open room must be rejected with 429 busy');
     }
+    await post({ op: 'take', code: openBatch[0].code });
+    const replacement = await rawPost({ op: 'open' });
+    if (replacement.status !== 200) throw new Error('joining must free an open slot');
+    await post({ op: 'drop', ...replacement.body });
+    const afterDrop = await rawPost({ op: 'open' });
+    if (afterDrop.status !== 200) throw new Error('dropping must free an open slot');
+    openBatch.push(afterDrop.body);
     for (const r of openBatch) await post({ op: 'drop', code: r.code, key: r.key });
 
     // 6. Attack simulation: Single-IP rapid TURN farming (15s cooldown + 20/day per-IP cap)
     const attackerIp = '203.0.113.66';
     const openAndJoin = async ip => {
       const rm = await post({ op: 'open' }, ip);
-      await post({ op: 'take', code: rm.code }, ip);
+      await post({ op: 'take', code: rm.code, guestKey }, ip);
       return rm;
     };
     // First mint by attackerIp succeeds
@@ -534,7 +599,7 @@ async function check() {
       throw new Error('Singapore TURN must stay behind the joined-room gate');
     }
     const sgRoom = await post({ op: 'open' });
-    await post({ op: 'take', code: sgRoom.code });
+    await post({ op: 'take', code: sgRoom.code, guestKey });
     const beforeSg = cfMintCalls;
     const sgTurn = await rawPost({ op: 'turn', code: sgRoom.code, key: sgRoom.key }, {}, '198.51.100.120');
     const expiry = Math.floor(simNow / 1000) + 600;
@@ -550,7 +615,7 @@ async function check() {
     const sgUsers = (table('rooms').get('_turn_quota').data.activeUsers || []).map(x => x.u);
     if (sgUsers.includes(sgUser)) throw new Error('Singapore username must not be queued for Cloudflare revoke');
     await post({ op: 'offer', code: sgRoom.code, key: sgRoom.key, sdp: validSdp });
-    const sgGuest = await rawPost({ op: 'turn', code: sgRoom.code }, {}, '198.51.100.121');
+    const sgGuest = await rawPost({ op: 'turn', code: sgRoom.code, guestKey }, {}, '198.51.100.121');
     if (sgGuest.body.iceServers.length !== sgTurn.body.iceServers.length || cfMintCalls !== beforeSg + 1) {
       throw new Error('guest must reuse the cached list including Singapore');
     }
@@ -570,7 +635,7 @@ async function check() {
 
     failGraphql = true;
     const probeRoom = await post({ op: 'open' });
-    await post({ op: 'take', code: probeRoom.code });
+    await post({ op: 'take', code: probeRoom.code, guestKey });
     const beforeProbe = cfMintCalls;
     const probeTurn = await rawPost({ op: 'turn', code: probeRoom.code, key: probeRoom.key }, {}, '198.51.100.140');
     failGraphql = false;
@@ -580,7 +645,7 @@ async function check() {
 
     failMint = true;
     const downRoom = await post({ op: 'open' });
-    await post({ op: 'take', code: downRoom.code });
+    await post({ op: 'take', code: downRoom.code, guestKey });
     const beforeDown = cfMintCalls;
     const downTurn = await rawPost({ op: 'turn', code: downRoom.code, key: downRoom.key }, {}, '198.51.100.130');
     failMint = false;
@@ -591,14 +656,14 @@ async function check() {
       throw new Error('Cloudflare mint failure must still return the self-hosted TURN');
     }
     await post({ op: 'offer', code: downRoom.code, key: downRoom.key, sdp: validSdp });
-    const downGuest = await rawPost({ op: 'turn', code: downRoom.code }, {}, '198.51.100.131');
+    const downGuest = await rawPost({ op: 'turn', code: downRoom.code, guestKey }, {}, '198.51.100.131');
     if (downGuest.body.iceServers.length !== 1 || cfMintCalls !== beforeDown + 1) {
       throw new Error('guest must reuse the self-hosted TURN cached after a Cloudflare failure');
     }
 
     process.env.SG_TURN_HOST = '203.0.113.10:3478';
     const badRoom = await post({ op: 'open' });
-    await post({ op: 'take', code: badRoom.code });
+    await post({ op: 'take', code: badRoom.code, guestKey });
     const badTurn = await rawPost({ op: 'turn', code: badRoom.code, key: badRoom.key }, {}, '198.51.100.132');
     const badUrls = (badTurn.body.iceServers || []).flatMap(s => s.urls || []);
     if (badTurn.body.iceServers.length === 0 || badUrls.some(u => String(u).includes('203.0.113.10:3478:3478') || String(u).includes('@'))) {
@@ -608,13 +673,25 @@ async function check() {
 
     process.env.SG_TURN_SECRET = 'short-secret';
     const weakRoom = await post({ op: 'open' });
-    await post({ op: 'take', code: weakRoom.code });
+    await post({ op: 'take', code: weakRoom.code, guestKey });
     const weakTurn = await rawPost({ op: 'turn', code: weakRoom.code, key: weakRoom.key }, {}, '198.51.100.133');
     const weakUsers = (weakTurn.body.iceServers || []).map(s => s.username).filter(Boolean);
     if (weakTurn.body.iceServers.length === 0 || weakUsers.some(u => String(u).includes(':room-'))) {
       throw new Error('a short self-hosted TURN secret must not mint a forgeable credential');
     }
 
+    simNow += 86400000;
+    const untrusted1 = await openAndJoin(null);
+    const untrusted2 = await openAndJoin(null);
+    const minted = await rawPost({ op: 'turn', ...untrusted1 }, {
+      'x-real-ip': '198.51.100.50', 'x-forwarded-for': '198.51.100.50', 'x-client-ip': '198.51.100.50',
+    }, null);
+    const spoofed = await rawPost({ op: 'turn', ...untrusted2 }, {
+      'x-real-ip': '198.51.100.51', 'x-forwarded-for': '198.51.100.51', 'x-client-ip': '198.51.100.51',
+    }, null);
+    if (!minted.body.iceServers.length || spoofed.body.iceServers.length) {
+      throw new Error('unverified IP headers must not split the shared cooldown bucket');
+    }
     console.log('mailbox pair & all 8 security valve attack simulations ok');
   } finally {
     https.request = origHttpsRequest;

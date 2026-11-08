@@ -29,7 +29,9 @@ export type ModKind =
   /** 不用说我也懂: on her, acc its seconds left. The first U / I / O a foe starts while it holds is cut off (game/lisa.ts). */
   | 'read'
   /** 特制曲奇·隐藏风味: the mustard eaten. from is who baked it; it goes off when acc runs out (game/lisa.ts). */
-  | 'mustard';
+  | 'mustard'
+  /** 一呼零应: v is how many times nobody answered her this round; 一呼百应 spends them (game/himari.ts). */
+  | 'grievance';
 
 /**
  * One running buff.

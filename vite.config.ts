@@ -53,31 +53,45 @@ function themeLight(): Plugin {
   };
 }
 
-/** Dev panel posts the live numbers here. The fight keeps running; this file is not hot-reloaded. */
-function propLayout(): Plugin {
-  const file = new URL('./src/render/propLayout.data.ts', import.meta.url);
+/** Layout writes are same-origin JSON, including on the LAN phone dev page. */
+function layoutWriter(name: string, path: string, serialize: (value: unknown) => string): Plugin {
+  const file = new URL(path, import.meta.url);
+  const maxBody = 16 * 1024;
   return {
-    name: 'prop-layout',
+    name,
     configureServer(server) {
-      server.middlewares.use('/__prop-layout', (req, res, next) => {
+      server.middlewares.use('/__' + name, async (req, res, next) => {
         if (req.method !== 'POST') return next();
+        const { host, origin } = req.headers;
+        if (!host || (origin !== 'http://' + host && origin !== 'https://' + host)) {
+          res.writeHead(403).end();
+          return;
+        }
+        if (req.headers['content-type']?.split(';', 1)[0].trim().toLowerCase() !== 'application/json') {
+          res.writeHead(415).end();
+          return;
+        }
         const chunks: Buffer[] = [];
-        req.on('data', (c: Buffer) => chunks.push(c));
-        req.on('end', () => {
-          try {
-            const text = serialize(JSON.parse(Buffer.concat(chunks).toString('utf8')));
-            if (readFileSync(file, 'utf8') !== text) writeFileSync(file, text);
-            res.statusCode = 204;
-            res.end();
-          } catch (err) {
-            res.statusCode = 400;
-            res.end(err instanceof Error ? err.message : 'bad layout');
+        let size = 0;
+        try {
+          for await (const chunk of req.iterator({ destroyOnReturn: false })) {
+            size += chunk.length;
+            if (size > maxBody) {
+              res.writeHead(413, { Connection: 'close' }).end();
+              return;
+            }
+            chunks.push(chunk);
           }
-        });
+          const text = serialize(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+          if (readFileSync(file, 'utf8') !== text) writeFileSync(file, text);
+          res.writeHead(204).end();
+        } catch {
+          if (!res.destroyed) res.writeHead(400).end();
+        }
       });
     },
     handleHotUpdate(ctx) {
-      if (ctx.file.replaceAll('\\', '/').endsWith('/src/render/propLayout.data.ts')) return [];
+      if (ctx.file.replaceAll('\\', '/').endsWith(path.slice(1))) return [];
     },
   };
 }
@@ -109,35 +123,6 @@ ${lines.join('\n')}
 }
 
 const PAD_IDS = ['atk', 'guard', 's1', 's2', 's3', 'stick', 'ult'] as const;
-
-/** Same idea as prop layout: drag the phone buttons, drop writes the data file, fight keeps running. */
-function touchLayout(): Plugin {
-  const file = new URL('./src/ui/touchLayout.data.ts', import.meta.url);
-  return {
-    name: 'touch-layout',
-    configureServer(server) {
-      server.middlewares.use('/__touch-layout', (req, res, next) => {
-        if (req.method !== 'POST') return next();
-        const chunks: Buffer[] = [];
-        req.on('data', (c: Buffer) => chunks.push(c));
-        req.on('end', () => {
-          try {
-            const text = serializeTouch(JSON.parse(Buffer.concat(chunks).toString('utf8')));
-            if (readFileSync(file, 'utf8') !== text) writeFileSync(file, text);
-            res.statusCode = 204;
-            res.end();
-          } catch (err) {
-            res.statusCode = 400;
-            res.end(err instanceof Error ? err.message : 'bad layout');
-          }
-        });
-      });
-    },
-    handleHotUpdate(ctx) {
-      if (ctx.file.replaceAll('\\', '/').endsWith('/src/ui/touchLayout.data.ts')) return [];
-    },
-  };
-}
 
 function serializeTouch(raw: unknown): string {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('layout must be an object');
@@ -187,7 +172,11 @@ export default defineConfig(({ command }) => ({
       output: { codeSplitting: { groups: [{ name: 'roster', test: /[\\/]src[\\/]data[\\/]/ }] } },
     },
   },
-  plugins: [themeLight(), idlePortraits(), propLayout(), touchLayout()],
+  plugins: [
+    themeLight(), idlePortraits(),
+    layoutWriter('prop-layout', './src/render/propLayout.data.ts', serialize),
+    layoutWriter('touch-layout', './src/ui/touchLayout.data.ts', serializeTouch),
+  ],
   server: { host: true },
   preview: { host: true },
 }));

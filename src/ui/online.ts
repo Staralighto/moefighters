@@ -208,10 +208,10 @@ export function notifyOnlinePick(charId: string): void {
 
 /** TURN credentials the mailbox mints (op 'turn') for a live room, or undefined to fall back
  *  to config's static ICE servers. Cached for 5 minutes (credentials live 10 minutes). */
-async function turnIce(signal: AbortSignal, code: string, key?: string): Promise<RTCIceServer[] | undefined> {
+async function turnIce(signal: AbortSignal, code: string, proof: { key: string } | { guestKey: string }): Promise<RTCIceServer[] | undefined> {
   if (turnCache && Date.now() - turnCacheAt < 5 * 60 * 1000) return turnCache;
   try {
-    const res = await postMail({ op: 'turn', code, ...(key ? { key } : {}) }, signal);
+    const res = await postMail({ op: 'turn', code, ...proof }, signal);
     const list = iceList(res.iceServers);
     if (list.length) {
       turnCache = list;
@@ -505,8 +505,7 @@ export function cancelOnline(): Promise<void> {
 }
 
 function ticket(): string {
-  const a = crypto.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36);
-  return a.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32).padEnd(8, 'a');
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
 }
 
 async function poll(
@@ -731,7 +730,7 @@ async function offerSide(signal: AbortSignal, picked: OnlinePick, code: string, 
   codeShown = board.codeAt === undefined ? '' : code;
   await postMail({ op: 'offer', code, key, sdp }, signal);
   show(board, board.link);
-  const answer = await poll(signal, () => postMail({ op: 'poll', code }, signal), res => typeof res.sdp === 'string');
+  const answer = await poll(signal, () => postMail({ op: 'poll', code, key }, signal), res => typeof res.sdp === 'string');
   show(board, board.link);
   await acceptAnswer(link.pc, String(answer.sdp));
   await link.ready(signal);
@@ -741,20 +740,20 @@ async function offerSide(signal: AbortSignal, picked: OnlinePick, code: string, 
   await handshake(link, 'host', picked, board, signal);
 }
 
-async function joinSide(signal: AbortSignal, picked: OnlinePick, code: string, board: Board, from: number): Promise<void> {
+async function joinSide(signal: AbortSignal, picked: OnlinePick, code: string, board: Board, from: number, guestKey = ticket()): Promise<void> {
   show(board, from);
-  const taken = await poll(signal, () => postMail({ op: 'take', code }, signal), res => typeof res.sdp === 'string');
+  const taken = await poll(signal, () => postMail({ op: 'take', code, guestKey }, signal), res => typeof res.sdp === 'string');
   show(board, board.link);
-  const guest = await createGuest(String(taken.sdp), signal, await turnIce(signal, code));
+  const guest = await createGuest(String(taken.sdp), signal, await turnIce(signal, code, { guestKey }));
   own(guest.link);
-  await postMail({ op: 'answer', code, sdp: guest.sdp }, signal);
+  await postMail({ op: 'answer', code, guestKey, sdp: guest.sdp }, signal);
   await guest.link.ready(signal);
   await handshake(guest.link, 'guest', picked, board, signal);
 }
 
 async function asHost(signal: AbortSignal, picked: OnlinePick): Promise<void> {
   show(HOST_BOARD, 0);
-  const opened = await postMail({ op: 'open' }, signal);
+  const opened = await postMail({ op: 'open', guestAuth: true }, signal);
   const code = typeof opened.code === 'string' ? opened.code : '';
   const key = typeof opened.key === 'string' ? opened.key : '';
   if (!cleanCode(code) || cleanCode(code) !== code || !key) throw new MailError('联机不可用');
@@ -762,9 +761,9 @@ async function asHost(signal: AbortSignal, picked: OnlinePick): Promise<void> {
   heldKey = key;
   codeShown = code;
   show(HOST_BOARD, 2);
-  await poll(signal, () => postMail({ op: 'poll', code }, signal), res => res.joined === true || typeof res.sdp === 'string', 5000);
+  await poll(signal, () => postMail({ op: 'poll', code, key }, signal), res => res.joined === true || typeof res.sdp === 'string', 5000);
   show(HOST_BOARD, HOST_BOARD.link);
-  const host = await createHost(signal, await turnIce(signal, code, key));
+  const host = await createHost(signal, await turnIce(signal, code, { key }));
   own(host.link);
   await offerSide(signal, picked, code, key, host.link, host.sdp, HOST_BOARD);
 }
@@ -782,7 +781,7 @@ async function matched(signal: AbortSignal, picked: OnlinePick): Promise<void> {
   try {
     while (Date.now() < deadline) {
       if (signal.aborted) throw signal.reason ?? new DOMException('aborted', 'AbortError');
-      const res = await postMail({ op: 'queue', ticket: id, sid: queueSid, build: NET_BUILD, hash: NET_HASH }, signal);
+      const res = await postMail({ op: 'queue', ticket: id, sid: queueSid, build: NET_BUILD, hash: NET_HASH, guestAuth: true }, signal);
       if ((res.role === 'host' || res.role === 'guest') && typeof res.code === 'string') {
         role = res.role;
         code = res.code;
@@ -797,10 +796,10 @@ async function matched(signal: AbortSignal, picked: OnlinePick): Promise<void> {
     if (role === 'host') {
       heldCode = code;
       heldKey = key;
-      const host = await createHost(signal, await turnIce(signal, code, key));
+      const host = await createHost(signal, await turnIce(signal, code, { key }));
       own(host.link);
       await offerSide(signal, picked, code, key, host.link, host.sdp, MATCH_BOARD);
-    } else await joinSide(signal, picked, code, MATCH_BOARD, 2);
+    } else await joinSide(signal, picked, code, MATCH_BOARD, 2, id);
   } finally {
     // Cancel already took the id and is removing it. A matched ticket is already gone on the server.
     if (waiting && queueTicket === id) void releaseTicket();

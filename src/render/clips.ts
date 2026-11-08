@@ -867,6 +867,36 @@ export const LISA_FUSE = 1.5;
 export const LISA_TEA = .8;
 /** 银猫扑脸: how long the cat clings (the 混乱 runs the same), and the cat's height off the floor as it runs. */
 export const LISA_CLING = 2;
+/** 摇匀一杯摩卡: the lunge, the grip (four shakes on a fixed beat), the let-go. Shared by game/himari.ts and the cell pick. */
+export const HIMARI_SHAKE = { lunge: 0, held: 1, done: 2 } as const;
+export const HIMARI_SHAKE_LUNGE = .3;
+export const HIMARI_SHAKE_FIRST = .12;
+export const HIMARI_SHAKE_GAP = .17;
+export const HIMARI_SHAKE_TAIL = .32;
+/** 一呼零应: the three words go up at these seconds into the cast (before Skill.start); the fist stays up this long
+ *  after the silence falls, then her shoulders drop. */
+export const HIMARI_AAO_WORDS = [.02, .16, .3] as const;
+export const HIMARI_AAO_RAISE = .32;
+/** 一呼百应: her two 「A！」 and the 「O——！」 (seconds into the move), the four who answer (鸫, 巴, 摩卡, 兰 in that order,
+ *  HIMARI_ANSWER_AT + n × HIMARI_ANSWER_GAP), the sunset wave they make together, and when she turns for the V. */
+export const HIMARI_CALL_A = [.5, .78] as const;
+export const HIMARI_CALL_O = 1.04;
+export const HIMARI_ANSWER_AT = 1.16;
+export const HIMARI_ANSWER_GAP = .22;
+export const HIMARI_CALL_FINAL = 2.06;
+export const HIMARI_CALL_TURN = 2.24;
+/** friends.png: 4 columns (the four, in answer order) × 3 rows — HIMARI_FRIEND_ROW. Shared by himariFx.ts and the sheet script. */
+export const HIMARI_FRIENDS_SRC = '/sprites/himari/friends.png';
+export const HIMARI_FRIEND_ROW = { rise: 0, shout: 1, after: 2 } as const;
+export interface HimariFriend { name: string; color: string; height: number }
+/** 一呼百应: who answers, in order; the column on friends.png is the index. */
+export const HIMARI_FRIENDS: readonly HimariFriend[] = [
+  { name: '鸫', color: '#FFEE88', height: 172 },
+  { name: '巴', color: '#BB0033', height: 188 },
+  { name: '摩卡', color: '#00CCAA', height: 175 },
+  { name: '兰', color: '#EE0022', height: 181 },
+];
+
 export const LISA_CAT_BODY = 22;
 
 export function clipFor(f: Fighter): Clip {
@@ -1111,6 +1141,21 @@ export function clipFor(f: Fighter): Clip {
       const a = f.attack, s = a.skill;
       if (a.mode === LISA_COOKIE.tea) return at('special', a.index - 2, 2);
       return at('special', a.index - 2, a.t < s.start ? 0 : a.t < s.start + LISA_TOSS ? 1 : 2);
+    }
+    // 摇匀一杯摩卡: hands out on the lunge; the grip through the shaking; the brush-off after.
+    if (f.attack.skill.fx === 'himari-shake') {
+      const a = f.attack, mode = a.mode ?? HIMARI_SHAKE.lunge;
+      return at('special', a.index - 2, mode === HIMARI_SHAKE.lunge ? 0 : mode === HIMARI_SHAKE.held ? 1 : 2);
+    }
+    // 一呼零应: fist at the chest through the three words; up in the air into the silence; then the slump.
+    if (f.attack.skill.fx === 'himari-aao') {
+      const a = f.attack, s = a.skill;
+      return at('special', a.index - 2, a.t < s.start ? 0 : a.t < s.start + HIMARI_AAO_RAISE ? 1 : 2);
+    }
+    // 一呼百应: the breath; the fist up through every shout and every answer; turned round for the V.
+    if (f.attack.skill.fx === 'himari-call') {
+      const a = f.attack;
+      return at('special', a.index - 2, a.t < HIMARI_CALL_A[0] - .05 ? 0 : a.t < HIMARI_CALL_TURN ? 1 : 2);
     }
     // 死亡银河号: the kick start; the run and the skid lean over the tank; off the bike.
     if (f.attack.skill.fx === 'galaxy-ride') {

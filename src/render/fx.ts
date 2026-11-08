@@ -14,6 +14,7 @@ import { drawMisakiFx, drawMisakiShot } from './misakiFx.ts';
 import { drawMaskingFx } from './maskingFx.ts';
 import { drawTaeFx, drawTaeShot } from './taeFx.ts';
 import { drawLisaFx, drawLisaShot } from './lisaFx.ts';
+import { drawHimariFx, drawHimariShot } from './himariFx.ts';
 import { drawStatusEffect } from './statusMarks.ts';
 import { isLiteFx, liteFx } from './fxQuality.ts';
 import { drawShizukuFx, drawShizukuShot } from './shizukuFx.ts';
@@ -996,6 +997,8 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
   if (drawTaeFx(ctx, e, liteFx)) return;
   // 今井莉莎 too.
   if (drawLisaFx(ctx, e, liteFx, images)) return;
+  // 上原绯玛丽 too.
+  if (drawHimariFx(ctx, e, liteFx, images)) return;
   // 异常: `<mark>@apply` / `<mark>@expire`, drawn by the status table.
   if (drawStatusEffect(ctx, e)) return;
   // 四宫宁月's accidents keep their own module too.
@@ -6163,6 +6166,7 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   if (drawMisakiShot(ctx, p, images, liteFx)) return;
   if (drawTaeShot(ctx, p, liteFx)) return;
   if (drawLisaShot(ctx, p, liteFx, images)) return;
+  if (drawHimariShot(ctx, p, liteFx)) return;
   ctx.save();
   // 火的故事: the arrow art rides ten pixels above its flight band so the flame head reads on the body.
   if (p.fx === 'fuga') ctx.translate(0, -10);

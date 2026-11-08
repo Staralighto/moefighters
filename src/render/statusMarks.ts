@@ -530,6 +530,154 @@ function applyWasabi(ctx: CanvasRenderingContext2D, e: Effect, age: number): voi
   ctx.restore();
 }
 
+/* 上原绯玛丽 (game/himari.ts):
+   'himari-shake' (混乱 from 摇匀一杯摩卡): a latte-art swirl turning over the head, two coffee beans orbiting it.
+   'himari-awkward' (定身 from 一呼零应): 尴尬到石化 — the body goes grey stone with cracks across it, a sweat drop by the
+     face; when it lifts the stone breaks off in chips and dust. (The empty reply bubble is an effect, himariFx.ts.)
+   'himari-calorie' (减速 from 热量全部送给你): heavy — a dust ring pressed into the floor at the feet, little chevrons
+     and pink-brown hearts sinking down the body. */
+function auraShake(ctx: CanvasRenderingContext2D, f: Fighter, left: number, t: number): void {
+  const h = bodyH(f);
+  const fade = Math.min(1, left / .2);
+  const cx = f.x, cy = f.y - h - 14;
+  ctx.save();
+  ctx.globalAlpha = fade * .95;
+  ctx.fillStyle = '#8a5a3a';
+  ctx.beginPath(); ctx.ellipse(cx, cy, 20, 7, 0, 0, TAU); ctx.fill();
+  // The swirl: a cream spiral drawn as short arcs, turning.
+  ctx.strokeStyle = '#fff3df';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  for (let i = 0; i <= 18; i++) {
+    const a = t * 5 + i * .55, r = 2 + i * .9;
+    const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r * .34;
+    if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+  }
+  ctx.stroke();
+  for (let i = 0; i < 2; i++) {
+    const a = -t * 3 + i * Math.PI;
+    ctx.fillStyle = '#6b3f25';
+    ctx.beginPath(); ctx.ellipse(cx + Math.cos(a) * 28, cy - 2 + Math.sin(a) * 6, 4, 2.8, a, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+}
+function applyShake(ctx: CanvasRenderingContext2D, e: Effect, age: number): void {
+  ctx.save();
+  burst(age, 81, { n: n(10), speed: [60, 170], life: .5, gravity: 200, drag: .3 }, (x, y, q, i) => {
+    ctx.globalAlpha = 1 - q;
+    ctx.fillStyle = i % 3 ? '#fff3df' : '#e9c39a';
+    dot(ctx, x, y, 3.4 * (1 - q * .5));
+  }, e.x, e.y - 170);
+  ctx.restore();
+}
+const STONE_BODY: BodyLook = {
+  outline: '#ece8f2',
+  washes: [
+    { tint: '#aaa5b2', alpha: .66 },
+    { tint: '#ffffff', alpha: .08, mode: 'lighter' },
+  ],
+};
+/** Crack lines across the stone, fixed per body (so they do not crawl), drawn over the torso and the face. */
+const CRACKS: readonly (readonly [number, number])[][] = [
+  [[-.02, .9], [.05, .84], [-.01, .78], [.06, .72]],
+  [[-.1, .6], [-.03, .55], [-.08, .48], [0, .42], [-.04, .36]],
+  [[.08, .64], [.13, .58], [.09, .52]],
+];
+function auraAwkward(ctx: CanvasRenderingContext2D, f: Fighter, left: number, t: number): void {
+  const h = bodyH(f);
+  const fade = Math.min(1, left / .15);
+  ctx.save();
+  ctx.strokeStyle = '#4b4652';
+  ctx.lineWidth = 1.8;
+  ctx.lineJoin = 'round';
+  ctx.globalAlpha = fade * .85;
+  for (const line of CRACKS) {
+    ctx.beginPath();
+    line.forEach(([x, y], i) => {
+      const px = f.x + x * h * f.facing, py = f.y - y * h;
+      if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+    });
+    ctx.stroke();
+  }
+  // The sweat drop slides a little and starts again.
+  const k = (t * .8) % 1;
+  ctx.globalAlpha = fade * (1 - k * .5) * .95;
+  ctx.fillStyle = '#bfe6ff';
+  const x = f.x - f.facing * 22, y = f.y - h * .86 + k * 10;
+  ctx.beginPath();
+  ctx.moveTo(x, y - 10); ctx.quadraticCurveTo(x + 7, y - 1, x, y + 6); ctx.quadraticCurveTo(x - 7, y - 1, x, y - 10);
+  ctx.fill();
+  ctx.restore();
+}
+function applyAwkward(ctx: CanvasRenderingContext2D, e: Effect, age: number): void {
+  // Turning to stone: a grey flash down the body.
+  ctx.save();
+  const k = Math.min(1, age / .3);
+  ctx.globalAlpha = (1 - k) * .45;
+  glow(ctx, e.x, e.y - 100 + k * 40, 70, '200,196,208');
+  ctx.restore();
+}
+function expireAwkward(ctx: CanvasRenderingContext2D, e: Effect, age: number): void {
+  // The stone breaks off: grey chips knocked off and a puff of dust.
+  ctx.save();
+  burst(age, 83, { n: n(12), speed: [80, 230], life: .55, gravity: 1000, angle: -Math.PI / 2, spread: Math.PI * 1.5 }, (x, y, k, i) => {
+    ctx.globalAlpha = 1 - k;
+    ctx.fillStyle = i % 2 ? '#c9c4d0' : '#8c8696';
+    tri(ctx, x, y, 3 + hash(i, 84) * 4, i + k * 8);
+  }, e.x, e.y - 100);
+  burst(age, 86, { n: n(8), speed: [40, 120], life: .6, drag: .2 }, (x, y, k) => {
+    ctx.globalAlpha = (1 - k) * .5;
+    glow(ctx, x, y, 10 + k * 14, '210,206,216');
+  }, e.x, e.y - 40);
+  ctx.restore();
+}
+const CALORIE = ['#FF9999', '#c98a6a', '#e6a27e'] as const;
+function calorieHeart(ctx: CanvasRenderingContext2D, x: number, y: number, s: number): void {
+  ctx.beginPath();
+  ctx.moveTo(x, y + s * .9);
+  ctx.bezierCurveTo(x - s * 1.4, y - s * .1, x - s * .6, y - s * 1.2, x, y - s * .35);
+  ctx.bezierCurveTo(x + s * .6, y - s * 1.2, x + s * 1.4, y - s * .1, x, y + s * .9);
+  ctx.fill();
+}
+function auraCalorie(ctx: CanvasRenderingContext2D, f: Fighter, left: number, t: number): void {
+  const h = bodyH(f);
+  const fade = Math.min(1, left / .25);
+  ctx.save();
+  // Pressed into the floor: a flat dust ring that thumps on every step of the clock.
+  const thump = 1 + Math.abs(Math.sin(t * 4)) * .12;
+  ctx.globalAlpha = fade * .45;
+  ctx.strokeStyle = '#b08a6a';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.ellipse(f.x, f.y - 2, 34 * thump, 7 * thump, 0, 0, TAU); ctx.stroke();
+  for (let i = 0, m = n(5); i < m; i++) {
+    const k = cycle(t, .55, i, 87);
+    ctx.globalAlpha = fade * Math.sin(k * Math.PI) * .8;
+    ctx.fillStyle = CALORIE[i % 3];
+    calorieHeart(ctx, f.x + (hash(i, 88) - .5) * 46, f.y - h * (.85 - k * .75), 4 + hash(i, 89) * 2);
+  }
+  // Two little chevrons sinking at the hips: heavier.
+  ctx.strokeStyle = '#c98a6a';
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 2; i++) {
+    const k = cycle(t, .9, i, 90);
+    const x = f.x + (i ? 30 : -30), y = f.y - h * .55 + k * 40;
+    ctx.globalAlpha = fade * Math.sin(k * Math.PI) * .85;
+    ctx.beginPath(); ctx.moveTo(x - 6, y - 4); ctx.lineTo(x, y + 2); ctx.lineTo(x + 6, y - 4); ctx.stroke();
+  }
+  ctx.restore();
+}
+function applyCalorie(ctx: CanvasRenderingContext2D, e: Effect, age: number): void {
+  ctx.save();
+  burst(age, 91, { n: n(8), speed: [50, 140], life: .55, gravity: 380, angle: -Math.PI / 2, spread: 2 }, (x, y, q, i) => {
+    ctx.globalAlpha = 1 - q;
+    ctx.fillStyle = CALORIE[i % 3];
+    calorieHeart(ctx, x, y, 5);
+  }, e.x, e.y - 150);
+  ctx.restore();
+}
+
 export const STATUS_MARKS: Record<string, MarkDrawer> = {
   'follow-flag': { aura: auraFollow, apply: applyFollow, expire: expireFollow },
   'recruit-badge': { aura: auraBadge },
@@ -541,6 +689,9 @@ export const STATUS_MARKS: Record<string, MarkDrawer> = {
   cuffs: { aura: auraCuffs, apply: applyCuffs, expire: expireCuffs },
   'lisa-cat': { aura: auraCatMess, apply: applyCatMess },
   'lisa-wasabi': { aura: auraWasabi, apply: applyWasabi, body: WASABI_BODY },
+  'himari-shake': { aura: auraShake, apply: applyShake },
+  'himari-awkward': { aura: auraAwkward, apply: applyAwkward, expire: expireAwkward, body: STONE_BODY },
+  'himari-calorie': { aura: auraCalorie, apply: applyCalorie },
 };
 
 /** Live marks this body wears that the table knows. Older looks (摩卡's bubble, the petals) are not in the

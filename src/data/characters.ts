@@ -1191,6 +1191,55 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'himari', name: '上原绯玛丽', title: '贝斯 / 一呼零应', quote: 'えい、えい、おー！……诶？大家怎么不跟着喊？', color: '#FF9999',
+    bands: ['afterglow'],
+    ...stats('armor'),
+    view: {
+      kind: 'sprite', common: '/sprites/himari/common.png', special: '/sprites/himari/special.png', height: 178,
+      // 一呼百应: the four friends on one sheet (鸫 / 巴 / 摩卡 / 兰 × rise / shout / after).
+      extras: ['/sprites/himari/friends.png'],
+    },
+    // 上原绯玛丽（萌娘百科）: Afterglow 的贝斯，自封的队长，乐队的开心果；一喊「えい、えい、おー！」就没人跟（一呼零应），
+    // 第三章大家终于应了。全部空手；体重秤、咖啡奶泡、乌鸦和夕阳由代码画（himariFx.ts），四位队友是一张 friends.png。
+    skills: [
+      // 打气 (萌娘百科: 乐队的开心果).
+      skill(0, 'light', '打气'),
+      // 队长踢 (萌娘百科: 自愿担当乐团的队长，乐队名差点变成 ひまりBand).
+      skill(1, 'heavy', '队长踢'),
+      // 摇匀一杯摩卡 (himari.ts, B 站「绯玛丽只是在摇摩卡」): a lunge, both hands on their shoulders, four hard shakes.
+      skill(2, 'grab', '摇匀一杯摩卡', {
+        damage: 7, count: 4, range: 70, speed: 560, start: .14, duration: 1.3, cd: 8, fx: 'himari-shake', knock: 0, gain: 4,
+        react: { kind: 'pin', stun: .3, holdStill: true },
+        finale: { damage: 14, knock: 180, react: { kind: 'stand', stun: .4 }, status: [{ kind: 'confuse', time: 1.5, mark: 'himari-shake' }] },
+        brief: '前冲抓住双肩猛摇四下，松手后对手混乱',
+        detail: '前冲抓取，抓住双肩猛摇四下：前三下各 7 伤害，末下 14 伤害并混乱 1.5 秒（左右颠倒）',
+      }),
+      // 一呼零应 (himari.ts, 萌娘百科别号; 元祖丧尸绯玛丽用 AAO 硬控): nobody answers; everyone in front is frozen, and so is she.
+      skill(3, 'endure', '一呼零应', {
+        damage: 0, range: 320, root: 1.6, start: .45, duration: 1.25, cd: 12, knock: 0, fx: 'himari-aao',
+        noBlock: true, noSparks: true, control: true, gain: 4,
+        rootLevel: 'freeze', rootBreak: 2, rootPin: true, react: { kind: 'stand', stun: .1 },
+        brief: '霸体禁足身前含空中，不能格挡，自己也僵；积委屈',
+        detail: '霸体喊出 A！A！O！，身前对手禁足 1.6 秒，空中也算，再受击两次解除；不能格挡；自己僵住 0.8 秒；每次积一层委屈（最多 3 层），强化必杀',
+      }),
+      // 热量全部送给你 (himari.ts, 摩卡「把脂肪都送给绯玛丽酱吧」反着用): a bathroom scale slid along the floor.
+      skill(4, 'projectile', '热量全部送给你', {
+        damage: 18, speed: 430, size: 60, life: 1.5, start: .3, duration: .7, cd: 10, knock: 0, fx: 'himari-scale',
+        slow: 4, slowMul: .65, slowJump: .8, slowAtk: .8, slowMark: 'himari-calorie',
+        brief: '体重秤贴地滑出：对手减速，自己加速；可挡可跳',
+        detail: '体重秤贴地滑出，命中 18 伤害并减速 4 秒，移动降至 65%、跳跃变低，J / K 攻速降至 80%；自己移速提高 20% 持续 4 秒；可格挡，跳起可躲',
+      }),
+      // 一呼百应 (himari.ts, 乐队故事第三章第 14 话): at sunset all four of them answer at last.
+      skill(5, 'endure', '一呼百应', {
+        cost: 180, damage: 16, range: 470, start: .5, duration: 2.55, knock: 30, gain: 2, fx: 'himari-call', holdEndure: true,
+        noBlock: true, react: { kind: 'stand', stun: .5 },
+        finale: { damage: 130, knock: 420, react: { kind: 'knockdown', vy: -320, knocked: 1 } },
+        brief: '队友应答连打击倒；不能格挡，前两下可跳，委屈加伤',
+        detail: '霸体喊两声 A！各 16 伤害，跳起可躲；四位队友依次应答各 16 伤害，最后五色声浪 130 伤害并击倒；不能格挡；每层委屈末击加 15 伤害，用后清空',
+      }),
+    ],
+  },
+  {
     id: 'layer', name: 'LAYER', title: '主唱 / 近战', quote: '准备好大闹一场了吗？', color: '#CC0000',
     bands: ['raise-a-suilen'],
     ...stats('rush'),

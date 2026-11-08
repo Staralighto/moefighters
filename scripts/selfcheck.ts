@@ -87,6 +87,40 @@ function newGame(p1 = at('gale'), p2 = at('boulder'), mode: 'cpu' | 'training' =
   return g;
 }
 function run(g: FightGame, seconds: number) { for (let i = 0; i < Math.round(seconds / STEP); i++) g.step(STEP); }
+
+// Both online receive paths must keep the local character sheet that feeds the HTML movelist.
+{
+  const host = newGame();
+  const guest = newGame();
+  const local = guest.fighters[1].data;
+  const marker = '<img src=x onerror=alert(1)>';
+  const forged = { ...local, skills: local.skills.map(s => ({ ...s, name: marker })) };
+  const snap = captureState(host, new IdBook());
+  const peer = snap.get('f1')!;
+  peer.set('data', JSON.stringify(forged));
+  peer.set('__proto__', '{"injected":true}');
+  applyState(guest, snap, null, new Map());
+  assert.equal(guest.fighters[1].data, local, 'snapshot cannot replace local character data');
+  assert.equal('injected' in guest.fighters[1], false, 'snapshot cannot change the fighter prototype');
+
+  const seed = new Rng(1);
+  const wire = JSON.parse(dumpGame(host, seed));
+  wire.fighters[1].data = forged;
+  Object.defineProperty(wire, '__proto__', { enumerable: true, value: { injected: true } });
+  loadGame(guest, seed, JSON.stringify(wire));
+  assert.equal(guest.fighters[1].data, local, 'lockstep resync cannot replace local character data');
+  assert.equal('injected' in guest, false, 'lockstep resync cannot change the game prototype');
+  assert.ok(!skillHTML(guest.fighters[1].data, 0, false).includes(marker), 'peer markup does not reach the movelist');
+
+  const pad = { bits: 0, taps: new Array(TAP_SLOTS).fill(0) };
+  const lock = new LockSession(guest, seed, 1, {
+    sendFast() {}, sendRel() {}, sample: () => pad, mute() {}, fallback() {}, log() {},
+  });
+  const inbound = lock as unknown as { remote: Map<number, unknown>; theirHash: Map<number, unknown> };
+  lock.onMessage({ t: 'L', f: 100000, q: [[pad.bits, pad.taps]] }, 1);
+  lock.onMessage({ t: 'H', k: 100000, h: 0 }, 1);
+  assert.equal(inbound.remote.size + inbound.theirHash.size, 0, 'far-future peer messages cannot fill the buffers');
+}
 /** Turn the CPU slot into a dummy human with no keys so the AI leaves it alone. */
 function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1]; }
 
@@ -143,7 +177,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(opening < 40, `${id}: the opening stays under a chipped bar, ${opening}`);
     assert.equal(withGuard(s, breakAt + 99).guardDmg, plan![plan!.length - 1], id + ': a late segment repeats the last entry');
   }
-  for (const id of ['uika', 'mutsumi', 'umiri', 'taki', 'layer', 'sayo', 'houka', 'mahoro', 'raika', 'miku', 'shizuku', 'chieri']) {
+  for (const id of ['uika', 'mutsumi', 'umiri', 'taki', 'layer', 'sayo', 'houka', 'mahoro', 'raika', 'miku', 'shizuku', 'chieri', 'himari']) {
     const s = ROSTER[at(id)].skills[5];
     assert.ok(!s.guardPlan && !s.guardDmg, id + ': the unblockable super carries no guard value');
   }
@@ -9004,6 +9038,130 @@ for (const order of [[2, 3], [3, 2]]) {
     run(g, .3);
     assert.ok(!g.effects.some(e => e.type === 'tae-siren'), 'a cut-short I takes its siren with it');
   }
+}
+
+// himari: 上原绯玛丽。U lunges, grabs both shoulders and shakes four times, 混乱 in the 'himari-shake' look; I is 一呼零应 —
+// nobody answers, everyone in front (in the air too, through a guard) is 禁足 in the 'himari-awkward' look and she is
+// stuck a while herself, one 委屈 each time (at most 3); O slides a scale along the floor: 减速 on them, faster her;
+// L is 一呼百应 — two shouts a jump clears, four answers, the sunset wave that knocks down, heavier for each 委屈.
+{
+  const hi = at('himari');
+  const data = ROSTER[hi];
+  assert.ok(hi === at('moca') + 1, '上原绯玛丽 sits with Afterglow, after 摩卡');
+  assert.equal(data.trait, 'armor', 'she takes a hit');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/himari/friends.png'), 'the four friends are one preloaded sheet');
+  for (const mark of ['himari-shake', 'himari-awkward', 'himari-calorie']) assert.ok(!!STATUS_MARKS[mark], 'her look is registered: ' + mark);
+  const fresh = (p2x = 520) => {
+    const g = newGame(hi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  const live = (f: { mods: { kind: string; left: number; mark?: string }[] }, kind: string, mark?: string) =>
+    f.mods.some(m => m.kind === kind && m.left > 0 && (mark == null || m.mark === mark));
+  const grief = (f: { mods: { kind: string; left: number; v?: number }[] }) => f.mods.find(m => m.kind === 'grievance' && m.left > 0)?.v ?? 0;
+  // U: the shake, then 混乱
+  {
+    const { g, p1, p2 } = fresh(380);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    let dizzy = 0;
+    for (let i = 0; i < 480; i++) { g.step(STEP); if (live(p2, 'confuse', 'himari-shake')) dizzy += STEP; }
+    assert.ok(hp - p2.hp > 20, 'four shakes land: ' + (hp - p2.hp).toFixed(1));
+    assert.ok(dizzy > 1.4 && dizzy < 1.7, 'and leave about 1.5 s of 混乱: ' + dizzy.toFixed(2));
+  }
+  {
+    const { g, p1, p2 } = fresh(350);
+    g.attack(p1, 2);
+    run(g, .24);
+    assert.equal(p1.attack?.hold, p2.id, 'the grab latched');
+    p2.invuln = .48;
+    run(g, .05);
+    assert.equal(p1.attack?.hold, -1, 'an invulnerable target is released immediately');
+  }
+  // I: through a guard, in her look; she is stuck past the silence; one 委屈 a time, at most three
+  {
+    const { g, p1, p2 } = fresh();
+    g.attack(p1, 3);
+    let held = 0, look = false, busy = 0;
+    for (let i = 0; i < 360; i++) {
+      p2.blocking = true;
+      g.step(STEP);
+      if (p2.root > 0) { held += STEP; if (p2.rootMark === 'himari-awkward') look = true; }
+      if (p1.attack) busy += STEP;
+    }
+    assert.ok(held > 1.5 && held < 1.75, 'the silence holds about 1.6 s through a guard: ' + held.toFixed(2));
+    assert.ok(look, 'in her awkward look');
+    assert.ok(busy > 1.2 && busy < 1.35, 'and she is stuck about 0.8 s past it herself: ' + busy.toFixed(2));
+    assert.equal(grief(p1), 1, 'one 委屈');
+    for (let k = 0; k < 4; k++) { p1.cooldowns[3] = 0; g.attack(p1, 3); run(g, 1.4); }
+    assert.equal(grief(p1), 3, '委屈 tops out at three');
+  }
+  {
+    const { g, p1, p2 } = fresh();
+    p2.y -= 80; p2.vy = -300;
+    g.attack(p1, 3);
+    let held = 0;
+    for (let i = 0; i < 240; i++) { g.step(STEP); if (p2.root > 0) held += STEP; }
+    assert.ok(held > 1.5, 'a body in the air is frozen too: ' + held.toFixed(2));
+  }
+  {
+    const { g, p1, p2 } = fresh();
+    addMod(p2, 'brace', 2);
+    g.attack(p1, 3);
+    run(g, .65);
+    assert.equal(p2.root, 0, 'armour prevents the root');
+    assert.equal(p2.rootMark, '', 'armour also prevents the stone look');
+    assert.ok(!g.effects.some(e => e.type === 'himari-reply' || e.type === 'himari-awkward@apply'), 'a resisted shout has no root effects');
+    assert.equal(grief(p1), 1, 'a resisted shout still adds 委屈');
+  }
+  {
+    const { g, p1, p2 } = fresh();
+    p2.root = 2;
+    p2.rootMark = 'cuffs';
+    g.attack(p1, 3);
+    run(g, .65);
+    assert.equal(p2.rootMark, 'cuffs', 'an existing root keeps its own look');
+    assert.ok(!g.effects.some(e => e.type === 'himari-reply'), 'an existing root gains no reply bubble');
+  }
+  // O: 减速 on them, lighter her
+  {
+    const { g, p1, p2 } = fresh(600);
+    g.attack(p1, 4);
+    let slow = 0, light = 0;
+    for (let i = 0; i < 720; i++) { g.step(STEP); if (live(p2, 'slow', 'himari-calorie')) slow += STEP; if (live(p1, 'speed')) light += STEP; }
+    assert.ok(slow > 3.8 && slow < 4.3, 'the calories stay about 4 s: ' + slow.toFixed(2));
+    assert.ok(light > 3.8 && light < 4.3, 'and she is light as long: ' + light.toFixed(2));
+  }
+  // L: through a guard, a knockdown at the end, 委屈 spent and worth more
+  {
+    const { g, p1 } = fresh();
+    assert.equal(p1.energyMax, 180);
+    p1.energy = 179;
+    assert.equal(g.attack(p1, 5), false, '179 energy cannot cast 一呼百应');
+    p1.energy = 180;
+    assert.equal(g.attack(p1, 5), true, '180 energy casts 一呼百应');
+    assert.equal(p1.energy, 0, '一呼百应 spends the full 180 energy');
+  }
+  const ult = (stacks: number, jumpAt = -1) => {
+    const { g, p1, p2 } = fresh();
+    p1.energy = p1.energyMax;
+    if (stacks) addMod(p1, 'grievance', 999, { v: stacks });
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    let down = false, early = 0;
+    for (let i = 0; i < 480; i++) {
+      if (i === 120) early = hp - p2.hp;
+      if (i === jumpAt) p2.vy = -720;
+      else if (jumpAt < 0) p2.blocking = p2.stun <= 0 && p2.knocked <= 0;
+      g.step(STEP);
+      if (p2.knocked > 0) down = true;
+    }
+    return { dmg: hp - p2.hp, down, left: grief(p1), early };
+  };
+  const plain = ult(0), sore = ult(3), hop = ult(0, 25);
+  assert.ok(plain.down && plain.dmg > 110, 'the answers knock down through a guard: ' + plain.dmg.toFixed(1));
+  assert.ok(sore.dmg - plain.dmg > 15 && sore.left === 0, 'three 委屈 hit harder and are spent: ' + (sore.dmg - plain.dmg).toFixed(1));
+  assert.ok(plain.early > 20 && hop.early === 0, 'an early jump clears her own two shouts: ' + plain.early.toFixed(1) + ' / ' + hop.early.toFixed(1));
 }
 
 // lisa: 今井莉莎。U is the stock dash with a star trail; I sends a silver cat that clings to the face it reaches

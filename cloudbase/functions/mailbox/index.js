@@ -3,6 +3,8 @@
 
 const crypto = require('crypto');
 const https = require('https');
+const tls = require('tls');
+const { isIP } = require('net');
 const cloudbase = require('@cloudbase/node-sdk');
 const app = cloudbase.init({ env: cloudbase.SYMBOL_CURRENT_ENV });
 const db = app.database();
@@ -23,6 +25,7 @@ const TURN_MONTHLY_BYTES_MAX = Number(process.env.TURN_MONTHLY_BYTES_MAX) || 800
 const TURN_SPIKE_BYTES_MAX = Number(process.env.TURN_SPIKE_BYTES_MAX) || 2 * 1000 * 1000 * 1000;
 const TURN_USAGE_CHECK_MS = Number(process.env.TURN_USAGE_CHECK_MS) || 60 * 1000;
 const QUOTA_DOC = '_turn_quota';
+const OPEN_SLOTS_DOC = '_open_slots';
 
 function originState(event) {
   const raw = event && event.headers && (event.headers.origin || event.headers.Origin);
@@ -51,15 +54,15 @@ function originState(event) {
 }
 
 function clientIpOf(event) {
-  const ctx = event && event.requestContext;
-  const ctxIp = ctx && (ctx.sourceIp || ctx.ip);
-  if (typeof ctxIp === 'string' && ctxIp.trim()) return ctxIp.trim();
-  const h = (event && event.headers) || {};
-  const real = h['x-real-ip'] || h['X-Real-IP'] || h['x-client-ip'];
-  if (typeof real === 'string' && real.trim()) return real.trim();
-  const xff = h['x-forwarded-for'] || h['X-Forwarded-For'];
-  if (typeof xff === 'string' && xff.trim()) return xff.split(',')[0].trim();
-  return 'local';
+  // The Web SCF adapter has no verified client IP. Its calls share one quota bucket.
+  const raw = event?.requestContext?.sourceIp;
+  const ip = typeof raw === 'string' ? raw.trim() : '';
+  if (isIP(ip) === 4) return ip;
+  if (isIP(ip) !== 6 || ip.includes('%')) return 'unknown';
+  const normalized = new URL('http://[' + ip + ']/').hostname.slice(1, -1);
+  if (!normalized.startsWith('::ffff:')) return normalized;
+  const [high, low] = normalized.slice(7).split(':').map(part => parseInt(part, 16));
+  return [high >> 8, high & 255, low >> 8, low & 255].join('.');
 }
 
 function ipHash(ip, day) {
@@ -201,16 +204,22 @@ function codeOk(code) {
 function makeCode() {
   for (let i = 0; i < 200; i++) {
     let s = '';
-    for (let j = 0; j < 4; j++) s += ALPH[Math.floor(Math.random() * ALPH.length)];
+    for (let j = 0; j < 4; j++) s += ALPH[crypto.randomInt(ALPH.length)];
     if (!isBlockedCode(s)) return s;
   }
   return 'K7QM';
 }
 
 function makeKey() {
-  let s = '';
-  for (let i = 0; i < 16; i++) s += ALPH[Math.floor(Math.random() * ALPH.length)];
-  return s;
+  return crypto.randomBytes(16).toString('base64url');
+}
+
+function guestKeyOk(key) {
+  return typeof key === 'string' && /^[a-zA-Z0-9_-]{8,40}$/.test(key);
+}
+
+function guestAllowed(room, body) {
+  return room.guestKey === undefined || (room.guestKey && room.guestKey === body.guestKey);
 }
 
 function sdpOk(sdp) {
@@ -225,27 +234,53 @@ function sdpOk(sdp) {
   );
 }
 
-async function freshRoom(now) {
-  const waiting = await db.collection('rooms').where({ 'data.joined': false }).limit(OPEN_MAX + 10).get();
-  const rows = (Array.isArray(waiting.data) ? waiting.data : []).map(peel).filter(Boolean);
-  let liveOpen = 0;
-  for (const r of rows) {
-    if (ms(r.expireAt) <= now) {
-      try { await db.collection('rooms').doc(idOf(r)).remove(); } catch { /* best effort cleanup */ }
-    } else {
-      liveOpen++;
-    }
-  }
-  if (liveOpen >= OPEN_MAX) return { busy: true };
+async function pruneExpired(collection, now) {
+  try {
+    await db.collection(collection).where({ 'data.expireAt': db.command.lte(now) }).remove();
+  } catch { /* best effort cleanup */ }
+}
+
+async function freshRoom(now, guestAuth) {
+  await pruneExpired('rooms', now);
   for (let i = 0; i < 5; i++) {
     const code = makeCode();
-    const prev = peel(one(await db.collection('rooms').doc(code).get()));
-    if (prev && ms(prev.expireAt) > now) continue;
     const key = makeKey();
-    await db.collection('rooms').doc(code).set({ data: { offer: '', answer: '', key, joined: false, expireAt: now + TTL } });
-    return { code, key };
+    const expireAt = now + TTL;
+    const opened = await db.runTransaction(async tx => {
+      const rooms = tx.collection('rooms');
+      const gate = rooms.doc(OPEN_SLOTS_DOC);
+      const gateRead = await gate.get();
+      if (gateRead.code) throw gateRead;
+      const current = peel(one(gateRead));
+      const slots = Object.fromEntries(Object.entries(current?.slots ?? {}).filter(([, slot]) => ms(slot.expireAt) > now));
+      if (Object.keys(slots).length >= OPEN_MAX) return { busy: true };
+      const room = rooms.doc(code);
+      const roomRead = await room.get();
+      if (roomRead.code) throw roomRead;
+      const prev = peel(one(roomRead));
+      if (prev && ms(prev.expireAt) > now) return null;
+      slots[code] = { key, expireAt };
+      const gateWrite = await gate.set({ data: { slots } });
+      if (gateWrite.code) throw gateWrite;
+      const roomWrite = await room.set({ data: { offer: '', answer: '', key, ...(guestAuth ? { guestKey: '' } : {}), openSlot: true, joined: false, expireAt } });
+      if (roomWrite.code) throw roomWrite;
+      return { code, key };
+    }).catch(err => {
+      if (err?.code === 'DATABASE_TRANSACTION_CONFLICT') return { busy: true };
+      throw err;
+    });
+    if (opened) return opened;
   }
   return null;
+}
+
+async function releaseOpenSlot(code, room) {
+  if (!room.openSlot) return;
+  const path = 'data.slots.' + code;
+  try {
+    await db.collection('rooms').where({ _id: OPEN_SLOTS_DOC, [path + '.key']: room.key })
+      .update({ [path]: db.command.remove() });
+  } catch { /* the reservation still expires at the original room deadline */ }
 }
 
 async function liveRoom(code, now) {
@@ -253,10 +288,27 @@ async function liveRoom(code, now) {
   const room = peel(one(await db.collection('rooms').doc(code).get()));
   if (!room) return null;
   if (ms(room.expireAt) <= now) {
-    try { await db.collection('rooms').doc(code).remove(); } catch { /* best effort cleanup */ }
+    try {
+      await db.collection('rooms').where({ _id: code, 'data.expireAt': db.command.lte(now) }).remove();
+    } catch { /* best effort cleanup */ }
     return null;
   }
   return room;
+}
+
+function liveRoomQuery(code, room, now, condition) {
+  return db.collection('rooms').where({
+    _id: code,
+    'data.key': room.key,
+    'data.expireAt': db.command.gt(now),
+    ...condition,
+  });
+}
+
+async function writeSdp(code, room, field, sdp, now) {
+  const path = 'data.' + field;
+  const res = await liveRoomQuery(code, room, now, { [path]: '' }).update({ [path]: sdp });
+  return res.updated === 1;
 }
 
 /* A waiting ticket that has not polled for this long belongs to a closed page. */
@@ -266,7 +318,7 @@ const SEEN_THROTTLE = 10000;
 
 /* Fields are stored under data, so a top-level status/build query matches nothing.
    Sweep expired waiters globally across all builds so fake builds cannot bloat the queue. */
-async function pair(ticket, build, now, sid) {
+async function pair(ticket, build, now, sid, guestAuth) {
   const liveRow = d => d && ms(d.expireAt) > now && now - ms(d.seen || d.at) < LIVE;
   const found = await db.collection('queue').where({
     'data.status': 'wait',
@@ -284,19 +336,21 @@ async function pair(ticket, build, now, sid) {
     if (!alreadyIn && liveWaiters.length >= QUEUE_MAX) return { busy: true };
     return null;
   }
+  // Matched rooms and their unread host tickets may never see another request.
+  await Promise.all([pruneExpired('rooms', now), pruneExpired('queue', now)]);
   const code = makeCode();
-  const clash = peel(one(await db.collection('rooms').doc(code).get()));
-  if (clash && ms(clash.expireAt) > now) return null;
   const key = makeKey();
   const tx = await db.startTransaction();
   try {
     const fresh = peel(one(await tx.collection('queue').doc(idOf(other)).get()));
-    if (!fresh || fresh.status !== 'wait' || !sameBuild(fresh.build, build)) {
+    const room = tx.collection('rooms').doc(code);
+    const clash = peel(one(await room.get()));
+    if (!fresh || fresh.status !== 'wait' || !sameBuild(fresh.build, build) || (clash && ms(clash.expireAt) > now)) {
       await tx.rollback();
       return null;
     }
     const row = { build, at: now, expireAt: now + TTL, status: 'gone', code };
-    await tx.collection('rooms').doc(code).set({ data: { offer: '', answer: '', key, joined: true, expireAt: now + TTL } });
+    await room.set({ data: { offer: '', answer: '', key, ...(guestAuth ? { guestKey: ticket } : {}), joined: true, expireAt: now + TTL } });
     await tx.collection('queue').doc(idOf(other)).update({ data: { ...row, role: 'host', key } });
     await tx.collection('queue').doc(ticket).remove();
     await tx.commit();
@@ -322,13 +376,14 @@ async function queue(body, now, reply) {
   // build + source hash: two pages only pair when they run the same game.
   const hash = typeof body.hash === 'string' && /^[a-zA-Z0-9_-]{1,40}$/.test(body.hash) ? body.hash : '';
   if (!/^[a-zA-Z0-9_-]{8,40}$/.test(ticket) || !Number.isInteger(body.build)) return reply(400, { error: 'ticket' });
-  const build = hash ? body.build + ':' + hash : body.build;
+  const guestAuth = body.guestAuth === true;
+  const build = guestAuth ? body.build + ':' + hash + ':guest' : hash ? body.build + ':' + hash : body.build;
   const me = peel(one(await db.collection('queue').doc(ticket).get()));
   if (me && me.role && ms(me.expireAt) > now) {
     try { await db.collection('queue').doc(ticket).remove(); } catch { /* best effort cleanup */ }
     return reply(200, { role: me.role, code: me.code, ...(me.key ? { key: me.key } : {}) });
   }
-  const paired = await pair(ticket, build, now, sid);
+  const paired = await pair(ticket, build, now, sid, guestAuth);
   if (paired && paired.busy) return reply(429, { error: 'busy' });
   if (paired) return reply(200, paired);
   // ponytail: if a match lands on this ticket during pair(), this request still says wait.
@@ -343,7 +398,30 @@ async function queue(body, now, reply) {
   return reply(200, { wait: true });
 }
 
-function postJsonOnce(host, urlStr, token, payload) {
+// Race the TLS dials, then send HTTP once. Racing POSTs can mint untracked TURN credentials.
+function dialCloudflare(servername, done) {
+  const hosts = [servername, '172.64.154.105', '162.159.135.42'];
+  const sockets = hosts.map(host => tls.connect({ host, port: 443, servername, family: 4 }));
+  let pending = sockets.length;
+  let connected = false;
+  for (const socket of sockets) {
+    const timeout = () => socket.destroy(new Error('ETIMEDOUT'));
+    socket.setTimeout(3500, timeout);
+    socket.once('error', err => {
+      if (--pending === 0 && !connected) done(err);
+    });
+    socket.once('secureConnect', () => {
+      if (connected) return;
+      connected = true;
+      socket.removeListener('timeout', timeout);
+      socket.setTimeout(0);
+      for (const other of sockets) if (other !== socket) other.destroy();
+      done(null, socket);
+    });
+  }
+}
+
+function postJsonIpv4(urlStr, token, payload) {
   return new Promise((resolve, reject) => {
     const u = new URL(urlStr);
     const body = payload == null ? '' : JSON.stringify(payload);
@@ -354,7 +432,7 @@ function postJsonOnce(host, urlStr, token, payload) {
     };
     if (payload != null) headers['Content-Type'] = 'application/json';
     const req = https.request({
-      host,
+      host: u.hostname,
       port: 443,
       servername: u.hostname,
       path: u.pathname + u.search,
@@ -362,6 +440,7 @@ function postJsonOnce(host, urlStr, token, payload) {
       family: 4,
       timeout: 3500,
       headers,
+      createConnection: (_options, done) => dialCloudflare(u.hostname, done),
     }, res => {
       const chunks = [];
       res.on('data', c => chunks.push(c));
@@ -379,14 +458,6 @@ function postJsonOnce(host, urlStr, token, payload) {
     if (body) req.write(body);
     req.end();
   });
-}
-
-// ponytail: domestic DNS in ap-shanghai can poison or blackhole 104.18.x.x for rtc.live.cloudflare.com.
-// Race the hostname against two clean Cloudflare anycast prefixes with full TLS SNI verification.
-function postJsonIpv4(urlStr, token, payload) {
-  const u = new URL(urlStr);
-  const hosts = [u.hostname, '172.64.154.105', '162.159.135.42'];
-  return Promise.any(hosts.map(h => postJsonOnce(h, urlStr, token, payload)));
 }
 
 async function queryTurnUsage(accountId, analyticsToken, monthStart, day) {
@@ -689,10 +760,11 @@ function sgTurnServer(code, now) {
    a trip returns nothing and does not cache it. */
 async function turn(body, now, reply, event) {
   const room = await liveRoom(body.code, now);
-  if (!room || !room.joined) return reply(403, { error: 'auth', iceServers: [] });
-  const isHost = Boolean(room.key && typeof body.key === 'string' && body.key === room.key);
-  const isGuest = Boolean(room.offer && !room.answer);
-  if (!isHost && !isGuest) return reply(403, { error: 'auth', iceServers: [] });
+  const allowed = room => {
+    if (!room || !room.joined || room.answer) return false;
+    return (room.key && room.key === body.key) || (room.offer && guestAllowed(room, body));
+  };
+  if (!allowed(room)) return reply(403, { error: 'auth', iceServers: [] });
   const day = new Date(now).toISOString().slice(0, 10);
   const month = day.slice(0, 7);
   const gate = await patrolTurn(now);
@@ -719,7 +791,7 @@ async function turn(body, now, reply, event) {
     const tx = await db.startTransaction();
     try {
       const fresh = peel(one(await tx.collection('rooms').doc(body.code).get()));
-      if (!fresh || !fresh.joined || ms(fresh.expireAt) <= now) {
+      if (!allowed(fresh) || fresh.key !== room.key || ms(fresh.expireAt) <= now) {
         await tx.rollback();
         return { stop: 'auth' };
       }
@@ -804,7 +876,7 @@ async function turn(body, now, reply, event) {
     const sg = sgTurnServer(body.code, now);
     const issued = sg ? [sg, ...cfServers] : cfServers;
     if (issued.length > 0) {
-      try { await db.collection('rooms').doc(body.code).update({ data: { iceServers: issued } }); } catch { /* best effort cache */ }
+      try { await liveRoomQuery(body.code, room, now).update({ 'data.iceServers': issued }); } catch { /* best effort cache */ }
     }
     return reply(200, { iceServers: issued });
   }
@@ -826,7 +898,7 @@ exports.main = async (event) => {
       return reply(200, { ok: true });
     }
     if (body.op === 'open') {
-      const opened = await freshRoom(now);
+      const opened = await freshRoom(now, body.guestAuth === true);
       if (opened && opened.busy) return reply(429, { error: 'busy' });
       return opened ? reply(200, opened) : reply(500, { error: 'code' });
     }
@@ -834,39 +906,55 @@ exports.main = async (event) => {
       const room = await liveRoom(body.code, now);
       if (!room) return reply(200, { error: 'expired' });
       if (room.offer) return reply(403, { error: 'locked' });
-      if (room.key && body.key !== room.key) return reply(403, { error: 'auth' });
+      if (!room.key || body.key !== room.key) return reply(403, { error: 'auth' });
       if (!sdpOk(body.sdp)) return reply(400, { error: 'sdp' });
-      await db.collection('rooms').doc(body.code).update({ data: { offer: body.sdp } });
+      if (!await writeSdp(body.code, room, 'offer', body.sdp, now)) return reply(403, { error: 'locked' });
       return reply(200, { ok: true });
     }
     if (body.op === 'answer') {
       const room = await liveRoom(body.code, now);
       if (!room) return reply(200, { error: 'expired' });
       if (!room.offer) return reply(403, { error: 'order' });
+      if (!guestAllowed(room, body)) return reply(403, { error: 'auth' });
       if (room.answer) return reply(403, { error: 'locked' });
       if (!sdpOk(body.sdp)) return reply(400, { error: 'sdp' });
-      await db.collection('rooms').doc(body.code).update({ data: { answer: body.sdp } });
+      if (!await writeSdp(body.code, room, 'answer', body.sdp, now)) return reply(403, { error: 'locked' });
       return reply(200, { ok: true });
     }
     if (body.op === 'take') {
       const room = await liveRoom(body.code, now);
       if (!room) return reply(200, { error: 'expired' });
+      const secure = room.guestKey !== undefined;
+      if (secure && !guestKeyOk(body.guestKey)) return reply(403, { error: 'auth' });
       if (!room.joined) {
-        await db.collection('rooms').doc(body.code).update({ data: { joined: true, expireAt: now + TTL } });
+        const patch = { 'data.joined': true, 'data.expireAt': now + TTL };
+        if (secure) patch['data.guestKey'] = body.guestKey;
+        const claimed = await liveRoomQuery(body.code, room, now, { 'data.joined': false }).update(patch);
+        if (claimed.updated === 1) {
+          await releaseOpenSlot(body.code, room);
+          return reply(200, room.offer ? { sdp: room.offer } : { wait: true, joined: true });
+        }
+        // A retry may overlap its first request. Read the winning reservation before replying.
+        const winner = await liveRoom(body.code, now);
+        if (!winner || !guestAllowed(winner, body)) return reply(403, { error: 'locked' });
+        return reply(200, winner.offer ? { sdp: winner.offer } : { wait: true, joined: true });
       }
+      if (!guestAllowed(room, body)) return reply(403, { error: 'locked' });
       return reply(200, room.offer ? { sdp: room.offer } : { wait: true, joined: true });
     }
     if (body.op === 'poll') {
       const room = await liveRoom(body.code, now);
       if (!room) return reply(200, { error: 'expired' });
+      if ((room.guestKey !== undefined || body.key !== undefined) && room.key !== body.key) return reply(403, { error: 'auth' });
       return reply(200, room.answer ? { sdp: room.answer } : { wait: true, ...(room.joined ? { joined: true } : {}) });
     }
     if (body.op === 'drop') {
       if (typeof body.key !== 'string' || !body.key) return reply(403, { error: 'auth' });
       const room = await liveRoom(body.code, now);
       if (!room) return reply(200, { ok: true });
-      if (room.key && body.key !== room.key) return reply(403, { error: 'auth' });
-      await db.collection('rooms').doc(body.code).remove();
+      if (!room.key || body.key !== room.key) return reply(403, { error: 'auth' });
+      await liveRoomQuery(body.code, room, now).remove();
+      await releaseOpenSlot(body.code, room);
       return reply(200, { ok: true });
     }
     if (body.op === 'queue') return await queue(body, now, reply);

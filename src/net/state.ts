@@ -12,6 +12,7 @@ import type { Effect, FightGame, Phase, Projectile } from '../game/game.ts';
 
 /** Fighter fields that stay on the host: input, CPU brain, the echo's tape, the shared data. */
 export const NO_WIRE: ReadonlySet<string> = new Set(['data', 'controller', 'queue', 'ai', 'recTape']);
+const PROJECTILE_SNAPSHOT_SKIP: ReadonlySet<string> = new Set(['trail']);
 
 /** Game-level fields the guest paints from. */
 export const GAME_FIELDS = [
@@ -29,6 +30,7 @@ export const PART_BYTES = 1100;
 export type WireState = Map<string, Map<string, string>>;
 
 const PHASES: readonly Phase[] = ['intro', 'fight', 'roundend', 'finished'];
+export const isWireField = (key: string): boolean => key !== '__proto__' && key !== 'constructor' && key !== 'prototype';
 
 function round(n: number): number {
   if (!Number.isFinite(n)) return 0;
@@ -96,7 +98,7 @@ export function dec(v: unknown): unknown {
     return typeof o.range === 'number' ? { ...base, range: o.range, damage: o.damage as number } : base;
   }
   const out: Record<string, unknown> = {};
-  for (const [k, x] of Object.entries(o)) out[k] = dec(x);
+  for (const [k, x] of Object.entries(o)) if (isWireField(k)) out[k] = dec(x);
   return out;
 }
 
@@ -132,7 +134,12 @@ export function captureState(g: FightGame, book: IdBook): WireState {
     m.set('charId', JSON.stringify(f.data.id));
     s.set('f' + f.id, m);
   }
-  for (const p of g.projectiles) s.set('p' + book.of(p), fieldsOf(p, g.fighterById(p.owner)?.data));
+  for (const p of g.projectiles) {
+    const m = fieldsOf(p, g.fighterById(p.owner)?.data, PROJECTILE_SNAPSHOT_SKIP);
+    // A trail is paint only: whole pixels are plenty, and a 48-point one (薇欧拉's fuga) then still fits one packet.
+    m.set('trail', p.trail.length ? JSON.stringify(p.trail.map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }))) : '[]');
+    s.set('p' + book.of(p), m);
+  }
   for (const e of g.effects) s.set('e' + book.of(e), fieldsOf(e, undefined));
   return s;
 }
@@ -225,14 +232,14 @@ function field(m: Map<string, string> | undefined, k: string): unknown {
 
 function paint(target: Record<string, unknown>, fields: Map<string, string>, prev: Map<string, string> | undefined, skip?: ReadonlySet<string>, force = false): void {
   for (const [k, v] of fields) {
-    if (skip?.has(k) || (!force && prev?.get(k) === v)) continue;
+    if (!isWireField(k) || skip?.has(k) || (!force && prev?.get(k) === v)) continue;
     const val = field(fields, k);
     if (val !== undefined) target[k] = val;
   }
-  if (prev) for (const k of prev.keys()) if (!fields.has(k) && !skip?.has(k)) delete target[k];
+  if (prev) for (const k of prev.keys()) if (isWireField(k) && !fields.has(k) && !skip?.has(k)) delete target[k];
 }
 
-const GUEST_SKIP: ReadonlySet<string> = new Set(['charId']);
+const GUEST_FIGHTER_SKIP: ReadonlySet<string> = new Set([...NO_WIRE, 'charId']);
 
 /** Paint a wire state onto a guest game. `prev` is the state painted last time (unchanged maps are skipped). */
 export function applyState(g: FightGame, s: WireState, prev: WireState | null, objs: Map<string, object>): void {
@@ -254,6 +261,7 @@ export function applyState(g: FightGame, s: WireState, prev: WireState | null, o
     if (kind === 'g') continue;
     let obj = objs.get(key);
     const before = prev?.get(key);
+    const skip = kind === 'f' ? GUEST_FIGHTER_SKIP : undefined;
     if (!obj) {
       if (kind === 'f') {
         const data = ROSTER_BY_ID.get(String(field(fields, 'charId')));
@@ -261,8 +269,8 @@ export function applyState(g: FightGame, s: WireState, prev: WireState | null, o
         obj = makeFighter(data, Number(key.slice(1)), { x: 0, facing: 1, controller: null, energy: 0, team: 0 });
       } else obj = {};
       objs.set(key, obj);
-      paint(obj as Record<string, unknown>, fields, undefined, GUEST_SKIP, true);
-    } else if (before !== fields || key === 'f1') paint(obj as Record<string, unknown>, fields, before, GUEST_SKIP, key === 'f1');
+      paint(obj as Record<string, unknown>, fields, undefined, skip, true);
+    } else if (before !== fields || key === 'f1') paint(obj as Record<string, unknown>, fields, before, skip, key === 'f1');
     if (kind === 'f') fighters.push(obj as Fighter);
     else if (kind === 'p') shots.push(obj as Projectile);
     else if (kind === 'e' && !(obj as Effect).dup) effects.push(obj as Effect);

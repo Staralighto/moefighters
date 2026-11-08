@@ -1,8 +1,12 @@
 # 联机握手
 
-只存连接说明。对战不经过这里。记录大约 90 秒后作废，通道打开后页面会删房间。
+只存连接说明。对战不经过这里。房间有效期为 60 秒，通道打开后房主会删房间。
 
 字符表与 `src/net/proto.ts` 的 `CODE_ALPH` 保持一致。
+
+房间号用于找到房间。新版客户端创建的房间启用席位凭证。手动加入时客机用随机凭证认领席位，随机匹配时使用客机的队列票据。后续应答和 TURN 校验席位凭证，房主读取应答时使用自己的凭证。旧版网页仍可使用旧协议，随机匹配按协议隔离。
+
+Web 信箱无法从转发头确认客户端 IP。所有缺少可信来源 IP 的请求共用 TURN 新签发额度，默认 15 秒一次、每天 20 次。房间已缓存的凭证可继续复用。
 
 ## 控制台
 
@@ -20,3 +24,5 @@
 1. `node cloudbase/functions/mailbox/local.js`（内存数据库，端口 9000）。
 2. `VITE_MAILBOX_URL=http://127.0.0.1:9000/mailbox npx vite`。
 3. 双浏览器联机回归：`node scripts/online-e2e.mjs`（需要 `npm i playwright` 和 `npx playwright install chromium`）。
+
+部署前用 `npm ci --prefix cloudbase/functions/mailbox --omit=dev --ignore-scripts` 按锁文件安装，再运行 `npm audit --prefix cloudbase/functions/mailbox` 和 `node cloudbase/functions/mailbox/local.js --check`。上传时随代码打包 `node_modules`，因为云端自动安装会忽略这份覆盖规则。

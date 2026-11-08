@@ -38,6 +38,7 @@ export interface LockPlan {
 
 /** Host publish rate. */
 const SNAP_MS = 33;
+const MAX_PENDING_SNAPSHOTS = 16;
 /** Guest heartbeat when nothing changes; it also carries the acks. */
 const BEAT_MS = 33;
 /** A held pad is re-stamped this often so the host's clock estimate keeps moving. */
@@ -446,7 +447,11 @@ function onFast(msg: Record<string, unknown>): void {
     if (typeof msg.ia === 'number') pad = pad.filter(e => e[0] > (msg.ia as number));
     if (typeof msg.ca === 'number' && outClaim && outClaim[0] <= msg.ca) outClaim = null;
     let slot = pending.get(part.n);
-    if (!slot) { slot = { b: part.b, k: part.k, parts: new Map() }; pending.set(part.n, slot); }
+    if (!slot) {
+      if (pending.size >= MAX_PENDING_SNAPSHOTS) pending.delete(pending.keys().next().value!);
+      slot = { b: part.b, k: part.k, parts: new Map() };
+      pending.set(part.n, slot);
+    } else if (slot.b !== part.b || slot.k !== part.k) return;
     slot.parts.set(part.i, part);
     // Keep this snapshot's own send time. hostTs is the newest timestamp seen and may belong
     // to a later snapshot that arrived while this one was still waiting for its parts.

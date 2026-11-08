@@ -13,6 +13,7 @@ import './masking.ts';
 import './tae.ts';
 // 今井莉莎 too.
 import './lisa.ts';
+import './himari.ts';
 import { applyStatus, applyStatusBlocked, extendStatus, isRecruit, statusMask } from './status.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
