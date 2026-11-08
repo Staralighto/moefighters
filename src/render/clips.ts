@@ -897,9 +897,36 @@ export const HIMARI_FRIENDS: readonly HimariFriend[] = [
   { name: '兰', color: '#EE0022', height: 181 },
 ];
 
+/** 白鹭千圣. 这明明是狗: the doodle hops this many times a second along the floor, this high at the top of a hop. */
+export const CHISATO_HOPS = 2.6;
+export const CHISATO_HOP = 54;
+/** 铁壁微笑: how long the smile holds, and how many veins it takes before she glares back. */
+export const CHISATO_SMILE = 3.5;
+export const CHISATO_VEINS = 3;
+/** 有必要说教一下呢: the beckon (Skill.start), the pull, six bubbles on a beat, the 花丸. Seconds after the catch. */
+export const CHISATO_LECTURE = { beckon: 0, pull: 1, held: 2, done: 3, whiff: 4 } as const;
+export const CHISATO_PULL = .22;
+export const CHISATO_BUBBLE_FIRST = .45;
+export const CHISATO_BUBBLE_GAP = .28;
+export const CHISATO_BUBBLES = 6;
+export const CHISATO_STAMP_AFTER = .42;
+/** Catch to 花丸. The 'lecture' mod on the one being lectured counts this down; the squash reads it. */
+export const CHISATO_LECTURE_SPAN = CHISATO_BUBBLE_FIRST + (CHISATO_BUBBLES - 1) * CHISATO_BUBBLE_GAP + CHISATO_STAMP_AFTER;
+/** 正坐: the one being lectured sits on the standing cell, pressed flat and low, and shrinks with every bubble. */
+export function lectureSquash(f: Fighter): { x: number; y: number } | undefined {
+  const m = f.mods.find(x => x.kind === 'lecture' && x.left > 0);
+  if (!m) return undefined;
+  const k = Math.min(1, Math.max(0, 1 - m.left / CHISATO_LECTURE_SPAN));
+  const settle = Math.min(1, (CHISATO_LECTURE_SPAN - m.left) / .12);
+  const s = 1 - .26 * k;
+  return { x: s * (1 + .08 * settle), y: s * (1 - .2 * settle) };
+}
+
 export const LISA_CAT_BODY = 22;
 
 export function clipFor(f: Fighter): Clip {
+  // 有必要说教一下呢: whoever is being lectured sits it out on the standing cell (squashed by spriteView).
+  if (!f.attack && f.mods.some(m => m.kind === 'lecture' && m.left > 0)) return loco('idle');
   if (f.attack) {
     // 狂化: ground J/K read the frenzy sheet. A king or box reskin keeps the common cells and swaps the image.
     const crowned = f.data.view.kind === 'sprite' && (!!f.data.view.king || !!f.data.view.box);
@@ -1156,6 +1183,21 @@ export function clipFor(f: Fighter): Clip {
     if (f.attack.skill.fx === 'himari-call') {
       const a = f.attack;
       return at('special', a.index - 2, a.t < HIMARI_CALL_A[0] - .05 ? 0 : a.t < HIMARI_CALL_TURN ? 1 : 2);
+    }
+    // 这明明是狗: drawing, the page turned out, the sketchbook hugged.
+    // 铁壁微笑: hand to the mouth, the smile with hands folded, the little bow.
+    // 垃圾分拣: the hair flick, the look down the nose, back to the smile.
+    if (f.attack.skill.fx === 'chisato-jennifer' || f.attack.skill.fx === 'chisato-smile' || f.attack.skill.fx === 'chisato-glare') {
+      const a = f.attack, s = a.skill;
+      return at('special', a.index - 2, a.t < s.start ? 0 : a.t < s.duration - .16 ? 1 : 2);
+    }
+    // 有必要说教一下呢: the beckon; hands on hips through the pull and every bubble (and the lecture to thin air);
+    // the raised finger for the 花丸.
+    if (f.attack.skill.fx === 'chisato-lecture') {
+      const a = f.attack, mode = a.mode ?? CHISATO_LECTURE.beckon;
+      if (mode === CHISATO_LECTURE.beckon) return at('special', a.index - 2, 0);
+      if (mode === CHISATO_LECTURE.whiff) return at('special', a.index - 2, a.t < a.skill.duration - .35 ? 1 : 2);
+      return at('special', a.index - 2, mode === CHISATO_LECTURE.done ? 2 : 1);
     }
     // 死亡银河号: the kick start; the run and the skid lean over the tank; off the bike.
     if (f.attack.skill.fx === 'galaxy-ride') {

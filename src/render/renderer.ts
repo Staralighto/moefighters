@@ -17,6 +17,7 @@ import { YOMOGI_BACK, YOMOGI_SCREEN_BACK, YOMOGI_SCREEN_FRONT, drawHeartBack, dr
 import { MASKING_BACK, MASKING_SCREEN_BACK } from './maskingFx.ts';
 import { TAE_BACK, TAE_SCREEN_BACK } from './taeFx.ts';
 import { HIMARI_BACK, HIMARI_SCREEN_BACK, HIMARI_SCREEN_FRONT } from './himariFx.ts';
+import { CHISATO_BACK, CHISATO_SCREEN_BACK, CHISATO_SCREEN_FRONT } from './chisatoFx.ts';
 import { heartTier } from './clips.ts';
 
 /** Backing-store pixels per CSS pixel. The compositor then blits 1:1.
@@ -37,10 +38,10 @@ export function portraitBodyScale(padSplit: boolean): number {
 /** Hard 1px rim, yellow for the left team and green for the right. */
 const TEAM_GLOW = SIDE;
 /** Effects painted under every body: 和泉朋花's coffin and her spotlights. */
-const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK, ...MIKU_BACK, ...SHIZUKU_BACK, ...CHIERI_BACK, ...YOMOGI_BACK, ...MASKING_BACK, ...TAE_BACK, ...HIMARI_BACK]);
+const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK, ...MIKU_BACK, ...SHIZUKU_BACK, ...CHIERI_BACK, ...YOMOGI_BACK, ...MASKING_BACK, ...TAE_BACK, ...HIMARI_BACK, ...CHISATO_BACK]);
 /** Screen-space layers that ignore the body zoom: behind every body, and in front of them. */
-const SCREEN_BACK = new Set(['encore-stage', 'family-dim', ...SAKIKO_SCREEN_BACK, ...MIKU_SCREEN_BACK, ...YOMOGI_SCREEN_BACK, ...MASKING_SCREEN_BACK, ...TAE_SCREEN_BACK, ...HIMARI_SCREEN_BACK]);
-const SCREEN_FRONT = new Set(['encore-rain', 'encore-crowd', 'encore-call', 'slap-flash', ...CHIERI_SCREEN_FRONT, ...YOMOGI_SCREEN_FRONT, ...HIMARI_SCREEN_FRONT]);
+const SCREEN_BACK = new Set(['encore-stage', 'family-dim', ...SAKIKO_SCREEN_BACK, ...MIKU_SCREEN_BACK, ...YOMOGI_SCREEN_BACK, ...MASKING_SCREEN_BACK, ...TAE_SCREEN_BACK, ...HIMARI_SCREEN_BACK, ...CHISATO_SCREEN_BACK]);
+const SCREEN_FRONT = new Set(['encore-rain', 'encore-crowd', 'encore-call', 'slap-flash', ...CHIERI_SCREEN_FRONT, ...YOMOGI_SCREEN_FRONT, ...HIMARI_SCREEN_FRONT, ...CHISATO_SCREEN_FRONT]);
 /** 安可是主唱的: the eye line on the 175 px body, measured up from the feet. */
 const ENCORE_EYE_Y = 152;
 
@@ -356,7 +357,7 @@ export class Renderer {
         if (f.blocking) drawEffect(c, { type: 'shield', x: f.x + f.facing * 28, y: f.y - 80, color: '#a6eeff', life: .14, max: .22, radius: 58 });
         // 异常: every status wears its mark's drawing (statusMarks.ts). A slow or a root whose mark is not in
         // that table keeps the older look below.
-        const marked = f.hp > 0 ? drawStatusAuras(c, f, g.age) : { slow: false, root: false };
+        const marked = f.hp > 0 ? drawStatusAuras(c, f, g.age, this.images) : { slow: false, root: false };
         if (f.root > 0 && f.hp > 0 && !marked.root) drawRootFx(c, f, g.age);
         // 剑道三连: the stance charges — a wide ring collapses into her as the meter fills.
         if (f.attack?.skill.fx === 'iaido' && (f.attack.mode ?? IAIDO_PHASE.pending) === IAIDO_PHASE.stance) {

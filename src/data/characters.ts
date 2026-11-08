@@ -1100,6 +1100,52 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'chisato', name: '白鹭千圣', title: '贝斯 / 铁假面', quote: '有必要好好说教一下吧？', color: '#FFEEAA',
+    bands: ['pastel-palettes'],
+    ...stats('focus'),
+    view: {
+      kind: 'sprite', common: '/sprites/chisato/common.png', special: '/sprites/chisato/special.png', height: 175,
+      extras: ['/sprites/chisato/jennifer.png', '/sprites/chisato/glare-cutin.png'],
+    },
+    // 白鹭千圣（萌娘百科）: Pastel*Palettes 的贝斯，童星出身的女演员；PICO 官方称号「微笑的铁假面」，不愉快时露出著名的
+    // 「看垃圾的眼神」，题头原话「お説教が必要かしら？」；画伯，画的狗被彩认成谜之生物（珍妮弗）。全部空手（U 列手持素描本）；
+    // 珍妮弗和眼神特写各用一张 PNG，其余特效由 chisatoFx.ts 绘制。
+    skills: [
+      // 彩排 (童星出身的女演员).
+      skill(0, 'light', '彩排'),
+      // NG！ (片场).
+      skill(1, 'heavy', 'NG！'),
+      // 这明明是狗 (chisato.ts, 画伯·珍妮弗; 彩：「这是狗啊！？」): the doodle hops off the page along the floor.
+      skill(2, 'projectile', '这明明是狗', {
+        damage: 26, speed: 360, size: 70, life: 1.9, start: .34, duration: .62, cd: 7, knock: 60, fx: 'chisato-jennifer',
+        status: [{ kind: 'confuse', time: 1.2, mark: 'chisato-doodle' }],
+        brief: '画出珍妮弗蹦跳去咬；命中混乱，可格挡可跳过',
+        detail: '画出珍妮弗贴地蹦跳前进，命中混乱 1.2 秒（左右颠倒）；可格挡，跳起可躲',
+      }),
+      // 铁壁微笑 (chisato.ts, PICO「微笑的铁假面」): armour and less damage while she keeps moving; the third vein, she glares.
+      skill(3, 'endure', '铁壁微笑', {
+        damage: 0, range: 0, start: .3, duration: .55, cd: 14, knock: 0, fx: 'chisato-smile', noSparks: true,
+        brief: '营业微笑：霸体减伤可行动；受击三次自动回瞪',
+        detail: '保持微笑 3.5 秒：霸体，受到伤害降低 40%，期间可自由行动；第 3 次掉血时提前结束，对最近的对手放一次 O',
+      }),
+      // 垃圾分拣 (chisato.ts, 「看垃圾的眼神」): one look along the floor ahead of her.
+      skill(4, 'projectile', '垃圾分拣', {
+        damage: 8, range: 520, start: .28, duration: .6, cd: 11, knock: 0, fx: 'chisato-glare',
+        noBlock: true, noSparks: true, frail: 4, frailBonus: .2, react: { kind: 'stand', stun: .25 },
+        brief: '冷眼一扫：打实脆弱并驱邪；挡不住，跳起可躲',
+        detail: '视线扫过身前远距的第一个对手，打实脆弱 4 秒（受伤 +20%）并驱邪 2 秒；不能格挡，跳起或后撤可躲',
+      }),
+      // 有必要说教一下呢 (chisato.ts, 题头原话「お説教が必要かしら？」): beckoned over, sat down, lectured, 花丸.
+      skill(5, 'grab', '有必要说教一下呢', {
+        cost: 150, damage: 18, count: 7, range: 300, start: .5, duration: 3.25, knock: 0, gain: 2, fx: 'chisato-lecture',
+        react: { kind: 'pin', stun: .3, holdStill: true },
+        finale: { damage: 90, knock: 380, react: { kind: 'knockdown', vy: -300, knocked: 1 } },
+        brief: '抓投：拽来按坐说教连打，末击击倒；跳起可躲',
+        detail: '招手把身前对手拽到面前按坐，说教六段各 18 伤害，末段 90 伤害并击倒；跳起或后撤可躲；抓空则独自说教片刻',
+      }),
+    ],
+  },
+  {
     id: 'mitake', name: '美竹兰', title: '主唱 / 挑染', quote: 'いつも通り、行こう。', color: '#EE0022',
     bands: ['afterglow'],
     ...stats('rush'),

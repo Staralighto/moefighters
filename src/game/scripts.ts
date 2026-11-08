@@ -1,4 +1,4 @@
-import type { Skill } from '../data/types.ts';
+import type { Skill, StatusApply } from '../data/types.ts';
 import { isInvulnerable, type Attack, type Fighter } from './fighter.ts';
 import type { FightGame } from './game.ts';
 import { FLOOR, X_MAX, X_MIN, clamp } from './constants.ts';
@@ -15,6 +15,8 @@ export interface MoveScript {
   shot?: (g: FightGame, p: import('./game.ts').Projectile, dt: number) => boolean;
   /** Clean-hit pose. Return 'still' to pin, true when the pose was applied. dir is the knockback sign. */
   hit?: (g: FightGame, attacker: Fighter, defender: Fighter, source: Attack | { hit: Set<number> }, dir: number) => boolean | 'still';
+  /** Resolve the status list at the clean-hit gate. */
+  hitStatus?: (g: FightGame, defender: Fighter, list: StatusApply[]) => StatusApply[];
   /** On the cast, before the attack clock starts. */
   cast?: (g: FightGame, f: Fighter) => void;
   /** This hit places the body itself, so the kernel does not add knockback. */

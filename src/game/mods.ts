@@ -31,7 +31,11 @@ export type ModKind =
   /** 特制曲奇·隐藏风味: the mustard eaten. from is who baked it; it goes off when acc runs out (game/lisa.ts). */
   | 'mustard'
   /** 一呼零应: v is how many times nobody answered her this round; 一呼百应 spends them (game/himari.ts). */
-  | 'grievance';
+  | 'grievance'
+  /** 铁壁微笑: on her, v the veins so far (game/chisato.ts). */
+  | 'smile'
+  /** 有必要说教一下呢: on whoever is being lectured; left counts down to the 花丸 (render/clips.ts lectureSquash). */
+  | 'lecture';
 
 /**
  * One running buff.
@@ -53,8 +57,8 @@ export interface Mod {
   onExpire?: (g: FightGame, f: Fighter) => void;
   pulseEvery?: number;
   pulse?: (g: FightGame, f: Fighter) => void;
-  /** Runs once each time the owner takes a clean hit that costs hp (绝不退场's stacks). */
-  hurt?: (g: FightGame, f: Fighter) => void;
+  /** Runs once per hit that costs hp, including guard chip. */
+  hurt?: (g: FightGame, f: Fighter, attacker: Fighter, blocked: boolean) => void;
   /** 珍稀动物认证: an 'incoming' mod with an owner only multiplies hits from that fighter id. */
   from?: number;
   /** 烧焦: seconds between two ticks. */

@@ -9,8 +9,10 @@
 
 import type { Effect } from '../game/game.ts';
 import type { Fighter } from '../game/fighter.ts';
+import type { ImageCache } from '../assets/loader.ts';
 import { TAU, burst, cycle, dot, flame, glow, glyph, hash, snowflake, sparkle, stampText, streak, tri } from './fxParticles.ts';
 import { isLiteFx } from './fxQuality.ts';
+import { drawDoodleDizzy, drawDoodleLand } from './chisatoFx.ts';
 
 /** A status that changes the body itself, painted by the renderer with the view's own outline and tint:
  *  the outline replaces the team rim, each wash is the sprite's silhouette in one colour laid over it, and the
@@ -23,7 +25,7 @@ export interface BodyLook {
 
 export interface MarkDrawer {
   /** Every frame while the status holds, in world space. `left` is its seconds left, `t` the match clock. */
-  aura(ctx: CanvasRenderingContext2D, f: Fighter, left: number, t: number): void;
+  aura(ctx: CanvasRenderingContext2D, f: Fighter, left: number, t: number, images?: ImageCache): void;
   /** Optional: the status also changes how the body itself is painted (冻住: an ice sculpture). */
   body?: BodyLook;
   /** The moment it lands. `age` is seconds since; `e.x, e.y` are the feet. */
@@ -678,6 +680,15 @@ function applyCalorie(ctx: CanvasRenderingContext2D, e: Effect, age: number): vo
   ctx.restore();
 }
 
+/* 'chisato-doodle' (混乱 from 这明明是狗): crayon question marks over the head and a tiny 珍妮弗 trotting round them
+   (「！？」 on 丸山彩). Drawn in chisatoFx.ts with the rest of the crayon. */
+function auraDoodle(ctx: CanvasRenderingContext2D, f: Fighter, _left: number, t: number, images?: ImageCache): void {
+  drawDoodleDizzy(ctx, f.x, f.y - bodyH(f) - 14, t, f.data.id === 'aya', images);
+}
+function applyDoodle(ctx: CanvasRenderingContext2D, e: Effect, age: number): void {
+  drawDoodleLand(ctx, e.x, e.y - 175, age);
+}
+
 export const STATUS_MARKS: Record<string, MarkDrawer> = {
   'follow-flag': { aura: auraFollow, apply: applyFollow, expire: expireFollow },
   'recruit-badge': { aura: auraBadge },
@@ -692,6 +703,7 @@ export const STATUS_MARKS: Record<string, MarkDrawer> = {
   'himari-shake': { aura: auraShake, apply: applyShake },
   'himari-awkward': { aura: auraAwkward, apply: applyAwkward, expire: expireAwkward, body: STONE_BODY },
   'himari-calorie': { aura: auraCalorie, apply: applyCalorie },
+  'chisato-doodle': { aura: auraDoodle, apply: applyDoodle },
 };
 
 /** Live marks this body wears that the table knows. Older looks (摩卡's bubble, the petals) are not in the
@@ -704,18 +716,18 @@ const STATUS_MOD_KINDS = new Set(['burn', 'slow', 'confuse', 'follow', 'recruit'
 
 /** Every status aura on this body, and whether the slow and the root were drawn here (so the old
  *  petal / heart drawings stay off for them). */
-export function drawStatusAuras(ctx: CanvasRenderingContext2D, f: Fighter, t: number): { slow: boolean; root: boolean } {
+export function drawStatusAuras(ctx: CanvasRenderingContext2D, f: Fighter, t: number, images?: ImageCache): { slow: boolean; root: boolean } {
   let slow = false, root = false;
   for (const m of f.mods) {
     if (m.left <= 0 || !STATUS_MOD_KINDS.has(m.kind)) continue;
     const d = statusMarkOf(m.mark);
     if (!d) continue;
-    d.aura(ctx, f, m.left, t);
+    d.aura(ctx, f, m.left, t, images);
     if (m.kind === 'slow') slow = true;
   }
   if (f.root > 0) {
     const d = statusMarkOf(f.rootMark);
-    if (d) { d.aura(ctx, f, f.root, t); root = true; }
+    if (d) { d.aura(ctx, f, f.root, t, images); root = true; }
   }
   return { slow, root };
 }

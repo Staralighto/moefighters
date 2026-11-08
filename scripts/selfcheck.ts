@@ -1,7 +1,7 @@
 /* Headless rule check: runs the fixed-step engine without DOM or canvas. `npm run check`. */
 import { FightGame, type GameOptions } from '../src/game/game.ts';
 import { dreadMul } from '../src/game/combat.ts';
-import { heartTier, YOMOGI_BODY, FILLS, METEOR, BURROW, WARREN } from '../src/render/clips.ts';
+import { heartTier, YOMOGI_BODY, FILLS, METEOR, BURROW, WARREN, CHISATO_LECTURE_SPAN, lectureSquash } from '../src/render/clips.ts';
 import { drawHeartBack, drawHeartFront, drawYomogiFx } from '../src/render/yomogiFx.ts';
 import { BUSHIDO_CREEP, BUSHIDO_LUNGE, BUSHIDO_SPAN, VEIL_NORMAL, VEIL_SHOT, clockRings, drumShotTime, escapePulse, hit, holdNoteSpan, outshines, violetHidden, withGuard } from '../src/game/combat.ts';
 import { FLIGHT_HOP, vowBeatTime, VOW_BEATS, PRACTICE_GAP1, PRACTICE_HITS, practiceBeat, practiceGap, practiceRow, practiceStrums, FAMILY_MEMBERS, familyLife, PUFF_STOP, PLAY, PLAY_BYE, PLAY_DRAW, PLAY_FIGURES, PLAY_HOUSE, PLAY_PASS, PLAY_SLASHES, RARE_TIME, EAR, WIDE, WIDE_DROPS, WIDE_POP } from '../src/render/clips.ts';
@@ -178,7 +178,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(opening < 40, `${id}: the opening stays under a chipped bar, ${opening}`);
     assert.equal(withGuard(s, breakAt + 99).guardDmg, plan![plan!.length - 1], id + ': a late segment repeats the last entry');
   }
-  for (const id of ['uika', 'mutsumi', 'umiri', 'taki', 'layer', 'sayo', 'houka', 'mahoro', 'raika', 'miku', 'shizuku', 'chieri', 'himari']) {
+  for (const id of ['uika', 'mutsumi', 'umiri', 'taki', 'layer', 'sayo', 'houka', 'mahoro', 'raika', 'miku', 'shizuku', 'chieri', 'himari', 'chisato']) {
     const s = ROSTER[at(id)].skills[5];
     assert.ok(!s.guardPlan && !s.guardDmg, id + ': the unblockable super carries no guard value');
   }
@@ -9196,6 +9196,183 @@ for (const order of [[2, 3], [3, 2]]) {
   assert.ok(plain.down && plain.dmg > 110, 'the answers knock down through a guard: ' + plain.dmg.toFixed(1));
   assert.ok(sore.dmg - plain.dmg > 15 && sore.left === 0, 'three 委屈 hit harder and are spent: ' + (sore.dmg - plain.dmg).toFixed(1));
   assert.ok(plain.early > 20 && hop.early === 0, 'an early jump clears her own two shouts: ' + plain.early.toFixed(1) + ' / ' + hop.early.toFixed(1));
+}
+
+// chisato: 白鹭千圣。U draws 珍妮弗, who hops along the floor and bites: 混乱 in the 'chisato-doodle' look, a jump clears
+// her; I is 铁壁微笑 — armour and 40% less damage while she moves, a vein per hp lost, and the third vein ends it with a
+// free 垃圾分拣 at the nearest foe; O is that look — through a guard, 脆弱 and 驱邪 (日菜 shrugs off the 驱邪), a jump
+// clears it; L beckons the foe in front over, sits them down (正坐: the standing cell, squashed), six bubbles and a 花丸.
+{
+  const ci = at('chisato');
+  const data = ROSTER[ci];
+  assert.ok(ci === at('eve') + 1, '白鹭千圣 sits with Pastel*Palettes, after 伊芙');
+  assert.equal(data.trait, 'focus', 'she keeps her head');
+  assert.ok(!!STATUS_MARKS['chisato-doodle'], 'her 混乱 look is registered');
+  const fresh = (foe = 'boulder', p2x = 560) => {
+    const g = newGame(ci, at(foe)); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  const team = () => {
+    const g = new FightGame([data, ROSTER[at('boulder')], ROSTER[at('aya')], ROSTER[at('gale')]], {
+      mode: 'team', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(7), controllers: [0, 0, 1, 1],
+    });
+    run(g, 2.3);
+    const [p1, ally, aya, other] = g.fighters;
+    p1.x = 300; ally.x = 150; aya.x = 420; other.x = 550;
+    p1.facing = 1; aya.facing = -1; other.facing = -1;
+    return { g, p1, aya, other };
+  };
+  const live = (f: { mods: { kind: string; left: number; mark?: string }[] }, kind: string, mark?: string) =>
+    f.mods.some(m => m.kind === kind && m.left > 0 && (mark == null || m.mark === mark));
+  // U: the bite, then 混乱; a jump clears the doodle
+  {
+    const { g, p1, p2 } = fresh();
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    let dizzy = 0;
+    for (let i = 0; i < 360; i++) { g.step(STEP); if (live(p2, 'confuse', 'chisato-doodle')) dizzy += STEP; }
+    assert.ok(hp - p2.hp > 15, '珍妮弗 bites: ' + (hp - p2.hp).toFixed(1));
+    assert.ok(dizzy > 1.1 && dizzy < 1.35, 'and leaves about 1.2 s of 混乱: ' + dizzy.toFixed(2));
+  }
+  {
+    const { g, p1, p2 } = fresh('boulder', 640);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    for (let i = 0; i < 300; i++) { if (i === 50) p2.vy = -720; g.step(STEP); }
+    assert.equal(p2.hp, hp, 'a jump clears the doodle');
+  }
+  {
+    const { g, p1, p2 } = fresh('aya', 470);
+    const old = addMod(p2, 'confuse', 5, { mark: 'dizzy-q' });
+    g.attack(p1, 2);
+    const guard = p2.guard;
+    for (let i = 0; i < 120 && p2.guard === guard; i++) {
+      p2.blocking = true; p2.blockLeft = .2;
+      g.step(STEP);
+    }
+    assert.ok(p2.guard < guard && old.left < 5 && old.mark === 'dizzy-q', 'guarded Jennifer leaves existing confusion alone');
+    assert.ok(!g.effects.some(e => e.type === 'chisato-aya'), 'guarded Jennifer skips the Aya reaction');
+  }
+  {
+    const { g, p1, p2 } = fresh('aya', 470);
+    g.attack(p1, 2);
+    run(g, .7);
+    const m = p2.mods.find(m => m.kind === 'confuse');
+    assert.ok(m && m.left > 1.4 && m.mark === 'chisato-doodle', 'clean Jennifer applies the longer Aya duration');
+    assert.ok(g.effects.some(e => e.type === 'chisato-aya'), 'clean Jennifer shows the Aya reaction');
+  }
+  // O: through a guard, 脆弱 and 驱邪; a jump clears it; 日菜 keeps her guard
+  {
+    const { g, p1, p2 } = fresh();
+    g.attack(p1, 4);
+    let purged = false;
+    for (let i = 0; i < 60; i++) { p2.blocking = true; g.step(STEP); if (p2.purge > 0) purged = true; }
+    assert.ok(p2.frail > 3 && p2.frailBonus === .2, 'the look lands 脆弱 through a guard: ' + p2.frail.toFixed(2));
+    assert.ok(purged, 'and 驱邪');
+    assert.ok(g.effects.some(e => e.type === 'chisato-trash'), 'with the rain cloud on them');
+  }
+  {
+    const { g, p1, p2 } = fresh();
+    p2.y = FLOOR - 140; p2.vy = -200;
+    g.attack(p1, 4);
+    run(g, .5);
+    assert.equal(p2.frail, 0, 'a jump clears the look');
+  }
+  {
+    const { g, p1, p2 } = fresh('hina');
+    g.attack(p1, 4);
+    run(g, .5);
+    assert.ok(p2.frail > 0 && p2.purge === 0, '日菜 is 脆弱 but never 驱邪');
+  }
+  {
+    const { g, p1, aya, other } = team();
+    aya.y = FLOOR - 140; aya.vy = -200;
+    g.attack(p1, 4);
+    run(g, .4);
+    assert.ok(aya.frail === 0 && other.frail > 0, 'the look skips the airborne foe and hits the grounded foe behind her');
+  }
+  // I: armour and less damage; the third vein snaps and she glares at them
+  {
+    const { g, p1, p2 } = fresh('boulder', 380);
+    g.attack(p1, 3);
+    run(g, .5);
+    assert.ok(live(p1, 'brace') && live(p1, 'smile'), 'the smile is up');
+    const jab = ROSTER[at('boulder')].skills[0];
+    const before = p1.hp;
+    hit(g, p2, p1, jab, { hit: new Set() });
+    run(g, .15);
+    assert.equal(p1.stun, 0, 'a jab does not stagger her');
+    const cut = before - p1.hp;
+    assert.ok(cut > 0 && cut < jab.damage * .65, 'and lands for less: ' + cut.toFixed(1));
+    assert.equal(p1.mods.find(m => m.kind === 'smile' && m.left > 0)?.v, 1, 'one vein');
+    for (let k = 0; k < 2; k++) { hit(g, p2, p1, jab, { hit: new Set() }); run(g, .15); }
+    assert.ok(!live(p1, 'smile') && !live(p1, 'brace'), 'the third vein ends the smile');
+    assert.ok(p2.frail > 0, 'and she gives them the look');
+  }
+  {
+    const { g, p1, p2 } = fresh('aya', 380);
+    g.attack(p1, 3);
+    run(g, .5);
+    hit(g, p2, p1, ROSTER[at('aya')].skills[0], { hit: new Set() });
+    run(g, .15);
+    assert.equal(p1.mods.find(m => m.kind === 'smile' && m.left > 0)?.v, 2, '彩 always gets two veins');
+  }
+  {
+    const { g, p1, aya, other } = team();
+    g.attack(p1, 3);
+    run(g, .6);
+    const jab = other.data.skills[0];
+    hit(g, other, p1, jab, { hit: new Set() });
+    hit(g, other, p1, jab, { hit: new Set() });
+    assert.equal(p1.mods.find(m => m.kind === 'smile')?.v, 2, 'each same-step hit counts once even with Aya closer');
+    hit(g, aya, p1, aya.data.skills[0], { hit: new Set() });
+    run(g, .15);
+    assert.ok(!live(p1, 'smile') && aya.frail > 0, 'the third vein schedules one return glare');
+  }
+  // L: 150 气; through a guard, the 正坐 squash, a knockdown at the 花丸; a jump clears the beckon
+  {
+    const { g, p1, p2 } = fresh('boulder', 480);
+    assert.equal(p1.energyMax, 150);
+    p1.energy = 150;
+    const hp = p2.hp;
+    assert.equal(g.attack(p1, 5), true, '150 energy casts the lecture');
+    let squashed = false, down = false, seated = 0;
+    for (let i = 0; i < 600; i++) {
+      p2.blocking = p2.stun <= 0 && p2.knocked <= 0;
+      g.step(STEP);
+      const sq = lectureSquash(p2);
+      if (sq && sq.y < .8) squashed = true;
+      if (live(p2, 'lecture')) seated = Math.abs(p2.x - p1.x);
+      if (p2.knocked > 0) down = true;
+    }
+    assert.ok(hp - p2.hp > 100 && down, 'six bubbles and the 花丸 knock down through a guard: ' + (hp - p2.hp).toFixed(1));
+    assert.ok(squashed, 'sat down and squashed');
+    assert.ok(seated > 70 && seated < 100, 'right in front of her: ' + seated.toFixed(0));
+    assert.ok(!live(p2, 'lecture') && CHISATO_LECTURE_SPAN > 2, 'the 正坐 ends with the 花丸');
+  }
+  {
+    const { g, p1, p2 } = fresh('boulder', 480);
+    p1.energy = 150;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    for (let i = 0; i < 300; i++) { if (i === 20) p2.vy = -720; g.step(STEP); }
+    assert.equal(p2.hp, hp, 'a jump clears the beckon');
+  }
+  {
+    const { g, p1, aya, other } = team();
+    p1.energy = 150;
+    assert.ok(g.attack(p1, 5), 'Chisato starts the lecture in a team fight');
+    run(g, .7);
+    assert.ok(lectureSquash(aya), 'Aya is seated before the interruption');
+    const throwSkill = other.data.skills[4];
+    assert.equal(throwSkill.type, 'grab');
+    assert.ok(hit(g, other, p1, throwSkill, { hit: new Set() }), 'the third fighter lands a grab on Chisato');
+    assert.equal(p1.attack, null, 'the third fighter interrupts the lecture');
+    run(g, .4);
+    assert.equal(lectureSquash(aya), undefined, 'interrupting the caster clears the target’s seated pose');
+    assert.ok(!g.effects.some(e => ['chisato-split', 'chisato-cushion', 'chisato-sweat'].includes(e.type)), 'interrupted lecture effects finish fading');
+  }
 }
 
 // lisa: 今井莉莎。U is the stock dash with a star trail; I sends a silver cat that clings to the face it reaches

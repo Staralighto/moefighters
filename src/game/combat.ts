@@ -14,6 +14,7 @@ import './tae.ts';
 // 今井莉莎 too.
 import './lisa.ts';
 import './himari.ts';
+import './chisato.ts';
 import { applyStatus, applyStatusBlocked, extendStatus, isRecruit, statusMask } from './status.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
@@ -705,7 +706,8 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       applySlow(defender, skill);
       // 异常: data on the skill, the same clean-hit gate as 减速 and 定身. A freeze holds the body
       // still and takes the place of the hit's own pose.
-      const froze = applyStatus(g, attacker, defender, skill);
+      const status = skill.status;
+      const froze = status?.length && applyStatus(g, attacker, defender, skill, SCRIPTS[skill.fx]?.hitStatus?.(g, defender, status) ?? status);
       if (froze) {
         defender.stun = hitStun(.25);
         holdStill = true;
@@ -839,8 +841,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   // 狼王来了: while it holds, a hit cannot take the last point. The relapse is not a hit, so it still can.
   if (has(defender, 'undying')) defender.hp = Math.max(Math.min(1, hpBefore), defender.hp);
   noteDamage(g, defender, hpBefore - defender.hp);
-  // 绝不退场: a mod can count the clean hits that cost her hp.
-  if (!blocked && hpBefore > defender.hp) for (const m of defender.mods) if (m.left > 0 && m.hurt) m.hurt(g, defender);
+  if (hpBefore > defender.hp) for (const m of defender.mods) if (m.left > 0) m.hurt?.(g, defender, attacker, blocked);
   if (hpBefore > defender.hp) wheatRoll(g, defender);
   if (defender.hp <= 0 && defender.deathSave > 0) {
     // 想成为人类: lethal damage stops at 1 hp, spends a charge, and clears the hit's locks. One sparks, no text.
@@ -4069,8 +4070,8 @@ function emit_slap(g: FightGame, f: Fighter): void {
   addMod(f, 'dmgTaken', UNBOWED_TIME, { v: UNBOWED_CUT, tag: 'unbowed' });
   const rage = addMod(f, 'dmgDealt', UNBOWED_TIME, {
     v: 0, tag: 'unbowed',
-    hurt: (game, who) => {
-      if ((rage.v ?? 0) >= UNBOWED_MAX - 1e-9) return;
+    hurt: (game, who, _attacker, blocked) => {
+      if (blocked || (rage.v ?? 0) >= UNBOWED_MAX - 1e-9) return;
       rage.v = Math.min(UNBOWED_MAX, (rage.v ?? 0) + UNBOWED_STEP);
       game.effect('unbowed-stack', who.x, who.y - 176, '#ff8a9a', .4, { follow: who.id, ox: 0, oy: -176 });
     },
@@ -5287,8 +5288,8 @@ function step_cherry(g: FightGame, f: Fighter, a: Attack): void {
     a.shots = 0;
     cherryArmour.set(a, addMod(f, 'dmgTaken', s.start + .02, {
       tag: 'cherry', v: .5,
-      hurt: (game, who) => {
-        if (who.attack !== a || a.t >= s.start || a.shots >= CHERRY_MAX) return;
+      hurt: (game, who, _attacker, blocked) => {
+        if (blocked || who.attack !== a || a.t >= s.start || a.shots >= CHERRY_MAX) return;
         a.shots++;
         game.effect('cherry-swell', who.x, who.y, '#ff3b5c', .35, { follow: who.id, ox: 0, oy: 0, dir: who.facing, n: a.shots });
       },
