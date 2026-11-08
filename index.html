@@ -128,7 +128,10 @@
     <div class="versus"><span>VS</span><small id="stage-caption"></small></div>
     <div class="fighter-preview right" id="preview-right" data-slot="1">
       <div class="slot-head">
-        <span class="side-label p2" id="p2tag">2P</span>
+        <div class="net-peer-line">
+          <span class="side-label p2" id="p2tag">2P</span>
+          <button type="button" class="net-codename net-connection-trigger" id="room-connection" aria-haspopup="dialog" hidden><span></span> <span aria-hidden="true">›</span></button>
+        </div>
         <small class="net-codename" id="p2code" hidden></small>
         <div class="slot-control" id="control-right" data-lead="1" role="group" aria-label="右侧控制">
           <button type="button" class="icon-btn" data-who="player" aria-label="玩家"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-user"/></svg><span class="btn-label">玩家</span></button>
@@ -155,7 +158,7 @@
           </div>
           <div class="net-step-row">
             <span class="net-pulse-dot" aria-hidden="true"></span>
-            <span class="net-step-desc" id="net-step-desc">正在建立连接…</span>
+            <span class="net-step-desc" id="net-step-desc" role="status">正在建立连接…</span>
           </div>
           <div class="net-timer-row" id="net-timer">00:00</div>
           <div class="net-note-text" id="net-wait-note" hidden></div>
@@ -224,6 +227,7 @@
         <button type="button" class="net-cancel" id="net-cancel" hidden>取消</button>
       </div>
     </div>
+    <small class="muted" id="toy-net-note" hidden>B 站版暂不支持联机。联机请访问 moefighters.com</small>
   </div>
 
   <div id="roster" class="roster"></div>
@@ -255,7 +259,10 @@
 <main id="battle" hidden>
   <div class="battle-top">
     <button id="back" class="icon-btn" type="button" aria-label="返回选人"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-arrow-left"/></svg><span class="btn-label">← 返回选人</span></button>
-    <span id="battle-mode"></span>
+    <div class="battle-mode-line">
+      <button type="button" class="net-connection-trigger" id="battle-connection" aria-haspopup="dialog" hidden><span></span> <span aria-hidden="true">›</span></button>
+      <span id="battle-mode"></span>
+    </div>
     <div class="battle-actions">
       <button id="pause" class="icon-btn icon-only" type="button" aria-label="暂停"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-pause"/></svg><span class="btn-label">暂停 ESC</span></button>
       <button id="fullscreen" class="icon-btn icon-only" type="button" title="宽屏" aria-label="宽屏"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-corners-out"/></svg><span class="btn-label">宽屏</span></button>
@@ -359,9 +366,19 @@
   <div class="buff-cards" id="buff-cards"></div>
 </div>
 
+<dialog id="net-connection-dialog" aria-labelledby="net-connection-heading">
+  <div class="dialog-head"><h2 id="net-connection-heading">连接详情</h2><button id="close-net-connection" type="button" aria-label="关闭">×</button></div>
+  <dl class="net-connection-details">
+    <dt>线路</dt><dd id="net-detail-route"></dd>
+    <dt>往返延迟</dt><dd id="net-detail-rtt"></dd>
+    <dt>同步方式</dt><dd id="net-detail-mode"></dd>
+    <dt id="net-detail-fallback-label" hidden>切换原因</dt><dd id="net-detail-fallback" hidden></dd>
+  </dl>
+</dialog>
+
 <dialog id="net-join-dialog">
   <div class="dialog-head"><h2>加入房间</h2><button id="close-net-join" type="button" aria-label="关闭">×</button></div>
-  <p class="net-dialog-desc">输入对手的 4 位房间号即可直连对战：</p>
+  <p class="net-dialog-desc">输入对方的 4 位房间号</p>
   <div class="net-dialog-code-row">
     <span class="net-cells" id="net-dialog-cells">
       <input maxlength="1" placeholder="·" aria-label="房间号第1位" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text">

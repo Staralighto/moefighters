@@ -33,9 +33,13 @@ export function swipeEdgeSlide(dx: number, dy: number): boolean {
   return Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy);
 }
 
+export function isBilibiliHost(host: string): boolean {
+  return /(^|\.)bilibili\.com$/i.test(host);
+}
+
 /** The toy script is only the webview's bridge. A normal phone keeps the history sentinel and does not fetch it. */
 export function toyScriptWanted(host: string, block: boolean, hasBridge: boolean): boolean {
-  return block && !hasBridge && /(^|\.)bilibili\.com$/i.test(host);
+  return block && !hasBridge && isBilibiliHost(host);
 }
 
 export type SwipePop = 'skip' | 'rearm' | 'idle';

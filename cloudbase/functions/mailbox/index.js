@@ -315,6 +315,7 @@ async function writeSdp(code, room, field, sdp, now) {
 const LIVE = 15000;
 /* Throttle heartbeat writes to the database so polling does not spam DB writes. */
 const SEEN_THROTTLE = 10000;
+const QUEUE_SCAN = QUEUE_MAX + 10;
 
 /* Fields are stored under data, so a top-level status/build query matches nothing.
    Sweep expired waiters globally across all builds so fake builds cannot bloat the queue. */
@@ -322,7 +323,7 @@ async function pair(ticket, build, now, sid, guestAuth) {
   const liveRow = d => d && ms(d.expireAt) > now && now - ms(d.seen || d.at) < LIVE;
   const found = await db.collection('queue').where({
     'data.status': 'wait',
-  }).orderBy('data.at', 'asc').limit(QUEUE_MAX + 10).get();
+  }).orderBy('data.at', 'asc').limit(QUEUE_SCAN).get();
   const allRows = (Array.isArray(found.data) ? found.data : []).map(peel).filter(Boolean);
   for (const d of allRows) {
     if (liveRow(d)) continue;
@@ -330,11 +331,15 @@ async function pair(ticket, build, now, sid, guestAuth) {
   }
   const liveWaiters = allRows.filter(liveRow);
   // A stale row from the same page can outlive its drop request. Never pair a retry with it.
-  const other = liveWaiters.find(d => idOf(d) !== ticket && sameBuild(d.build, build) && (!sid || d.sid !== sid));
+  const otherPlayers = liveWaiters.filter(d => idOf(d) !== ticket && (!sid || d.sid !== sid));
+  const other = otherPlayers.find(d => sameBuild(d.build, build));
   if (!other) {
     const alreadyIn = liveWaiters.some(d => idOf(d) === ticket);
     if (!alreadyIn && liveWaiters.length >= QUEUE_MAX) return { busy: true };
-    return null;
+    if (otherPlayers.length > 0) return { wait: true, otherWaiting: true };
+    // A full scan may have missed newer waiters behind expired rows.
+    if (Array.isArray(found.data) && found.data.length < QUEUE_SCAN) return { wait: true, otherWaiting: false };
+    return { wait: true };
   }
   // Matched rooms and their unread host tickets may never see another request.
   await Promise.all([pruneExpired('rooms', now), pruneExpired('queue', now)]);
@@ -347,7 +352,7 @@ async function pair(ticket, build, now, sid, guestAuth) {
     const clash = peel(one(await room.get()));
     if (!fresh || fresh.status !== 'wait' || !sameBuild(fresh.build, build) || (clash && ms(clash.expireAt) > now)) {
       await tx.rollback();
-      return null;
+      return { wait: true };
     }
     const row = { build, at: now, expireAt: now + TTL, status: 'gone', code };
     await room.set({ data: { offer: '', answer: '', key, ...(guestAuth ? { guestKey: ticket } : {}), joined: true, expireAt: now + TTL } });
@@ -357,7 +362,7 @@ async function pair(ticket, build, now, sid, guestAuth) {
     return { role: 'guest', code };
   } catch {
     try { await tx.rollback(); } catch { /* already finished */ }
-    return null;
+    return { wait: true };
   }
 }
 
@@ -383,9 +388,9 @@ async function queue(body, now, reply) {
     try { await db.collection('queue').doc(ticket).remove(); } catch { /* best effort cleanup */ }
     return reply(200, { role: me.role, code: me.code, ...(me.key ? { key: me.key } : {}) });
   }
-  const paired = await pair(ticket, build, now, sid, guestAuth);
-  if (paired && paired.busy) return reply(429, { error: 'busy' });
-  if (paired) return reply(200, paired);
+  const result = await pair(ticket, build, now, sid, guestAuth);
+  if (result.busy) return reply(429, { error: 'busy' });
+  if (result.role) return reply(200, result);
   // ponytail: if a match lands on this ticket during pair(), this request still says wait.
   // The next poll (5s) reads the role at the top. Ceiling is one client interval; the upgrade is a conditional update.
   if (!me || me.status !== 'wait' || ms(me.expireAt) <= now) {
@@ -395,7 +400,7 @@ async function queue(body, now, reply) {
   } else if (now - ms(me.seen) >= SEEN_THROTTLE) {
     await db.collection('queue').doc(ticket).update({ data: { seen: now } });
   }
-  return reply(200, { wait: true });
+  return reply(200, result);
 }
 
 // Race the TLS dials, then send HTTP once. Racing POSTs can mint untracked TURN credentials.

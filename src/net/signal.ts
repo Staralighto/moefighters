@@ -19,10 +19,10 @@ function unwrap(data: unknown): Record<string, unknown> {
   return data as Record<string, unknown>;
 }
 
-function checkError(obj: Record<string, unknown>): void {
+function checkError(obj: Record<string, unknown>, busyText: string): void {
   const code = typeof obj.error === 'string' ? obj.error : (typeof obj.err === 'string' ? obj.err : '');
   if (!code) return;
-  if (code === 'busy') throw new MailError('联机人数较多，请稍后再试');
+  if (code === 'busy') throw new MailError(busyText);
   if (code === 'full' || code === 'locked') throw new MailError('房间已满');
   if (code === 'expired' || code === 'stale' || code === 'gone') throw new MailError('房间号无效');
   if (code === 'limit') throw new MailError('操作太频繁，请稍后重试');
@@ -58,6 +58,7 @@ function retryable(status: number): boolean {
 
 export async function postMail(body: Record<string, unknown>, signal?: AbortSignal): Promise<Record<string, unknown>> {
   if (!mailboxUsable(MAILBOX_URL)) throw new MailError('联机不可用');
+  const busyText = body.op === 'queue' ? '匹配服务繁忙，请稍后重试' : '联机服务繁忙，请稍后重试';
   let lastWasTimeout = false;
   for (let attempt = 0; attempt < RETRY_MAX; attempt++) {
     if (signal?.aborted) throw signal.reason ?? new DOMException('aborted', 'AbortError');
@@ -92,7 +93,7 @@ export async function postMail(body: Record<string, unknown>, signal?: AbortSign
         await sleep(300 * (attempt + 1), signal);
         continue;
       }
-      if (res.status === 429) throw new MailError('联机人数较多，请稍后再试');
+      if (res.status === 429) throw new MailError(busyText);
       if (res.status >= 500) throw new MailError('服务响应异常，请稍后再试');
       throw new MailError('网络连接失败，请检查网络后重试');
     }
@@ -102,12 +103,12 @@ export async function postMail(body: Record<string, unknown>, signal?: AbortSign
         await sleep(300 * (attempt + 1), signal);
         continue;
       }
-      checkError(obj);
-      if (res.status === 429) throw new MailError('联机人数较多，请稍后再试');
+      checkError(obj, busyText);
+      if (res.status === 429) throw new MailError(busyText);
       if (res.status >= 500) throw new MailError('服务响应异常，请稍后再试');
       throw new MailError('联机不可用');
     }
-    checkError(obj);
+    checkError(obj, busyText);
     return obj;
   }
   throw new MailError(lastWasTimeout

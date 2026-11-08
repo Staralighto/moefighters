@@ -1,6 +1,7 @@
 /* Lockstep: this device's keys never touch the sim directly. Keyboard and touch input write here
    (the same surface they use on a FightGame), and the lockstep session samples it once a tick. */
 
+import { CONTROLS } from '../game/constants.ts';
 import type { FightGame } from '../game/game.ts';
 import { TAP_SLOTS, packBits, tapSlot, type Pad } from './proto.ts';
 
@@ -8,6 +9,7 @@ export class LocalPad {
   readonly keys = new Set<string>();
   readonly netRole = 'lock' as const;
   private readonly taps: number[] = new Array(TAP_SLOTS).fill(0);
+  private softBlock = false;
   private readonly game: FightGame;
 
   constructor(game: FightGame) { this.game = game; }
@@ -25,7 +27,9 @@ export class LocalPad {
     if (slot >= 0) this.taps[slot] = (this.taps[slot] + 1) % 256;
   }
 
-  keyUp(code: string): void { this.keys.delete(code); }
+  keyUp(code: string, dodge = true): void {
+    if (this.keys.delete(code) && code === CONTROLS[0].block) this.softBlock = !dodge;
+  }
 
-  sample(touch: boolean): Pad { return { bits: packBits(this.keys, touch), taps: this.taps.slice() }; }
+  sample(): Pad { return { bits: packBits(this.keys, this.softBlock), taps: this.taps.slice() }; }
 }

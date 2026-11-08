@@ -44,7 +44,7 @@ export class Rng {
 const NEUTRAL: Pad = { bits: 0, taps: new Array(TAP_SLOTS).fill(0) };
 
 /** Fields of a FightGame that are wiring, not match state. */
-const GAME_SKIP = new Set(['characters', 'options', 'audio', 'netRole', 'netMenu', 'onKey', 'onFx', 'random', 'accumulator', 'lastFrame', 'particles']);
+const GAME_SKIP = new Set(['characters', 'options', 'audio', 'netRole', 'netMenu', 'onKey', 'onKeyUp', 'onFx', 'random', 'accumulator', 'lastFrame', 'particles']);
 
 /** The whole match, exactly. Mod closures (onExpire/pulse) cannot travel; see the report. */
 export function dumpGame(g: FightGame, rng: Rng, extra: Record<string, unknown> = {}): string {

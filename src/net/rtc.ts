@@ -247,6 +247,26 @@ function liveSdp(pc: RTCPeerConnection, seen: string[]): string {
   return sdp;
 }
 
+export interface ConnectionPath {
+  route: 'direct' | 'relay';
+  rtt: number | null;
+}
+
+export function selectedPath(stats: RTCStatsReport): ConnectionPath | null {
+  for (const stat of stats.values()) {
+    if (stat.type !== 'transport' || !stat.selectedCandidatePairId) continue;
+    const pair = stats.get(stat.selectedCandidatePairId);
+    const local = stats.get(pair?.localCandidateId)?.candidateType;
+    const remote = stats.get(pair?.remoteCandidateId)?.candidateType;
+    if (!local || !remote) continue;
+    return {
+      route: local === 'relay' || remote === 'relay' ? 'relay' : 'direct',
+      rtt: Number.isFinite(pair.currentRoundTripTime) ? Math.round(pair.currentRoundTripTime * 1000) : null,
+    };
+  }
+  return null;
+}
+
 export class Link {
   readonly pc: RTCPeerConnection;
   private rel: RTCDataChannel | null = null;
@@ -261,6 +281,9 @@ export class Link {
   private relChain: Promise<void> = Promise.resolve();
   private fastChain: Promise<void> = Promise.resolve();
   private downed = false;
+  private path: ConnectionPath | null = null;
+  private pathCheckAt = 0;
+  private checkingPath = false;
   private readonly readyPromise: Promise<void>;
 
   constructor(pc: RTCPeerConnection, waitChannels: Promise<[RTCDataChannel, RTCDataChannel]>) {
@@ -347,6 +370,19 @@ export class Link {
   /** What ICE managed for this failed connect, for the on-screen diagnostic line. */
   diagnose(): Promise<string> {
     return iceReport(this.pc);
+  }
+
+  /** Refresh in the background so reading connection details never delays a fight frame. */
+  connectionPath(): ConnectionPath | null {
+    const now = performance.now();
+    if (this.downed) return null;
+    if (!this.checkingPath && now >= this.pathCheckAt) {
+      this.checkingPath = true;
+      void this.pc.getStats().then(stats => { this.path = selectedPath(stats); })
+        .catch(() => { this.path = null; })
+        .finally(() => { this.pathCheckAt = performance.now() + 1000; this.checkingPath = false; });
+    }
+    return this.path;
   }
 
   sendRel(msg: unknown): void {

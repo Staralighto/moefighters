@@ -30,7 +30,8 @@ import { iceList, parseIce } from '../src/net/config.ts';
 import { HASH_EVERY, LockSession, Rng, SNAP_RTT_MS, TICK_MS, TICK_STEPS, dumpGame, hashGame, loadGame } from '../src/net/lock.ts';
 import { EchoBook, HOST_LEAD_MS, applyClaimHit, coastHost, guestFrame, netAudio, queueGuestState, reconcileGuestPred, resetNetForTest, snapshotGuestPred, stepSoftOffset, syncHostGuestPos, type SoftOffset } from '../src/net/play.ts';
 import { stateFor } from '../src/game/animState.ts';
-import { decodeFrame, relayAddressCount, relaysCovered, sealCandidates, turnHosts, turnUrlHost } from '../src/net/rtc.ts';
+import { decodeFrame, relayAddressCount, relaysCovered, sealCandidates, selectedPath, turnHosts, turnUrlHost } from '../src/net/rtc.ts';
+import { LocalPad } from '../src/net/localPad.ts';
 import { swipeEdgeBlock, swipeEdgeHit, swipeEdgeSlide, swipeGuardPop, swipeGuardWanted, toyScriptWanted } from '../src/ui/swipeBack.ts';
 import { battleFrame, comboAnchor, pictureHud } from '../src/ui/battleFrame.ts';
 import { clampStick, visibleBox } from '../src/ui/stageFit.ts';
@@ -6178,16 +6179,28 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.equal(relaysCovered(two, ['turn.cloudflare.com'], 2), false, 'two relay IPs from the fast TURN host do not cover the other host');
   assert.equal(relaysCovered(two, ['turn.cloudflare.com', '203.0.113.10'], 1), true, 'one relay from each TURN host is enough');
   assert.equal(relaysCovered(two, [], 2), true, 'missing candidate.url falls back to distinct relay addresses');
+  const candidates = new Map<string, unknown>([
+    ['transport', { type: 'transport', selectedCandidatePairId: 'pair' }],
+    ['pair', { localCandidateId: 'local', remoteCandidateId: 'remote', currentRoundTripTime: .023 }],
+    ['local', { candidateType: 'host' }],
+    ['remote', { candidateType: 'srflx' }],
+    ['unused', { candidateType: 'relay' }],
+  ]);
+  assert.deepEqual(selectedPath(candidates as unknown as RTCStatsReport), { route: 'direct', rtt: 23 }, 'gathered but unused relay candidates do not label the match');
+  candidates.set('remote', { candidateType: 'relay' });
+  assert.deepEqual(selectedPath(candidates as unknown as RTCStatsReport), { route: 'relay', rtt: 23 }, 'either selected side can be relayed');
 }
 
 // online: the guest's normals and skills come out on the host, through the same pad the wire carries
 {
-  const pair = (soft: boolean) => {
+  const pair = (initialSoft: boolean) => {
     const opts = { mode: 'cpu' as const, difficulty: 1, stage: STAGES[0], audio: silent, random: rng(5) };
     const host = new FightGame([ROSTER[at('gale')], ROSTER[at('ember')]], { ...opts, controllers: [0, 1], netRole: 'host' });
     const guest = new FightGame([ROSTER[at('gale')], ROSTER[at('ember')]], { ...opts, controllers: [null, null], netRole: 'guest' });
     const taps = new Array(TAP_SLOTS).fill(0);
     guest.onKey = code => { const i = tapSlot(code); if (i >= 0) taps[i] = (taps[i] + 1) % 256; };
+    let soft = initialSoft;
+    guest.onKeyUp = (code, dodge) => { if (code === 'KeyS') soft = !dodge; };
     const remote = new RemotePad();
     let inbox: string[] = [];
     const book = new IdBook();
@@ -6271,6 +6284,21 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     let old = false;
     for (let i = 0; i < 6; i++) { w.host.step(STEP); if (w.p2.attack) old = true; }
     assert.equal(old, false, 'held bits alone drop a same-tick tap (the bug this fixes)');
+  }
+
+  // Touch guard button and blank-screen back-dodge share KeyS but have different releases.
+  for (const dodge of [false, true]) {
+    const w = pair(true);
+    w.guest.keyDown('KeyS'); w.guest.keyUp('KeyS', dodge);
+    w.send(); w.hostFrame();
+    assert.equal(w.p2.dodge > 0, dodge, 'snapshots replay the touch gesture after a lost or unsampled keydown');
+
+    const lock = pair(true);
+    const pad = new LocalPad(lock.guest);
+    pad.keyDown('KeyS'); pad.keyUp('KeyS', dodge);
+    new RemotePad().apply(lock.host, pad.sample());
+    lock.host.step(STEP);
+    assert.equal(lock.p2.dodge > 0, dodge, 'lockstep distinguishes a guard-button tap from a back-dodge');
   }
 
   // The host's own keyboard drives 1P only; 2P keys belong to the wire.
@@ -6642,7 +6670,13 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.equal(hostGame.fighters[0].hp, hpBefore, 'the stock swing misses at the initial host spacing');
   assert.ok(!applyClaimHit(hostGame, slot, NaN, NaN), 'malformed positions cannot bypass host range');
   assert.ok(!applyClaimHit(hostGame, 5, gx, hx), 'a claim cannot change the attack slot');
-  syncHostGuestPos(hostGame, Math.round(guestGame.fighters[1].x));
+  syncHostGuestPos(hostGame, Math.round(guestGame.fighters[1].x), 40);
+  assert.equal(hostGame.fighters[1].x, 585, 'low-RTT snapshots leave host movement to its own simulation');
+  hostGame.fighters[1].dodgeRequest = true;
+  syncHostGuestPos(hostGame, Math.round(guestGame.fighters[1].x), 350);
+  assert.equal(hostGame.fighters[1].x, 585, 'position assist never adds displacement to a queued dodge');
+  hostGame.fighters[1].dodgeRequest = false;
+  syncHostGuestPos(hostGame, Math.round(guestGame.fighters[1].x), 350);
   assert.ok(hostGame.fighters[1].x < 585, 'syncHostGuestPos pulls host p2 smoothly toward guest x');
   assert.ok(applyClaimHit(hostGame, slot, gx, hx), 'applyClaimHit returns true for valid hit claim');
   const hpAfterOneClaim = hostGame.fighters[0].hp;

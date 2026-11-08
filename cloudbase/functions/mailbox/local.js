@@ -242,7 +242,7 @@ async function check() {
     const host = await post({ op: 'queue', ticket: 'live1111', build: 9, hash: 'dead', guestAuth: true });
     const other = await post({ op: 'queue', ticket: 'live3333', build: 9, hash: 'else' });
     const gone = [...Array(10).keys()].filter(i => !rows.has('old' + i + 'xxxx')).length;
-    if (first.wait !== true) throw new Error('first ticket should wait');
+    if (first.wait !== true || first.otherWaiting !== false) throw new Error('first ticket should wait alone after expired rows are swept');
     if (second.role !== 'guest' || typeof second.code !== 'string') throw new Error('second ticket should pair');
     if (host.role !== 'host' || host.code !== second.code || typeof host.key !== 'string') throw new Error('first ticket should become host with key');
     if (rows.has('expired-pair') || table('rooms').has('expired-room')) throw new Error('new matches must clear abandoned matched rooms and unread tickets');
@@ -250,7 +250,7 @@ async function check() {
     if (matchedTake.status !== 200 || !matchedTake.body.wait) throw new Error('the matched guest can use its original ticket');
     const initialSeen = rows.get('live3333')?.data?.seen;
     const pollAgain = await post({ op: 'queue', ticket: 'live3333', build: 9, hash: 'else' });
-    if (pollAgain.wait !== true) throw new Error('subsequent poll should keep waiting');
+    if (pollAgain.wait !== true || pollAgain.otherWaiting !== false) throw new Error('subsequent poll should not count its own ticket');
     if (rows.get('live3333')?.data?.seen !== initialSeen) throw new Error('rapid queue poll should throttle seen updates');
     if (gone !== 10) throw new Error('expired waits across different builds must be swept');
 
@@ -258,6 +258,7 @@ async function check() {
     for (let i = 0; i < 19; i++) {
       const r = await rawPost({ op: 'queue', ticket: 'flood_' + String(i).padStart(4, '0'), build: 100 + i, hash: 'h' + i });
       if (r.status !== 200 || r.body.wait !== true) throw new Error('queue slot ' + (i + 2) + ' should wait');
+      if (r.body.otherWaiting !== true) throw new Error('waiting players on a different build still count as other players');
     }
     const overflowQueue = await rawPost({ op: 'queue', ticket: 'flood_over', build: 999, hash: 'over' });
     if (overflowQueue.status !== 429 || overflowQueue.body.error !== 'busy') {
@@ -276,6 +277,21 @@ async function check() {
     const alone = await post({ op: 'queue', ticket: 'ghost2222', build: 7, hash: 'same' });
     if (dropped.ok !== true || rows.has('ghost1111')) throw new Error('leaving the queue must remove that ticket');
     if (alone.role || alone.wait !== true) throw new Error('a new ticket must not pair with the waiter that just left');
+    rows.clear();
+
+    await post({ op: 'queue', ticket: 'retry1111', sid: 'samepage', build: 7 });
+    const retry = await post({ op: 'queue', ticket: 'retry2222', sid: 'samepage', build: 7 });
+    if (retry.wait !== true || retry.otherWaiting !== false) throw new Error('a lingering ticket from the same page is not another player');
+    rows.clear();
+
+    for (let i = 0; i < 30; i++) {
+      rows.set('stale_' + i, { data: { at: i, seen: 1, expireAt: 2, status: 'wait' } });
+    }
+    rows.set('pastscan', { data: { build: 8, at: simNow, seen: simNow, expireAt: simNow + 60000, status: 'wait' } });
+    const capped = await post({ op: 'queue', ticket: 'scan1111', build: 7 });
+    if (capped.wait !== true || capped.otherWaiting !== undefined) throw new Error('a full scan must not claim there are no other players');
+    const nextScan = await post({ op: 'queue', ticket: 'scan1111', build: 7 });
+    if (nextScan.otherWaiting !== true) throw new Error('the next scan should see the player beyond the expired rows');
     rows.clear();
 
     // 3. Origin whitelist enforcement

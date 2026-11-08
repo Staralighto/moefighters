@@ -4,24 +4,32 @@
 
 import { sanitizeReport, type MatchReport } from '../game/report.ts';
 import { claimableMelee, hit } from '../game/combat.ts';
-import { FLOOR, GRAVITY, X_MAX, X_MIN, clamp } from '../game/constants.ts';
+import { CONTROLS, FLOOR, GRAVITY, X_MAX, X_MIN, clamp } from '../game/constants.ts';
 import { isInvulnerable, type Attack, type Fighter } from '../game/fighter.ts';
 import type { Effect, FightGame, SfxKind } from '../game/game.ts';
 import { SILENT_MS } from './config.ts';
 import { InputClock, RemotePad, TAP_SLOTS, packBits, readEvents, tapSlot, type PadEvent } from './proto.ts';
-import type { Link } from './rtc.ts';
-import { LockSession, type Rng } from './lock.ts';
+import type { ConnectionPath, Link } from './rtc.ts';
+import { LockSession, SNAP_RTT_MS, type Rng } from './lock.ts';
 import type { Pad } from './proto.ts';
 import { IdBook, applyState, captureState, diffState, partText, patchState, readPart, splitParts, type Part, type WireState } from './state.ts';
 
 export interface NetEnd { title: string; stats: string; win: number; guestStats: string; guestReport?: MatchReport }
 
+export interface NetQuality {
+  path: ConnectionPath | null;
+  rtt: number | null;
+  mode: 'lock' | 'snap';
+  delay?: number;
+  fallback?: string;
+  shaky?: boolean;
+}
+
 export interface NetUi {
   hud: (g: FightGame) => void;
   banner: (title: string, sub: string) => void;
   end: (title: string, stats: string, report?: MatchReport | null) => void;
-  /** '42ms', '连接不稳', or '' while nothing is known yet. */
-  quality: (text: string) => void;
+  quality: (status: NetQuality | null) => void;
   /** Rematch: 'asked' the other side wants one, 'wait' we asked, 'go' both did. */
   again: (state: 'asked' | 'wait' | 'go', seed?: number) => void;
   /** Lockstep gave up: the host now runs the match alone and the guest paints it. */
@@ -76,7 +84,7 @@ let endTold = false;
 let lastHeard = 0;
 let rtt = 0;
 let qualityAt = 0;
-let qualityText = '';
+let fallbackReason = '';
 let wantAgain = false;
 let lock: LockSession | null = null;
 /** Dev and E2E: what lockstep did (resyncs, fallback). */
@@ -109,6 +117,7 @@ let shownN = 0;
 let objs = new Map<string, object>();
 let eventSeen = 0;
 let taps: number[] = new Array(TAP_SLOTS).fill(0);
+let softBlock = false;
 let seq = 0;
 let t0 = 0;
 let pad: PadEvent[] = [];
@@ -190,7 +199,7 @@ function reset(): void {
   lastHeard = performance.now();
   rtt = 0;
   qualityAt = 0;
-  qualityText = '';
+  fallbackReason = '';
   wantAgain = peerAgain = false;
   book = new IdBook();
   sent = new Map();
@@ -212,6 +221,7 @@ function reset(): void {
   objs = new Map();
   eventSeen = 0;
   taps = new Array(TAP_SLOTS).fill(0);
+  softBlock = false;
   seq = 0;
   t0 = performance.now();
   pad = [];
@@ -270,7 +280,7 @@ export function beginNet(next: 'host' | 'guest', wire: Link, hooks: NetUi, match
 export function keepLink(): Link | null {
   const wire = link;
   lock = null;
-  if (gameRef) { gameRef.onKey = null; gameRef.onFx = null; }
+  if (gameRef) { gameRef.onKey = null; gameRef.onKeyUp = null; gameRef.onFx = null; }
   link = null;
   role = null;
   ui = null;
@@ -319,6 +329,7 @@ function left(why: string): void {
   if (g) {
     if (role === 'host') remote.release(g);
     g.onKey = null;
+    g.onKeyUp = null;
     g.onFx = null;
     g.phase = 'finished';
   }
@@ -333,7 +344,7 @@ function left(why: string): void {
     endTold = true;
     hooks.end(why, '');
   }
-  hooks?.quality('');
+  hooks?.quality(null);
 }
 
 /** The lockstep session, for the dev hooks the E2E run pokes. */
@@ -348,6 +359,7 @@ function toSnapshots(why: string): void {
   const heard = lastHeard;
   const asked = [wantAgain, peerAgain];
   reset();
+  fallbackReason = why;
   lastHeard = heard;
   rtt = lag;
   [wantAgain, peerAgain] = asked;
@@ -366,17 +378,19 @@ function onRel(msg: Record<string, unknown>): void {
   if (lock && (msg.t === 'H' || msg.t === 'R' || msg.t === 'desync')) { lastHeard = performance.now(); lock.onMessage(msg, performance.now()); return; }
   if (lock && msg.t === 'giveup') { lock.onGiveUp(String(msg.why ?? '')); return; }
   if (msg.t === 'F' && role === 'guest') {
+    const why = String(msg.why ?? '');
     lock?.stop();
     lock = null;
-    netLog.push('lockstep: host switched to snapshots (' + String(msg.why ?? '') + ')');
+    netLog.push('lockstep: host switched to snapshots (' + why + ')');
     const heard = lastHeard;
     const lag = typeof msg.r === 'number' ? msg.r : rtt;
     reset();
+    fallbackReason = why;
     lastHeard = heard;
     rtt = lag;
     if (gameRef) { gameRef.netRole = 'guest'; gameRef.keys.clear(); }
     gameRef = null;
-    ui?.fallback?.(String(msg.why ?? ''));
+    ui?.fallback?.(why);
     return;
   }
   if (msg.t === 'again') {
@@ -513,12 +527,16 @@ function takeEvents(list: FxEvent[]): void {
 }
 
 function quality(now: number): void {
-  if (!ui || now - qualityAt < 250) return;
+  if (!ui || !link || now - qualityAt < 250) return;
   qualityAt = now;
-  const shaky = now - lastHeard > DISCONNECT_HINT_MS;
-  const ms = lock ? lock.rtt : rtt;
-  const text = shaky ? '连接不稳' : ms ? Math.round(ms) + 'ms' + (lock ? ' · 延迟 ' + lock.delay + ' 帧' : '') : '';
-  if (text !== qualityText) { qualityText = text; ui.quality(text); }
+  ui.quality({
+    path: link.connectionPath(),
+    rtt: Math.round(lock ? lock.rtt : rtt) || null,
+    mode: lock ? 'lock' : 'snap',
+    delay: lock?.delay,
+    fallback: fallbackReason,
+    shaky: !!lock?.shaky || now - lastHeard > DISCONNECT_HINT_MS,
+  });
 }
 
 /** Lockstep: both sides step here, never through advance(). */
@@ -532,11 +550,13 @@ export function netLockFrame(now: number): void {
 /** Lockstep is running this match. */
 export function netLockLive(): boolean { return !!lock && !lock.fallen; }
 
-/** Host: softly align 2P's free-movement x toward the guest's local position within a safe drift bound. */
-export function syncHostGuestPos(g: FightGame, gx: number): void {
-  if (g.phase !== 'fight' || g.paused || g.timeStop !== null) return;
+/** High-latency snapshots only: help free movement when prediction is far ahead of the host. */
+export function syncHostGuestPos(g: FightGame, gx: number, rtt: number): void {
+  if (rtt <= SNAP_RTT_MS || g.phase !== 'fight' || g.paused || g.timeStop !== null) return;
   const p2 = g.fighters[1];
   if (!p2 || p2.hp <= 0 || p2.stun > 0 || p2.knocked > 0 || p2.root > 0 || p2.ban > 0) return;
+  // The host steps the dodge itself. Applying its displacement from the guest as well overshoots.
+  if (p2.dodge > 0 || p2.dodgeRequest || p2.dodgeBuffer > 0) return;
   const diff = gx - p2.x;
   if (Math.abs(diff) <= 150) p2.x = clamp(p2.x + diff * .35, X_MIN, X_MAX);
 }
@@ -582,7 +602,7 @@ export function netBefore(g: FightGame): void {
   const due = clock.due(pendingClaim && pendingClaim.serial === undefined ? now + 80 : now);
   for (const [, , bits, t] of due) remote.apply(g, { bits, taps: t });
   if (pendingGuestX !== null) {
-    syncHostGuestPos(g, pendingGuestX);
+    syncHostGuestPos(g, pendingGuestX, rtt);
     pendingGuestX = null;
   }
   if (pendingClaim) {
@@ -625,6 +645,9 @@ function hook(g: FightGame): void {
       if (slot >= 0) taps[slot] = (taps[slot] + 1) % 256;
       lastLocalActAt = performance.now();
     };
+    g.onKeyUp = (code, dodge) => {
+      if (code === CONTROLS[0].block) softBlock = !dodge;
+    };
     g.onClaimHit = (slot, gx, hx) => {
       outClaim = [++claimSeq, slot, Math.round(gx), Math.round(hx)];
       lastLocalActAt = performance.now();
@@ -658,8 +681,8 @@ function publish(g: FightGame, now: number): void {
 /** Guest: sample the pad and send it with the acks. */
 function report(g: FightGame, now: number): void {
   if (!link) return;
-  const bits = packBits(g.keys, document.body.classList.contains('touch'));
-  if (bits !== 0) lastLocalActAt = now;
+  const bits = packBits(g.keys, softBlock);
+  if (g.keys.size > 0) lastLocalActAt = now;
   const sample = bits + ':' + taps.join(',');
   let fresh = false;
   if (sample !== lastSample || now - lastStampAt >= RESTAMP_MS) {
@@ -679,7 +702,10 @@ function report(g: FightGame, now: number): void {
   };
   // Report the predicted (pre-rubber-band) position. The visual offset exists only to
   // hide host corrections and must never be fed back as the guest's authoritative x.
-  if (p2) { pkt.gx = Math.round(p2LogicalX); pkt.gy = Math.round(Math.min(FLOOR, p2LogicalY)); }
+  if (p2 && p2.dodge <= 0 && !p2.dodgeRequest && p2.dodgeBuffer <= 0) {
+    pkt.gx = Math.round(p2LogicalX);
+    pkt.gy = Math.round(Math.min(FLOOR, p2LogicalY));
+  }
   if (outClaim) pkt.ch = outClaim;
   link.sendFast(pkt);
 }
@@ -1030,5 +1056,6 @@ export function netHidden(): void {
   const g = gameRef;
   if (role !== 'guest' || !g) return;
   g.keys.clear();
+  softBlock = true;
   report(g, performance.now());
 }

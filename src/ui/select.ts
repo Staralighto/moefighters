@@ -13,6 +13,7 @@ import { MAILBOX_URL, mailboxUsable } from '../net/endpoint.ts';
 import { cancelOnline, ensureCodename, formatCodename, noteOnlinePlace, notifyOnlinePick } from './online.ts';
 import { fitCanvasCached } from './canvasFit.ts';
 import { StageMotion } from './stageMotion.ts';
+import { isBilibiliHost } from './swipeBack.ts';
 
 /** Roster card face: the idle fighter sprite on its colour disc, or the head-shot avatar as a badge. */
 export type RosterThumb = 'sprite' | 'face';
@@ -855,8 +856,9 @@ export class SelectScreen {
   }
 
   refresh(): void {
-    const net = this.place === 'net' && mailboxUsable(MAILBOX_URL);
-    if (!mailboxUsable(MAILBOX_URL)) this.place = 'local';
+    const onlineAvailable = mailboxUsable(MAILBOX_URL);
+    const net = this.place === 'net' && onlineAvailable;
+    if (!onlineAvailable) this.place = 'local';
     const team = this.mode === 'team';
     const challenge = this.mode === 'challenge';
     const run = challenge && !net ? readRun(this.challengeKind) : null;
@@ -872,9 +874,11 @@ export class SelectScreen {
     if (net && this.side !== 0) this.side = 0;
     const netTab = document.getElementById('net-tab') as HTMLButtonElement | null;
     if (netTab) {
-      netTab.hidden = !mailboxUsable(MAILBOX_URL);
+      netTab.hidden = !onlineAvailable;
       netTab.classList.toggle('active', net);
     }
+    const toyNetNote = document.getElementById('toy-net-note');
+    if (toyNetNote) toyNetNote.hidden = onlineAvailable || !isBilibiliHost(globalThis.location?.hostname ?? '');
     const localActs = document.getElementById('local-actions');
     if (localActs) localActs.hidden = net;
     const netActs = document.getElementById('net-actions');

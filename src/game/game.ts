@@ -262,6 +262,7 @@ export class FightGame {
   netMenu = false;
   /** Online guest: every fresh press, so a tap that ends inside one frame still reaches the host. */
   onKey: ((code: string) => void) | null = null;
+  onKeyUp: ((code: string, dodge: boolean) => void) | null = null;
   /** Online guest: local melee contact claim (attack slot, guest x, host x) sent to the host for lenient hit arbitration. */
   onClaimHit: ((slot: number, gx: number, hx: number) => void) | null = null;
   /** Online host: floating texts and spark bursts, which the guest replays as events. */
@@ -449,7 +450,7 @@ export class FightGame {
     }
   }
   keyUp(code: string, dodge = true): void {
-    this.keys.delete(code);
+    if (this.keys.delete(code)) this.onKeyUp?.(code, dodge);
     for (const f of this.fighters) {
       const c = f.controller !== null ? CONTROLS[f.controller] : undefined;
       if (!c || code !== c.block) continue;

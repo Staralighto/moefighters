@@ -6,11 +6,12 @@ import { acceptAnswer, createGuest, createHost, NetFail, type Link } from '../ne
 import { MailError, postMail, sleep } from '../net/signal.ts';
 import { MAILBOX_URL, mailboxUsable } from '../net/endpoint.ts';
 import { NET_MODE, iceList } from '../net/config.ts';
+import { bindConnectionDetails, paintConnection } from './netConnection.ts';
 
 const ICE_FAIL = '连不上，请换同一个 WiFi 后再开一间';
 const HOST = ['正在建立连接', '房间已打开', '等待对手加入', '正在接通', '正在核对版本', '进入对战'];
 const JOIN = ['正在查找这个房间', '正在接通', '正在核对版本', '进入对战'];
-const MATCH = ['正在排队', '已配上', '正在接通', '正在核对版本', '进入对战'];
+const MATCH = ['正在连接匹配服务…', '暂未匹配到对手', '已找到对手，正在连接…', '正在核对版本…', '连接完成，进入对战！'];
 
 const CODENAME_KEY = 'mf-codename';
 export const READY_SECONDS = 10;
@@ -283,6 +284,7 @@ function clearReadyUi(): void {
   if (typeof document !== 'undefined') document.body.classList.remove('net-ready-phase');
   const btnsReady = document.getElementById('net-btns-ready');
   if (btnsReady) btnsReady.hidden = true;
+  paintConnection('room-connection', null);
   setPeer('', '');
 }
 
@@ -374,12 +376,7 @@ function draw(fail?: string, diag?: string): void {
       if (badge) badge.textContent = '快速匹配';
       if (codeBox) codeBox.hidden = true;
 
-      if (stepDesc) {
-        if (step === 0) stepDesc.textContent = '正在寻找对手…';
-        else if (step === 1) stepDesc.textContent = '已找到对手！';
-        else if (step === 2 || step === 3) stepDesc.textContent = '对手就绪，正在连接…';
-        else stepDesc.textContent = '连接完成，进入对战！';
-      }
+      if (stepDesc) stepDesc.textContent = labels[step];
     } else {
       if (badge) badge.textContent = '加入房间';
       if (codeBox) codeBox.hidden = false;
@@ -416,9 +413,9 @@ function draw(fail?: string, diag?: string): void {
   }
 }
 
-function show(board: Board, index: number, fail?: string): void {
+function show(board: Board, index: number, currentLabel?: string): void {
   currentBoard = board;
-  labels = board.labels;
+  labels = currentLabel ? board.labels.map((label, i) => i === index ? currentLabel : label) : board.labels;
   step = index;
   codeAt = board.codeAt ?? -1;
   const note = document.getElementById('net-wait-note');
@@ -426,7 +423,7 @@ function show(board: Board, index: number, fail?: string): void {
     note.hidden = !board.note;
     note.textContent = board.note ?? '';
   }
-  draw(fail);
+  draw();
 }
 
 function failText(err: unknown): string {
@@ -566,6 +563,7 @@ function handshake(link: Link, role: 'host' | 'guest', picked: OnlinePick, board
       if (btn) btn.disabled = myReady;
       if (textEl) textEl.textContent = myReady ? '已准备' : '我准备好了';
       if (cdEl) cdEl.textContent = `(${Math.max(0, remain)}s)`;
+      paintConnection('room-connection', { path: link.connectionPath(), rtt: null, mode: plan.mode });
     };
 
     const launchHost = () => {
@@ -778,19 +776,29 @@ async function matched(signal: AbortSignal, picked: OnlinePick): Promise<void> {
   let code = '';
   let key = '';
   let waiting = true;
+  let waitText = '';
   try {
     while (Date.now() < deadline) {
-      if (signal.aborted) throw signal.reason ?? new DOMException('aborted', 'AbortError');
       const res = await postMail({ op: 'queue', ticket: id, sid: queueSid, build: NET_BUILD, hash: NET_HASH, guestAuth: true }, signal);
+      if (signal.aborted) throw signal.reason ?? new DOMException('aborted', 'AbortError');
       if ((res.role === 'host' || res.role === 'guest') && typeof res.code === 'string') {
         role = res.role;
         code = res.code;
         key = typeof res.key === 'string' ? res.key : '';
         break;
       }
+      if (res.wait === true) {
+        const text = res.otherWaiting === false ? '暂时只有你在匹配'
+          : res.otherWaiting === true ? '有其他玩家在匹配，暂未配对成功'
+          : MATCH[1];
+        if (text !== waitText) {
+          waitText = text;
+          show(MATCH_BOARD, 1, text);
+        }
+      }
       await sleep(5000, signal);
     }
-    if (!role || !code) throw new MailError('没有对手');
+    if (!role || !code) throw new MailError('本次未找到对手');
     waiting = false;
     show(MATCH_BOARD, MATCH_BOARD.link);
     if (role === 'host') {
@@ -842,6 +850,7 @@ export function bindOnline(
   startFight = start;
   setLocked = lock;
   setPeer = onPeer;
+  bindConnectionDetails(openModal);
   $('net-host').onclick = () => run(asHost);
   $('net-match').onclick = () => run(matched);
   const joinBtn = document.getElementById('net-join-btn');

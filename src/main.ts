@@ -27,6 +27,7 @@ import { bindPick, bindTip, setTrainPrefs, trainPrefs } from './ui/settings.ts';
 import { setThemePref, themePref, type ThemePref } from './ui/theme.ts';
 import { bindOnline, CODENAME_ADJS, CODENAME_CHARS, ensureCodename, formatCodename, setCodenameWords, type NetPlan } from './ui/online.ts';
 import { beginNet, endNet, keepLink, netAfter, netAudio, netBefore, netEpoch, netHidden, netLock, netLockFrame, netLog, netRematch, noteEnd, type NetEnd } from './net/play.ts';
+import { paintConnection } from './ui/netConnection.ts';
 import type { Link } from './net/rtc.ts';
 import { LocalPad } from './net/localPad.ts';
 import { Rng } from './net/lock.ts';
@@ -340,6 +341,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
   hideVersus();
   hideEnd();
   hideBuffPicker();
+  paintConnection('battle-connection', null);
   $('battle-mode').textContent = setup.online
     ? '联机 · ' + setup.stage.name
     : setup.mode === 'challenge'
@@ -410,12 +412,11 @@ async function startGame(setup: MatchSetup): Promise<void> {
   const wire = pendingLink;
   pendingLink = null;
   if (setup.online && wire) {
-    const label = '联机 · ' + setup.stage.name;
     beginNet(setup.online, wire, {
       hud: updateHUD,
       banner: showBanner,
       end: (title, stats, report) => { showEnd(title, stats, report); if (title === '对手已离开' || title === '连接已断开') $('rematch').hidden = true; },
-      quality: text => { $('battle-mode').textContent = text ? label + ' · ' + text : label; },
+      quality: status => paintConnection('battle-connection', status),
       again: (state, seed) => {
         if (state === 'go') { rematchOnline(seed); return; }
         setIconBtn($('rematch'), state === 'wait' ? '等待对手…' : '对手想再来一局 ↻');
@@ -433,7 +434,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
     }, setup.match ?? 0, setup.lock && lockRng && game ? {
       g: game,
       rng: lockRng,
-      sample: () => localPad?.sample(document.body.classList.contains('touch')) ?? { bits: 0, taps: [0, 0, 0, 0, 0, 0, 0, 0] },
+      sample: () => localPad?.sample() ?? { bits: 0, taps: [0, 0, 0, 0, 0, 0, 0, 0] },
       mute: on => { muted = on; },
     } : undefined);
   }
@@ -588,6 +589,7 @@ function menuUp(): boolean {
 /** Leave the battle screen for the select one; any waiting run stays parked, storage untouched. */
 function restBack(): void {
   endNet();
+  paintConnection('battle-connection', null);
   hostTicker(false);
   pendingLink = null;
   cancelAnimationFrame(raf);

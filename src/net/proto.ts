@@ -3,8 +3,8 @@
 import { CONTROLS } from '../game/constants.ts';
 import type { FightGame } from '../game/game.ts';
 
-/** Bump when a snapshot field changes meaning. Mismatched peers refuse to start. */
-export const NET_BUILD = 3;
+/** Bump when a wire field changes meaning. Mismatched peers refuse to start. */
+export const NET_BUILD = 4;
 
 declare const __NET_HASH__: string | undefined;
 /** Hash of the game source, stamped by vite.config.ts. Two builds that differ anywhere refuse to pair. */
@@ -18,7 +18,7 @@ export const BIT_RIGHT = 1 << 1;
 export const BIT_JUMP = 1 << 2;
 export const BIT_BLOCK = 1 << 3;
 export const BIT_ATK = 1 << 4;
-/** Set for the whole packet when block-release must stay a block (touch). */
+/** The last block release keeps a short tap as guard, as on the touch guard button. */
 export const BIT_SOFT = 1 << 10;
 
 export function cleanCode(raw: string): string {
@@ -72,7 +72,7 @@ export class RemotePad {
   constructor(slot = 1) { this.slot = slot; }
 
   /** Release everything the guest was holding (leave, timeout). Counters stay. */
-  release(g: FightGame): void { applyRemoteBits(g, 0, this.slot); }
+  release(g: FightGame): void { applyRemoteBits(g, BIT_SOFT, this.slot); }
 
   apply(g: FightGame, pad: Pad): void {
     const c = CONTROLS[this.slot];
