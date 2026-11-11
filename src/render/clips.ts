@@ -1289,7 +1289,8 @@ export function clipFor(f: Fighter): Clip {
     }
     // 筑紫四列都要把命中姿势留住：土笔蹲着、闹钟抛完、滚轮一直跑、姐姐叉腰。
     if (f.attack.skill.fx === 'sprout' || f.attack.skill.fx === 'clock' || f.attack.skill.fx === 'wheel' || f.attack.skill.fx === 'sisters'
-      || f.attack.skill.fx === 'sandwich' || f.attack.skill.fx === 'excuse' || f.attack.skill.fx === 'skip') {
+      || f.attack.skill.fx === 'sandwich' || f.attack.skill.fx === 'excuse' || f.attack.skill.fx === 'skip'
+      || f.attack.skill.fx.startsWith('mizuho-')) {
       const t = f.attack.t, s = f.attack.skill;
       const row = t < s.start ? 0 : t >= s.duration - .22 ? 2 : 1;
       return at('special', f.attack.index - 2, row);

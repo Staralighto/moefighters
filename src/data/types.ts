@@ -349,6 +349,8 @@ export interface CharacterData {
   /** False keeps the entry off the select screen: headless-check dummies (gale, ember,
    *  boulder). Unset means playable — new characters need no roster of ids to join. */
   playable?: boolean;
+  /** Opt-in roster pick, excluded from public pools and progression. */
+  hidden?: boolean;
   trait: Trait;
   hp: number;
   speed: number;

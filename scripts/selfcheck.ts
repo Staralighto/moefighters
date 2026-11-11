@@ -6,7 +6,7 @@ import { drawHeartBack, drawHeartFront, drawYomogiFx } from '../src/render/yomog
 import { BUSHIDO_CREEP, BUSHIDO_LUNGE, BUSHIDO_SPAN, VEIL_NORMAL, VEIL_SHOT, clockRings, drumShotTime, escapePulse, hit, holdNoteSpan, outshines, violetHidden, withGuard } from '../src/game/combat.ts';
 import { FLIGHT_HOP, vowBeatTime, VOW_BEATS, PRACTICE_GAP1, PRACTICE_HITS, practiceBeat, practiceGap, practiceRow, practiceStrums, FAMILY_MEMBERS, familyLife, PUFF_STOP, PLAY, PLAY_BYE, PLAY_DRAW, PLAY_FIGURES, PLAY_HOUSE, PLAY_PASS, PLAY_SLASHES, RARE_TIME, EAR, WIDE, WIDE_DROPS, WIDE_POP } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
-import { PLAYABLE, ROSTER, bandMembers, guestsFor } from '../src/data/characters.ts';
+import { PLAYABLE, PUBLIC_ROSTER, ROSTER, bandMembers, guestsFor } from '../src/data/characters.ts';
 import { BANDS, BAND_BY_ID } from '../src/data/bands.ts';
 import { AIR_SKILLS, skill } from '../src/data/skills.ts';
 import { STAGES } from '../src/data/stages.ts';
@@ -156,11 +156,11 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const breaksAt: Record<string, number> = {
     nyamu: 4, sakiko: 10, anon: 5, rana: 10, soyo: 3, kokoro: 3, miyako: 5,
-    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6,
+    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6,
   };
   const segments: Record<string, number> = {
     nyamu: 4, sakiko: 16, anon: 6, rana: 22, soyo: 3, kokoro: 3, miyako: 6,
-    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8,
+    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9,
   };
   for (const [id, breakAt] of Object.entries(breaksAt)) {
     const s = ROSTER[at(id)].skills[5];
@@ -672,6 +672,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const [a, b] = rollEnemies(2);
   assert.ok(a !== b, 'the two rolled enemies are distinct');
   assert.equal(rollEnemies(1).length, 1, '闯关 rolls a single foe');
+  assert.deepEqual(rollEnemies(PLAYABLE.length).map(c => c.id).sort(), PUBLIC_ROSTER.map(c => c.id).sort(), 'challenge rolls only public opponents');
   const setup = stageSetup('brawl', ROSTER[at('gale')], [], 1, [ROSTER[at('ember')], ROSTER[at('boulder')]], STAGES[0]);
   assert.equal(setup.characters.length, 3, 'a brawl stage fields the player plus two enemies');
   assert.equal(setup.characters[0].hp, ROSTER[at('gale')].hp * 2, 'brawl doubles base health');
@@ -1067,6 +1068,93 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const emberU = clipFor(g.fighters[0]);
   assert.equal(emberU.sheet, 'special', 'ember U uses special');
   assert.equal(emberU.col, 0, 'U is column 0');
+}
+
+// mizuho: the hug holds, hurts and heals; the doll answers a swing; the 白祥 runs along the floor and leaves
+// 脆弱; the stars fall where they stand; the wish stands her up once a round, and only once.
+{
+  const mizuho = at('mizuho');
+  const data = ROSTER[mizuho];
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/sakiko/shiro.png'), 'the 白祥 is preloaded');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/mizuho/doll.png'), 'the doll is preloaded');
+  {
+    const g = newGame(mizuho, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 70; p2.facing = -1; p1.hp = 500;
+    const hp0 = p2.hp;
+    g.keyDown('KeyU'); g.keyUp('KeyU'); run(g, 2);
+    assert.ok(p2.hp < hp0 - 40, `the hug hurts, ${hp0 - p2.hp}`);
+    assert.equal(p1.hp, 548, 'four beats give her 12 each');
+  }
+  {
+    const g = newGame(mizuho, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 320; p2.facing = -1;
+    const hp0 = p2.hp;
+    g.keyDown('KeyO'); g.keyUp('KeyO'); run(g, 1.3);
+    assert.ok(p2.hp < hp0, '妈妈的小祥 reaches them on the floor');
+    assert.ok(p2.frail > 0, 'and leaves 脆弱');
+    const air = newGame(mizuho, at('boulder')); const [a1, a2] = air.fighters; dummy(air);
+    a2.x = a1.x + 200; a2.facing = -1;
+    const ahp = a2.hp;
+    air.keyDown('KeyO'); air.keyUp('KeyO');
+    for (let i = 0; i < Math.round(1.3 / STEP); i++) { a2.y = FLOOR - 200; a2.vy = 0; air.step(STEP); }
+    assert.equal(a2.hp, ahp, 'a jump clears her');
+  }
+  {
+    const g = newGame(mizuho, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 300; p2.facing = -1; p1.energy = 100;
+    const hp0 = p2.hp;
+    g.keyDown('KeyL'); g.keyUp('KeyL'); run(g, 3.4);
+    assert.ok(hp0 - p2.hp > 120, `the stars find them, ${hp0 - p2.hp}`);
+    assert.equal(g.projectiles.length, 0, 'every star has landed');
+  }
+  {
+    const g = newGame(mizuho, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 80; p2.facing = -1;
+    p1.hp -= 100;
+    const mine = p1.hp, theirs = p2.hp;
+    g.keyDown('KeyI'); g.keyUp('KeyI'); run(g, .2);
+    assert.ok(g.effects.some(e => e.type === 'mizuho-doll'), 'the doll is out');
+    assert.equal(hit(g, p2, p1, ROSTER[at('boulder')].skills[0], { hit: new Set() }), false, 'the doll takes the swing');
+    assert.equal(p1.hp, mine, 'she is not hurt');
+    assert.ok(p2.hp < theirs, 'and it answers');
+    assert.ok(g.effects.some(e => e.type === 'mizuho-doll-burst'), 'in a ring of light');
+    run(g, 1.3);
+    assert.equal(p1.hp, mine, 'a triggered counter does not heal');
+  }
+  {
+    const host = newGame(mizuho, at('boulder')); const [lead, foe] = host.fighters; dummy(host);
+    foe.x = lead.x + 80;
+    host.keyDown('KeyI'); host.keyUp('KeyI'); run(host, .2);
+    const restored = newGame(mizuho, at('boulder'));
+    loadGame(restored, new Rng(1), dumpGame(host, new Rng(1)));
+    const [p1, p2] = restored.fighters;
+    assert.equal(hit(restored, p2, p1, ROSTER[at('boulder')].skills[0], { hit: new Set() }), false);
+    const doll = restored.effects.find(e => e.type === 'mizuho-doll');
+    assert.ok(doll && doll.life <= .12, 'a counter after lockstep resync still dismisses its doll');
+  }
+  for (const missing of [100, 20]) {
+    const g = newGame(mizuho, at('boulder')); const [p1] = g.fighters; dummy(g);
+    p1.hp -= missing;
+    const hp = p1.hp;
+    g.keyDown('KeyI'); g.keyUp('KeyI'); run(g, .6);
+    assert.equal(p1.hp, hp, 'no heal while the counter window is open');
+    run(g, .7);
+    assert.equal(p1.hp, hp + Math.min(missing, 40), 'an untriggered counter heals once, up to full health');
+  }
+  {
+    const g = newGame(mizuho, at('boulder')); const [p1] = g.fighters; dummy(g);
+    assert.ok(p1.mods.some(m => m.kind === 'wish' && m.v === 0), 'the wish is armed');
+    const x = p1.x;
+    p1.hp = 1; run(g, .05);
+    assert.equal(p1.hp, 270, 'the wish stands her up at 30%');
+    g.keyDown('KeyD'); run(g, .3); g.keyUp('KeyD');
+    assert.ok(p1.x > x, 'she can leave the revival spot');
+    const wish = g.effects.find(e => e.type === 'mizuho-wish');
+    assert.deepEqual([wish?.x, wish?.y], [x, FLOOR], 'the revival light stays where it appeared');
+    p1.hp = 1; run(g, .05);
+    assert.equal(p1.hp, 1, 'only once a round');
+    assert.ok(!p1.mods.some(m => m.kind === 'undying' && m.left > 0), 'and the floor under her is gone');
+  }
 }
 
 // sakiko: 忘却之影 blinks and leaves the 白祥 to blow; 神威 lifts the ground and misses a jumper;
@@ -2450,7 +2538,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const onlineGroup = dialogHtml.match(/<section class="setting-group" id="set-online-group">[\s\S]*?<\/section>/)?.[0] ?? '';
     assert.equal(onlineGroup.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(), '联机 联机代号 修改代号', 'online codename setting row has control name and button only');
     const visible = dialogHtml.replace(onlineGroup, '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-    assert.equal(visible, '设置 × 外观 主题 暗色 暗色 亮色 跟随系统 名册 名册显示 直接排开 直接排开 按乐队分组 名册卡面 全身 全身 头像 印章色条 显示 显示 隐藏 训练场 无技能冷却 开 开 关 无限大招 开 开 关 音乐 开打换曲 ? 只在随机播放时生效，其他时候不能改。 开 开 关', 'settings dialog keeps control names, plus the fight-shuffle tip (with #set-online-group exempted)');
+    assert.equal(visible, '设置 × 外观 主题 暗色 暗色 亮色 跟随系统 名册 名册显示 直接排开 直接排开 按乐队分组 名册卡面 全身 全身 头像 印章色条 显示 显示 隐藏 显示隐藏角色 关 开 关 训练场 无技能冷却 开 开 关 无限大招 开 开 关 音乐 开打换曲 ? 只在随机播放时生效，其他时候不能改。 开 开 关', 'settings dialog keeps control names, plus the fight-shuffle tip (with #set-online-group exempted)');
     const css = readFileSync('src/style.css', 'utf8');
     assert.ok(css.includes('width: min(760px, calc(100% - 2rem))'), 'settings dialog width is reserved, not content-sized');
     assert.ok(css.includes('#start > span') && !/\.start span \{ display: inline-grid/.test(css), 'the start arrow badge does not restyle the rematch label');
@@ -6998,7 +7086,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 {
   assert.equal(READY_SECONDS, 10, 'online ready phase lasts 10 seconds');
   assert.ok(CODENAME_ADJS.length >= 16, 'codename adjective pool has moe personality/mood words');
-  assert.equal(CODENAME_CHARS.length, PLAYABLE.length, 'codename character pool matches playable roster');
+  assert.deepEqual(CODENAME_CHARS, PUBLIC_ROSTER.map(c => c.name), 'new codenames use the public roster');
   // Malformed numbers (non-4-digit strings)
   for (const malformed of ['', '123', '12345', 'abcd', '12a4', '-123']) {
     assert.equal(isBlockedCodeNum(malformed), true, `malformed number ${malformed} is rejected`);
@@ -8709,20 +8797,23 @@ for (const order of [[2, 3], [3, 2]]) {
   const legacy = JSON.stringify({ uika: { d: 2, rank: 'S' } });
   store.set('mf.stamps.v1', legacy);
   assert.equal(stampOf('uika'), -1, 'legacy player-character clears cannot prove which opponent was defeated');
-  assert.equal(stampOf('gale'), -1, 'no stamp yet');
-  assert.equal(recordClear('gale', 1, 'A'), true, 'first 标准 clear is a first');
-  assert.equal(recordClear('gale', 0, 'S'), false, 'a lower tier never replaces or celebrates');
-  assert.equal(recordClear('gale', 1, 'S'), false, 'same tier again is not a first');
-  assert.equal(readStamps().gale.rank, 'S', 'but a better rank at the same tier is kept');
-  assert.equal(recordClear('gale', 2, 'B'), true, 'a higher tier is a new first');
-  assert.equal(stampOf('gale'), 2);
+  assert.equal(stampOf('viola'), -1, 'no stamp yet');
+  assert.equal(recordClear('viola', 1, 'A'), true, 'first 标准 clear is a first');
+  assert.equal(recordClear('viola', 0, 'S'), false, 'a lower tier never replaces or celebrates');
+  assert.equal(recordClear('viola', 1, 'S'), false, 'same tier again is not a first');
+  assert.equal(readStamps().viola.rank, 'S', 'but a better rank at the same tier is kept');
+  assert.equal(recordClear('viola', 2, 'B'), true, 'a higher tier is a new first');
+  assert.equal(stampOf('viola'), 2);
   // Another tab saves after this page cached its book. The next write must preserve its gains.
-  store.set('mf.stamps.v2', JSON.stringify({ gale: { d: 2, rank: 'S' }, tomori: { d: 2, rank: 'S' } }));
+  store.set('mf.stamps.v2', JSON.stringify({ viola: { d: 2, rank: 'S' }, tomori: { d: 2, rank: 'S' }, mizuho: { d: 2 } }));
+  assert.equal(stampOf('mizuho'), -1, 'old hidden-character stamps do not count');
+  assert.equal(recordClear('mizuho', 2, 'S'), false, 'hidden characters cannot receive stamps');
   assert.equal(recordClear('mutsumi', 1, 'A'), true);
   const persisted = JSON.parse(store.get('mf.stamps.v2')!);
   assert.equal(persisted.tomori.d, 2, 'a stale page cannot erase another tabs character');
-  assert.equal(persisted.gale.rank, 'S', 'a stale page preserves another tabs improved rank');
-  assert.equal(recordClear('gale', 1, 'S'), false, 'another tabs higher tier cannot be downgraded');
+  assert.equal(persisted.mizuho.d, 2, 'ordinary saves preserve historical stamps excluded from the public book');
+  assert.equal(persisted.viola.rank, 'S', 'a stale page preserves another tabs improved rank');
+  assert.equal(recordClear('viola', 1, 'S'), false, 'another tabs higher tier cannot be downgraded');
   store.set('mf.stamps.v2', JSON.stringify({ ...persisted, uika: { d: 0, rank: 'A' } }));
   assert.equal(stampOf('uika'), 0, 'reads also refresh when another tab changes storage');
 
@@ -8785,6 +8876,16 @@ for (const order of [[2, 3], [3, 2]]) {
   const mirror = match(['rana', 'rana']);
   finish(mirror);
   assert.equal(recordMatchClear(mirror, buildReport(mirror, humanTeam(mirror))), false, 'a mirror match still uses the defeated characters existing stamp');
+  const hidden = match(['uika', 'mizuho']);
+  finish(hidden);
+  const hiddenReport = buildReport(hidden, humanTeam(hidden));
+  assert.equal(recordMatchClear(hidden, hiddenReport), false, 'beating a hidden character awards no stamp');
+  assert.ok(!hiddenReport.tag.startsWith('首次'), 'a hidden opponent alone cannot award a first-clear ribbon');
+  const mixed = match(['uika', 'mutsumi', 'mizuho', 'viola']);
+  finish(mixed);
+  assert.equal(recordMatchClear(mixed, buildReport(mixed, humanTeam(mixed))), true, 'a public opponent in a mixed team still earns a stamp');
+  assert.equal(stampOf('viola'), 1);
+  assert.equal(stampOf('mizuho'), -1);
 
   const unfinished = match(['uika', 'hina']);
   unfinished.winnerTeam = 0;
@@ -8807,12 +8908,14 @@ for (const order of [[2, 3], [3, 2]]) {
     renderStampBook(host, layout);
     const cells = [...host.innerHTML.matchAll(/<figure\b[^>]*>[\s\S]*?<\/figure>/g)].map(m => m[0]);
     const cell = (id: string) => cells.find(html => html.includes(`data-id="${id}"`)) ?? '';
+    assert.equal(cells.length, PUBLIC_ROSTER.length, 'only public characters count toward book completion');
+    assert.equal(cell('mizuho'), '', 'the hidden character has no stamp-book slot');
     assert.ok(cell('tomori').includes('大师'), 'both stamp-book layouts show the defeated opponents highest difficulty');
     assert.ok(cell('uika').includes('is-empty'), 'both layouts keep the players unearned character empty');
   }
   g.localStorage = { getItem: () => { throw Error('blocked'); }, setItem: () => { throw Error('blocked'); } };
-  assert.equal(recordClear('boulder', 2, 'S'), true, 'private mode does not break the result screen');
-  assert.equal(stampOf('boulder'), 2, 'blocked storage still keeps the stamp for this session');
+  assert.equal(recordClear('viola', 2, 'S'), true, 'private mode does not break the result screen');
+  assert.equal(stampOf('viola'), 2, 'blocked storage still keeps the stamp for this session');
   g.localStorage = saved;
   assert.ok(miniSeal(2).split('★').length - 1 === 3, 'a 大师 stamp carries three stars');
 }

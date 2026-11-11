@@ -1,4 +1,5 @@
-import { PLAYABLE } from '../src/data/characters.ts';
+import { PLAYABLE, PUBLIC_ROSTER } from '../src/data/characters.ts';
+import { readRun, writeRun } from '../src/ui/challenge.ts';
 import { SelectScreen } from '../src/ui/select.ts';
 
 /** Count DOM work on the real selection path; this does not emulate browser layout or paint. */
@@ -7,6 +8,7 @@ export function checkSelect(): void {
   const originals = names.map(name => Object.getOwnPropertyDescriptor(globalThis, name));
   const check = (ok: boolean, message: string) => { if (!ok) throw Error('FAIL: ' + message); };
   let writes = 0, reads = 0, skillBuilds = 0;
+  let cards: Node[] = [];
   class Node {
     dataset: Record<string, string> = {};
     classes = new Set<string>();
@@ -20,6 +22,7 @@ export function checkSelect(): void {
     style = { setProperty() {}, removeProperty() {}, backgroundImage: '' };
     children = new Map<string, Node>();
     parentElement: Node | null = null;
+    onclick?: () => void;
     private text = '';
     private html = '';
     private invisible = false;
@@ -28,7 +31,18 @@ export function checkSelect(): void {
     get textContent() { return this.text; }
     set textContent(v: string) { writes++; this.text = v; }
     get innerHTML() { return this.html; }
-    set innerHTML(v: string) { writes++; if (this.id === 'skills') skillBuilds++; this.html = v; }
+    set innerHTML(v: string) {
+      writes++;
+      if (this.id === 'skills') skillBuilds++;
+      if (this.id === 'roster') cards = Array.from(v.matchAll(/data-index="(\d+)"/g), ([, i]) => {
+        const card = new Node('card' + i);
+        card.dataset.index = i;
+        card.children.set('.slot-tag', new Node('tag' + i));
+        card.children.set('canvas', new Node('canvas' + i));
+        return card;
+      });
+      this.html = v;
+    }
     get hidden() { return this.invisible; }
     set hidden(v: boolean) { writes++; this.invisible = v; }
     get offsetWidth() { reads++; return 100; }
@@ -62,19 +76,13 @@ export function checkSelect(): void {
     if (!n) nodes.set(id, n = new Node(id));
     return n;
   };
-  const cards = PLAYABLE.map((_, i) => {
-    const card = new Node('card' + i);
-    card.dataset.index = String(i);
-    card.dataset.view = 'face';
-    card.children.set('.slot-tag', new Node('tag' + i));
-    return card;
-  });
   for (const suffix of ['1', '2', 'A', 'E']) node('portrait' + suffix).parentElement = node('preview' + suffix);
   const install = (name: string, value: unknown) => Object.defineProperty(globalThis, name, { value, configurable: true });
   try {
     install('document', { getElementById: node, querySelectorAll: () => [], body: node('body') });
-    install('window', { setTimeout: () => 0, setInterval: () => 0 });
-    install('localStorage', { getItem: () => null, setItem() {} });
+    install('window', { setTimeout: () => 0, setInterval: () => 0, addEventListener() {} });
+    const storage = new Map<string, string>();
+    install('localStorage', { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v) });
     install('matchMedia', () => ({ matches: true }));
     install('getComputedStyle', () => { reads++; return { display: 'block' }; });
     let shown = 0;
@@ -82,14 +90,13 @@ export function checkSelect(): void {
     const select = new SelectScreen(PLAYABLE, views, () => {}, () => {}, () => { shown++; });
     // Private methods are intentionally exercised through a test-only structural view.
     const screen = select as unknown as {
-      rosterButtons: Node[]; selected: number[]; side: number; who: ('player' | 'cpu')[];
+      selected: number[]; side: number; who: ('player' | 'cpu')[];
       place: 'local' | 'net'; netLocked: boolean; netPeerCharId: string;
       pick(i: number): void; refreshSelection(indices?: Iterable<number>): void;
       load(i: number): void; wantFace(i: number): Promise<void>;
       near: Set<number>; portrait(...args: unknown[]): void; rosterCanvases: Node[];
     };
-    screen.rosterButtons = cards;
-    select.refresh();
+    select.mount();
     writes = reads = skillBuilds = 0;
     const before = shown;
     screen.pick(2);
@@ -168,6 +175,75 @@ export function checkSelect(): void {
     screen.portrait = canvas => { painted.push(canvas as Node); };
     select.animate(100);
     check(painted.includes(cards[1]) && !painted.includes(cards[2]) && !painted.includes(cards[0]), 'roster drawing visits only nearby sprite cards');
+
+    const mizuho = PLAYABLE.findIndex(c => c.id === 'mizuho');
+    const viola = PLAYABLE.findIndex(c => c.id === 'viola');
+    storage.set('mf-select-state', JSON.stringify({ mode: 'cpu', selected: [viola, mizuho], who: ['player', 'cpu'], difficulty: 1, side: 0 }));
+    let started = 0;
+    const legacy = new SelectScreen(PLAYABLE, views, () => { started++; }, () => {});
+    legacy.mount();
+    check(!legacy.showsHidden && cards.length === PUBLIC_ROSTER.length && !node('roster').innerHTML.includes('丰川瑞穗'), 'the hidden character is absent by default');
+    check(legacy.setup().characters[0].id === 'viola' && !legacy.setup().characters[1].hidden, 'legacy indices preserve public picks and replace hidden picks');
+    legacy.setShowHidden(true);
+    check(cards.length === PLAYABLE.length && node('roster').innerHTML.includes('丰川瑞穗'), 'the preference reveals the hidden card');
+    const rand = Math.random;
+    try {
+      for (let i = 0; i < PLAYABLE.length; i++) {
+        Math.random = () => (i + .5) / PLAYABLE.length;
+        node('random').onclick?.();
+        check(!legacy.setup().characters[0].hidden, 'random never picks a revealed hidden character');
+      }
+    } finally { Math.random = rand; }
+    cards[mizuho].onclick?.();
+    const restored = new SelectScreen(PLAYABLE, views, () => {}, () => {});
+    check(restored.showsHidden && restored.setup().characters[0].id === 'mizuho', 'opt-in and manual hidden picks survive reload');
+    const reordered = new SelectScreen([...PLAYABLE].reverse(), views, () => {}, () => {});
+    check(reordered.setup().characters[0].id === 'mizuho', 'saved character IDs survive roster reorder');
+
+    const lobby = legacy as unknown as typeof screen;
+    legacy.mode = 'team';
+    lobby.who = ['cpu', 'player', 'cpu', 'cpu'];
+    lobby.selected = [mizuho, viola, 0, 1];
+    lobby.place = 'net';
+    lobby.netPeerCharId = PLAYABLE[viola].id;
+    lobby.refreshSelection();
+    check(legacy.onlinePick().charId === 'mizuho' && node('name2').textContent === PLAYABLE[viola].name, 'online uses its two displayed seats even after a local team selection');
+    node('body').classList.add('net-ready-phase');
+    const removedCard = cards[mizuho];
+    legacy.setShowHidden(false);
+    check(!legacy.setup().characters[0].hidden && cards.length === PUBLIC_ROSTER.length, 'turning the setting off removes the card and replaces the active pick');
+    check(!node('body').classList.contains('net-ready-phase'), 'removing a hidden pick cancels an already-unlocked online ready phase');
+    const fallback = legacy.onlinePick().charId;
+    removedCard.onclick?.();
+    check(legacy.onlinePick().charId === fallback, 'a removed card cannot select a different fighter at its old index');
+    lobby.place = 'net';
+    lobby.netPeerCharId = 'mizuho';
+    lobby.refreshSelection();
+    check(node('name2').textContent === PLAYABLE[mizuho].name && legacy.onlinePick().charId !== 'mizuho', 'a peer can still deliberately pick a hidden fighter');
+    lobby.place = 'local';
+    restored.setRosterThumb('face');
+    check(!new SelectScreen(PLAYABLE, views, () => {}, () => {}).showsHidden, 'a stale tab saving ordinary selection state cannot overwrite the hidden preference');
+
+    storage.set('mf-challenge-run', JSON.stringify({ stage: 3, charId: 'mizuho', enemyIds: ['mizuho', PUBLIC_ROSTER[0].id], picks: ['burn'], armed: true, newBest: true }));
+    const run = readRun('brawl');
+    check(run?.stage === 3 && run.picks[0] === 'burn' && run.enemies[1] === PUBLIC_ROSTER[0] && !run.enemies[0].hidden && run.enemies[0] !== run.enemies[1] && !run.newBest, 'a legacy run replaces only the hidden foe and retains its deck and stage');
+    legacy.mode = 'challenge';
+    lobby.selected = lobby.selected.slice(0, 2);
+    lobby.who = ['player', 'cpu', 'cpu'];
+    legacy.refresh();
+    node('start').onclick?.();
+    check(started === 0 && node('start').attrs.get('aria-disabled') === 'true' && !legacy.setup().characters[0].hidden, 'a saved hidden lead waits off the select stage when the preference is off');
+    legacy.setShowHidden(true);
+    node('start').onclick?.();
+    check(started === 1 && legacy.setup().characters[0].id === 'mizuho', 're-enabling the setting restores access to the saved run');
+    if (!run) throw Error('missing challenge fixture');
+    install('localStorage', { getItem: (k: string) => storage.get(k) ?? null, setItem() { throw Error('quota'); }, removeItem() { throw Error('blocked'); } });
+    writeRun('brawl', { ...run, stage: 4 });
+    check(readRun('brawl')?.stage === 4, 'a failed challenge save keeps the current stage in this tab');
+    writeRun('brawl', null);
+    check(readRun('brawl') === null, 'a failed removal does not revive the previous challenge');
+    install('localStorage', { getItem: (k: string) => storage.get(k) ?? null, removeItem: (k: string) => storage.delete(k) });
+    writeRun('brawl', null);
   } finally {
     names.forEach((name, i) => {
       const descriptor = originals[i];

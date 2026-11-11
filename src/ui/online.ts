@@ -1,6 +1,6 @@
 /* Online lobby. The select screen shows this panel only while place is 联网. */
 
-import { PLAYABLE, ROSTER_BY_ID } from '../data/characters.ts';
+import { PLAYABLE, PLAYABLE_BY_ID, PUBLIC_ROSTER } from '../data/characters.ts';
 import { NET_BUILD, NET_HASH, cleanCode } from '../net/proto.ts';
 import { acceptAnswer, createGuest, createHost, NetFail, type Link } from '../net/rtc.ts';
 import { MailError, postMail, sleep } from '../net/signal.ts';
@@ -23,9 +23,9 @@ export const CODENAME_ADJS: readonly string[] = [
   '率真的', '神秘的', '直率的', '贪睡的', '爱笑的', '慢热的',
 ];
 
-export const CODENAME_CHARS: readonly string[] = PLAYABLE.map(c => c.name);
+export const CODENAME_CHARS: readonly string[] = PUBLIC_ROSTER.map(c => c.name);
 const ADJ_SET = new Set<string>(CODENAME_ADJS);
-const CHAR_SET = new Set<string>(CODENAME_CHARS);
+const CHAR_SET = new Set(PLAYABLE.map(c => c.name));
 
 export const CODE_SALT = 'mf_codename_salt_v1';
 
@@ -604,7 +604,7 @@ function handshake(link: Link, role: 'host' | 'guest', picked: OnlinePick, board
       syncReadyBtn();
 
       readySendPick = (nextChar: string) => {
-        if (settled || !ROSTER_BY_ID.has(nextChar)) return;
+        if (settled || !PLAYABLE_BY_ID.has(nextChar)) return;
         myChar = nextChar;
         link.sendRel({ t: 'pick', charId: myChar });
       };
@@ -636,7 +636,7 @@ function handshake(link: Link, role: 'host' | 'guest', picked: OnlinePick, board
       if (msg.t === 'bad') { finish(() => reject(new MailError('版本不一致'))); return; }
       if (msg.t === 'leave') { finish(() => reject(new MailError('对手已离开'))); return; }
       if (msg.t === 'pick') {
-        if (typeof msg.charId === 'string' && ROSTER_BY_ID.has(msg.charId)) {
+        if (typeof msg.charId === 'string' && PLAYABLE_BY_ID.has(msg.charId)) {
           peerChar = msg.charId;
           if (inReady) setPeer(peerChar, peerCode);
         }
@@ -657,7 +657,7 @@ function handshake(link: Link, role: 'host' | 'guest', picked: OnlinePick, board
       }
       if (role === 'host' && msg.t === 'hello') {
         const guestChar = msg.charId;
-        if (msg.build !== NET_BUILD || msg.hash !== NET_HASH || typeof guestChar !== 'string' || !ROSTER_BY_ID.has(guestChar)) {
+        if (msg.build !== NET_BUILD || msg.hash !== NET_HASH || typeof guestChar !== 'string' || !PLAYABLE_BY_ID.has(guestChar)) {
           link.sendRel({ t: 'bad' });
           finish(() => reject(new MailError('版本不一致')));
           return;
@@ -677,7 +677,7 @@ function handshake(link: Link, role: 'host' | 'guest', picked: OnlinePick, board
       if (role === 'guest' && msg.t === 'welcome') {
         const hostChar = msg.hostChar;
         const stg = msg.stageId;
-        if (msg.build !== NET_BUILD || msg.hash !== NET_HASH || typeof hostChar !== 'string' || !ROSTER_BY_ID.has(hostChar) || typeof stg !== 'string') {
+        if (msg.build !== NET_BUILD || msg.hash !== NET_HASH || typeof hostChar !== 'string' || !PLAYABLE_BY_ID.has(hostChar) || typeof stg !== 'string') {
           finish(() => reject(new MailError('版本不一致')));
           return;
         }
@@ -694,7 +694,8 @@ function handshake(link: Link, role: 'host' | 'guest', picked: OnlinePick, board
         const hostChar = msg.hostChar;
         const guestChar = msg.guestChar;
         const stg = msg.stageId;
-        if (msg.build !== NET_BUILD || msg.hash !== NET_HASH || typeof hostChar !== 'string' || typeof guestChar !== 'string' || typeof stg !== 'string') {
+        if (msg.build !== NET_BUILD || msg.hash !== NET_HASH || typeof hostChar !== 'string' || !PLAYABLE_BY_ID.has(hostChar)
+          || typeof guestChar !== 'string' || !PLAYABLE_BY_ID.has(guestChar) || typeof stg !== 'string') {
           finish(() => reject(new MailError('版本不一致')));
           return;
         }

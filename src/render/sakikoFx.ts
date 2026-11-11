@@ -885,3 +885,6 @@ export function bloodSparkles(ctx: CanvasRenderingContext2D, p: Projectile): voi
   }
   ctx.restore();
 }
+
+/* Shared with 丰川瑞穗 (mizuhoFx.ts): mother and daughter draw with the same moons, rings and petals. */
+export { crescent, floorRing, simpleSeal, petal as gladiolus, sparkle as moonSparkle };

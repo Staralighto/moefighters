@@ -45,6 +45,7 @@ export interface MatchSetup {
 }
 
 const STATE_KEY = 'mf-select-state';
+const SHOW_HIDDEN_KEY = 'mf-show-hidden';
 const MODES: Mode[] = ['cpu', 'training', 'team', 'challenge'];
 
 /** What carries over between visits: the select screen exactly as it was left. */
@@ -53,7 +54,9 @@ interface SavedSelect {
   difficulty: number;
   /** Challenge sub-mode last looked at; absent in pre-split saves, which read as 无尽激战. */
   challengeKind?: ChallengeKind;
-  selected: number[];
+  selectedIds?: string[];
+  /** Legacy saves used indices into the complete roster. */
+  selected?: number[];
   who: ('player' | 'cpu')[];
   side: number;
   /** Scene the picker points at; 'random' rolls a fresh one on every start. Absent in pre-stage saves. */
@@ -62,6 +65,7 @@ interface SavedSelect {
   grouped?: boolean;
   /** Roster card face. Absent in pre-setting saves reads as the sprite. */
   thumb?: RosterThumb;
+  showHidden?: boolean;
 }
 const KEYS_1P = 'A D 移动 · W / 空格 跳跃 · 长按 S 格挡 · 点按 S 后闪 · J K 轻 / 重击（跳中为空击） · U I O 技能 · L 必杀';
 const KEYS_2P = '玩家二：方向键移动 · 上跳 · 下格挡 · 小键盘 1 / 2 轻重击 · 4 / 5 / 6 技能 · 3 必杀';
@@ -169,7 +173,9 @@ export class SelectScreen {
   challengeKind: ChallengeKind = 'brawl';
   /** Scene picker: 'random' or a STAGES id. Default rolls on every start, like the reference. */
   stageId: string = 'random';
-  private readonly roster: CharacterData[];
+  private roster: CharacterData[];
+  private readonly allRoster: CharacterData[];
+  private readonly publicRoster: CharacterData[];
   private readonly views: Map<string, FighterView>;
   private readonly onStart: (setup: MatchSetup) => void;
   private readonly onPick: (cue?: PickCue) => void;
@@ -207,8 +213,10 @@ export class SelectScreen {
   /** Slow link: the panel backdrop is the 480px preview, behind a 40% shade. */
   liteStage = false;
 
-  constructor(roster: CharacterData[], views: Map<string, FighterView>, onStart: (setup: MatchSetup) => void, onPick: (cue?: PickCue) => void, onShown: (shown: CharacterData[]) => void = () => {}) {
-    this.roster = roster;
+  constructor(allRoster: CharacterData[], views: Map<string, FighterView>, onStart: (setup: MatchSetup) => void, onPick: (cue?: PickCue) => void, onShown: (shown: CharacterData[]) => void = () => {}) {
+    this.allRoster = allRoster;
+    this.publicRoster = allRoster.filter(c => !c.hidden);
+    this.roster = this.publicRoster;
     this.views = views;
     this.onStart = onStart;
     this.onPick = onPick;
@@ -228,9 +236,7 @@ export class SelectScreen {
 
   /** The character this player takes online, and the stage a host would use. */
   onlinePick(): { charId: string; stageId: string } {
-    const slot = this.who.findIndex(w => w === 'player');
-    const index = this.selected[slot < 0 ? 0 : slot];
-    return { charId: this.roster[index].id, stageId: this.resolveStage().id };
+    return { charId: this.roster[this.selected[0]].id, stageId: this.resolveStage().id };
   }
 
   mount(): void {
@@ -275,7 +281,8 @@ export class SelectScreen {
     $('random').onclick = () => {
       if (this.netLocked) { this.onPick('deny'); return; }
       if (this.place === 'net') this.side = 0;
-      this.pick(Math.floor(Math.random() * this.roster.length));
+      const chosen = this.publicRoster[Math.floor(Math.random() * this.publicRoster.length)];
+      this.pick(this.roster.indexOf(chosen));
     };
     // Portrait phones drop the title row; the same shuffle sits on the stage's corner instead.
     $('random-stage').onclick = e => { e.stopPropagation(); $('random').click(); };
@@ -312,6 +319,7 @@ export class SelectScreen {
       this.setRosterThumb(this.thumb === 'face' ? 'sprite' : 'face');
     });
     $('start').onclick = () => {
+      if (!this.showsHidden && this.mode === 'challenge' && readRun(this.challengeKind)?.char.hidden) return;
       this.onPick();
       this.onStart(this.setup());
     };
@@ -348,6 +356,25 @@ export class SelectScreen {
   private grouped = false;
 
   get isGrouped(): boolean { return this.grouped; }
+
+  get showsHidden(): boolean { return this.roster === this.allRoster; }
+
+  setShowHidden(show: boolean): void {
+    if (show === this.showsHidden) return;
+    try { localStorage.setItem(SHOW_HIDDEN_KEY, show ? 'on' : 'off'); } catch { /* private mode */ }
+    const cast = this.selected.map(i => this.roster[i]);
+    this.roster = show ? this.allRoster : this.publicRoster;
+    this.selected = cast.map((c, slot) => this.rosterIndex(c, slot));
+    this.renderRoster();
+    if (!show && cast[0].hidden && this.place === 'net'
+      && (this.netLocked || document.body.classList.contains('net-ready-phase'))) void cancelOnline();
+    this.refresh();
+  }
+
+  private rosterIndex(c: CharacterData | undefined, slot: number): number {
+    const i = c ? this.roster.indexOf(c) : -1;
+    return i >= 0 ? i : slot % this.publicRoster.length;
+  }
 
   /** Roster layout switch from the header settings popover. Re-renders the roster in place;
    *  renderRoster re-attaches the scroll observer to the new nodes. */
@@ -419,6 +446,7 @@ export class SelectScreen {
     this.observer = new IntersectionObserver(entries => {
       for (const e of entries) {
         const i = Number((e.target as HTMLElement).dataset.index);
+        if (this.rosterButtons[i] !== e.target) continue;
         if (!e.isIntersecting) { this.near.delete(i); continue; }
         this.near.add(i);
         this.load(i);
@@ -517,12 +545,14 @@ export class SelectScreen {
   }
 
   private renderRoster(): void {
+    this.flipGen++;
     $('roster').innerHTML = this.rosterHTML();
     this.rosterButtons = [...$('roster').querySelectorAll<HTMLButtonElement>('button.character')];
     this.rosterButtons.forEach((b, i) => {
-      b.onclick = () => this.pick(i);
+      const c = this.roster[i];
+      b.onclick = () => { if (this.rosterButtons[i] === b) this.pick(i); };
       b.onpointerenter = b.onfocus = () => {
-        if (this.thumb === 'face') this.onNeedSprite(this.roster[i]);
+        if (this.thumb === 'face' && this.rosterButtons[i] === b) this.onNeedSprite(c);
       };
     });
     this.rosterCanvases = this.rosterButtons.map(b => b.querySelector('canvas')!);
@@ -581,7 +611,8 @@ export class SelectScreen {
   startLabel(): string {
     const watch = this.mode !== 'training' && this.mode !== 'challenge' && this.controllers().every(c => c === null);
     const run = this.mode === 'challenge' ? readRun(this.challengeKind) : null;
-    const label = watch ? '开始观战'
+    const label = run?.char.hidden && !this.showsHidden ? '开启显示隐藏角色后继续'
+      : watch ? '开始观战'
       : this.mode === 'training' ? '进入训练场'
       : this.mode === 'challenge' ? (run ? `继续挑战 · 第 ${run.stage} 关` : '开始挑战')
       : '准备好了，开打！';
@@ -653,8 +684,14 @@ export class SelectScreen {
   private restore(): void {
     let saved: SavedSelect | null = null;
     try {
+      const hidden = localStorage.getItem(SHOW_HIDDEN_KEY);
+      if (hidden === 'on') this.roster = this.allRoster;
       const raw = localStorage.getItem(STATE_KEY);
       if (raw) saved = JSON.parse(raw) as SavedSelect;
+      if (hidden === null && saved?.showHidden === true) {
+        this.roster = this.allRoster;
+        localStorage.setItem(SHOW_HIDDEN_KEY, 'on');
+      }
     } catch { /* private mode or junk */ }
     if (!saved || typeof saved !== 'object') return;
     // Display prefs do not depend on the match state, so a stale or junk match half cannot wipe them.
@@ -662,6 +699,11 @@ export class SelectScreen {
     this.thumb = parseRosterThumb(saved.thumb);
     // Slots grow to four in team mode; challenge keeps one controller per fielded fighter.
     const need = saved.mode === 'team' ? 4 : 2;
+    const picks = Array.isArray(saved.selectedIds) && saved.selectedIds.length === need
+      ? saved.selectedIds.map(id => this.allRoster.find(c => c.id === id))
+      : Array.isArray(saved.selected) && saved.selected.length === need
+        ? saved.selected.map(i => Number.isInteger(i) ? this.allRoster[i] : undefined)
+        : null;
     const isWho = (w: unknown): w is 'player' | 'cpu' => w === 'player' || w === 'cpu';
     // Absent kind (pre-split save) reads as 无尽激战; a parked 闯关 run pulls the default there too.
     const kind: ChallengeKind = saved.challengeKind === 'climb' || saved.challengeKind === 'brawl'
@@ -670,15 +712,14 @@ export class SelectScreen {
     if (
       !MODES.includes(saved.mode)
       || !Number.isInteger(saved.difficulty) || saved.difficulty < 0 || saved.difficulty > 2
-      || !Array.isArray(saved.selected) || saved.selected.length !== need
-      || !saved.selected.every(i => Number.isInteger(i) && i >= 0 && i < this.roster.length)
+      || !picks
       || !Array.isArray(saved.who) || saved.who.length !== (saved.mode === 'challenge' ? foeCount(kind) + 1 : need)
       || !saved.who.every(isWho)
     ) return;
     this.mode = saved.mode;
     this.difficulty = saved.difficulty;
     this.challengeKind = kind;
-    this.selected = [...saved.selected];
+    this.selected = picks.map((c, slot) => this.rosterIndex(c, slot));
     this.who = saved.mode === 'challenge'
       ? ['player', ...Array.from({ length: foeCount(kind) }, () => 'cpu' as const)]
       : [...saved.who];
@@ -688,7 +729,8 @@ export class SelectScreen {
   }
 
   private save(): void {
-    const saved: SavedSelect = { mode: this.mode, difficulty: this.difficulty, challengeKind: this.challengeKind, selected: this.selected, who: this.who, side: this.side, stageId: this.stageId, grouped: this.grouped, thumb: this.thumb };
+    const selectedIds = this.selected.map(i => this.roster[i].id);
+    const saved: SavedSelect = { mode: this.mode, difficulty: this.difficulty, challengeKind: this.challengeKind, selectedIds, who: this.who, side: this.side, stageId: this.stageId, grouped: this.grouped, thumb: this.thumb };
     try { localStorage.setItem(STATE_KEY, JSON.stringify(saved)); } catch { /* private mode */ }
   }
 
@@ -715,7 +757,7 @@ export class SelectScreen {
       const used = new Set(this.selected);
       const extra: number[] = [];
       for (let i = 0; i < this.roster.length && extra.length < 2; i++) {
-        if (!used.has(i)) { extra.push(i); used.add(i); }
+        if (!this.roster[i].hidden && !used.has(i)) { extra.push(i); used.add(i); }
       }
       while (extra.length < 2) extra.push(this.selected[0]);
       this.selected = [this.selected[0], extra[0], this.selected[1], extra[1]];
@@ -743,10 +785,11 @@ export class SelectScreen {
 
   private pick(index: number): void {
     const card = this.rosterButtons[index];
+    if (!card) return;
     // A waiting run locks the cast: the stage keeps its character until it is fought or abandoned.
     if (this.netLocked || (this.place !== 'net' && this.mode === 'challenge' && readRun(this.challengeKind))) {
       this.onPick('deny');
-      if (card) this.nope(card);
+      this.nope(card);
       return;
     }
     if (this.place === 'net') this.side = 0;
@@ -759,7 +802,7 @@ export class SelectScreen {
       this.save();
       this.onShown(this.cast());
     }
-    if (card) restartClass(card, 'picked', 0, 'card-sheen');
+    restartClass(card, 'picked', 0, 'card-sheen');
   }
 
   /** Refused click: the thing shakes its head instead of doing nothing. */
@@ -830,7 +873,8 @@ export class SelectScreen {
   }
 
   private shown(): SlotView[] {
-    if (this.mode === 'challenge') {
+    const net = this.place === 'net';
+    if (!net && this.mode === 'challenge') {
       if (this.challengeKind === 'climb') {
         return [
           { slot: 0, name: 'name1', tag: 'p1tag', portrait: 'portrait1', facing: 1 },
@@ -843,12 +887,13 @@ export class SelectScreen {
         { slot: 2, name: 'nameE', tag: 'pEtag', portrait: 'portraitE', facing: -1 },
       ];
     }
-    const right: SlotView = { slot: this.mode === 'team' ? 2 : 1, name: 'name2', tag: 'p2tag', portrait: 'portrait2', facing: -1 };
+    const team = !net && this.mode === 'team';
+    const right: SlotView = { slot: team ? 2 : 1, name: 'name2', tag: 'p2tag', portrait: 'portrait2', facing: -1 };
     const slots: SlotView[] = [
       { slot: 0, name: 'name1', tag: 'p1tag', portrait: 'portrait1', facing: 1 },
       right,
     ];
-    if (this.mode === 'team') {
+    if (team) {
       slots.splice(1, 0, { slot: 1, name: 'nameA', tag: 'pAtag', portrait: 'portraitA', facing: 1 });
       slots.push({ slot: 3, name: 'nameE', tag: 'pEtag', portrait: 'portraitE', facing: -1 });
     }
@@ -893,7 +938,7 @@ export class SelectScreen {
     $('preview-ally').hidden = net || !team;
     $('preview-enemy2').hidden = net || !(team || (challenge && this.challengeKind === 'brawl'));
     $('preview-enemy2').dataset.slot = String(team ? 3 : 2);
-    $('preview-right').dataset.slot = String(team ? 2 : 1);
+    $('preview-right').dataset.slot = String(team && !net ? 2 : 1);
     $('control-right').dataset.lead = String(team ? 2 : 1);
     // Challenge fixes the sides: solo player left, the CPU(s) right, nobody toggles a slot.
     document.querySelectorAll<HTMLElement>('.slot-control').forEach(el => { el.hidden = challenge || net; });
@@ -981,6 +1026,7 @@ export class SelectScreen {
       : this.stageId === 'random' ? '默认随机' : '已选 · ' + stage.name;
     $('stage-caption').textContent = this.stageId === 'random' ? '随机场景 · 开打时揭晓' : stage.name;
     $('start').innerHTML = this.startLabel();
+    $('start').setAttribute('aria-disabled', String(!!run?.char.hidden && !this.showsHidden));
     const humans = this.controllers().filter(x => x !== null).length;
     $('select-keys').textContent = net
       ? (isTouch() ? KEYS_TOUCH : KEYS_1P)
@@ -1020,7 +1066,7 @@ export class SelectScreen {
       tag.textContent = net ? '你' : [...new Set(chosen.map(p => this.rosterTag(p)))].join('/');
     }
     const c = this.roster[this.selected[this.side]];
-    const scheme = this.scheme(this.side);
+    const scheme = net ? 0 : this.scheme(this.side);
     $('skill-owner').textContent = (net ? '你' : this.slotMark(this.side)) + ' · ' + c.name + (scheme ? ' · 小键盘' : '');
     $('flavor').textContent = c.title + ' · ' + c.quote;
     $('passive').textContent = c.passive[0] + '：' + c.passive[1];
@@ -1077,7 +1123,7 @@ export class SelectScreen {
   /** Challenge enemy slots read the rolled pair; online slot 1 shows peer's choice when known, or mirrors player's choice; every other slot reads the roster selection. */
   private slotChar(v: SlotView): CharacterData {
     if (this.place === 'net' && v.slot === 1) {
-      return (this.netPeerCharId && this.roster.find(c => c.id === this.netPeerCharId)) || this.roster[this.selected[0]];
+      return (this.netPeerCharId && this.allRoster.find(c => c.id === this.netPeerCharId)) || this.roster[this.selected[0]];
     }
     return this.mode === 'challenge' && v.slot > 0 ? this.challengeEnemies[v.slot - 1] : this.roster[this.selected[v.slot]];
   }

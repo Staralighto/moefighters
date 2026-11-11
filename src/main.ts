@@ -1,4 +1,4 @@
-import { PLAYABLE, ROSTER_BY_ID, guestsFor } from './data/characters.ts';
+import { PLAYABLE, PLAYABLE_BY_ID, guestsFor } from './data/characters.ts';
 import { STAGES } from './data/stages.ts';
 import type { CharacterData, StageData } from './data/types.ts';
 import { FightGame, MINION_BAND } from './game/game.ts';
@@ -165,15 +165,9 @@ const select = new SelectScreen(PLAYABLE, previewViews, setup => {
       // Stage 1 fights the exact foe(s) shown in the select screen's enemy slots; the cast locks
       // the moment it is shown, so refreshing out of the picker cannot reroll it.
       challenge = { kind, stage: 1, char: setup.characters[0], enemies: setup.characters.slice(1), picks: [], armed: false, newBest: false };
-      writeRun(kind, challenge);
     }
     hideEnd();
-    showBuffPicker(challenge.stage, challenge.enemies, previewViews, challenge.picks, cardId => {
-      // The pick joins the deck for good; startChallengeStage writes the run with it armed.
-      challenge!.picks.push(cardId);
-      challenge!.armed = true;
-      startChallengeStage();
-    });
+    openChallengeStage();
     return;
   }
   void startGame(setup);
@@ -218,10 +212,10 @@ mountSegThumbs($('selection'));
 }
 let pendingLink: Link | null = null;
 bindOnline(() => select.onlinePick(), (role, hostChar, guestChar, stageId, link, plan: NetPlan) => {
-  const host = ROSTER_BY_ID.get(hostChar);
-  const guest = ROSTER_BY_ID.get(guestChar);
+  const host = PLAYABLE_BY_ID.get(hostChar);
+  const guest = PLAYABLE_BY_ID.get(guestChar);
   const stage = STAGES.find(s => s.id === stageId);
-  if (!host || !guest || !stage) { link.close(); return; }
+  if (!host || !guest || !stage || (!select.showsHidden && (role === 'host' ? host : guest).hidden)) { link.close(); return; }
   pendingLink = link;
   void startGame({
     characters: [host, guest],
@@ -252,7 +246,7 @@ watchTouch(() => { syncFullscreenLabel(); select.refresh(); });
    the next thing the player was about to see, so it restarts directly. A parked run (stage won,
    next card not picked) stays in storage only — seeding it here would leak challenge state into
    other modes' end screens. The select screen renders a parked run's 继续挑战 entry from storage. */
-const saved = [readRun('brawl'), readRun('climb')].find(r => r?.armed);
+const saved = [readRun('brawl'), readRun('climb')].find(r => r?.armed && (select.showsHidden || !r.char.hidden));
 if (saved) {
   challenge = saved;
   startChallengeStage();
@@ -458,8 +452,25 @@ async function startGame(setup: MatchSetup): Promise<void> {
 /** Build and run the stage the pending challenge currently points at. */
 function startChallengeStage(): void {
   if (!challenge) return;
+  if (!select.showsHidden && challenge.char.hidden) { restBack(); return; }
   writeRun(challenge.kind, challenge);
   void startGame(stageSetup(challenge.kind, challenge.char, challenge.picks, challenge.stage, challenge.enemies, select.resolveStage()));
+}
+
+/** A saved stage with a card already picked resumes directly. */
+function openChallengeStage(): void {
+  const run = challenge;
+  if (!run) return;
+  if (!select.showsHidden && run.char.hidden) { restBack(); return; }
+  if (run.armed) { startChallengeStage(); return; }
+  writeRun(run.kind, run);
+  showBuffPicker(run.stage, run.enemies, previewViews, run.picks, cardId => {
+    if (challenge !== run) return;
+    if (!select.showsHidden && run.char.hidden) { restBack(); return; }
+    run.picks.push(cardId);
+    run.armed = true;
+    startChallengeStage();
+  });
 }
 
 function onFightEnd(title: string, stats: string): void {
@@ -477,7 +488,7 @@ function onFightEnd(title: string, stats: string): void {
   if (game.winnerTeam === 0) {
     // Write the record per stage: a run can end right after this, so nothing waits for the run.
     const prev = readBest(kind);
-    if (stage > prev) {
+    if (!challenge.char.hidden && stage > prev) {
       writeBest(kind, stage);
       challenge.newBest = true;
     }
@@ -571,11 +582,19 @@ function hostTicker(on: boolean): void {
 /** Both sides asked: the same link carries the next match, same picks, counted up. */
 function rematchOnline(seed?: number): void {
   const setup = lastSetup;
+  if (!setup?.online) return;
+  if (hiddenRematch(setup)) { restBack(); return; }
   const match = netEpoch() + 1;
   const wire = keepLink();
-  if (!setup?.online || !wire) return;
+  if (!wire) return;
   pendingLink = wire;
   void startGame({ ...setup, match, lock: setup.lock && seed !== undefined ? { seed } : setup.lock });
+}
+
+function hiddenRematch(setup: MatchSetup): boolean {
+  if (select.showsHidden) return false;
+  const mine = setup.online ? [setup.characters[setup.online === 'host' ? 0 : 1]] : setup.characters;
+  return mine.some(c => c.hidden);
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) netHidden(); });
 // Closing or reloading the tab says bye on the reliable channel, so the other side reads 对手已离开 at once.
@@ -641,16 +660,10 @@ $('rematch').onclick = () => {
   // restarts its own lastSetup. Inside an end screen game is still that fight, so the mode gate
   // is exact; the challenge check only guards the callbacks below.
   if (game?.mode === 'challenge' && challenge) {
-    // Endless run: the button is either 下一关 (won) or 再来一次 (lost); both show the foe(s), then a card.
-    // The cast locks here too, so a refresh out of the picker keeps it.
-    writeRun(challenge.kind, challenge);
-    showBuffPicker(challenge.stage, challenge.enemies, previewViews, challenge.picks, cardId => {
-      challenge!.picks.push(cardId);
-      challenge!.armed = true;
-      startChallengeStage();
-    });
+    openChallengeStage();
     return;
   }
+  if (lastSetup && hiddenRematch(lastSetup)) { restBack(); return; }
   if (game?.netRole) { netRematch(); return; }
   if (lastSetup) void startGame(lastSetup);
 };
@@ -946,6 +959,13 @@ bindPick('set-strip-menu', {
   get: () => stripOn() ? 'on' : 'off',
   set: value => setStripOn(value === 'on'),
 });
+bindPick('set-hidden-menu', {
+  get: () => select.showsHidden ? 'on' : 'off',
+  set: value => {
+    select.setShowHidden(value === 'on');
+    if (!select.showsHidden && challenge?.char.hidden && !$('buff-picker').hidden) restBack();
+  },
+});
 bindPick('set-nocd-menu', {
   get: () => trainPrefs().noCd ? 'on' : 'off',
   set: value => { setTrainPrefs({ noCd: value === 'on' }); select.refresh(); },
@@ -976,7 +996,8 @@ window.addEventListener('focus', () => setMusicSuspended(false));
 document.addEventListener('pointerdown', e => {
   const t = e.target;
   /* Start/rematch spend the tap on fullscreen. Audio unlock here would consume it first, and Chrome then rejects requestFullscreen. */
-  if (t instanceof Element && t.closest('#start, #rematch')) {
+  const start = t instanceof Element ? t.closest('#start:not([aria-disabled="true"]), #rematch') : null;
+  if (start && (start.id !== 'rematch' || !lastSetup || !hiddenRematch(lastSetup))) {
     enterBattleFullscreen();
     return;
   }

@@ -3,7 +3,7 @@
    结算海报的「首次 · 大师」飘带、选人卡底边色条、印章册页面都从这里取数。 */
 
 import { BANDS } from '../data/bands.ts';
-import { PLAYABLE } from '../data/characters.ts';
+import { PLAYABLE_BY_ID, PUBLIC_ROSTER } from '../data/characters.ts';
 import type { CharacterData } from '../data/types.ts';
 import type { FightGame } from '../game/game.ts';
 import { humanTeam, type MatchReport } from '../game/report.ts';
@@ -12,6 +12,7 @@ import { assignFirst, loadImage } from '../assets/loader.ts';
 // v1 记的是玩家使用的角色，无法还原对手；保留原数据，不混入击败记录。
 const KEY = 'mf.stamps.v2';
 const STRIP_KEY = 'mf.stampStrip';
+const STAMP_IDS = new Set(PUBLIC_ROSTER.map(c => c.id));
 export const STAMP_NAMES = ['轻松', '标准', '大师'] as const;
 
 export interface Stamp { d: number; rank?: string }
@@ -28,6 +29,7 @@ export function readStamps(): Book {
     const raw = JSON.parse(stored ?? '{}') as unknown;
     if (raw && typeof raw === 'object') {
       for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+        if (!PLAYABLE_BY_ID.has(id)) continue;
         const d = (v as Stamp | null)?.d;
         if (Number.isInteger(d) && d! >= 0 && d! <= 2) book[id] = { d: d!, rank: typeof (v as Stamp).rank === 'string' ? (v as Stamp).rank : undefined };
       }
@@ -40,11 +42,12 @@ export function readStamps(): Book {
 
 /** 击败该角色的最高人机难度，没有为 -1。 */
 export function stampOf(id: string): number {
-  return readStamps()[id]?.d ?? -1;
+  return STAMP_IDS.has(id) ? (readStamps()[id]?.d ?? -1) : -1;
 }
 
 /** 记录被击败的角色。返回这次是否刷新了击败该角色的最高难度。 */
 export function recordClear(id: string, d: number, rank: string): boolean {
+  if (!STAMP_IDS.has(id)) return false;
   const book = readStamps();
   const prev = book[id];
   const first = !prev || d > prev.d;
@@ -113,7 +116,7 @@ export function setStampLayout(v: StampLayout): void {
 /** 名册按乐队顺序排好；直接排开和分组都用这个顺序，两种排法里角色位置一致。 */
 function groups(): { key: string; name: string; color?: string; members: CharacterData[] }[] {
   const map = new Map<string, CharacterData[]>();
-  for (const c of PLAYABLE) {
+  for (const c of PUBLIC_ROSTER) {
     const key = c.bands?.[0] ?? 'none';
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(c);
@@ -125,7 +128,7 @@ function groups(): { key: string; name: string; color?: string; members: Charact
 }
 
 function counts(book: Book): [number, number, number] {
-  const n = (d: number) => PLAYABLE.filter(c => (book[c.id]?.d ?? -1) >= d).length;
+  const n = (d: number) => PUBLIC_ROSTER.filter(c => (book[c.id]?.d ?? -1) >= d).length;
   return [n(2), n(1), n(0)];
 }
 
@@ -142,7 +145,7 @@ export function renderStampBook(host: HTMLElement, layout: StampLayout = stampLa
       </figure>`;
   };
   let html = `<div class="sb-total">
-      <span class="sb-count" data-d="2"><b>${gold}</b> / ${PLAYABLE.length}<em>金章</em></span>
+      <span class="sb-count" data-d="2"><b>${gold}</b> / ${PUBLIC_ROSTER.length}<em>金章</em></span>
       <span class="sb-count" data-d="1"><b>${pink}</b><em>粉章及以上</em></span>
       <span class="sb-count" data-d="0"><b>${any}</b><em>已盖章</em></span>
     </div>`;

@@ -2009,6 +2009,56 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    // 丰川瑞穗 (game/mizuho.ts, render/mizuhoFx.ts): 祥子的母亲。招式全取自女儿那一套，再做成温柔的那一面。
+    id: 'mizuho', name: '丰川瑞穗', title: '母亲 / 守望', quote: '小祥，妈妈一直看着你哦。', color: '#A9BEE8',
+    hidden: true,
+    ...stats('focus'),
+    hp: 900,
+    passive: ['还想再看看你', '每局一次，被击倒的那一击只会留下 1 点体力，随后在柔光中恢复 30% 体力并推开近身；飞行道具速度提高 15%'],
+    // 礼仪是她教的：J / K 留下和祥子一样的银月。
+    aura: { swing: 'saki-swing' },
+    view: {
+      kind: 'sprite', common: '/sprites/mizuho/common.png', special: '/sprites/mizuho/special.png', height: 181,
+      extras: ['/sprites/sakiko/shiro.png', '/sprites/mizuho/doll.png'],
+    },
+    skills: [
+      skill(0, 'light', '摸摸头', { brief: '轻击；命中可接 J / K', detail: '轻击；命中可接 J / K' }),
+      skill(1, 'heavy', '拂袖', { brief: '重击；击退，轻击后可接', detail: '重击；击退，轻击后可接' }),
+      // 再抱一会儿（《小祥猫的时候》：「她只想和妈妈多抱一会儿」）
+      skill(2, 'grab', '再抱一会儿', {
+        damage: 14, count: 4, range: 100, start: .24, duration: 1.75, cd: 8, knock: 0, fx: 'mizuho-hug',
+        react: { kind: 'pin', stun: .3, holdStill: true },
+        finale: { damage: 22, knock: 300, react: { kind: 'stand', stun: .45 } },
+        brief: '抓投：抱住连打并回复自身，末段推开；跳起可躲',
+        detail: '抱住身前对手四段共 64 伤害，每段回复自身 12 体力，末段推开；跳起或后撤可躲',
+      }),
+      // 留给你的人偶（祥子珍藏的西洋人偶是她的遗物）
+      skill(3, 'endure', '留给你的人偶', {
+        damage: 52, range: 150, start: .7, duration: 1.2, cd: 9, knock: 340, fx: 'mizuho-doll',
+        react: { kind: 'knockdown', vy: -300, knocked: .8 },
+        brief: '举起人偶反击近战，未触发反击则回复 40 体力',
+        detail: '举起人偶 0.7 秒，期间近战打来由人偶代受，并放出光环 52 伤害击倒周围对手；架势结束时若未触发反击，回复 40 体力；飞行道具照常命中',
+      }),
+      // 妈妈的小祥（忘却之影丢下的白祥，会跑回妈妈身边）
+      skill(4, 'projectile', '妈妈的小祥', {
+        damage: 36, speed: 560, size: 70, life: 1.15, start: .3, duration: .62, cd: 7, knock: 200, fx: 'mizuho-shiro',
+        frail: 4, frailBonus: .2, react: { kind: 'stand', stun: .4 },
+        brief: '白祥的幻影贴地奔出；打实后脆弱，跳起可躲',
+        detail: '白祥的幻影贴地向前奔出 36 伤害，打实后脆弱 4 秒（受伤 +20%）；可格挡，跳起可躲',
+      }),
+      // 化作星星（「人死后会变成星星」；收尾两轮月是《ふたつの月》）
+      skill(5, 'projectile', '化作星星', {
+        damage: 30, count: 9, interval: .17, speed: 660, size: 110, start: .5, duration: 2.3, life: 1.6,
+        knock: 60, gain: 0, fx: 'mizuho-star', holdEndure: true, solid: false,
+        react: { kind: 'stand', stun: .3 },
+        guardPlan: [6, 10, 14, 18, 24, 30, 34, 38, 42],
+        finale: { damage: 70, knock: 360, react: { kind: 'knockdown', vy: -320, knocked: .8 } },
+        brief: '祈祷霸体；九颗星星落向对手所在位置，末星击倒',
+        detail: '合十祈祷 1.8 秒，期间霸体；九颗星星从天而降落向对手所在位置，前八颗各 30 伤害，末星 70 伤害并击倒',
+      }),
+    ],
+  },
+  {
     id: 'viola', name: '薇欧拉', title: '队长 / 恶德', quote: '火种燃尽之后会怎么样呢？', color: '#8E5AC8',
     ...stats('armor'),
     view: {
@@ -2088,10 +2138,12 @@ export const ROSTER: CharacterData[] = [
 /** Select screen. playable: false holds the headless dummies (gale, ember, boulder) out;
  *  everyone else plays, band or not (薇欧拉 has no band). */
 export const PLAYABLE = ROSTER.filter(c => c.playable !== false);
+export const PLAYABLE_BY_ID = new Map(PLAYABLE.map(c => [c.id, c]));
+export const PUBLIC_ROSTER = PLAYABLE.filter(c => !c.hidden);
 
 /** Roster members of a band, in roster order. `except` drops the caller from her own call (诗超绊). */
 export function bandMembers(band: BandId, except?: string): CharacterData[] {
-  return ROSTER.filter(c => c.bands?.includes(band) && c.id !== except);
+  return PUBLIC_ROSTER.filter(c => c.bands?.includes(band) && c.id !== except);
 }
 
 export const ROSTER_BY_ID = new Map(ROSTER.map(c => [c.id, c]));

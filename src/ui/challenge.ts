@@ -1,5 +1,5 @@
 import type { CharacterData, StageData } from '../data/types.ts';
-import { PLAYABLE } from '../data/characters.ts';
+import { PLAYABLE_BY_ID, PUBLIC_ROSTER } from '../data/characters.ts';
 import type { ChallengeMods } from '../game/game.ts';
 import { COMBO_DECAY, COMBO_ESCAPE } from '../game/constants.ts';
 import { previewFighter } from '../game/fighter.ts';
@@ -51,6 +51,7 @@ const CAP: Record<string, number> = Object.fromEntries(POOL.map(c => [c.id, c.ca
 const BEST_MAX_AGE = 31536000; // one year
 /** 无尽激战 keeps the legacy keys, so pre-split saves and records land there untouched. */
 const RUN_KEYS: Record<ChallengeKind, string> = { climb: 'mf-challenge-run-climb', brawl: 'mf-challenge-run' };
+const unsavedRuns = new Map<ChallengeKind, string | null>();
 const BEST_KEYS: Record<ChallengeKind, string> = { climb: 'mf-challenge-best-climb', brawl: 'mf-challenge-best' };
 
 /** The two challenge sub-modes: 无尽闯关 is a plain 1v1, 无尽激战 is the 1v2 with opening buffs. */
@@ -72,43 +73,51 @@ export interface ChallengeRun {
   newBest: boolean;
 }
 
-function charById(id: string): CharacterData | undefined {
-  return PLAYABLE.find(c => c.id === id);
-}
-
 /** The saved run of this sub-mode with characters resolved, or null when none is stored or the format is unknown. */
 export function readRun(kind: ChallengeKind): ChallengeRun | null {
   try {
-    const raw = localStorage.getItem(RUN_KEYS[kind]);
+    const raw = unsavedRuns.has(kind) ? unsavedRuns.get(kind) : localStorage.getItem(RUN_KEYS[kind]);
     if (!raw) return null;
     const want = foeCount(kind);
     const s = JSON.parse(raw) as { stage: unknown; charId: unknown; enemyIds: unknown; picks: unknown; armed: unknown; newBest: unknown };
     const ok = typeof s.stage === 'number' && Number.isInteger(s.stage) && s.stage >= 1
-      && typeof s.charId === 'string' && !!charById(s.charId)
-      && Array.isArray(s.enemyIds) && s.enemyIds.length === want && s.enemyIds.every(id => typeof id === 'string' && !!charById(id))
+      && typeof s.charId === 'string' && PLAYABLE_BY_ID.has(s.charId)
+      && Array.isArray(s.enemyIds) && s.enemyIds.length === want && s.enemyIds.every(id => typeof id === 'string' && PLAYABLE_BY_ID.has(id))
       && Array.isArray(s.picks) && s.picks.every(id => typeof id === 'string' && POOL.some(c => c.id === id))
       && typeof s.armed === 'boolean'
       && typeof s.newBest === 'boolean';
     if (!ok) return null;
+    const char = PLAYABLE_BY_ID.get(s.charId as string)!;
+    const enemies = (s.enemyIds as string[]).map(id => PLAYABLE_BY_ID.get(id)!);
+    // Keep the deck and stage of older runs whose random draw included a now-hidden foe.
+    const used = new Set(enemies.map(c => c.id));
+    for (const [i, c] of enemies.entries()) {
+      if (!c.hidden) continue;
+      const replacement = PUBLIC_ROSTER.find(o => !used.has(o.id));
+      if (!replacement) return null;
+      enemies[i] = replacement;
+      used.add(replacement.id);
+    }
     return {
       kind,
       stage: s.stage as number,
-      char: charById(s.charId as string)!,
-      enemies: (s.enemyIds as string[]).map(id => charById(id)!),
+      char,
+      enemies,
       picks: s.picks as string[],
       armed: s.armed as boolean,
-      newBest: s.newBest as boolean,
+      newBest: !char.hidden && s.newBest === true,
     };
   } catch { return null; }
 }
 
 /** Written whenever a stage starts or is won; null clears that sub-mode's run (player left, or lost the stage). */
 export function writeRun(kind: ChallengeKind, run: ChallengeRun | null): void {
+  const raw = run && JSON.stringify({ stage: run.stage, charId: run.char.id, enemyIds: run.enemies.map(e => e.id), picks: run.picks, armed: run.armed, newBest: run.newBest });
   try {
-    if (!run) { localStorage.removeItem(RUN_KEYS[kind]); return; }
-    const s = { stage: run.stage, charId: run.char.id, enemyIds: run.enemies.map(e => e.id), picks: run.picks, armed: run.armed, newBest: run.newBest };
-    localStorage.setItem(RUN_KEYS[kind], JSON.stringify(s));
-  } catch { /* private mode */ }
+    if (raw === null) localStorage.removeItem(RUN_KEYS[kind]);
+    else localStorage.setItem(RUN_KEYS[kind], raw);
+    unsavedRuns.delete(kind);
+  } catch { unsavedRuns.set(kind, raw); }
 }
 
 /** Highest stage ever cleared in this sub-mode, kept in a cookie. Private mode or a cleared jar just reads as 0. */
@@ -129,9 +138,9 @@ export function bestLabel(best: number): string { return best >= 100 ? '99+' : S
 
 /** `count` distinct random opponents from the finished roster, rerolled every stage. */
 export function rollEnemies(count = 2): CharacterData[] {
-  const bag = PLAYABLE.map(c => c.id);
+  const bag = [...PUBLIC_ROSTER];
   const out: CharacterData[] = [];
-  while (out.length < count && bag.length) out.push(charById(bag.splice(Math.floor(Math.random() * bag.length), 1)[0])!);
+  while (out.length < count && bag.length) out.push(...bag.splice(Math.floor(Math.random() * bag.length), 1));
   return out;
 }
 

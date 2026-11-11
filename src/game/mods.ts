@@ -35,7 +35,9 @@ export type ModKind =
   /** 铁壁微笑: on her, v the veins so far (game/chisato.ts). */
   | 'smile'
   /** 有必要说教一下呢: on whoever is being lectured; left counts down to the 花丸 (render/clips.ts lectureSquash). */
-  | 'lecture';
+  | 'lecture'
+  /** 还想再看看你: on 丰川瑞穗, v 0 while the wish is still unspent, 1 after (game/mizuho.ts). */
+  | 'wish';
 
 /**
  * One running buff.

@@ -538,6 +538,16 @@
         <button type="button" role="option" data-value="off" aria-selected="false">隐藏</button>
       </div>
     </div>
+    <div class="setting-row">
+      <b id="set-hidden">显示隐藏角色</b>
+      <button type="button" class="pick-btn" popovertarget="set-hidden-menu" aria-haspopup="listbox" aria-expanded="false" aria-controls="set-hidden-menu" aria-labelledby="set-hidden set-hidden-value">
+        <span class="pick-value" id="set-hidden-value">关</span>
+      </button>
+      <div id="set-hidden-menu" class="pick-menu" popover role="listbox" aria-labelledby="set-hidden">
+        <button type="button" role="option" data-value="on" aria-selected="false">开</button>
+        <button type="button" role="option" data-value="off" aria-selected="true">关</button>
+      </div>
+    </div>
   </section>
   <section class="setting-group">
     <h3 class="setting-title">训练场</h3>

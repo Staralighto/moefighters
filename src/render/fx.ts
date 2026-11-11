@@ -16,6 +16,7 @@ import { drawTaeFx, drawTaeShot } from './taeFx.ts';
 import { drawLisaFx, drawLisaShot } from './lisaFx.ts';
 import { drawHimariFx, drawHimariShot } from './himariFx.ts';
 import { drawChisatoFx, drawChisatoShot } from './chisatoFx.ts';
+import { drawMizuhoFx, drawMizuhoShot } from './mizuhoFx.ts';
 import { drawStatusEffect } from './statusMarks.ts';
 import { isLiteFx, liteFx } from './fxQuality.ts';
 import { drawShizukuFx, drawShizukuShot } from './shizukuFx.ts';
@@ -198,6 +199,15 @@ const MORTIS_H = 181;
 
 /* Drop the pose-sheet chrome and the chroma key so a placeholder can sit in the fight. */
 const cutCache = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
+
+/** 丰川瑞穗's picture lookup (mizuhoFx.ts), one closure per image cache instead of one per effect per frame. */
+const mizuhoArts = new WeakMap<ImageCache, (src: string) => CanvasImageSource | null>();
+function mizuhoArt(images?: ImageCache): ((src: string) => CanvasImageSource | null) | undefined {
+  if (!images) return undefined;
+  let f = mizuhoArts.get(images);
+  if (!f) mizuhoArts.set(images, f = src => { const im = images.get(src); return im?.naturalWidth ? keyed(im) : null; });
+  return f;
+}
 
 function keyed(im: HTMLImageElement): CanvasImageSource {
   const hit = cutCache.get(im);
@@ -1002,6 +1012,7 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
   if (drawHimariFx(ctx, e, liteFx, images)) return;
   // 白鹭千圣 too.
   if (drawChisatoFx(ctx, e, liteFx, images)) return;
+  if (e.type.startsWith('mizuho-') && drawMizuhoFx(ctx, e, liteFx, mizuhoArt(images))) return;
   // 异常: `<mark>@apply` / `<mark>@expire`, drawn by the status table.
   if (drawStatusEffect(ctx, e)) return;
   // 四宫宁月's accidents keep their own module too.
@@ -6171,6 +6182,10 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   if (drawLisaShot(ctx, p, liteFx, images)) return;
   if (drawHimariShot(ctx, p, liteFx)) return;
   if (drawChisatoShot(ctx, p, images)) return;
+  if (p.fx.startsWith('mizuho-')) {
+    const im = p.fx === 'mizuho-shiro' ? images?.get(SHIRO_SRC) : undefined;
+    if (drawMizuhoShot(ctx, p, liteFx, im?.naturalWidth ? keyed(im) : null)) return;
+  }
   ctx.save();
   // 火的故事: the arrow art rides ten pixels above its flight band so the flame head reads on the body.
   if (p.fx === 'fuga') ctx.translate(0, -10);
