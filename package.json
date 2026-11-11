@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "check": "node --experimental-strip-types scripts/selfcheck.ts",
     "check:adaptation": "node scripts/adaptation-e2e.mjs",
+    "sprite:align": "node --experimental-strip-types scripts/repack-common.ts",
     "sheets": "node --experimental-strip-types scripts/write-sheets.ts"
   },
   "devDependencies": {

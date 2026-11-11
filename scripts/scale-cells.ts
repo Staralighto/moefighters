@@ -5,7 +5,7 @@ import { decodePng, encodePng, ink, CELL } from './align-down.ts';
 /* Scales the subject in every cell of a finished sheet by one factor, anchored at each cell's
    ink bounding-box bottom-centre, so the feet stay planted and the head clears the cell top.
    Nearest-neighbour sampling keeps pixel art crisp. Preview only: writes <base>.scaled.png
-   next to the source and never touches the original. Run align-feet on the preview after. */
+   next to the source. If the preview needs alignment, use npm run sprite:align. */
 
 function scaleFile(src: string, factor: number): void {
   const abs = resolve(src);

@@ -905,6 +905,26 @@ export const HIMARI_FRIENDS: readonly HimariFriend[] = [
   { name: '兰', color: '#EE0022', height: 181 },
 ];
 
+/** 这张必火: the lunge, the arm round their shoulders until the flash, the look at the phone. Shared by game/toko.ts and the cell pick. */
+export const TOKO_SELFIE = { lunge: 0, held: 1, done: 2 } as const;
+export const TOKO_SELFIE_LUNGE = .3;
+export const TOKO_SELFIE_SNAP = .22;
+export const TOKO_SELFIE_TAIL = .3;
+/** 师父示范一下: seconds after her own muddy note that 纱夜 steps in (TOKO_MASTER_IN) and looses the arrow (TOKO_MASTER_AT);
+ *  the strum cell holds TOKO_STRUM. 纱夜 is the U column of her own special sheet. */
+export const TOKO_MASTER_IN = .25;
+export const TOKO_MASTER_AT = .45;
+export const TOKO_STRUM = .3;
+export const TOKO_MASTER_SRC = '/sprites/sayo/special.png';
+export const TOKO_MASTER_HEIGHT = 199;
+/** 天上天下 本小姐独尊: the pillar from the sky, three waves along the floor, the five colours together, and when she turns away. */
+export const TOKO_SOLO_SKY = .6;
+export const TOKO_SOLO_WAVES = [.9, 1.08, 1.26] as const;
+export const TOKO_SOLO_FINAL = 1.7;
+export const TOKO_SOLO_TURN = 1.95;
+/** The five of Morfonica in line-up order (真白 / 透子 / 七深 / 筑紫 / 瑠唯): the colours the one spotlight splits into. */
+export const TOKO_FIVE = ['#6677CC', '#EE6666', '#EE7744', '#EE7788', '#669988'] as const;
+
 /** 白鹭千圣. 这明明是狗: the doodle hops this many times a second along the floor, this high at the top of a hop. */
 export const CHISATO_HOPS = 2.6;
 export const CHISATO_HOP = 54;
@@ -1190,6 +1210,26 @@ export function clipFor(f: Fighter): Clip {
       const a = f.attack, s = a.skill;
       if (a.mode === LISA_COOKIE.tea) return at('special', a.index - 2, 2);
       return at('special', a.index - 2, a.t < s.start ? 0 : a.t < s.start + LISA_TOSS ? 1 : 2);
+    }
+    // 这张必火: the run with a hand out; the arm round them, phone up; looking at the phone.
+    if (f.attack.skill.fx === 'toko-selfie') {
+      const a = f.attack, mode = a.mode ?? TOKO_SELFIE.lunge;
+      return at('special', a.index - 2, mode === TOKO_SELFIE.lunge ? 0 : mode === TOKO_SELFIE.held ? 1 : 2);
+    }
+    // 师父示范一下: the air-guitar stance; the big strum; looking back over her shoulder at 纱夜.
+    if (f.attack.skill.fx === 'toko-mud') {
+      const a = f.attack, s = a.skill;
+      return at('special', a.index - 2, a.t < s.start ? 0 : a.t < s.start + TOKO_STRUM ? 1 : 2);
+    }
+    // 笑到你破防: the breath in; pointing and laughing; wiping a tear.
+    if (f.attack.skill.fx === 'toko-laugh') {
+      const a = f.attack, s = a.skill;
+      return at('special', a.index - 2, a.t < s.start ? 0 : a.t < s.duration - .2 ? 1 : 2);
+    }
+    // 天上天下 本小姐独尊: hands on hips; one hand to the sky and one to the floor through every light; the hair flip.
+    if (f.attack.skill.fx === 'toko-solo') {
+      const a = f.attack;
+      return at('special', a.index - 2, a.t < TOKO_SOLO_SKY - .2 ? 0 : a.t < TOKO_SOLO_TURN ? 1 : 2);
     }
     // 摇匀一杯摩卡: hands out on the lunge; the grip through the shaking; the brush-off after.
     if (f.attack.skill.fx === 'himari-shake') {

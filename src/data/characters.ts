@@ -1453,6 +1453,54 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'toko', name: '桐谷透子', title: '吉他 / 辣妹', quote: '放到地球规模来看，这点事只是微米啦！', color: '#EE6666',
+    bands: ['morfonica'],
+    ...stats('rush'),
+    view: {
+      kind: 'sprite', common: '/sprites/toko/common.png', special: '/sprites/toko/special.png', height: 181, lift: 5,
+      // 师父示范一下: 纱夜 steps in off her own sheet with her own arrow, so both are preloaded here.
+      extras: ['/sprites/sayo/special.png', '/sprites/sayo/arrow.png'],
+    },
+    // 桐谷透子（萌娘百科）: Morfonica 的吉他，学校和 SNS 上的万人迷辣妹，老字号和服店千金；因为吉他最显眼才选的吉他，
+    // 起步弹得糊，拜了纱夜为师。全部空手（I 是空气吉他）；相框、糊音、「哈」和聚光灯由代码画（tokoFx.ts）。
+    skills: [
+      // 超顺手 / 超用力 (萌娘百科: 说话时偶尔会加上「超」来强调语气).
+      skill(0, 'light', '超顺手'),
+      skill(1, 'heavy', '超用力'),
+      // 这张必火 (toko.ts, B 站「乐队辣妹」/ 走到哪自拍到哪): a lunge, an arm round their shoulders, the phone up, one flash.
+      skill(2, 'grab', '这张必火', {
+        damage: 45, range: 70, speed: 560, start: .14, duration: .95, cd: 7, fx: 'toko-selfie', knock: 60,
+        root: .6, react: { kind: 'stand', stun: .3 },
+        brief: '前冲搂肩自拍，闪光定身；命中后自己增伤',
+        detail: '前冲抓取，搂住对手自拍：45 伤害并定身 0.6 秒；命中后自己造成的伤害提高 15% 持续 4 秒',
+      }),
+      // 师父示范一下 (toko.ts, B 站「邦邦前三菜的吉他」+ 纱夜师徒): her own muddy note, then 纱夜 behind her with the real arrow.
+      skill(3, 'projectile', '师父示范一下', {
+        damage: 8, speed: 220, size: 52, life: .8, start: .28, duration: 1.05, cd: 8, knock: 0, fx: 'toko-mud',
+        slow: 1.5, slowMul: .6, slowOnBlock: true, slowMark: 'toko-mud',
+        brief: '糊音被挡仍减速；纱夜随后补一发音矢',
+        detail: '空气吉他弹出一颗慢速糊音，8 伤害并减速 1.5 秒，移动降至 60%，被格挡也减速；随后纱夜现身射出一发笔直音矢，30 伤害，可格挡，跳起可躲',
+      }),
+      // 笑到你破防 (toko.ts, B 站「正在嘲笑你的辣妹」): pointing and laughing; whoever it reaches takes more from everything.
+      skill(4, 'light', '笑到你破防', {
+        damage: 10, range: 300, start: .3, duration: .75, cd: 6, knock: 40, fx: 'toko-laugh',
+        frail: 4, frailBonus: .25, react: { kind: 'stand', stun: .25 },
+        brief: '指着大笑，身前对手脆弱；可挡可跳',
+        detail: '指着对手大笑，身前较长距离 10 伤害并脆弱 4 秒（受伤 +25%）；可格挡，跳起可躲',
+      }),
+      // 天上天下 本小姐独尊 (toko.ts, 官方二つ名「天上天下あたし独尊」): one hand to the sky, one to the floor; at the
+      // end the one light is five (从「只有本小姐」到五个人的声音).
+      skill(5, 'endure', '天上天下 本小姐独尊', {
+        cost: 120, damage: 20, range: 460, start: .6, duration: 2.2, knock: 30, gain: 2, fx: 'toko-solo', holdEndure: true,
+        guardPlan: [8, 12, 22, 66, 75],
+        react: { kind: 'stand', stun: .4 },
+        finale: { damage: 60, knock: 420, react: { kind: 'knockdown', vy: -300, knocked: .9 } },
+        brief: '天降光柱接贴地光浪，五色光击倒；光浪可跳',
+        detail: '霸体，一道光柱从天而降 20 伤害，三道贴地光浪各 20 伤害，跳起可躲；最后五色光 60 伤害并击倒',
+      }),
+    ],
+  },
+  {
     id: 'tsukushi', name: '二叶筑紫', title: '鼓手 / 班长', quote: '以成为坚定可靠的人为目标。', color: '#EE7788',
     bands: ['morfonica'],
     ...stats('beat'),

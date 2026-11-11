@@ -680,6 +680,27 @@ function applyCalorie(ctx: CanvasRenderingContext2D, e: Effect, age: number): vo
   ctx.restore();
 }
 
+/* 桐谷透子 (game/toko.ts): 'toko-mud' (减速 from 师父示范一下's own note): the muddy sound stuck to their feet — a grey-brown
+   puddle that wobbles, and a few slow drips coming off the legs. */
+const MUD_TONES = ['#8a7a6a', '#5d5148', '#b3a596'];
+function auraMud(ctx: CanvasRenderingContext2D, f: Fighter, left: number, t: number): void {
+  const h = bodyH(f);
+  const fade = Math.min(1, left / .25);
+  ctx.save();
+  ctx.globalAlpha = fade * .7;
+  ctx.fillStyle = MUD_TONES[1];
+  ctx.beginPath(); ctx.ellipse(f.x, f.y - 2, 38 + Math.sin(t * 5) * 4, 7 + Math.sin(t * 7) * 1.2, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = MUD_TONES[0];
+  ctx.beginPath(); ctx.ellipse(f.x - 4, f.y - 3, 24 + Math.sin(t * 6 + 1) * 3, 4.5, 0, 0, TAU); ctx.fill();
+  for (let i = 0, m = n(5); i < m; i++) {
+    const k = cycle(t, .8, i, 95);
+    ctx.globalAlpha = fade * Math.sin(k * Math.PI) * .85;
+    ctx.fillStyle = MUD_TONES[i % 3];
+    dot(ctx, f.x + (hash(i, 96) - .5) * 44, f.y - h * .32 * (1 - k) - 4, 3.5 - k * 1.5);
+  }
+  ctx.restore();
+}
+
 /* 'chisato-doodle' (混乱 from 这明明是狗): crayon question marks over the head and a tiny 珍妮弗 trotting round them
    (「！？」 on 丸山彩). Drawn in chisatoFx.ts with the rest of the crayon. */
 function auraDoodle(ctx: CanvasRenderingContext2D, f: Fighter, _left: number, t: number, images?: ImageCache): void {
@@ -703,6 +724,7 @@ export const STATUS_MARKS: Record<string, MarkDrawer> = {
   'himari-shake': { aura: auraShake, apply: applyShake },
   'himari-awkward': { aura: auraAwkward, apply: applyAwkward, expire: expireAwkward, body: STONE_BODY },
   'himari-calorie': { aura: auraCalorie, apply: applyCalorie },
+  'toko-mud': { aura: auraMud },
   'chisato-doodle': { aura: auraDoodle, apply: applyDoodle },
 };
 

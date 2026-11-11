@@ -3,7 +3,8 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CELL, FOOT, TARGET, archiveDest, decodePng, encodePng, ink, type Image, type Shift } from './align-down.ts';
 
-/* Per-cell foot line. Each listed cell slides on its own so its lowest ink pixel lands on
+/* Legacy per-cell repair. Standard sprite alignment uses npm run sprite:align.
+   Each listed cell slides on its own so its lowest ink pixel lands on
    y=243. A common sheet's default list is every cell with a foot on the ground: all 24
    except jump (6), knockdown (10), KO and the six aerials (17–23), and the empty cell.
    Any other sheet needs --cells.

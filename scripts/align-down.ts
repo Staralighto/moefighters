@@ -4,7 +4,8 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { crc32, deflateSync, inflateSync } from 'node:zlib';
 
-/* Shifts the knockdown and KO cells so the body sits on the shared foot line.
+/* Legacy knockdown and KO repair. Standard sprite alignment uses npm run sprite:align.
+   Shifts the knockdown and KO cells so the body sits on the shared foot line.
    Writes a sibling preview. --accept moves the original into 素材/archive and renames the preview.
    ponytail: RGBA-8 sheets only. Anything else throws instead of guessing a color type. */
 

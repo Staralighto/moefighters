@@ -6,7 +6,8 @@ import {
   type Image,
 } from './align-down.ts';
 
-/* Slides a whole common sheet so idle, the four walks and block share the foot line.
+/* Legacy whole-sheet shift. Standard sprite alignment uses npm run sprite:align.
+   Slides a whole common sheet so idle, the four walks and block share the foot line.
    Jumps and knockdowns keep their offset from those feet. Writes a sibling preview.
    ponytail: one vertical shift. Outliers inside the sheet stay outliers. */
 

@@ -3,6 +3,7 @@ import { FightGame, type GameOptions } from '../src/game/game.ts';
 import { dreadMul } from '../src/game/combat.ts';
 import { heartTier, YOMOGI_BODY, FILLS, METEOR, BURROW, WARREN, CHISATO_LECTURE_SPAN, lectureSquash } from '../src/render/clips.ts';
 import { drawHeartBack, drawHeartFront, drawYomogiFx } from '../src/render/yomogiFx.ts';
+import { drawTokoFx, drawTokoSoloLight } from '../src/render/tokoFx.ts';
 import { BUSHIDO_CREEP, BUSHIDO_LUNGE, BUSHIDO_SPAN, VEIL_NORMAL, VEIL_SHOT, clockRings, drumShotTime, escapePulse, hit, holdNoteSpan, outshines, violetHidden, withGuard } from '../src/game/combat.ts';
 import { FLIGHT_HOP, vowBeatTime, VOW_BEATS, PRACTICE_GAP1, PRACTICE_HITS, practiceBeat, practiceGap, practiceRow, practiceStrums, FAMILY_MEMBERS, familyLife, PUFF_STOP, PLAY, PLAY_BYE, PLAY_DRAW, PLAY_FIGURES, PLAY_HOUSE, PLAY_PASS, PLAY_SLASHES, RARE_TIME, EAR, WIDE, WIDE_DROPS, WIDE_POP } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
@@ -173,11 +174,11 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const breaksAt: Record<string, number> = {
     nyamu: 4, sakiko: 10, anon: 5, rana: 10, soyo: 3, kokoro: 3, miyako: 5,
-    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5,
+    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5, toko: 4,
   };
   const segments: Record<string, number> = {
     nyamu: 4, sakiko: 16, anon: 6, rana: 22, soyo: 3, kokoro: 3, miyako: 6,
-    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7,
+    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7, toko: 5,
   };
   for (const [id, breakAt] of Object.entries(breaksAt)) {
     const s = ROSTER[at(id)].skills[5];
@@ -9486,6 +9487,169 @@ for (const order of [[2, 3], [3, 2]]) {
   assert.ok(plain.down && plain.dmg > 110, 'the answers knock down through a guard: ' + plain.dmg.toFixed(1));
   assert.ok(sore.dmg - plain.dmg > 15 && sore.left === 0, 'three 委屈 hit harder and are spent: ' + (sore.dmg - plain.dmg).toFixed(1));
   assert.ok(plain.early > 20 && hop.early === 0, 'an early jump clears her own two shouts: ' + plain.early.toFixed(1) + ' / ' + hop.early.toFixed(1));
+}
+
+// Stage light must add energy at crossings, and illuminate only the casting fighter's silhouette.
+{
+  const modes: string[] = [];
+  const stack: string[] = [];
+  const bottoms: number[] = [];
+  let matrix: number[] = [];
+  const ctx = new Proxy({ globalAlpha: 1, globalCompositeOperation: 'source-over' } as Record<string, unknown>, {
+    get(o, key: string) {
+      if (key in o) return o[key];
+      if (key === 'save') return () => stack.push(String(o.globalCompositeOperation));
+      if (key === 'restore') return () => { o.globalCompositeOperation = stack.pop()!; };
+      if (key === 'transform') return (...values: number[]) => { matrix = values; };
+      if (key === 'drawImage') return (im: HTMLCanvasElement, x: number, _y: number, w: number, h: number) => {
+        if (im.width !== 64 || im.height !== 256) return;
+        for (const edge of [x, x + w]) bottoms.push(matrix[1] * edge + matrix[3] * h + matrix[5]);
+        assert.ok(Number(o.globalAlpha) <= .3, 'five-colour beams have no overbright core');
+      };
+      return () => {};
+    },
+    set(o, key: string, value) {
+      if (key === 'globalCompositeOperation') modes.push(String(value));
+      o[key] = value; return true;
+    },
+  }) as unknown as CanvasRenderingContext2D;
+  const previousDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  const bakeContext = new Proxy({}, { get: (_o, key) => key === 'createLinearGradient' || key === 'createRadialGradient'
+    ? () => ({ addColorStop() {} }) : () => {} });
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: { createElement: () => ({ getContext: () => bakeContext }) } });
+  try {
+    for (const lite of [false, true]) for (const dir of [-1, 1]) for (const elapsed of [0, .1, .45, .9]) {
+      modes.length = 0; bottoms.length = 0;
+      drawTokoFx(ctx, { type: 'toko-five', x: 300, y: FLOOR, color: '#EE6666', max: .9, life: .9 - elapsed, dir }, lite);
+      assert.ok(modes.length > 0 && modes.every(mode => mode === 'lighter'), 'five lights never paint over earlier light');
+      assert.equal(ctx.globalCompositeOperation, 'source-over', 'light blend does not leak to later effects');
+      assert.equal(bottoms.length, 10, 'five ordinary beams, each with two bottom corners');
+      assert.ok(bottoms.every(y => Math.abs(y - FLOOR) < 1e-9), 'both bottom corners meet the floor at every sweep angle');
+    }
+  } finally {
+    if (previousDocument) Object.defineProperty(globalThis, 'document', previousDocument);
+    else Reflect.deleteProperty(globalThis, 'document');
+  }
+  const g = newGame(at('toko'), at('boulder')); dummy(g);
+  const f = g.fighters[0];
+  const paints: { alpha: number; tint?: string; rim?: string; mode: string }[] = [];
+  const view: Parameters<typeof drawTokoSoloLight>[2] = {
+    draw(c, _f, _x, _y, alpha, tint, rim) { paints.push({ alpha, tint, rim, mode: c.globalCompositeOperation }); },
+  };
+  drawTokoSoloLight(ctx, f, view, FLOOR, 1);
+  assert.equal(paints.length, 0, 'idle body has no super lighting');
+  f.energy = 200; assert.ok(g.attack(f, 5), 'Toko starts her super');
+  f.attack!.t = 1;
+  drawTokoSoloLight(ctx, f, view, FLOOR, 1);
+  assert.ok(paints.some(p => p.rim && p.alpha > .25 && p.alpha < .5), 'casting body gets a restrained silhouette rim');
+  assert.ok(paints.some(p => p.tint && p.alpha > .1 && p.alpha < .2), 'body light stays subtle enough to read the costume');
+  assert.ok(paints.every(p => p.mode === 'screen'), 'body light preserves the underlying sprite detail');
+  assert.equal(ctx.globalCompositeOperation, 'source-over');
+}
+
+// toko: 桐谷透子。U lunges, an arm round their shoulders and one flash: 定身, and her own damage up for a while; I is her own
+// muddy note (减速 in the 'toko-mud' look, through a guard too) and then 纱夜's arrow from behind her; O is the laugh —
+// 脆弱 on whoever stands in front, a jump clears it; L is a pillar from the sky, three floor waves a jump clears, and
+// the five colours that knock down, on a guard plan that breaks at the fourth beat.
+{
+  const ti = at('toko');
+  const data = ROSTER[ti];
+  assert.ok(ti === at('mashiro') + 1, '桐谷透子 sits with Morfonica, after 真白');
+  assert.equal(data.trait, 'rush', 'she does as she pleases, fast');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/sayo/special.png'), "纱夜's sheet is preloaded for 师父示范一下");
+  assert.ok(!!STATUS_MARKS['toko-mud'], 'her 减速 look is registered');
+  const fresh = (p2x = 520) => {
+    const g = newGame(ti, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  const live = (f: { mods: { kind: string; left: number; mark?: string; tag?: string }[] }, kind: string, tag?: string) =>
+    f.mods.some(m => m.kind === kind && m.left > 0 && (tag == null || m.tag === tag || m.mark === tag));
+  // U: the picture
+  {
+    const { g, p1, p2 } = fresh(380);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    let rooted = false, framed = false;
+    for (let i = 0; i < 240; i++) {
+      g.step(STEP);
+      if (p2.root > 0) rooted = true;
+      if (g.effects.some(e => e.type === 'toko-frame' && e.n === 1)) framed = true;
+    }
+    assert.ok(hp - p2.hp > 15, 'the flash lands: ' + (hp - p2.hp).toFixed(1));
+    assert.ok(rooted && framed, 'they are held in the frame');
+    assert.ok(live(p1, 'dmgDealt', 'toko-hype'), 'and she is worth more for a while');
+  }
+  {
+    const { g, p1, p2 } = fresh(900);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    run(g, 1.2);
+    assert.equal(p2.hp, hp, 'out of reach the picture is of thin air');
+    assert.ok(!live(p1, 'dmgDealt', 'toko-hype'), 'and nothing trends');
+    assert.equal(p1.attack, null, 'she is free again');
+  }
+  // I: the mud, then the arrow
+  {
+    const { g, p1, p2 } = fresh(440);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    let slowed = false, arrow = false, master = false;
+    for (let i = 0; i < 300; i++) {
+      g.step(STEP);
+      if (live(p2, 'slow', 'toko-mud')) slowed = true;
+      if (g.projectiles.some(p => p.fx === 'arrow' && p.owner === p1.id)) arrow = true;
+      if (g.effects.some(e => e.type === 'toko-master')) master = true;
+    }
+    assert.ok(slowed, 'the muddy note sticks');
+    assert.ok(master && arrow, '纱夜 steps in and shoots');
+    assert.ok(hp - p2.hp > 30, 'both land: ' + (hp - p2.hp).toFixed(1));
+  }
+  // O: the laugh
+  {
+    const { g, p1, p2 } = fresh(480);
+    g.attack(p1, 4);
+    let frail = 0;
+    for (let i = 0; i < 120; i++) { g.step(STEP); frail = Math.max(frail, p2.frail); }
+    assert.ok(frail > 3.5 && Math.abs(p2.frailBonus - .25) < 1e-9, 'whoever is laughed at is 脆弱: ' + frail.toFixed(2));
+    assert.ok(g.effects.some(e => e.type === 'toko-crack' && e.follow === p2.id), 'with the cracked shield over their head');
+  }
+  {
+    const { g, p1, p2 } = fresh(480);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    for (let i = 0; i < 120; i++) { if (i === 8) p2.vy = -720; g.step(STEP); }
+    assert.equal(p2.hp, hp, 'a jump clears the laugh');
+  }
+  // L: the pillar, the waves, the five
+  {
+    const { g, p1 } = fresh();
+    assert.equal(p1.energyMax, 120);
+    p1.energy = 119;
+    assert.equal(g.attack(p1, 5), false, '119 energy cannot cast it');
+    p1.energy = 120;
+    assert.equal(g.attack(p1, 5), true, '120 energy casts it');
+  }
+  const ult = (mode: 'stand' | 'jump' | 'block') => {
+    const { g, p1, p2 } = fresh();
+    if (mode === 'block') { g.keyDown('ArrowDown'); run(g, .1); }
+    p1.energy = p1.energyMax;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    let down = false, broke = false;
+    for (let i = 0; i < 420; i++) {
+      // Up through the three waves: in the air from just after the pillar until just after the last one.
+      if (mode === 'jump' && (i === 96 || i === 138)) p2.vy = -720;
+      g.step(STEP);
+      if (p2.knocked > 0) down = true;
+      if (p2.guardBroken > 0) broke = true;
+    }
+    return { dmg: hp - p2.hp, down, broke };
+  };
+  const plain = ult('stand'), hop = ult('jump'), held = ult('block');
+  assert.ok(plain.down && plain.dmg > 90, 'all five beats land and knock down: ' + plain.dmg.toFixed(1));
+  assert.ok(hop.down && hop.dmg < plain.dmg - 15, 'a jump clears waves, not the sky or the five: ' + hop.dmg.toFixed(1) + ' / ' + plain.dmg.toFixed(1));
+  assert.ok(held.broke && held.down && held.dmg < plain.dmg, 'a held guard breaks on the last wave and the five land: ' + held.dmg.toFixed(1));
 }
 
 // chisato: 白鹭千圣。U draws 珍妮弗, who hops along the floor and bites: 混乱 in the 'chisato-doodle' look, a jump clears

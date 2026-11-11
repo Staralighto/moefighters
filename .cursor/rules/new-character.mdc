@@ -1,6 +1,7 @@
 ---
-description: 用户要做新角色、新战士、精灵表或图生图提示词时，先读 docs/new-character-sop.md 并按它做完。
+description: 新角色、sprite 重制、补帧和精灵表提示词的文档入口。
 alwaysApply: false
 ---
 
-做新的可玩角色时，先读并遵循 `docs/new-character-sop.md`。格子、出图、提示词和踩坑都在那份文档里。不要改 8×3 / 4×3。不要整包重跑 `npm run sheets`，那会盖掉已有成图。
+- 先按用户目标确定角色所需素材和范围。新角色基础内容完成后，集中交付 `docs/public/new-character-sop.md` 中 special、common-a、common-b 三份完整提示词，以及用户要求的附加素材提示词。模板是默认方法，用户明确要求优先，保持目标表格与动作描述的格位对应。
+- 新角色和色块制作走 `docs/new-character-sop.md`，已有 sprite 重制和补帧走 `docs/sprite-remake-sop.md`。
