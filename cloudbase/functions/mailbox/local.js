@@ -3,8 +3,8 @@
    node cloudbase/functions/mailbox/local.js   (PORT, default 9000) */
 
 const Module = require('module');
-const http = require('http');
 const crypto = require('crypto');
+const { Readable } = require('stream');
 
 const tables = new Map();
 const table = name => {
@@ -113,8 +113,36 @@ const https = require('https');
 const { EventEmitter } = require('events');
 
 const { main } = require('./index.js');
+const { createMailboxServer } = require('./server.js');
+
+async function checkHttpBody() {
+  const [handleRequest] = createMailboxServer().listeners('request');
+  async function* interrupted() {
+    yield Buffer.from('{"op":');
+    throw Object.assign(new Error('aborted'), { code: 'ECONNRESET' });
+  }
+  async function request(chunks) {
+    const req = Readable.from(chunks);
+    req.method = 'POST';
+    req.headers = {};
+    const res = {
+      writeHead(status) { this.status = status; },
+      end(body) { this.body = JSON.parse(body); },
+      destroy() { this.destroyed = true; },
+    };
+    await handleRequest(req, res);
+    return res;
+  }
+  const aborted = await request(interrupted());
+  if (!aborted.destroyed || aborted.status) throw new Error('a truncated request must end without reaching the mailbox');
+  const oversized = await request([Buffer.alloc(32769)]);
+  if (oversized.status !== 413) throw new Error('oversized requests must still get 413');
+  const ping = await request([Buffer.from('{"op":"ping"}')]);
+  if (ping.status !== 200 || ping.body.ok !== true) throw new Error('mailbox must still accept requests after an aborted body');
+}
 
 async function check() {
+  await checkHttpBody();
   const guestKey = 'test-guest-room-proof';
   const validSdp = 'v=0\r\na=ice-ufrag:ufrag1\r\na=ice-pwd:pwd12345678901234567890\r\na=candidate:1 1 UDP 2122260223 192.168.1.2 50000 typ host\r\n';
   let simNow = Date.parse('2026-10-18T12:00:00Z');
@@ -254,11 +282,13 @@ async function check() {
     if (rows.get('live3333')?.data?.seen !== initialSeen) throw new Error('rapid queue poll should throttle seen updates');
     if (gone !== 10) throw new Error('expired waits across different builds must be swept');
 
-    // 2. Attack simulation: Queue stuffing with random builds hits QUEUE_MAX (20) -> 429 busy
-    for (let i = 0; i < 19; i++) {
-      const r = await rawPost({ op: 'queue', ticket: 'flood_' + String(i).padStart(4, '0'), build: 100 + i, hash: 'h' + i });
-      if (r.status !== 200 || r.body.wait !== true) throw new Error('queue slot ' + (i + 2) + ' should wait');
-      if (r.body.otherWaiting !== true) throw new Error('waiting players on a different build still count as other players');
+    // 2. Queue stuffing across builds must hit the same global cap under concurrency.
+    const flood = await Promise.all(Array.from({ length: 24 }, (_, i) =>
+      rawPost({ op: 'queue', ticket: 'flood_' + String(i).padStart(4, '0'), build: 100 + i, hash: 'h' + i })));
+    const admitted = flood.filter(r => r.status === 200 && r.body.wait === true && r.body.otherWaiting === true);
+    const denied = flood.filter(r => r.status === 429 && r.body.error === 'busy');
+    if (admitted.length !== 19 || denied.length !== 5 || rows.size !== 20) {
+      throw new Error('24 concurrent requests with 19 free slots must admit 19 and reject 5');
     }
     const overflowQueue = await rawPost({ op: 'queue', ticket: 'flood_over', build: 999, hash: 'over' });
     if (overflowQueue.status !== 429 || overflowQueue.body.error !== 'busy') {
@@ -269,6 +299,8 @@ async function check() {
     if (matchWhenFull.status !== 200 || matchWhenFull.body.role !== 'guest') {
       throw new Error('matching an existing waiter when queue is full must still succeed');
     }
+    const freed = await rawPost({ op: 'queue', ticket: 'freed_slot', build: 999 });
+    if (freed.status !== 200 || freed.body.wait !== true) throw new Error('matching must free a waiting slot');
     rows.clear();
 
     // A failed search leaves a live waiter. Retrying with a new ticket must not pair with it.
@@ -708,7 +740,7 @@ async function check() {
     if (!minted.body.iceServers.length || spoofed.body.iceServers.length) {
       throw new Error('unverified IP headers must not split the shared cooldown bucket');
     }
-    console.log('mailbox pair & all 8 security valve attack simulations ok');
+    console.log('mailbox HTTP body, pairing & all 8 security valve attack simulations ok');
   } finally {
     https.request = origHttpsRequest;
     delete process.env.SG_TURN_HOST;
@@ -719,25 +751,16 @@ async function check() {
 if (process.argv.includes('--check')) {
   check().catch(err => { console.error(err); process.exit(1); });
 } else {
-const port = Number(process.env.PORT) || 9000;
-http.createServer(async (req, res) => {
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const out = await main({
-    httpMethod: req.method,
-    headers: req.headers,
-    body: Buffer.concat(chunks).toString('utf8'),
-    isBase64Encoded: false,
-    path: req.url,
-  });
-  const headers = { ...(out.headers || {}) };
-  // The CloudBase gateway writes this for loopback origins; index.js leaves it out on purpose.
-  if (req.headers.origin && !headers['Access-Control-Allow-Origin']) {
-    headers['Access-Control-Allow-Origin'] = req.headers.origin;
-    headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS';
-    headers['Access-Control-Allow-Headers'] = 'Content-Type';
-  }
-  res.writeHead(out.statusCode || 200, headers);
-  res.end(out.body || '');
-}).listen(port, () => console.log('mailbox on http://127.0.0.1:' + port));
+  const port = Number(process.env.PORT) || 9000;
+  createMailboxServer(async event => {
+    const out = await main(event);
+    const headers = { ...(out.headers || {}) };
+    // The CloudBase gateway writes this for loopback origins; index.js leaves it out on purpose.
+    if (event.headers.origin && !headers['Access-Control-Allow-Origin']) {
+      headers['Access-Control-Allow-Origin'] = event.headers.origin;
+      headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS';
+      headers['Access-Control-Allow-Headers'] = 'Content-Type';
+    }
+    return { ...out, headers };
+  }).listen(port, () => console.log('mailbox on http://127.0.0.1:' + port));
 }

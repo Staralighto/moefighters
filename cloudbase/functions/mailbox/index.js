@@ -26,6 +26,7 @@ const TURN_SPIKE_BYTES_MAX = Number(process.env.TURN_SPIKE_BYTES_MAX) || 2 * 100
 const TURN_USAGE_CHECK_MS = Number(process.env.TURN_USAGE_CHECK_MS) || 60 * 1000;
 const QUOTA_DOC = '_turn_quota';
 const OPEN_SLOTS_DOC = '_open_slots';
+const QUEUE_GATE_DOC = '_queue_gate';
 
 function originState(event) {
   const raw = event && event.headers && (event.headers.origin || event.headers.Origin);
@@ -317,13 +318,34 @@ const LIVE = 15000;
 const SEEN_THROTTLE = 10000;
 const QUEUE_SCAN = QUEUE_MAX + 10;
 
+const waitingQueue = () => db.collection('queue').where({ 'data.status': 'wait' });
+
+async function admitWaiter(ticket, build, now, sid) {
+  return db.runTransaction(async tx => {
+    const doc = tx.collection('queue').doc(ticket);
+    const read = await doc.get();
+    if (read.code) throw read;
+    const current = peel(one(read));
+    if (current && ms(current.expireAt) > now && (current.role || current.status === 'wait')) return true;
+
+    // Lock the same document for every admission before querying the queue. CloudBase
+    // transactions only support doc operations. Hold the lock through the ticket write.
+    const gate = await tx.collection('rooms').doc(QUEUE_GATE_DOC).set({ data: { revision: makeKey() } });
+    if (gate.code) throw gate;
+    const found = await waitingQueue().limit(QUEUE_MAX).get();
+    if (found.code) throw found;
+    if (found.data.length >= QUEUE_MAX) return false;
+    const write = await doc.set({ data: { build, sid, at: now, seen: now, expireAt: now + TTL, status: 'wait' } });
+    if (write.code) throw write;
+    return true;
+  });
+}
+
 /* Fields are stored under data, so a top-level status/build query matches nothing.
    Sweep expired waiters globally across all builds so fake builds cannot bloat the queue. */
 async function pair(ticket, build, now, sid, guestAuth) {
   const liveRow = d => d && ms(d.expireAt) > now && now - ms(d.seen || d.at) < LIVE;
-  const found = await db.collection('queue').where({
-    'data.status': 'wait',
-  }).orderBy('data.at', 'asc').limit(QUEUE_SCAN).get();
+  const found = await waitingQueue().orderBy('data.at', 'asc').limit(QUEUE_SCAN).get();
   const allRows = (Array.isArray(found.data) ? found.data : []).map(peel).filter(Boolean);
   for (const d of allRows) {
     if (liveRow(d)) continue;
@@ -394,9 +416,12 @@ async function queue(body, now, reply) {
   // ponytail: if a match lands on this ticket during pair(), this request still says wait.
   // The next poll (5s) reads the role at the top. Ceiling is one client interval; the upgrade is a conditional update.
   if (!me || me.status !== 'wait' || ms(me.expireAt) <= now) {
-    await db.collection('queue').doc(ticket).set({
-      data: { build, sid, at: now, seen: now, expireAt: now + TTL, status: 'wait' },
-    });
+    try {
+      if (!await admitWaiter(ticket, build, now, sid)) return reply(429, { error: 'busy' });
+    } catch (err) {
+      if (err?.code !== 'DATABASE_TRANSACTION_CONFLICT') throw err;
+      return reply(200, result); // Retry on the next poll after SDK transaction retries are exhausted.
+    }
   } else if (now - ms(me.seen) >= SEEN_THROTTLE) {
     await db.collection('queue').doc(ticket).update({ data: { seen: now } });
   }
