@@ -95,6 +95,8 @@ export interface Effect {
   heavy?: boolean; hit?: boolean; air?: boolean;
   /** Rides on this fighter at the stamped offset instead of staying where it was spawned (狼爪). */
   follow?: number; ox?: number; oy?: number;
+  /** A pose-bound effect releases when its fighter's cast or specified mode ends. */
+  cast?: { serial: number; mode?: number; tail: number };
   /** A small count the graphic reads (打水漂's die pips, ……来练习吧's strum index). */
   n?: number;
   /** Seconds into the effect's life that its own timeline is measured from (……来练习吧's sea: the first strum). */
@@ -103,8 +105,7 @@ export interface Effect {
   tx?: number; ty?: number;
   /** Ghosts: drawn this much bigger about the feet. */
   scale?: number;
-  /** 想象吧，变强的我's rig: the `age` at which the move let go of it (-1 while held). The host ages it and removes it;
-   *  the picture reads only age and until, which both ride the wire every tick (life is a local clock there). */
+  /** Release time on the effect clock. The shadow rig uses -1 while held. */
   until?: number;
 }
 export interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string; size: number }
@@ -1341,6 +1342,17 @@ export class FightGame {
     let w = 0;
     for (let i = 0; i < this.effects.length; i++) {
       const e = this.effects[i];
+      if (e.cast && (e.life > e.cast.tail || e.follow !== undefined)) {
+        const owner = e.fighter != null ? this.fighterById(e.fighter) : undefined;
+        const attack = owner && owner.hp > 0 ? owner.attack : null;
+        if (e.until !== undefined || attack?.serial !== e.cast.serial || (e.cast.mode != null && attack.mode !== e.cast.mode)) {
+          if (e.life > e.cast.tail) {
+            e.until ??= e.max - e.life;
+            e.life = e.cast.tail;
+          }
+          e.follow = undefined;
+        }
+      }
       e.life = holdEffects && !e.local ? Math.max(.001, e.life - dt) : e.life - dt;
       if (e.life > 0) this.effects[w++] = e;
     }

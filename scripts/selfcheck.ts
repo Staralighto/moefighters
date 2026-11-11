@@ -7,7 +7,7 @@ import { BUSHIDO_CREEP, BUSHIDO_LUNGE, BUSHIDO_SPAN, VEIL_NORMAL, VEIL_SHOT, clo
 import { FLIGHT_HOP, vowBeatTime, VOW_BEATS, PRACTICE_GAP1, PRACTICE_HITS, practiceBeat, practiceGap, practiceRow, practiceStrums, FAMILY_MEMBERS, familyLife, PUFF_STOP, PLAY, PLAY_BYE, PLAY_DRAW, PLAY_FIGURES, PLAY_HOUSE, PLAY_PASS, PLAY_SLASHES, RARE_TIME, EAR, WIDE, WIDE_DROPS, WIDE_POP } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
 import { PLAYABLE, PUBLIC_ROSTER, ROSTER, bandMembers, guestsFor } from '../src/data/characters.ts';
-import { BANDS, BAND_BY_ID } from '../src/data/bands.ts';
+import { BANDS, BAND_BY_ID, IPS, groupOf, groupOrder, ipOf } from '../src/data/bands.ts';
 import { AIR_SKILLS, skill } from '../src/data/skills.ts';
 import { STAGES } from '../src/data/stages.ts';
 import { CONTROLS, FLOOR, COMBO_DECAY, STEP, W, X_MAX, X_MIN } from '../src/game/constants.ts';
@@ -133,14 +133,31 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   for (const b of BANDS) {
     assert.ok(ROSTER.some(c => c.bands?.includes(b.id)), 'band ' + b.id + ' has at least one member');
   }
-  // Primary bands run down the roster in the display order (bands.ts): Ave Mujica > MyGO!!!!!
-  // > 夢限大みゅーたいぷ > franchise debut order > sumimi > the bandless.
+  // Groups run down the roster in the display order (bands.ts): work by work (BanG Dream! > 孤独摇滚！ >
+  // 轻音少女 > Girls Band Cry), inside BanG Dream! Ave Mujica > MyGO!!!!! > 夢限大みゅーたいぷ > franchise
+  // debut order > sumimi, and each work's bandless close that work. The last run is the headless dummies.
   const runs: string[] = [];
   for (const c of ROSTER) {
-    const g = c.bands?.[0] ?? 'none';
+    const g = groupOf(c);
     if (runs[runs.length - 1] !== g) runs.push(g);
   }
-  assert.deepEqual(runs, ['ave-mujica', 'mygo', 'yumemita', 'poppin-party', 'roselia', 'hello-happy', 'sumimi', 'pastel-palettes', 'afterglow', 'raise-a-suilen', 'morfonica', 'millsage', 'ikka-dumb-rock', 'none'], 'roster order is the select-screen band order');
+  assert.deepEqual(runs, ['ave-mujica', 'mygo', 'yumemita', 'poppin-party', 'roselia', 'hello-happy', 'sumimi', 'pastel-palettes', 'afterglow', 'raise-a-suilen', 'morfonica', 'millsage', 'ikka-dumb-rock', 'none:bang-dream', 'kessoku-band', 'none:bang-dream'], 'roster order is the select-screen group order');
+  {
+    // On the select screen: works in IPS order, never revisited; inside a work the bandless come last.
+    const works: string[] = [];
+    let closed = false;
+    for (const c of PLAYABLE) {
+      const ip = ipOf(c);
+      if (works[works.length - 1] !== ip) { works.push(ip); closed = false; }
+      if (!c.bands?.length) closed = true;
+      else assert.ok(!closed, c.id + ': a band member sits before the bandless of ' + ip);
+    }
+    assert.deepEqual(works, IPS.filter(ip => works.includes(ip)), 'works follow the IPS order and each forms one run');
+    assert.deepEqual(works.slice(0, 2), ['bang-dream', 'bocchi-the-rock'], '孤独摇滚！ follows BanG Dream!');
+    assert.equal(groupOf(ROSTER[at('viola')]), 'none:bang-dream', "薇欧拉 closes her own work's run");
+    const order = groupOrder();
+    assert.ok(order.indexOf('none:bang-dream') < order.indexOf('kessoku-band'), 'the stamp book lists the bandless before the next work');
+  }
   assert.deepEqual(ROSTER[at('uika')].bands, ['ave-mujica', 'sumimi'], '初华 sings for two units');
   assert.deepEqual(bandMembers('mygo', 'tomori').map(c => c.id), ['anon', 'rana', 'soyo', 'taki'], 'the sing calls her bandmates, never herself');
   assert.deepEqual(guestsFor([ROSTER[at('tomori')]], 'mygo').map(c => c.id), ['anon', 'rana', 'soyo', 'taki'], 'a sing loads the bandmates who are not already in');
@@ -156,11 +173,11 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const breaksAt: Record<string, number> = {
     nyamu: 4, sakiko: 10, anon: 5, rana: 10, soyo: 3, kokoro: 3, miyako: 5,
-    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6,
+    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5,
   };
   const segments: Record<string, number> = {
     nyamu: 4, sakiko: 16, anon: 6, rana: 22, soyo: 3, kokoro: 3, miyako: 6,
-    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9,
+    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7,
   };
   for (const [id, breakAt] of Object.entries(breaksAt)) {
     const s = ROSTER[at(id)].skills[5];
@@ -1068,6 +1085,176 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const emberU = clipFor(g.fighters[0]);
   assert.equal(emberU.sheet, 'special', 'ember U uses special');
   assert.equal(emberU.col, 0, 'U is column 0');
+}
+
+// bocchi: the box hides her and braces; the tsuchinoko crawls under a hit and slows; the thumbs feed her meter;
+// the solo's comments cross the stage and the dive floors both of them; alone she hits harder; knocked down she
+// comes apart instead of lying there, once per cooldown, and never out of a super.
+{
+  const bocchi = at('bocchi');
+  const data = ROSTER[bocchi];
+  for (const pic of ['box', 'tsuchinoko', 'kaiju', 'crumble']) {
+    assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes(`/sprites/bocchi/${pic}.png`), pic + '.png is preloaded');
+  }
+  const jab = ROSTER[at('boulder')].skills[0];
+  {
+    const g = newGame(bocchi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 200; p2.facing = -1;
+    const hp0 = p2.hp, x0 = p1.x;
+    g.keyDown('KeyU'); g.keyUp('KeyU'); run(g, .3);
+    assert.ok(violetHidden(p1), 'inside the box no body is drawn');
+    assert.ok(g.effects.some(e => e.type === 'bocchi-box'), 'the box is');
+    const mine = p1.hp;
+    hit(g, p2, p1, jab, { hit: new Set() });
+    assert.ok(mine - p1.hp > 0 && mine - p1.hp < jab.damage, `a jab is cut inside the box, ${mine - p1.hp}`);
+    assert.equal(p1.attack?.skill.fx, 'bocchi-box', 'and does not stop it');
+    run(g, 1);
+    assert.ok(p1.x > x0 + 150, 'the box slides');
+    assert.ok(hp0 - p2.hp >= 36 && hp0 - p2.hp <= 40, `the bump lands once, at its written damage in the middle distance, ${hp0 - p2.hp}`);
+    assert.ok(!violetHidden(p1) && !p1.attack, 'she is out again');
+  }
+  {
+    const g = newGame(bocchi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 400; p2.facing = -1;
+    const hp0 = p2.hp;
+    g.keyDown('KeyU'); g.keyUp('KeyU'); run(g, STEP * 2);
+    assert.equal(p1.attack?.skill.damage, 48, 'nobody near at the cast: +20%');
+    assert.ok(g.effects.some(e => e.type === 'bocchi-alone'), 'with its mark');
+    assert.equal(data.skills[2].damage, 40, 'the shared skill is untouched');
+    run(g, 1.2);
+    assert.equal(hp0 - p2.hp, 0, 'too far to reach');
+    const near = newGame(bocchi, at('boulder')); const [n1, n2] = near.fighters; dummy(near);
+    n2.x = n1.x + 80; n2.facing = -1;
+    near.keyDown('KeyU'); near.keyUp('KeyU'); run(near, STEP * 2);
+    assert.equal(n1.attack?.skill.damage, 34, 'someone in her face: −15%');
+    const jabs = newGame(bocchi, at('boulder')); const [j1, j2] = jabs.fighters; dummy(jabs);
+    j2.x = j1.x + 400;
+    jabs.keyDown('KeyJ'); jabs.keyUp('KeyJ'); run(jabs, STEP * 2);
+    assert.equal(j1.attack?.skill.damage, data.skills[0].damage, 'J / K never change');
+  }
+  {
+    const g = newGame(bocchi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 220; p2.facing = -1;
+    const hp0 = p2.hp, mine = p1.hp;
+    g.keyDown('KeyI'); g.keyUp('KeyI'); run(g, .22);
+    assert.ok(violetHidden(p1) && g.effects.some(e => e.type === 'bocchi-tsuchi'), 'she is a tsuchinoko now');
+    assert.equal(hit(g, p2, p1, jab, { hit: new Set() }), false, 'nothing reaches her on the floor');
+    assert.equal(p1.hp, mine);
+    run(g, .8);
+    assert.ok(hp0 - p2.hp >= 27 && hp0 - p2.hp <= 30, `the bite lands, ${hp0 - p2.hp}`);
+    assert.ok(p2.slow > 0, 'and slows');
+    assert.ok(p1.x < p2.x, 'the crawl stops at the ankle');
+    const air = newGame(bocchi, at('boulder')); const [a1, a2] = air.fighters; dummy(air);
+    a2.x = a1.x + 220; a2.facing = -1;
+    const ahp = a2.hp;
+    air.keyDown('KeyI'); air.keyUp('KeyI');
+    for (let i = 0; i < Math.round(1 / STEP); i++) { a2.y = FLOOR - 160; a2.vy = 0; air.step(STEP); }
+    assert.equal(a2.hp, ahp, 'a jump clears the bite');
+  }
+  {
+    const g = newGame(bocchi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 230; p2.facing = -1; p1.energy = 0;
+    const hp0 = p2.hp;
+    g.keyDown('KeyO'); g.keyUp('KeyO'); run(g, .1);
+    assert.ok(g.effects.some(e => e.type === 'bocchi-kaiju'), 'the 承认欲求怪兽 rises');
+    run(g, 1.6);
+    assert.ok(hp0 - p2.hp >= 38 && hp0 - p2.hp <= 54, `six thumbs, 9 each before the combo decay, ${hp0 - p2.hp}`);
+    assert.equal(p1.attack, null, 'the pose is over');
+    assert.ok(p1.energy >= 30, `every thumb that lands feeds her meter, ${p1.energy}`);
+    assert.equal(g.projectiles.length, 0);
+  }
+  {
+    const g = newGame(bocchi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 260; p2.facing = -1;
+    assert.equal(p1.energyMax, 120, 'the bar caps at the cost of 吉他英雄');
+    p1.energy = 119;
+    assert.equal(g.canAttack(p1, 5), false, '119 energy cannot start the solo');
+    p1.energy = 120;
+    const hp0 = p2.hp, x0 = p1.x;
+    g.keyDown('KeyL'); g.keyUp('KeyL'); run(g, .2);
+    assert.ok(g.effects.some(e => e.type === 'bocchi-stage'), 'the lights come down');
+    assert.ok(p1.energy < 1, 'the cast spends 120 energy');
+    assert.equal(p1.attack?.skill.finale?.damage, 60, 'the dive has 60 base damage');
+    const soloRows: number[] = [];
+    let diveRow: number | undefined;
+    let diveDamage = 0;
+    for (let i = 0; i < Math.round(2.5 / STEP); i++) {
+      const hp = p2.hp;
+      run(g, STEP);
+      const attack = p1.attack;
+      if (attack?.skill.fx !== 'bocchi-hero') continue;
+      const row = clipFor(p1).row;
+      if (attack.mode === 1) {
+        diveRow = row;
+        diveDamage += hp - p2.hp;
+      }
+      else if (!attack.mode && attack.t >= attack.skill.start && row !== soloRows.at(-1)) soloRows.push(row);
+    }
+    assert.deepEqual(soloRows.slice(0, 4), [1, 0, 1, 0], 'the two guitar cells repeat before the dive');
+    assert.equal(diveRow, 2, 'the dive switches to the third cell');
+    assert.ok(p1.x > x0 + 150, 'she dives');
+    assert.equal(p1.attack?.mode, 2, 'and stays where she landed');
+    assert.ok(p2.knocked > 0 || p2.downTime > 0, 'on top of them');
+    run(g, 2);
+    assert.ok(diveDamage > 0 && diveDamage <= 60, `the nerfed dive still lands, ${diveDamage}`);
+    assert.ok(hp0 - p2.hp - diveDamage >= 100, 'the comments still land before the dive');
+    assert.equal(g.projectiles.length, 0, 'every comment has left the screen');
+    assert.ok(!p1.attack, 'she gets up');
+  }
+  {
+    const launch = skill(5, 'projectile', 'launcher', {
+      damage: 10, react: { kind: 'knockdown', vy: -500, knocked: .65 },
+    });
+    for (const [key, type, castTime] of [
+      ['KeyU', 'bocchi-box', .26], ['KeyO', 'bocchi-kaiju', .26], ['KeyL', 'bocchi-stage', .65],
+    ] as const) {
+      const g = newGame(bocchi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+      p2.x = p1.x + 440;
+      p1.energy = p1.energyMax;
+      g.keyDown(key); g.keyUp(key); run(g, castTime);
+      const effect = g.effects.find(e => e.type === type);
+      if (!effect) throw new Error(type + ' did not start');
+      assert.ok(hit(g, p2, p1, launch, { hit: new Set() }), 'the opposing super connects');
+      assert.equal(p1.attack, null, key + ' is interrupted');
+      if (key === 'KeyU') {
+        assert.equal(p1.braced, 0, 'the broken box leaves no brace on the fighter');
+        const hp = p1.hp;
+        assert.ok(hit(g, p2, p1, jab, { hit: new Set() }), 'the follow-up connects');
+        assert.ok(hp - p1.hp >= jab.damage * .8, 'the same-tick follow-up is not reduced by the box');
+      }
+      run(g, .18);
+      if (key === 'KeyO') {
+        assert.equal(effect.y, FLOOR, 'the monster stays grounded after the launch');
+        assert.ok(effect.life <= .18, 'the monster is already sinking');
+      }
+      if (key === 'KeyL') {
+        assert.ok(effect.life <= .3, 'the stage fades as soon as the solo is interrupted');
+        assert.ok(g.projectiles.some(p => p.fx === 'bocchi-hero'), 'already fired comments keep travelling');
+      }
+      run(g, .4);
+      assert.ok(!g.effects.includes(effect), type + ' disappears promptly');
+    }
+  }
+  {
+    const g = newGame(bocchi, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 300;
+    const down = () => { p1.knocked = .8; p1.vy = 0; p1.y = FLOOR; p1.stun = .4; };
+    down(); run(g, STEP * 2);
+    assert.equal(p1.attack?.skill.fx, 'bocchi-crumble', 'knocked onto the floor she comes apart');
+    assert.ok(violetHidden(p1) && g.effects.some(e => e.type === 'bocchi-crumble'), 'into a scribble');
+    assert.equal(p1.knocked, 0, 'instead of lying there');
+    const mine = p1.hp;
+    assert.equal(hit(g, p2, p1, jab, { hit: new Set() }), false, 'and cannot be touched');
+    assert.equal(p1.hp, mine);
+    run(g, 1.1);
+    assert.ok(!p1.attack && !violetHidden(p1), 'then she is back');
+    assert.ok(p1.poise > 0, 'sanded into shape, and steady for a moment');
+    down(); run(g, STEP * 2);
+    assert.ok(p1.knocked > 0 && !p1.attack, 'once per cooldown');
+    run(g, 13);
+    p1.hitBySuper = true; down(); run(g, STEP * 2);
+    assert.ok(!p1.attack, 'never out of a super');
+  }
 }
 
 // mizuho: the hug holds, hurts and heals; the doll answers a swing; the 白祥 runs along the floor and leaves

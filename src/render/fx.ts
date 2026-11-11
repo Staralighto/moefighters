@@ -17,6 +17,7 @@ import { drawLisaFx, drawLisaShot } from './lisaFx.ts';
 import { drawHimariFx, drawHimariShot } from './himariFx.ts';
 import { drawChisatoFx, drawChisatoShot } from './chisatoFx.ts';
 import { drawMizuhoFx, drawMizuhoShot } from './mizuhoFx.ts';
+import { drawBocchiFx, drawBocchiShot } from './bocchiFx.ts';
 import { drawStatusEffect } from './statusMarks.ts';
 import { isLiteFx, liteFx } from './fxQuality.ts';
 import { drawShizukuFx, drawShizukuShot } from './shizukuFx.ts';
@@ -1013,6 +1014,8 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
   // 白鹭千圣 too.
   if (drawChisatoFx(ctx, e, liteFx, images)) return;
   if (e.type.startsWith('mizuho-') && drawMizuhoFx(ctx, e, liteFx, mizuhoArt(images))) return;
+  // 后藤一里 too.
+  if (drawBocchiFx(ctx, e, liteFx, images)) return;
   // 异常: `<mark>@apply` / `<mark>@expire`, drawn by the status table.
   if (drawStatusEffect(ctx, e)) return;
   // 四宫宁月's accidents keep their own module too.
@@ -6182,6 +6185,7 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   if (drawLisaShot(ctx, p, liteFx, images)) return;
   if (drawHimariShot(ctx, p, liteFx)) return;
   if (drawChisatoShot(ctx, p, images)) return;
+  if (drawBocchiShot(ctx, p, liteFx)) return;
   if (p.fx.startsWith('mizuho-')) {
     const im = p.fx === 'mizuho-shiro' ? images?.get(SHIRO_SRC) : undefined;
     if (drawMizuhoShot(ctx, p, liteFx, im?.naturalWidth ? keyed(im) : null)) return;

@@ -6,7 +6,13 @@
 export type BandId =
   | 'mygo' | 'ave-mujica' | 'sumimi' | 'yumemita' | 'pastel-palettes'
   | 'poppin-party' | 'afterglow' | 'roselia' | 'hello-happy' | 'raise-a-suilen' | 'morfonica'
-  | 'millsage' | 'ikka-dumb-rock';
+  | 'millsage' | 'ikka-dumb-rock'
+  | 'kessoku-band';
+
+/** 作品（IP）。选人界面先按作品排，再按乐队排：BanG Dream! → 孤独摇滚！ → 轻音少女 → Girls Band Cry。
+ *  后两个还没有角色，先把顺序定在这里；新作品的角色进名册时按这个顺序接在后面。 */
+export type IpId = 'bang-dream' | 'bocchi-the-rock' | 'k-on' | 'girls-band-cry';
+export const IPS: readonly IpId[] = ['bang-dream', 'bocchi-the-rock', 'k-on', 'girls-band-cry'];
 
 export interface BandData {
   id: BandId;
@@ -14,6 +20,8 @@ export interface BandData {
   name: string;
   /** Unit accent for the group header dot; tracks the members' own roster colours. */
   color: string;
+  /** Which work the band is from. Unset is BanG Dream!. */
+  ip?: IpId;
 }
 
 export const BANDS: readonly BandData[] = [
@@ -37,6 +45,30 @@ export const BANDS: readonly BandData[] = [
   { id: 'millsage', name: 'millsage', color: '#AA22EE' },
   // 一家Dumb Rock!（读作「一家団欒」）：乐队色取萌娘百科词条。
   { id: 'ikka-dumb-rock', name: '一家Dumb Rock!', color: '#FFAA33' },
+  // 孤独摇滚！：结束乐队（結束バンド），乐队色取波奇粉。
+  { id: 'kessoku-band', name: '结束乐队', color: '#F5A9C0', ip: 'bocchi-the-rock' },
 ];
 
 export const BAND_BY_ID: ReadonlyMap<BandId, BandData> = new Map(BANDS.map(b => [b.id, b]));
+
+/** The work a roster member is from: her primary band's, or her own `ip` when she has no band. */
+export function ipOf(c: { bands?: BandId[]; ip?: IpId }): IpId {
+  const band = c.bands?.[0];
+  return (band ? BAND_BY_ID.get(band)?.ip : c.ip) ?? 'bang-dream';
+}
+
+/** Select-screen group key: the primary band, or the bandless group of her own work. The bandless
+ *  (薇欧拉) close their own work's run instead of collecting at the very end of the roster. */
+export function groupOf(c: { bands?: BandId[]; ip?: IpId }): string {
+  return c.bands?.[0] ?? 'none:' + ipOf(c);
+}
+
+/** Every group key in display order: work by work, each work's bands and then its bandless. */
+export function groupOrder(): string[] {
+  const out: string[] = [];
+  for (const ip of IPS) {
+    for (const b of BANDS) if ((b.ip ?? 'bang-dream') === ip) out.push(b.id);
+    out.push('none:' + ip);
+  }
+  return out;
+}

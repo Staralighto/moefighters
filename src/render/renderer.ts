@@ -19,6 +19,7 @@ import { TAE_BACK, TAE_SCREEN_BACK } from './taeFx.ts';
 import { HIMARI_BACK, HIMARI_SCREEN_BACK, HIMARI_SCREEN_FRONT } from './himariFx.ts';
 import { CHISATO_BACK, CHISATO_SCREEN_BACK, CHISATO_SCREEN_FRONT } from './chisatoFx.ts';
 import { MIZUHO_BACK, MIZUHO_SCREEN_BACK } from './mizuhoFx.ts';
+import { BOCCHI_BACK, BOCCHI_SCREEN_BACK, drawBocchiSolo } from './bocchiFx.ts';
 import { heartTier } from './clips.ts';
 
 /** Backing-store pixels per CSS pixel. The compositor then blits 1:1.
@@ -39,9 +40,9 @@ export function portraitBodyScale(padSplit: boolean): number {
 /** Hard 1px rim, yellow for the left team and green for the right. */
 const TEAM_GLOW = SIDE;
 /** Effects painted under every body: 和泉朋花's coffin and her spotlights. */
-const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK, ...MIZUHO_BACK, ...MIKU_BACK, ...SHIZUKU_BACK, ...CHIERI_BACK, ...YOMOGI_BACK, ...MASKING_BACK, ...TAE_BACK, ...HIMARI_BACK, ...CHISATO_BACK]);
+const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK, ...MIZUHO_BACK, ...MIKU_BACK, ...SHIZUKU_BACK, ...CHIERI_BACK, ...YOMOGI_BACK, ...MASKING_BACK, ...TAE_BACK, ...HIMARI_BACK, ...CHISATO_BACK, ...BOCCHI_BACK]);
 /** Screen-space layers that ignore the body zoom: behind every body, and in front of them. */
-const SCREEN_BACK = new Set(['encore-stage', 'family-dim', ...SAKIKO_SCREEN_BACK, ...MIZUHO_SCREEN_BACK, ...MIKU_SCREEN_BACK, ...YOMOGI_SCREEN_BACK, ...MASKING_SCREEN_BACK, ...TAE_SCREEN_BACK, ...HIMARI_SCREEN_BACK, ...CHISATO_SCREEN_BACK]);
+const SCREEN_BACK = new Set(['encore-stage', 'family-dim', ...SAKIKO_SCREEN_BACK, ...MIZUHO_SCREEN_BACK, ...MIKU_SCREEN_BACK, ...YOMOGI_SCREEN_BACK, ...MASKING_SCREEN_BACK, ...TAE_SCREEN_BACK, ...HIMARI_SCREEN_BACK, ...CHISATO_SCREEN_BACK, ...BOCCHI_SCREEN_BACK]);
 const SCREEN_FRONT = new Set(['encore-rain', 'encore-crowd', 'encore-call', 'slap-flash', ...CHIERI_SCREEN_FRONT, ...YOMOGI_SCREEN_FRONT, ...HIMARI_SCREEN_FRONT, ...CHISATO_SCREEN_FRONT]);
 /** 安可是主唱的: the eye line on the 175 px body, measured up from the feet. */
 const ENCORE_EYE_Y = 152;
@@ -284,6 +285,7 @@ export class Renderer {
         // 心跳计 (矢仓蓬咲): ゴゴゴ and the closing dark behind her once her heart is out of control.
         if (f.data.heart) drawHeartBack(c, f, g.age, lite);
         view.draw(c, f, f.x, footY, alpha, undefined, look?.outline ?? outline);
+        if (f.attack?.skill.fx === 'bocchi-hero' && f.hp > 0) drawBocchiSolo(c, f, lite);
         // 帝王引擎式误会: from 失控 up a shadow falls over the top of her face — killing intent, to anyone watching.
         if (f.data.heart && f.hp > 0 && heartTier(f.gauge) >= 2) {
           const vh = f.data.view.kind === 'sprite' ? f.data.view.height : 181;

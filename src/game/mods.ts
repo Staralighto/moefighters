@@ -37,7 +37,9 @@ export type ModKind =
   /** 有必要说教一下呢: on whoever is being lectured; left counts down to the 花丸 (render/clips.ts lectureSquash). */
   | 'lecture'
   /** 还想再看看你: on 丰川瑞穗, v 0 while the wish is still unspent, 1 after (game/mizuho.ts). */
-  | 'wish';
+  | 'wish'
+  /** 崩坏: on 后藤一里, v is the game age her next collapse is ready (game/bocchi.ts). */
+  | 'crumble';
 
 /**
  * One running buff.
@@ -122,12 +124,9 @@ export function dmgDealtMul(f: Fighter): number {
 }
 
 /** Damage taken from brace and dmgTaken. Brace applies once, including the howl/frenzy case. */
-export function dmgTakenMul(f: Fighter, opt: { grab: boolean; superHit: boolean; superBrace: boolean; fallback: number }): number {
+export function dmgTakenMul(f: Fighter, opt: { grab: boolean; superHit: boolean; superBrace: boolean; brace?: number; fallback: number }): number {
   let m = 1;
-  const brace = has(f, 'brace');
-  if ((brace && !opt.grab && !opt.superHit) || opt.superBrace) {
-    m *= f.mods.find(x => x.kind === 'brace' && x.left > 0)?.v ?? opt.fallback;
-  }
+  if ((opt.brace != null && !opt.grab && !opt.superHit) || opt.superBrace) m *= opt.brace ?? opt.fallback;
   if (!opt.grab && !opt.superHit) {
     for (const mod of f.mods) if (mod.kind === 'dmgTaken' && mod.left > 0) m *= mod.v ?? 1;
   }

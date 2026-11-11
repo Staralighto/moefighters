@@ -1,6 +1,6 @@
 /* Pure data shapes. Nothing here knows about pixels or the DOM. */
 
-import type { BandId } from './bands.ts';
+import type { BandId, IpId } from './bands.ts';
 
 export type SkillType =
   | 'light' | 'heavy' | 'dash' | 'projectile' | 'grab'
@@ -346,6 +346,9 @@ export interface CharacterData {
    *  headless dummies). Multiple entries only for dual-affiliation members (初华:
    *  Ave Mujica first, sumimi second — bands[0] is the select-screen group). */
   bands?: BandId[];
+  /** The work a bandless character is from (bands.ts IPS); with a band it follows the band. Unset is
+   *  BanG Dream!. The bandless sit at the end of their own work on the select screen. */
+  ip?: IpId;
   /** False keeps the entry off the select screen: headless-check dummies (gale, ember,
    *  boulder). Unset means playable — new characters need no roster of ids to join. */
   playable?: boolean;

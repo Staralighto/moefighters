@@ -2,7 +2,7 @@
    只存在本机浏览器的 localStorage，读写都包 try/catch，无痕模式下静默不记。
    结算海报的「首次 · 大师」飘带、选人卡底边色条、印章册页面都从这里取数。 */
 
-import { BANDS } from '../data/bands.ts';
+import { BANDS, groupOf, groupOrder } from '../data/bands.ts';
 import { PLAYABLE_BY_ID, PUBLIC_ROSTER } from '../data/characters.ts';
 import type { CharacterData } from '../data/types.ts';
 import type { FightGame } from '../game/game.ts';
@@ -117,11 +117,11 @@ export function setStampLayout(v: StampLayout): void {
 function groups(): { key: string; name: string; color?: string; members: CharacterData[] }[] {
   const map = new Map<string, CharacterData[]>();
   for (const c of PUBLIC_ROSTER) {
-    const key = c.bands?.[0] ?? 'none';
+    const key = groupOf(c);
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(c);
   }
-  return [...BANDS.map(b => b.id as string), 'none'].filter(k => map.has(k)).map(k => {
+  return groupOrder().filter(k => map.has(k)).map(k => {
     const band = BANDS.find(b => b.id === k);
     return { key: k, name: band?.name ?? '无所属', color: band?.color, members: map.get(k)! };
   });

@@ -2,8 +2,9 @@ import type { BandId } from './bands.ts';
 import type { CharacterData, Trait } from './types.ts';
 import { skill } from './skills.ts';
 
-/* Roster order is band order (see bands.ts): members sit together, and the select screen walks
-   this array emitting a group header whenever the primary band changes. gale, ember and boulder
+/* Roster order is work order, then band order (see bands.ts IPS and BANDS): members sit together, and the
+   select screen walks this array emitting a group header whenever the group changes. The bandless of a work
+   (薇欧拉) close that work's run, ahead of the next work's bands. gale, ember and boulder
    are the original placeholder cast (~7.3-head colour-block girls until img2img lands) —
    playable: false keeps them off the select screen while selfcheck still drills on them. */
 
@@ -2088,6 +2089,54 @@ export const ROSTER: CharacterData[] = [
         solid: false,
         friendly: true, noSiphon: true, blockMul: .5, guardDmg: 50,
         brief: '火焰箭命中或到边缘即引爆；敌我不分，满跳可躲', detail: '虚空巨弓射出缓慢火焰箭，命中或到边缘即引爆：范围 170 伤，敌我不分，贴身会炸到自己；满跳可躲，格挡也承受 50% 伤害并付半管破防值',
+      }),
+    ],
+  },
+  {
+    // 后藤一里 (game/bocchi.ts, render/bocchiFx.ts): 孤独摇滚！的波奇，第一位 BanG Dream! 以外的角色。
+    // U I O 都不是用人形出招（纸箱、槌子蛇、怪兽皮套），只有 L 是全场唯一帅的时刻。
+    id: 'bocchi', name: '后藤一里', title: '吉他 / 吉他英雄', quote: '社会好可怕！！', color: '#F5A9C0',
+    bands: ['kessoku-band'],
+    ...stats('focus'),
+    passive: ['一个人才行 · 崩坏', 'U I O 出招时对手在远处伤害 +20%，贴身则 −15%；被击倒落地时原地崩坏，无敌 0.8 秒后复原并霸体 0.6 秒，冷却 12 秒，抓投与必杀无效'],
+    view: {
+      kind: 'sprite', common: '/sprites/bocchi/common.png', special: '/sprites/bocchi/special.png', height: 176, lift: 5,
+      extras: ['/sprites/bocchi/box.png', '/sprites/bocchi/tsuchinoko.png', '/sprites/bocchi/kaiju.png', '/sprites/bocchi/crumble.png'],
+    },
+    skills: [
+      // 开口前一定会加上一声「啊…」
+      skill(0, 'light', '啊…那个…'),
+      skill(1, 'heavy', '对不起对不起'),
+      // 完熟芒果（街头演出前她只敢缩在芒果纸箱里弹琴）
+      skill(2, 'dash', '完熟芒果', {
+        damage: 40, range: 92, start: .2, duration: .98, cd: 6, speed: 430, knock: 320, fx: 'bocchi-box',
+        react: { kind: 'knockdown', vy: -260, knocked: .7 },
+        brief: '钻进纸箱滑撞并击倒；箱内霸体且受伤降低',
+        detail: '钻进纸箱向前滑撞 40 伤害并击倒；箱内 0.56 秒霸体，受伤降低 40%',
+      }),
+      // 下北泽槌子蛇（出没在脚边、喜欢潮湿阴暗狭窄处的不明生物）
+      skill(3, 'dash', '下北泽槌子蛇', {
+        damage: 30, range: 78, start: .16, duration: .8, cd: 8, speed: 640, knock: 60, reach: 'ground', fx: 'bocchi-tsuchi',
+        slow: 3, slowMul: .6, react: { kind: 'stand', stun: .35 },
+        brief: '变成槌子蛇贴地爬行并无敌；咬中减速，跳起可躲',
+        detail: '变成槌子蛇贴地爬行，期间无敌；咬中脚踝 30 伤害并减速 3 秒（移速 −40%）；跳起可躲',
+      }),
+      // 给我点赞（承认欲求怪兽：双手竖拇指，喷着热线喊「给我点赞」）
+      skill(4, 'projectile', '给我点赞', {
+        damage: 9, count: 6, interval: .09, speed: 640, size: 44, life: .95, start: .34, duration: 1.08, cd: 7,
+        knock: 40, gain: 5, guardDmg: 6, solid: false, fx: 'bocchi-like', react: { kind: 'stand', stun: .22 },
+        brief: '怪兽喷出六枚点赞；每枚命中回气',
+        detail: '承认欲求怪兽喷出六枚点赞，每枚 9 伤害，命中回复 5 气；可格挡或跳过',
+      }),
+      // 吉他英雄（投稿名义「吉他英雄」；文化祭的飞扑没人接）
+      skill(5, 'projectile', '吉他英雄', {
+        damage: 26, count: 6, interval: .15, speed: 820, size: 60, start: .5, duration: 2.55, life: 2,
+        cost: 120, knock: 0, gain: 0, fx: 'bocchi-hero', holdEndure: true, solid: false, contact: 'pass',
+        react: { kind: 'stand', stun: .3 },
+        guardPlan: [6, 10, 18, 28, 40],
+        finale: { damage: 60, knock: 480, react: { kind: 'knockdown', vy: -340, knocked: .9 } },
+        brief: '独奏：六条弹幕横穿全场，随后飞扑击倒；落地趴下',
+        detail: '独奏 1.2 秒，六条弹幕从身后横穿全场各 26 伤害；随后扑向身前对手 60 伤害并击倒，落地后趴下 0.55 秒；可格挡，第五段破防',
       }),
     ],
   },

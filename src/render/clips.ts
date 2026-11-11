@@ -1,4 +1,4 @@
-import type { Fighter } from '../game/fighter.ts';
+import type { Attack, Fighter } from '../game/fighter.ts';
 import { attackPhase, stateFor } from '../game/animState.ts';
 import { YOKAN_OX } from './miyakoSheet.ts';
 import { RIB_OX, SKEWER_OX, STEAK_OX } from './ritsuSheet.ts';
@@ -828,6 +828,14 @@ export function rabbitHop(age: number, coat: number): { lift: number; u: number 
   const u = (Math.max(0, age) / hop) % 1;
   return { lift: RABBIT_HIGH * (1 + ((coat * 7) % 5 - 2) * .08) * Math.sin(Math.PI * u), u };
 }
+/** 后藤一里: U / I stand back up, and 崩坏 is sanded back, this long before the pose ends. */
+export const BOCCHI_OUT = .22;
+/** 吉他英雄: a.mode — the solo, the stage dive, face down on the floor. */
+export const BOCCHI_HERO = { play: 0, dive: 1, down: 2 } as const;
+/** Integer beats start on a downstroke. The lightning uses the same clock. */
+export function bocchiSoloBeat(a: Attack): number {
+  return (a.t - a.skill.start) / (a.skill.interval ?? .15);
+}
 /** 花园兔王: a.mode — pointing at the sky, the warren erupting, her own dive, the rise beside them, the kick
  *  and the fall, done. */
 export const WARREN = { call: 0, erupt: 1, dive: 2, rise: 3, fall: 4, done: 5 } as const;
@@ -1131,6 +1139,20 @@ export function clipFor(f: Fighter): Clip {
       if (mode === SHADOW.scare) return at('special', a.index - 2, 1);
       if (mode === SHADOW.done) return at('special', a.index - 2, 2);
       return at('special', 0, 1);
+    }
+    // 吉他英雄: alternate both guitar frames until the stage dive takes over.
+    if (f.attack.skill.fx === 'bocchi-hero') {
+      const a = f.attack;
+      if ((a.mode ?? BOCCHI_HERO.play) !== BOCCHI_HERO.play) return at('special', a.index - 2, 2);
+      const beat = bocchiSoloBeat(a);
+      return at('special', a.index - 2, beat >= 0 && beat % 1 < .5 ? 1 : 0);
+    }
+    // 崩坏: the pose is hidden under the scribble; the last moment is her standing cell.
+    if (f.attack.skill.fx === 'bocchi-crumble') return loco('idle');
+    // 完熟芒果 / 下北泽槌子蛇 / 给我点赞: going in, (hidden or holding), coming out.
+    if (f.attack.skill.fx.startsWith('bocchi-')) {
+      const t = f.attack.t, sk = f.attack.skill;
+      return at('special', f.attack.index - 2, t < sk.start ? 0 : t >= sk.duration - BOCCHI_OUT ? 2 : 1);
     }
     // 神出鬼没: the crouch into the hole; up out of the far one; standing, dusting off.
     if (f.attack.skill.fx === 'tae-burrow') {

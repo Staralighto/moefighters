@@ -31,6 +31,8 @@ export interface MoveScript {
   commit?: boolean;
   /** While this pose is up, hits do not drop it (全力碰撞). Full damage and knockback. Grabs and supers still do. */
   poise?: boolean;
+  /** Damage multiplier of brace supplied by the current pose, when that pose grants it. */
+  brace?: (a: Attack) => number | undefined;
   /** Once the payload is away, the pose is done (剪、火的故事). */
   freeWhenEmitted?: boolean;
   /** Seconds before the end that a released hold counts as finished. */

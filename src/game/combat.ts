@@ -16,6 +16,7 @@ import './lisa.ts';
 import './himari.ts';
 import './chisato.ts';
 import './mizuho.ts';
+import './bocchi.ts';
 import { applyStatus, applyStatusBlocked, extendStatus, isRecruit, statusMask } from './status.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
@@ -495,10 +496,11 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     && !(skill.noBlockSlow && defender.slow > 0);
   // Super armour: an endure move in wind-up eats one strike. 恐湖 and 哈？ keep it through the hit. Grabs and supers still go through.
   const armour = defender.attack;
+  const defendingMove = armour ? SCRIPTS[armour.skill.fx] : undefined;
   // 好痛……♡: a melee swing that finds her lying in the act springs the trap — no damage, no flinch,
   // the script takes the swing over. A counter may return false to let this hit land (the tap already
   // left the act). A shot catches her for real: the act is dropped and it lands.
-  const feint = armour && armour.t < armour.skill.start && (armour.mode ?? 0) === 0 ? SCRIPTS[armour.skill.fx]?.counter : undefined;
+  const feint = armour && armour.t < armour.skill.start && (armour.mode ?? 0) === 0 ? defendingMove?.counter : undefined;
   if (feint && g.isEnemy(attacker, defender) && !isGrab && !skill.super && !skill.dot && !blocked && !cuts(source, defender)) {
     if (skill.type === 'projectile') armour!.endure = 0;
     else if (feint(g, defender, attacker, armour!) !== false) return false;
@@ -528,18 +530,20 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   const rippleLive = !!armour && !!armour.skill.holdEndure && armour.t < armour.skill.duration - .22;
   const endured = !cuts(source, defender) && !blocked && !!armour && armour.endure > 0 && (rippleLive || armour.t < armour.skill.start) && !isGrab && !skill.super;
   // 绊创膏: the buffed fighter eats the damage without the flinch. Grabs and supers ignore the plaster.
-  const braced = !blocked && has(defender, 'brace') && !isGrab && !skill.super;
+  const braceMod = defender.mods.find(m => m.kind === 'brace' && m.left > 0);
+  const brace = braceMod ? braceMod.v ?? BRACED_DAMAGE : armour ? defendingMove?.brace?.(armour) : undefined;
+  const braced = !blocked && brace != null && !isGrab && !skill.super;
   // 秋叶原马拉松: same no-flinch as the plaster, without the damage cut or the halved knockback.
   // 全力碰撞 wears that for the pose itself, not as a buff that outlives the move.
-  const poised = !blocked && (wallArmour || has(defender, 'poise') || !!armour && !!SCRIPTS[armour.skill.fx]?.poise) && !isGrab && !skill.super;
+  const poised = !blocked && (wallArmour || has(defender, 'poise') || !!defendingMove?.poise) && !isGrab && !skill.super;
   // 梦想即力量！: the frenzy brace is true super armour — only the control set (grabs, the
   // roots, the ban) staggers her. Supers lose their pierce and the combo escape never fires.
   // 满月嚎叫 wears the same brace for the howl itself, and it ends when the howl does.
   const howling = !!defender.attack?.skill.superArmor;
   const superBrace = !blocked && !isGrab && !skill.control
-    && ((has(defender, 'brace') && defender.frenzy > 0) || howling);
+    && ((brace != null && defender.frenzy > 0) || howling);
   let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .95 : 1)
-    * dmgTakenMul(defender, { grab: isGrab, superHit: !!skill.super, superBrace, fallback: BRACED_DAMAGE })
+    * dmgTakenMul(defender, { grab: isGrab, superHit: !!skill.super, superBrace, brace, fallback: BRACED_DAMAGE })
     * incomingMul(defender, attacker.id)
     * (defender.ban > 0 ? BAN_DAMAGE : 1) * attacker.baseDmgMul * attacker.dmgMul * dmgDealtMul(attacker)
     * (defender.frail > 0 ? 1 + defender.frailBonus : 1)

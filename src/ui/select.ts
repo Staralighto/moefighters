@@ -1,7 +1,7 @@
 import { applyImageUrl, assignFirst, loadImage, stageThumbSrc } from '../assets/loader.ts';
 import { stampOf } from './stamps.ts';
 import type { CharacterData, StageData } from '../data/types.ts';
-import { BAND_BY_ID, type BandId } from '../data/bands.ts';
+import { BAND_BY_ID, groupOf, type BandId } from '../data/bands.ts';
 import { STAGES } from '../data/stages.ts';
 import type { ChallengeMods, Mode } from '../game/game.ts';
 import type { FighterView } from '../render/view.ts';
@@ -572,7 +572,7 @@ export class SelectScreen {
   }
 
   private rosterHTML(): string {
-    const group = (c: CharacterData): string => c.bands?.[0] ?? 'none';
+    const group = groupOf;
     let html = '';
     let open: string | null = null;
     this.roster.forEach((c, i) => {
