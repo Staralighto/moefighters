@@ -2,7 +2,7 @@
 import { FightGame, type GameOptions } from '../src/game/game.ts';
 import { lockComeback } from '../src/game/lock.ts';
 import { dreadMul } from '../src/game/combat.ts';
-import { LOCK_LIVE_END, LOCK_LIVE_BOW, heartTier, YOMOGI_BODY, FILLS, METEOR, BURROW, WARREN, CHISATO_LECTURE_SPAN, lectureSquash } from '../src/render/clips.ts';
+import { LOCK_LIVE_END, LOCK_LIVE_BOW, heartTier, YOMOGI_BODY, FILLS, METEOR, BURROW, WARREN, CHISATO_LECTURE_SPAN, lectureSquash, kneadSquash } from '../src/render/clips.ts';
 import { drawHeartBack, drawHeartFront, drawYomogiFx } from '../src/render/yomogiFx.ts';
 import { drawTokoFx, drawTokoSoloLight } from '../src/render/tokoFx.ts';
 import { BUSHIDO_CREEP, BUSHIDO_LUNGE, BUSHIDO_SPAN, VEIL_NORMAL, VEIL_SHOT, clockRings, drumShotTime, escapePulse, hit, holdNoteSpan, outshines, violetHidden, withGuard } from '../src/game/combat.ts';
@@ -23,6 +23,7 @@ import { addMod, atkMul, clearMod, incomingMul, jumpMul, moveSign, speedMul } fr
 import { DEFAULT_MARK, hasStatus, isRecruit, statusCount, statusMask } from '../src/game/status.ts';
 import { STATUS_MARKS, drawStatusAuras, drawStatusEffect } from '../src/render/statusMarks.ts';
 import { drawShizukuFx, drawShizukuShot } from '../src/render/shizukuFx.ts';
+import { drawSaayaFx, drawSaayaShot } from '../src/render/saayaFx.ts';
 import { drawChieriFx } from '../src/render/chieriFx.ts';
 import { assetUrl, easeLoad, imageSources, linkRate, liteFight, liteSrc, nextSrc, portraitSrc, SLOW_RATE, stageThumbSrc } from '../src/assets/loader.ts';
 import { acceptBlank, isTouchJump, matchStickTouch, stickFingerGone, thumbBandTop, touchRelease, turnedStickDelta } from '../src/game/input.ts';
@@ -197,7 +198,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(opening < 40, `${id}: the opening stays under a chipped bar, ${opening}`);
     assert.equal(withGuard(s, breakAt + 99).guardDmg, plan![plan!.length - 1], id + ': a late segment repeats the last entry');
   }
-  for (const id of ['uika', 'mutsumi', 'umiri', 'taki', 'layer', 'sayo', 'houka', 'mahoro', 'raika', 'miku', 'shizuku', 'chieri', 'himari', 'chisato']) {
+  for (const id of ['uika', 'mutsumi', 'umiri', 'taki', 'layer', 'sayo', 'houka', 'mahoro', 'raika', 'miku', 'shizuku', 'chieri', 'himari', 'chisato', 'saaya']) {
     const s = ROSTER[at(id)].skills[5];
     assert.ok(!s.guardPlan && !s.guardDmg, id + ': the unblockable super carries no guard value');
   }
@@ -9509,6 +9510,292 @@ for (const order of [[2, 3], [3, 2]]) {
     p1.attack = null;
     run(g, .3);
     assert.ok(!g.effects.some(e => e.type === 'tae-siren'), 'a cut-short I takes its siren with it');
+  }
+}
+
+// saaya: 山吹沙绫。U steps in and pats three times, then 定身 in the 'sleepy' look (a jump clears it); I leaves a
+// dough that rises and pops them up (ground only, one at a time); O breathes fire while the key is held, a tick every
+// 0.15 s, and the 4th clean tick in a row 烧焦 in the 'saaya-toast' look; the fire bakes her dough and pops it early;
+// L kneads them (the 'knead' squash), rolls them flat, pushes them into the oven and 叮 — harder when already 烧焦.
+{
+  const sa = at('saaya');
+  const data = ROSTER[sa];
+  assert.ok(sa === at('tae') + 1, '山吹沙绫 sits with Poppin\'Party, after 多惠');
+  assert.equal(data.title, '鼓手 / 面包圣女', 'title from 面包圣女');
+  assert.equal(data.quote, '用擀面杖代替鼓棒？开玩笑的！', 'quote from her 萌娘百科 header');
+  assert.equal(data.trait, 'beat', 'the drummer keeps the beat');
+  assert.ok(data.view.kind === 'sprite' && data.view.height === 181 && data.view.extras?.includes('/sprites/saaya/oven.png'), 'the oven is her one prop picture');
+  assert.ok(!!STATUS_MARKS.sleepy && !!STATUS_MARKS['saaya-toast']?.body, 'the sleepy and toasted looks are registered');
+  const fresh = (p1x = 300, p2x = 400) => {
+    const g = newGame(sa, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = p1x; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  const live = (f: { mods: { kind: string; left: number; mark?: string }[] }, kind: string, mark?: string) =>
+    f.mods.some(m => m.kind === kind && m.left > 0 && (mark === undefined || m.mark === mark));
+  // boulder's armour takes 5% off every hit.
+  const near = (dmg: number, base: number) => Math.abs(dmg - base * .95) < .6;
+  const burnt = (f: Fighter) => f.mods.some(m => m.kind === 'burn' && m.left > 0 && m.mark === 'saaya-toast');
+  // U: the faster, longer dash still completes all three pats after catching at long range.
+  for (const dir of [-1, 1] as const) {
+    const { g, p1, p2 } = fresh(dir === 1 ? 200 : 700, dir === 1 ? 600 : 300);
+    p1.facing = dir; p2.facing = dir === 1 ? -1 : 1;
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    let pats = 0, root = 0;
+    for (let i = 0; i < 220 && p1.attack; i++) {
+      g.step(STEP);
+      pats = Math.max(pats, g.effects.filter(e => e.type === 'saaya-pat').length);
+      root = Math.max(root, p2.root);
+    }
+    assert.equal(pats, 3, 'long-range U completes three pats in either direction');
+    assert.ok(near(hp - p2.hp, 24) && root > 1.8, 'a distant catch keeps its damage and sleep');
+  }
+  {
+    const { g, p1, p2 } = fresh(200, 800);
+    g.attack(p1, 2);
+    run(g, .32);
+    assert.ok(p1.x - 200 > 80, 'U now closes quickly after its wind-up');
+    run(g, 1.2);
+    assert.ok(p1.x - 200 >= 350 && p1.x - 200 <= 375, 'U dashes roughly 360 pixels when it misses');
+    assert.equal(p2.hp, p2.data.hp, 'U still cannot grab beyond its full travel and reach');
+  }
+  // U: three pats, then asleep
+  {
+    const { g, p1, p2 } = fresh(300, 380);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    let root = 0, pats = 0;
+    for (let i = 0; i < 200 && p1.attack; i++) { g.step(STEP); root = Math.max(root, p2.root); pats = Math.max(pats, g.effects.filter(e => e.type === 'saaya-pat').length); }
+    assert.ok(near(hp - p2.hp, 24), 'one 24 on the third pat: ' + (hp - p2.hp).toFixed(1));
+    assert.equal(pats, 3, 'three pats');
+    assert.ok(root > 1.8 && root <= 2.01, 'asleep 2 s: ' + root.toFixed(2));
+    assert.equal(p2.rootMark, 'sleepy', 'worn as sleepy');
+  }
+  {
+    const { g, p1, p2 } = fresh(300, 380);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    for (let i = 0; i < 200; i++) { p2.y = FLOOR - 170; p2.vy = 0; g.step(STEP); }
+    assert.equal(p2.hp, hp, 'a jump clears the pats');
+  }
+  // I: the dough rises and pops them up; a jump clears it; one at a time
+  {
+    const { g, p1, p2 } = fresh(300, 450);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    let popAt = 0, flew = false;
+    for (let i = 0; i < 360; i++) {
+      g.step(STEP);
+      if (!popAt && g.effects.some(e => e.type === 'saaya-pop')) popAt = i * STEP;
+      if (p2.y < FLOOR - 40) flew = true;
+    }
+    assert.ok(popAt > 1.6 && popAt < 1.9, 'it pops after rising: ' + popAt.toFixed(2));
+    assert.ok(near(hp - p2.hp, 30), 'the pop: ' + (hp - p2.hp).toFixed(1));
+    assert.ok(flew, 'and throws them up');
+  }
+  {
+    const { g, p1, p2 } = fresh(300, 450);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    run(g, .7);
+    p1.cooldowns[3] = 0;
+    assert.ok(!g.attack(p1, 3), 'one dough on the field');
+    for (let i = 0; i < 240; i++) { p2.y = FLOOR - 120; p2.vy = 0; g.step(STEP); }
+    assert.equal(p2.hp, hp, 'a jump clears the dough');
+  }
+  // O: held, it ticks every 0.15 s and 烧焦 on the 4th; a tap lasts .8 s; a guard keeps the 烧焦 off
+  {
+    const { g, p1, p2 } = fresh(300, 460);
+    const key = CONTROLS[p1.controller!].attacks[4];
+    g.attack(p1, 4);
+    g.keys.add(key);
+    let ticks = 0, burnAt = -1, breathing = 0;
+    const hp0 = p2.hp;
+    for (let i = 0; i < 300 && p1.attack; i++) {
+      const before = p2.hp;
+      g.step(STEP);
+      if (p2.hp < before && !burnt(p2)) ticks++;
+      if (burnAt < 0 && burnt(p2)) burnAt = ticks + 1;
+      if (p1.attack?.mode === 1) breathing += STEP;
+      if (p1.attack?.mode === 1) assert.equal(p1.vx, 0, 'she stands still while she breathes fire');
+    }
+    g.keys.delete(key);
+    assert.equal(burnAt, 4, 'the 4th tick in a row 烧焦');
+    assert.ok(breathing > 1.15 && breathing < 1.4, 'held, the fire lasts its full 1.2 s (plus the hitstops): ' + breathing.toFixed(2));
+    assert.ok(hp0 - p2.hp > 40, 'eight ticks of fire (with combo decay) and the first 烧焦 ticks: ' + (hp0 - p2.hp).toFixed(1));
+    run(g, 1);
+    assert.ok(!g.effects.some(e => e.type === 'saaya-fire'), 'the fire goes with the breath');
+  }
+  {
+    const { g, p1, p2 } = fresh(300, 460);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    while (!p1.attack?.shots) g.step(STEP);
+    const hits = p1.attack!.hit;
+    assert.ok(near(hp - p2.hp, 30), 'the first fire pulse hits for 30: ' + (hp - p2.hp).toFixed(1));
+    const first = p2.hp;
+    while (p1.attack && p1.attack.shots < 2) g.step(STEP);
+    assert.equal(p1.attack!.hit, hits, 'fire reuses its per-cast hit set across pulses');
+    assert.ok(first - p2.hp > 0 && first - p2.hp < 8, 'later pulses keep their 8 base damage');
+    for (let i = 0; i < 300 && p1.attack; i++) g.step(STEP);
+    assert.ok(burnt(p2), 'the sustained tap can reach four consecutive hits and burn');
+  }
+  // Input duration sets a fixed cooldown tier; automatic tap fire never upgrades itself.
+  for (const releaseAt of [0, .2, .3, .6, 2]) {
+    const { g, p1 } = fresh(300, 1000);
+    const key = CONTROLS[p1.controller!].attacks[4];
+    if (releaseAt) g.keys.add(key);
+    g.attack(p1, 4);
+    let clock = 0, fireTime = 0;
+    for (let i = 0; i < 300 && p1.attack; i++) {
+      if (clock >= releaseAt) g.keys.delete(key);
+      if (p1.attack.mode === 1) fireTime += STEP;
+      g.step(STEP);
+      clock += STEP;
+    }
+    g.keys.delete(key);
+    const held = releaseAt >= .25;
+    assert.ok(Math.abs(p1.cooldowns[4] + clock - (held ? 8 : 2)) < .04,
+      `release at ${releaseAt}: cooldown is ${held ? 8 : 2} from cast, saw ${p1.cooldowns[4] + clock}`);
+    assert.ok(Math.abs(fireTime - (releaseAt === 2 ? 1.2 : .8)) < .03,
+      `release at ${releaseAt}: fire lasts at least .8, saw ${fireTime}`);
+  }
+  {
+    const { g, p1, p2 } = fresh(300, 460);
+    p1.controller = null;
+    g.attack(p1, 4);
+    for (let i = 0; i < 300 && p1.attack; i++) { p2.blocking = true; g.step(STEP); }
+    assert.ok(!burnt(p2), 'a guard holds the fire and keeps the 烧焦 off');
+  }
+  // The fire bakes the dough: early, golden, bigger
+  {
+    const g = new FightGame([data, data, ROSTER[at('boulder')], ROSTER[at('boulder')]], {
+      mode: 'team', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(7), controllers: [0, 1, 1, 1],
+    });
+    run(g, 2.3);
+    const [p1, partner, p2, other] = g.fighters;
+    p1.x = 300; partner.x = 310; p2.x = 460; other.x = 900;
+    p1.facing = 1; partner.facing = 1; p2.facing = -1;
+    g.keys.add(CONTROLS[0].attacks[4]); g.keys.add(CONTROLS[1].attacks[4]);
+    g.attack(p1, 4); g.attack(partner, 4);
+    run(g, 1);
+    const streaks = p2.mods.filter(m => m.kind === 'stoke' && m.left > 0);
+    assert.equal(streaks.length, 2, 'two Saayas keep independent fire streaks on the same target');
+    assert.ok(streaks.every(m => (m.v ?? 0) >= 4), 'neither caster resets the other caster\'s streak');
+    g.keys.clear();
+  }
+  {
+    const { g, p1, p2 } = fresh(300, 455);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    run(g, .65);
+    const dough = g.projectiles.find(q => q.fx === 'saaya-dough');
+    assert.ok(dough?.settled, 'the dough is down');
+    p1.controller = null;
+    g.attack(p1, 4);
+    let baked = false, bakedAt = 0;
+    for (let i = 0; i < 120 && !bakedAt; i++) {
+      g.step(STEP);
+      if (dough!.wave === 1) baked = true;
+      if (g.effects.some(e => e.type === 'saaya-pop' && e.hit)) bakedAt = .65 + i * STEP;
+    }
+    assert.ok(baked && bakedAt > 0 && bakedAt < 1.4, 'the fire bakes it and it pops early: ' + bakedAt.toFixed(2));
+    assert.ok(hp - p2.hp >= 60 * .95, 'the baked pop doubles its base damage: ' + (hp - p2.hp).toFixed(1));
+  }
+  for (const ignite of [false, true]) {
+    // Beyond both the ordinary pop and the fire cone, but inside the enlarged baked pop.
+    const { g, p1, p2 } = fresh(300, 640);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    run(g, .65);
+    if (ignite) g.attack(p1, 4);
+    run(g, 1.5);
+    assert.ok(ignite ? near(hp - p2.hp, 60) : p2.hp === hp,
+      `distant ground target: baked pop alone hits for double damage (${hp - p2.hp})`);
+  }
+  // L: kneaded flat, into the oven, 叮; already 烧焦 is 25% more; a jump clears the lunge; a cut-short bake lets go
+  const bake = (pre?: (p2: Fighter) => void) => {
+    const { g, p1, p2 } = fresh(300, 460);
+    pre?.(p2);
+    p1.energy = 200;
+    const hp = p2.hp;
+    assert.ok(g.attack(p1, 5), 'L casts at 130');
+    let flat = 1, oven = false, down = false;
+    for (let i = 0; i < 600 && p1.attack; i++) {
+      g.step(STEP);
+      flat = Math.min(flat, kneadSquash(p2)?.y ?? 1);
+      if (g.effects.some(e => e.type === 'saaya-oven')) oven = true;
+      if (p2.knocked > 0) down = true;
+    }
+    return { g, p1, p2, dmg: hp - p2.hp, flat, oven, down };
+  };
+  {
+    const { p2, dmg, flat, oven, down } = bake();
+    assert.ok(flat <= .36, 'rolled flat: ' + flat.toFixed(2));
+    assert.ok(oven, 'into the oven');
+    assert.ok(down, 'and out knocked down');
+    assert.ok(near(dmg, 3 * 12 + 2 * 12 + 100), 'three presses, two roasts and 叮: ' + dmg.toFixed(1));
+    assert.ok(!live(p2, 'knead') && live(p2, 'look', 'saaya-toast'), 'out of the oven toasted');
+  }
+  {
+    // Already 烧焦 (a burn that does no damage, so only the bake is counted).
+    const { dmg } = bake(p2 => addMod(p2, 'burn', 9, { v: 0, every: .5, acc: .5, mark: 'saaya-toast' }));
+    assert.ok(near(dmg, 3 * 15 + 2 * 15 + 125), 'already 烧焦: 25% more: ' + dmg.toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(300, 460);
+    p1.energy = 200;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    for (let i = 0; i < 600 && p1.attack; i++) { if (i < 90) { p2.y = FLOOR - 170; p2.vy = 0; } g.step(STEP); }
+    assert.equal(p2.hp, hp, 'a jump clears the lunge');
+  }
+  {
+    const { g, p1, p2 } = fresh(300, 460);
+    p1.energy = 200;
+    g.attack(p1, 5);
+    run(g, 1.8);
+    assert.ok(g.effects.some(e => e.type === 'saaya-oven' && e.fighter === p1.id), 'the oven is in mid-bake');
+    assert.ok(kneadSquash(p2), 'and they are flat');
+    p1.attack = null;
+    run(g, .6);
+    assert.ok(!g.effects.some(e => e.fighter === p1.id && (e.type === 'saaya-oven' || e.type === 'saaya-warm' || e.type === 'saaya-sign')), 'a cut-short bake takes its oven, light and sign with it');
+    assert.equal(kneadSquash(p2), undefined, 'and lets them spring back');
+  }
+}
+
+// Saaya effects must remain finite and balanced at both quality levels, including disappearing fire.
+{
+  let depth = 0;
+  const methods = new Map<string, (...args: unknown[]) => unknown>();
+  const ctx = new Proxy({ globalAlpha: 1 } as Record<string, unknown>, {
+    get(o, key: string) {
+      if (key in o) return o[key];
+      if (!methods.has(key)) methods.set(key, (...args: unknown[]) => {
+        for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value), `Saaya ${key} stays finite`);
+        if (key === 'save') depth++;
+        if (key === 'restore') depth--;
+        if (key === 'arc') assert.ok(Number(args[2]) >= 0, 'Saaya arc radius');
+        if (key === 'ellipse') assert.ok(Number(args[2]) >= 0 && Number(args[3]) >= 0, 'Saaya ellipse radii');
+        if (key === 'createLinearGradient' || key === 'createRadialGradient') return { addColorStop() {} };
+      });
+      return methods.get(key);
+    },
+  }) as unknown as CanvasRenderingContext2D;
+  for (const lite of [false, true]) for (const dir of [-1, 1]) {
+    for (const type of ['pat', 'splat', 'pop', 'puff', 'fire', 'pyro', 'smoke', 'warm', 'sign', 'oven', 'flour', 'ding']) {
+      for (let i = 0; i <= 24; i++) {
+        const e = { type: 'saaya-' + type, x: 450, y: FLOOR, color: '#FFCC11', max: 1, life: 1 - i / 24, age: i / 24, radius: 181, dir, tx: i / 24 - .2, hit: true };
+        assert.ok(drawSaayaFx(ctx, e, lite), `Saaya draws ${type}`);
+        assert.equal(depth, 0, 'Saaya restores the canvas after every effect');
+      }
+    }
+    const g = newGame(at('saaya'), at('boulder')); dummy(g);
+    g.attack(g.fighters[0], 3); run(g, .7);
+    const p = g.projectiles[0];
+    assert.ok(!!p && drawSaayaShot(ctx, p, lite), 'Saaya draws her dough');
+    assert.equal(depth, 0, 'Saaya restores the canvas after her dough');
   }
 }
 

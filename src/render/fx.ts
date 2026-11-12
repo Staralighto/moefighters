@@ -14,6 +14,7 @@ import { drawMisakiFx, drawMisakiShot } from './misakiFx.ts';
 import { drawMaskingFx } from './maskingFx.ts';
 import { drawLockFx } from './lockFx.ts';
 import { drawTaeFx, drawTaeShot } from './taeFx.ts';
+import { drawSaayaFx, drawSaayaShot } from './saayaFx.ts';
 import { drawLisaFx, drawLisaShot } from './lisaFx.ts';
 import { drawHimariFx, drawHimariShot } from './himariFx.ts';
 import { drawTokoFx, drawTokoShot } from './tokoFx.ts';
@@ -1011,6 +1012,8 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
   if (drawLockFx(ctx, e, liteFx, images)) return;
   // 花园多惠 too.
   if (drawTaeFx(ctx, e, liteFx)) return;
+  // 山吹沙绫 too.
+  if (drawSaayaFx(ctx, e, liteFx, images)) return;
   // 今井莉莎 too.
   if (drawLisaFx(ctx, e, liteFx, images)) return;
   // 上原绯玛丽 too.
@@ -6188,6 +6191,7 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   if (drawShizukuShot(ctx, p, images, liteFx)) return;
   if (drawMisakiShot(ctx, p, images, liteFx)) return;
   if (drawTaeShot(ctx, p, liteFx)) return;
+  if (drawSaayaShot(ctx, p, liteFx)) return;
   if (drawLisaShot(ctx, p, liteFx, images)) return;
   if (drawHimariShot(ctx, p, liteFx)) return;
   if (drawTokoShot(ctx, p, liteFx)) return;

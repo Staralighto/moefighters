@@ -11,6 +11,7 @@ import { noteJab, walled } from './ai.ts';
 import './masking.ts';
 // 花园多惠 too.
 import './tae.ts';
+import './saaya.ts';
 // 今井莉莎 too.
 import './lisa.ts';
 import './himari.ts';
@@ -275,7 +276,7 @@ function poseOf(skill: Skill): HitReact | null {
 }
 
 /** C和弦 and 吉他激奏 keep firing past the first shots only while the attack key is still down. CPU taps. */
-function attackHeld(g: FightGame, f: Fighter): boolean {
+export function attackHeld(g: FightGame, f: Fighter): boolean {
   if (f.controller === null || !f.attack) return false;
   const code = CONTROLS[f.controller]?.attacks[f.attack.index];
   return !!code && g.keys.has(code);

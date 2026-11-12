@@ -40,6 +40,13 @@ export type ModKind =
   | 'smile'
   /** 有必要说教一下呢: on whoever is being lectured; left counts down to the 花丸 (render/clips.ts lectureSquash). */
   | 'lecture'
+  /** 山吹烘焙坊，营业中！: on whoever is being baked; left counts down to 叮 (render/clips.ts kneadSquash). */
+  | 'knead'
+  /** 连中: v is how many hits in a row one move has landed on this body (from is who); it lapses with left.
+   *  A move that pays off on the Nth hit in a row reads it (唐突喷火). */
+  | 'stoke'
+  /** A look only: the body wears `mark` (render/statusMarks.ts) and nothing else happens (出炉的烤面包色). */
+  | 'look'
   /** 还想再看看你: on 丰川瑞穗, v 0 while the wish is still unspent, 1 after (game/mizuho.ts). */
   | 'wish'
   /** 崩坏: on 后藤一里, v is the game age her next collapse is ready (game/bocchi.ts). */

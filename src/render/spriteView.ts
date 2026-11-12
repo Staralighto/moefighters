@@ -1,7 +1,7 @@
 import type { FighterView, FrozenPose } from './view.ts';
 import { isInvulnerable, type Fighter } from '../game/fighter.ts';
 import { LITE_SCALE, liteSrc, missingImages, portraitSrc, type ImageCache } from '../assets/loader.ts';
-import { CELL, clipFor, lectureSquash, type Clip } from './clips.ts';
+import { CELL, bodySquash, clipFor, type Clip } from './clips.ts';
 
 const rimCache = new Map<string, HTMLCanvasElement>();
 const cellCache = new Map<string, HTMLCanvasElement>();
@@ -232,7 +232,8 @@ export class SpriteView implements FighterView {
       const cartwheel = !pose && f.attack?.skill.fx === 'cartwheel';
       ctx.scale(cartwheel ? 1 : (pose ? pose.facing : f.facing), 1);
       // 有必要说教一下呢: 正坐 — the standing cell pressed flat and low about the feet, smaller with every bubble.
-      const squash = pose ? undefined : lectureSquash(f);
+      // 山吹烘焙坊: the same squash, kneaded and rolled flat.
+      const squash = pose ? undefined : bodySquash(f);
       if (squash) ctx.scale(squash.x, squash.y);
       if (cartwheel && f.attack) {
         const s = f.attack.skill, end = s.duration - .08;

@@ -952,6 +952,83 @@ export function lectureSquash(f: Fighter): { x: number; y: number } | undefined 
 
 export const LISA_CAT_BODY = 22;
 
+/* ---- 山吹沙绫: shared by src/game/saaya.ts, the cell picks below and render/saayaFx.ts ---- */
+/** 乖，摸摸头: a.mode — the little step in, the three pats, done. */
+export const PAT = { reach: 0, pat: 1, done: 2 } as const;
+export const PAT_LUNGE = .4;
+export const PAT_GAP = .16;
+export const PAT_COUNT = 3;
+export const PAT_TAIL = .3;
+/** 面团发酵中: the dough flies this long from her hands to the floor DOUGH_OUT ahead, then rises DOUGH_RISE and pops. */
+export const DOUGH_TOSS = .3;
+export const DOUGH_OUT = 200;
+export const DOUGH_RISE = 1.2;
+/** 唐突喷火: a.mode — the breath in, the fire (the key held, at most FIRE_MAX), the smoke. A tick every FIRE_TICK. */
+export const FIRE = { breathe: 0, fire: 1, done: 2 } as const;
+export const FIRE_MAX = 1.2;
+export const FIRE_TICK = .15;
+export const FIRE_TAIL = .35;
+/** Her mouth over her feet (181 tall, facing right), and the plume: FIRE_REACH long, a thread at her lips
+ *  (half-height FIRE_HALF0) that widens ever faster to a billow FIRE_HALF1 half-high at the far end. Its centre line
+ *  leaves her mouth angled down (FIRE_DIP per px) and curls back up along its length (FIRE_CURL), so the middle
+ *  licks the floor where her dough lies and the tip rises. One shape for the hit (game/saaya.ts) and the picture. */
+export const FIRE_MOUTH = { x: 30, y: 142 } as const;
+export const FIRE_REACH = 260;
+export const FIRE_HALF0 = 5;
+export const FIRE_HALF1 = 92;
+export const FIRE_DIP = .5;
+export const FIRE_CURL = .42;
+/** The plume at fraction u (0 at the lips, 1 at the tip) of `len`: the centre's drop below the mouth (y down), and
+ *  the half-height there. The half-height grows as u^1.6, so it stays a thread for a while and then blooms. */
+export function plumeAt(u: number, len = FIRE_REACH): { dy: number; half: number } {
+  const v = Math.min(1, Math.max(0, u));
+  return { dy: len * (FIRE_DIP * v - FIRE_CURL * v * v), half: (FIRE_HALF0 + (FIRE_HALF1 - FIRE_HALF0) * v ** 1.6) * len / FIRE_REACH };
+}
+/** 山吹烘焙坊，营业中！: a.mode — the lunge, the bake (kneading, the oven, the push, the roast: timed from the catch
+ *  by the BAKE_* marks below), done after 叮; or the whiff. */
+export const BAKE = { lunge: 0, bake: 1, done: 2, whiff: 3 } as const;
+/** Seconds from the catch: the three presses, the oven in, pushed in, roasting, and 叮. */
+export const BAKE_LUNGE = .3;
+export const BAKE_PRESS = [.14, .44, .74] as const;
+export const BAKE_OVEN_AT = .95;
+export const BAKE_OVEN_SLIDE = .3;
+export const BAKE_PUSH_AT = BAKE_OVEN_AT + BAKE_OVEN_SLIDE;
+export const BAKE_PUSH = .25;
+export const BAKE_ROAST_AT = BAKE_PUSH_AT + BAKE_PUSH;
+export const BAKE_ROASTS = [.2, .5] as const;
+export const BAKE_DING = BAKE_ROAST_AT + .72;
+export const BAKE_TAIL = .5;
+export const BAKE_WHIFF = .6;
+/** The 'knead' mod on the one being baked counts this down; the squash reads it. */
+export const BAKE_SPAN = BAKE_DING + .05;
+/** The oven: drawn OVEN_W wide, its middle this far past the foe from her. */
+export const OVEN_W = 230;
+export const OVEN_GAP = 96;
+/** Rolled flat: this tall and this wide at the end of the third press. */
+export const KNEAD_FLAT = { x: 1.35, y: .35 } as const;
+/** Pressed into dough: three presses (down, back up with a bounce), the third leaves them flat until the oven pops. */
+export function kneadSquash(f: Fighter): { x: number; y: number } | undefined {
+  const m = f.mods.find(x => x.kind === 'knead' && x.left > 0);
+  if (!m) return undefined;
+  const t = BAKE_SPAN - m.left;
+  // The press under way: the last one whose push down has begun (each push takes .06 s).
+  let i = -1;
+  for (let k = 0; k < BAKE_PRESS.length; k++) if (t >= BAKE_PRESS[k] - .06) i = k;
+  if (i < 0) return undefined;
+  const at = BAKE_PRESS[i];
+  const down = Math.min(1, (t - (at - .06)) / .06);
+  if (i === BAKE_PRESS.length - 1) return { x: 1 + (KNEAD_FLAT.x - 1) * down, y: 1 - (1 - KNEAD_FLAT.y) * down };
+  if (t < at) return { x: 1 + .27 * down, y: 1 - .45 * down };
+  // Back up past 1 and settle: a dough bounce.
+  const back = Math.min(1, (t - at) / .16);
+  const y = .55 + .45 * back + .1 * Math.sin(back * Math.PI);
+  return { x: 1 + (1 - y) * .6, y };
+}
+/** The squash a body wears right now: 正坐 or the dough. */
+export function bodySquash(f: Fighter): { x: number; y: number } | undefined {
+  return lectureSquash(f) ?? kneadSquash(f);
+}
+
 
 /* ---- LOCK（朝日六花）: shared by src/game/lock.ts, the cell picks below and render/lockFx.ts ---- */
 /** 限制器解除: after the cast's start, the throw cell holds this long (the flash) before the stage pose. */
@@ -987,7 +1064,7 @@ function lockLiveCell(t: number): Clip {
 
 export function clipFor(f: Fighter): Clip {
   // 有必要说教一下呢: whoever is being lectured sits it out on the standing cell (squashed by spriteView).
-  if (!f.attack && f.mods.some(m => m.kind === 'lecture' && m.left > 0)) return loco('idle');
+  if (!f.attack && f.mods.some(m => (m.kind === 'lecture' || m.kind === 'knead') && m.left > 0)) return loco('idle');
   if (f.attack) {
     // 狂化: ground J/K read the frenzy sheet. A king or box reskin keeps the common cells and swaps the image.
     const crowned = f.data.view.kind === 'sprite' && (!!f.data.view.king || !!f.data.view.box);
@@ -1228,6 +1305,31 @@ export function clipFor(f: Fighter): Clip {
       const a = f.attack, mode = a.mode ?? WARREN.call;
       if (mode === WARREN.done) return at('special', a.index - 2, 2);
       return at('special', a.index - 2, mode === WARREN.rise || mode === WARREN.fall ? 1 : 0);
+    }
+    // 乖，摸摸头: the little step, one hand up; the pats; hands together.
+    if (f.attack.skill.fx === 'saaya-pat') {
+      const mode = f.attack.mode ?? PAT.reach;
+      return at('special', f.attack.index - 2, mode === PAT.done ? 2 : mode === PAT.pat ? 1 : 0);
+    }
+    // 面团发酵中: kneading it in her hands; the low throw; brushing the flour off.
+    if (f.attack.skill.fx === 'saaya-dough') {
+      const a = f.attack, s = a.skill;
+      return at('special', a.index - 2, a.t < s.start ? 0 : a.t < s.start + DOUGH_TOSS * .7 ? 1 : 2);
+    }
+    // 唐突喷火: the breath in; leaning in with the fire; a hand over her mouth.
+    if (f.attack.skill.fx === 'saaya-fire') {
+      const mode = f.attack.mode ?? FIRE.breathe;
+      return at('special', f.attack.index - 2, mode === FIRE.done ? 2 : mode === FIRE.fire ? 1 : 0);
+    }
+    // 山吹烘焙坊，营业中！: the dash with both hands out; the palms pressing down (kneading, the push); hands out to the
+    // oven while it roasts; dusting the flour off.
+    if (f.attack.skill.fx === 'saaya-bake') {
+      const a = f.attack, mode = a.mode ?? BAKE.lunge;
+      if (mode === BAKE.done) return at('special', a.index - 2, 2);
+      if (mode !== BAKE.bake) return at('special', a.index - 2, mode === BAKE.whiff && a.t >= a.skill.duration - BAKE_WHIFF * .5 ? 2 : 0);
+      const el = a.t - a.tossAt;
+      const pressing = el < BAKE_OVEN_AT || (el >= BAKE_PUSH_AT && el < BAKE_ROAST_AT);
+      return at('special', a.index - 2, pressing ? 1 : 0);
     }
     // 元气辣妹☆: the low lean; the sweep only while she is still sliding; the V sign from the moment she stops.
     if (f.attack.skill.fx === 'lisa-gal') {

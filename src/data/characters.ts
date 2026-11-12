@@ -765,6 +765,51 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'saaya', name: '山吹沙绫', title: '鼓手 / 面包圣女', quote: '用擀面杖代替鼓棒？开玩笑的！', color: '#FFCC11',
+    bands: ['poppin-party'],
+    ...stats('beat'),
+    view: {
+      kind: 'sprite', common: '/sprites/saaya/common.png', special: '/sprites/saaya/special.png', height: 181, lift: 5,
+      extras: ['/sprites/saaya/oven.png'],
+    },
+    // 山吹沙绫（萌娘百科）: Poppin'Party 的鼓手，商店街「山吹烘焙坊」的看板娘，照顾弟妹的「PPP 的妈」；茶发单马尾、蓝瞳。
+    // 称号取别号「面包圣女」，quote 是萌百题头。全部空手：面团、火、面包屑都由代码画（saayaFx.ts），只有 L 的砖窑是外置图。
+    skills: [
+      // 欢迎光临: the shop counter greeting.
+      skill(0, 'light', '欢迎光临'),
+      // 擀面杖代替鼓棒 (萌娘百科题头): both palms pressed forward and pushed, like rolling dough — empty-handed.
+      skill(1, 'heavy', '擀面杖代替鼓棒'),
+      // 乖，摸摸头 (game/saaya.ts step_pat): 「PPP 的妈」 — three soft pats on the head and they nod off (定身, 'sleepy').
+      skill(2, 'grab', '乖，摸摸头', {
+        damage: 24, range: 90, speed: 900, start: .22, duration: 1.25, cd: 9, knock: 0, fx: 'saaya-pat',
+        root: 2, rootPin: true,
+        brief: '快速远距突进抓取，摸头三下定身；跳起可躲',
+        detail: '快速远距突进抓取，摸头三下后定身 2 秒，受击两次解除；跳起可躲',
+      }),
+      // 面团发酵中 (game/saaya.ts step_dough): 「发酵少女」(萌百别号、PICO 卡名) — a dough on the floor that rises and pops.
+      skill(3, 'projectile', '面团发酵中', {
+        damage: 30, start: .25, duration: .6, cd: 8, life: 1.5, size: 90, knock: 80, fx: 'saaya-dough', reach: 'ground', solid: false,
+        react: { kind: 'launch', vy: -520, knocked: .8 },
+        brief: '面团延时挑空，遇火增伤扩圈；仅地面、限一团',
+        detail: '抛下面团，落地 1.2 秒后爆开挑空；被唐突喷火烤到提前爆开，伤害翻倍至 60、爆炸半径为普通面团的 3 倍；只打地面，同屏至多一团',
+      }),
+      // 唐突喷火 (game/saaya.ts step_fire): PICO 里在 live 上突然喷火; B 站「在 live 上唐突喷火的山吹沙绫」.
+      skill(4, 'projectile', '唐突喷火', {
+        damage: 30, range: 260, start: .3, duration: 1.85, cd: 2, knock: 0, fx: 'saaya-fire', solid: false, hitstop: .012, shake: 1,
+        status: [{ kind: 'burn', time: 3, dmg: 6, tick: .5, mark: 'saaya-toast' }],
+        brief: '原地喷火，长按延时增冷却；连中烧焦引爆面团',
+        detail: '点按喷锥形火焰 0.8 秒；按住超过 0.25 秒进入长按档，冷却改为 8 秒、喷火至多 1.2 秒；首段 30 伤害，后续每 0.15 秒一段、每段 8 伤害；连中同一对手 4 段烧焦 3 秒，每跳 6 伤害；喷火时不能移动，火会引爆面团',
+      }),
+      // 山吹烘焙坊，营业中！ (game/saaya.ts step_bake): 自家面包店 — knead them, roll them flat, into the oven, 叮.
+      skill(5, 'grab', '山吹烘焙坊，营业中！', {
+        cost: 130, damage: 12, range: 100, speed: 520, start: .3, duration: 3.2, knock: 0, gain: 2, fx: 'saaya-bake',
+        finale: { damage: 100, knock: 140, react: { kind: 'knockdown', vy: -520, knocked: .9 } },
+        brief: '前冲抓住揉面进窑烤熟；已烧焦伤害更高，跳起可躲',
+        detail: '前冲抓取，揉面三下擀平、进窑烤两段，每段 12 伤害，出炉 100 伤害并击倒；已烧焦时伤害 +25%；跳起可躲，打空有破绽',
+      }),
+    ],
+  },
+  {
     id: 'yukina', name: '凑友希那', title: '主唱 / 顶点', quote: '目标只有一个，就是顶点。', color: '#4455BB',
     bands: ['roselia'],
     ...stats('rush'),

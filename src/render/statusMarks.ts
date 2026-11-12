@@ -10,7 +10,7 @@
 import type { Effect } from '../game/game.ts';
 import type { Fighter } from '../game/fighter.ts';
 import type { ImageCache } from '../assets/loader.ts';
-import { TAU, burst, cycle, dot, flame, glow, glyph, hash, snowflake, sparkle, stampText, streak, tri } from './fxParticles.ts';
+import { TAU, burst, cycle, dot, flame, glow, glyph, hash, snowflake, soap, sparkle, stampText, streak, tri } from './fxParticles.ts';
 import { isLiteFx } from './fxQuality.ts';
 import { drawDoodleDizzy, drawDoodleLand } from './chisatoFx.ts';
 
@@ -771,6 +771,142 @@ function applyHush(ctx: CanvasRenderingContext2D, e: Effect, age: number): void 
   ctx.restore();
 }
 
+
+/* ---------- 山吹沙绫's two looks ----------
+   'sleepy' (定身 from 乖，摸摸头): patted off to sleep — two or three loose hand-drawn z's drifting up off the head,
+   a few pale bubbles, and a faint warm glow on the body; when it lifts, the bubbles pop.
+   'saaya-toast' (烧焦 from 唐突喷火, and the look on the way out of the oven): the body toasted a warm brown under a
+   gold rim, bread crumbs dropping off it and a wisp of steam off the head — bread, not a house fire. */
+/** One loose z: three strokes with a little wobble, as if written by hand. */
+function sleepyZ(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, tilt: number): void {
+  ctx.beginPath();
+  ctx.moveTo(x - s * .5, y - s * .45 + tilt);
+  ctx.quadraticCurveTo(x, y - s * .58, x + s * .5, y - s * .5);
+  ctx.lineTo(x - s * .45, y + s * .42);
+  ctx.quadraticCurveTo(x + s * .05, y + s * .55 - tilt, x + s * .52, y + s * .46);
+  ctx.stroke();
+}
+function auraSleepy(ctx: CanvasRenderingContext2D, f: Fighter, left: number, t: number): void {
+  const h = bodyH(f);
+  const fade = Math.min(1, left / .25);
+  ctx.save();
+  // A faint warm glow on the body, breathing slowly (asleep).
+  ctx.globalAlpha = fade * (.13 + .05 * Math.sin(t * 2.4));
+  glow(ctx, f.x, f.y - h * .5, h * .4, '255,214,120');
+  // The z's: a big Z then two small ones, each popping in, swaying side to side as it floats up and tilts.
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (let i = 0; i < 3; i++) {
+    // Evenly spaced, so one is always on its way up.
+    const k = ((t * .5 + i / 3) % 1 + 1) % 1;
+    const big = i === 0 ? 1.4 : 1;
+    const pop = Math.min(1, k / .12);
+    const s = (8 + k * 8) * big * (pop < 1 ? .6 + .6 * pop - .2 * pop * pop : 1);
+    const x = f.x + f.facing * (14 + k * 30) + Math.sin(k * 9 + i * 2) * 8 * k;
+    const y = f.y - h - 4 - k * 52;
+    const a = fade * Math.min(1, k / .12) * (1 - k) ** .6;
+    ctx.globalAlpha = a * .55;
+    glow(ctx, x, y, s * 1.7, '150,140,235');
+    ctx.globalAlpha = a * .95;
+    ctx.strokeStyle = i === 0 ? '#f6f2ff' : '#e2dcff';
+    ctx.lineWidth = 2.2 + s * .12;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(Math.sin(t * 2.2 + i) * .3 - .15 * f.facing);
+    sleepyZ(ctx, 0, 0, s, Math.sin(t * 3 + i) * 1.2);
+    ctx.restore();
+  }
+  // The nose bubble: swells and shrinks with each breath, and every few breaths it pops and starts again.
+  const breath = cycle(t, .42, 0, 53);
+  const bx = f.x + f.facing * 17, by = f.y - h * .83;
+  if (breath < .86) {
+    const r = 3 + 9 * Math.sin(breath / .86 * Math.PI * 1.5) ** 2 * (.5 + breath * .6);
+    soap(ctx, bx + f.facing * r * .7, by + r * .2, r, fade * .9);
+  } else {
+    const z = (breath - .86) / .14;
+    ctx.globalAlpha = fade * (1 - z);
+    ctx.fillStyle = '#ffffff';
+    for (let j = 0; j < 4; j++) dot(ctx, bx + f.facing * 6 + Math.cos(j * 1.6) * (4 + z * 9), by + Math.sin(j * 1.6) * (4 + z * 9), 1.6);
+  }
+  // Two little drifting bubbles.
+  for (let i = 1, m = n(3); i < m; i++) {
+    const k = cycle(t, .6, i, 54);
+    soap(ctx, bx + f.facing * (6 + Math.sin(t * 1.7 + i) * 5), by - 10 - k * 34, 2 + k * 3, fade * (1 - k) * .7);
+  }
+  ctx.restore();
+}
+function applySleepy(ctx: CanvasRenderingContext2D, e: Effect, age: number): void {
+  // Nodding off: a soft warm puff over the head and a few bubbles.
+  const y = e.y - 175;
+  ctx.save();
+  const k = Math.min(1, age / .55);
+  ctx.globalAlpha = (1 - k) * .45;
+  glow(ctx, e.x, y, 30 + k * 30, '255,222,140');
+  burst(age, 57, { n: n(6), speed: [30, 80], life: .55, gravity: -60, drag: .4 }, (x, yy, q) => {
+    soap(ctx, x, yy, 4 * (1 - q * .4), (1 - q) * .8);
+  }, e.x, y);
+  ctx.restore();
+}
+function expireSleepy(ctx: CanvasRenderingContext2D, e: Effect, age: number): void {
+  // Awake: the bubbles pop into little white dots.
+  const y = e.y - 170;
+  ctx.save();
+  burst(age, 59, { n: n(8), speed: [60, 150], life: .4, drag: .3 }, (x, yy, q) => {
+    ctx.globalAlpha = 1 - q;
+    ctx.fillStyle = '#ffffff';
+    dot(ctx, x, yy, 2.2 * (1 - q * .5));
+  }, e.x, y);
+  ctx.restore();
+}
+const CRUMB = ['#c98a3e', '#e8b35a', '#a8662e'] as const;
+const TOAST_BODY: BodyLook = { outline: '#ffd25a', washes: [{ tint: '#b06a2c', alpha: .3 }] };
+function auraToast(ctx: CanvasRenderingContext2D, f: Fighter, left: number, t: number): void {
+  const h = bodyH(f);
+  const fade = Math.min(1, left / .3);
+  ctx.save();
+  // A warm haze, low.
+  ctx.globalAlpha = fade * (.14 + .04 * Math.sin(t * 6));
+  glow(ctx, f.x, f.y - h * .45, h * .38, '255,170,80');
+  // Crumbs dropping off the body.
+  for (let i = 0, m = n(8); i < m; i++) {
+    const k = cycle(t, 1.1, i, 61);
+    ctx.globalAlpha = fade * (1 - k * k) * .95;
+    ctx.fillStyle = CRUMB[i % 3];
+    const x = f.x + (hash(i, 62) - .5) * 44 + Math.sin(t * 5 + i) * 2;
+    const y = f.y - h * (.25 + .6 * hash(i, 63)) + k * h * .3;
+    dot(ctx, x, y, 2 + hash(i, 64) * 1.6);
+  }
+  // A glint running round the golden crust now and then.
+  {
+    const k = cycle(t, .7, 0, 66);
+    if (k < .3) {
+      ctx.globalAlpha = fade * Math.sin(k / .3 * Math.PI);
+      ctx.fillStyle = '#fff2b0';
+      sparkle(ctx, f.x + (hash(Math.floor(t * .7), 67) - .5) * 40, f.y - h * (.3 + .5 * hash(Math.floor(t * .7), 68)), 5);
+    }
+  }
+  // A wisp of steam off the head.
+  for (let i = 0; i < 2; i++) {
+    const k = cycle(t, .8, i, 65);
+    ctx.globalAlpha = fade * Math.sin(k * Math.PI) * .35;
+    glow(ctx, f.x + Math.sin(t * 3 + i * 2) * 6 + (i - .5) * 10, f.y - h - 4 - k * 38, 8 + k * 10, '250,246,238');
+  }
+  ctx.restore();
+}
+function applyToast(ctx: CanvasRenderingContext2D, e: Effect, age: number): void {
+  // Toasted: a warm flash over the body and a spray of crumbs.
+  ctx.save();
+  const k = Math.min(1, age / .5);
+  ctx.globalAlpha = (1 - k) * .5;
+  glow(ctx, e.x, e.y - 100, 55 + k * 40, '255,190,90');
+  burst(age, 67, { n: n(12), speed: [70, 200], life: .55, gravity: 380, drag: .5 }, (x, y, q, i) => {
+    ctx.globalAlpha = 1 - q;
+    ctx.fillStyle = CRUMB[i % 3];
+    dot(ctx, x, y, 2.6 * (1 - q * .4));
+  }, e.x, e.y - 110);
+  ctx.restore();
+}
+
 export const STATUS_MARKS: Record<string, MarkDrawer> = {
   'follow-flag': { aura: auraFollow, apply: applyFollow, expire: expireFollow },
   'recruit-badge': { aura: auraBadge },
@@ -788,6 +924,8 @@ export const STATUS_MARKS: Record<string, MarkDrawer> = {
   'himari-calorie': { aura: auraCalorie, apply: applyCalorie },
   'toko-mud': { aura: auraMud },
   'chisato-doodle': { aura: auraDoodle, apply: applyDoodle },
+  sleepy: { aura: auraSleepy, apply: applySleepy, expire: expireSleepy },
+  'saaya-toast': { aura: auraToast, apply: applyToast, body: TOAST_BODY },
 };
 
 /** Live marks this body wears that the table knows. Older looks (摩卡's bubble, the petals) are not in the
@@ -796,7 +934,7 @@ export function statusMarkOf(mark: string | undefined): MarkDrawer | undefined {
   return mark ? STATUS_MARKS[mark] : undefined;
 }
 
-const STATUS_MOD_KINDS = new Set(['burn', 'slow', 'confuse', 'follow', 'recruit', 'silence']);
+const STATUS_MOD_KINDS = new Set(['burn', 'slow', 'confuse', 'follow', 'recruit', 'silence', 'look']);
 
 /** Every status aura on this body, and whether the slow and the root were drawn here (so the old
  *  petal / heart drawings stay off for them). */
