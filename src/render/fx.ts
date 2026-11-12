@@ -12,6 +12,7 @@ import { drawChieriFx } from './chieriFx.ts';
 import { drawYomogiFx } from './yomogiFx.ts';
 import { drawMisakiFx, drawMisakiShot } from './misakiFx.ts';
 import { drawMaskingFx } from './maskingFx.ts';
+import { drawLockFx } from './lockFx.ts';
 import { drawTaeFx, drawTaeShot } from './taeFx.ts';
 import { drawLisaFx, drawLisaShot } from './lisaFx.ts';
 import { drawHimariFx, drawHimariShot } from './himariFx.ts';
@@ -1006,6 +1007,8 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
   if (drawMisakiFx(ctx, e, liteFx, images)) return;
   // MASKING too.
   if (drawMaskingFx(ctx, e, liteFx, images)) return;
+  // LOCK too.
+  if (drawLockFx(ctx, e, liteFx, images)) return;
   // 花园多惠 too.
   if (drawTaeFx(ctx, e, liteFx)) return;
   // 今井莉莎 too.

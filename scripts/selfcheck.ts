@@ -1,7 +1,8 @@
 /* Headless rule check: runs the fixed-step engine without DOM or canvas. `npm run check`. */
 import { FightGame, type GameOptions } from '../src/game/game.ts';
+import { lockComeback } from '../src/game/lock.ts';
 import { dreadMul } from '../src/game/combat.ts';
-import { heartTier, YOMOGI_BODY, FILLS, METEOR, BURROW, WARREN, CHISATO_LECTURE_SPAN, lectureSquash } from '../src/render/clips.ts';
+import { LOCK_LIVE_END, LOCK_LIVE_BOW, heartTier, YOMOGI_BODY, FILLS, METEOR, BURROW, WARREN, CHISATO_LECTURE_SPAN, lectureSquash } from '../src/render/clips.ts';
 import { drawHeartBack, drawHeartFront, drawYomogiFx } from '../src/render/yomogiFx.ts';
 import { drawTokoFx, drawTokoSoloLight } from '../src/render/tokoFx.ts';
 import { BUSHIDO_CREEP, BUSHIDO_LUNGE, BUSHIDO_SPAN, VEIL_NORMAL, VEIL_SHOT, clockRings, drumShotTime, escapePulse, hit, holdNoteSpan, outshines, violetHidden, withGuard } from '../src/game/combat.ts';
@@ -17,7 +18,7 @@ import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
 import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell } from '../src/render/fx.ts';
 import { shouldGoLite } from '../src/render/fxQuality.ts';
 import { backingScale, portraitBodyScale, superZoom, teamGlowOn } from '../src/render/renderer.ts';
-import { previewFighter, gainEnergy, skillsOf } from '../src/game/fighter.ts';
+import { previewFighter, gainEnergy, skillsOf, type Fighter } from '../src/game/fighter.ts';
 import { addMod, atkMul, clearMod, incomingMul, jumpMul, moveSign, speedMul } from '../src/game/mods.ts';
 import { DEFAULT_MARK, hasStatus, isRecruit, statusCount, statusMask } from '../src/game/status.ts';
 import { STATUS_MARKS, drawStatusAuras, drawStatusEffect } from '../src/render/statusMarks.ts';
@@ -9106,6 +9107,152 @@ for (const order of [[2, 3], [3, 2]]) {
   assert.equal(stampOf('viola'), 2, 'blocked storage still keeps the stamp for this session');
   g.localStorage = saved;
   assert.ok(miniSeal(2).split('★').length - 1 === 3, 'a 大师 stamp carries three stars');
+}
+
+// lock: RAS 的 LOCK（朝日六花）。U takes the glasses off into the costume (the king sheet + frenzy.skills): in it U puts
+// them back on and I is the louder shout; the form's end starts a 10 s recast. A knockdown just before buys 3 s more.
+// I leaves them 沉默 (no U I O L, J still fine). O: she hops back and MASKING rides past into them. L: the scream
+// holds the stage, five headbangs and the star go through a guard, and the glasses come back on with the costume off.
+{
+  const lo = at('lock');
+  const data = ROSTER[lo];
+  assert.ok(lo === at('masking') + 1, 'LOCK sits right after MASKING in RAS');
+  assert.equal(data.name, 'LOCK', 'RAS members go by their code names');
+  assert.equal(data.title, '吉他 / 吉他狂战士', 'title from 萌娘百科 (吉他狂战士)');
+  assert.equal(data.trait, 'rush', 'a berserker rushes');
+  assert.equal(data.frenzy?.skills?.length, 6, 'the costume answers all six keys');
+  assert.ok(data.view.kind === 'sprite' && !!data.view.king && data.view.extras?.includes('/sprites/masking/special.png'), 'stage sheet and MASKING preload');
+  assert.ok(Math.abs(data.skills[5].duration - LOCK_LIVE_END) < 1e-6, 'L lasts exactly its timeline: ' + data.skills[5].duration + ' vs ' + LOCK_LIVE_END);
+  const fresh = (p1x = 300, p2x = 420) => {
+    const g = newGame(lo, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = p1x; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  const unseal = (g: FightGame, p1: Fighter) => { assert.ok(g.attack(p1, 2), 'U casts'); run(g, .9); };
+  // U into the costume; I there is the roar; U again takes it off and starts the recast
+  {
+    const { g, p1, p2 } = fresh(300, 400);
+    const hp = p2.hp;
+    unseal(g, p1);
+    assert.ok(p1.king && p1.frenzy > 6.5 && p1.frenzy <= 8, 'U puts the costume on for about 8 s: ' + p1.frenzy.toFixed(2));
+    assert.ok(hp > p2.hp, 'the ring shoves the one next to her');
+    assert.equal(skillsOf(p1)[3].fx, 'lock-roar', 'in costume I is the roar');
+    assert.equal(skillsOf(p1)[2].fx, 'lock-reseal', 'in costume U puts the glasses back on');
+    assert.ok(g.canAttack(p1, 3), 'U I O L stay open in the costume');
+    run(g, .2);
+    assert.ok(g.attack(p1, 2), 'the glasses go back on');
+    run(g, .6);
+    assert.ok(!p1.king && p1.frenzy === 0, 'the costume is off');
+    assert.ok(p1.cooldowns[2] > 9, 'and U waits the recast: ' + p1.cooldowns[2].toFixed(2));
+  }
+  // the costume runs out on its own: the recast starts there too
+  {
+    const { g, p1 } = fresh(300, 700);
+    unseal(g, p1);
+    run(g, 8.4);
+    assert.ok(!p1.king, 'the costume comes off when the clock runs out');
+    assert.ok(p1.cooldowns[2] > 9, 'and the recast starts: ' + p1.cooldowns[2].toFixed(2));
+  }
+  // 不同意我就不回去: knocked down, she gets up and the costume runs 3 s longer
+  {
+    const { g, p1 } = fresh(300, 700);
+    p1.knocked = .2;
+    run(g, .5);
+    assert.ok(p1.knocked === 0, 'she is back up');
+    unseal(g, p1);
+    assert.ok(p1.frenzy > 9.5, 'the comeback costume runs longer: ' + p1.frenzy.toFixed(2));
+    assert.ok(!lockComeback(p1), 'unseal consumes the comeback window');
+  }
+  // The comeback window survives state restoration, and expires on the shared mod clock.
+  {
+    const { g, p1 } = fresh(300, 700);
+    p1.knocked = .2;
+    run(g, .5);
+    assert.ok(lockComeback(p1), 'getting up opens the comeback window');
+    const { g: restored } = fresh(300, 700);
+    loadGame(restored, new Rng(1), dumpGame(g, new Rng(1)));
+    assert.ok(lockComeback(restored.fighters[0]), 'the comeback window is restored with the fighter');
+    unseal(restored, restored.fighters[0]);
+    assert.ok(restored.fighters[0].frenzy > 9.5, 'restored comeback still strengthens U');
+    run(g, 3.1);
+    assert.ok(!lockComeback(p1), 'the comeback window expires after 3 seconds');
+    unseal(g, p1);
+    assert.ok(p1.frenzy <= 8, 'an expired comeback does not strengthen U');
+  }
+  // I: the shout leaves them 沉默 — no U, J still fine
+  {
+    const { g, p1, p2 } = fresh(300, 420);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    run(g, .9);
+    assert.ok(hp > p2.hp, 'I lands: ' + (hp - p2.hp));
+    assert.ok(hasStatus(p2, 'silence'), 'I leaves them 沉默');
+    assert.ok(p2.mods.some(m => m.kind === 'silence' && m.mark === 'hush'), 'in the neutral hush look');
+    assert.ok(!!STATUS_MARKS.hush, 'the hush look is registered');
+    p2.stun = 0; p2.knocked = 0;
+    assert.ok(!g.canAttack(p2, 2), '沉默 shuts U');
+    assert.ok(g.canAttack(p2, 0), 'J still comes out');
+    run(g, 2.2);
+    assert.ok(!hasStatus(p2, 'silence') && g.canAttack(p2, 2), '沉默 wears off');
+  }
+  // O: she hops back, MASKING rides past her into them; a jump clears the bike
+  {
+    const { g, p1, p2 } = fresh(300, 520);
+    const hp = p2.hp, x0 = p1.x;
+    g.attack(p1, 4);
+    let rode = false;
+    for (let i = 0; i < 200 && p1.attack; i++) { g.step(STEP); if (g.effects.some(e => e.type === 'lock-rescue-ride')) rode = true; }
+    assert.ok(rode, 'MASKING rides in');
+    assert.ok(p1.x < x0 - 60, 'LOCK hops back: ' + (x0 - p1.x).toFixed(0));
+    assert.ok(hp - p2.hp >= 40, 'the bike hits them: ' + (hp - p2.hp));
+    run(g, .3);
+    assert.ok(!g.effects.some(e => e.type === 'lock-rescue-ride'), 'MASKING leaves with the move');
+  }
+  {
+    const { g, p1, p2 } = fresh(300, 520);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    for (let i = 0; i < 200 && p1.attack; i++) { p2.y = FLOOR - 160; p2.vy = 0; g.step(STEP); }
+    assert.equal(p2.hp, hp, 'a jump clears the bike');
+  }
+  // L: through a guard, the star knocks them down; cast in costume, it ends the costume
+  {
+    const { g, p1, p2 } = fresh(300, 520);
+    p1.energy = 200;
+    const hp = p2.hp;
+    assert.ok(g.attack(p1, 5), 'L casts at 150');
+    const beats = new Set<object>();
+    for (let i = 0; i < 600 && p1.attack; i++) {
+      p2.blocking = true;
+      g.step(STEP);
+      for (const e of g.effects) if (e.type === 'lock-scream' || e.type === 'lock-bang' || e.type === 'lock-star') beats.add(e);
+    }
+    assert.equal(beats.size, 7, 'L emits one scream, five headbangs and one star');
+    assert.ok(hp - p2.hp > 150, 'the set goes through a guard: ' + (hp - p2.hp));
+    assert.ok(p2.knocked > 0 || p2.y < FLOOR, 'the star knocks them down');
+    run(g, .5);
+    assert.ok(!g.effects.some(e => e.type === 'lock-dim' || e.type === 'lock-galaxy'), 'the lights come back up');
+  }
+  {
+    const { g, p1 } = fresh(300, 520);
+    unseal(g, p1);
+    p1.energy = 200;
+    assert.ok(g.attack(p1, 5), 'L casts in costume');
+    assert.ok(p1.attack!.t >= .39, 'in costume the intro is skipped');
+    let lt = 0;
+    for (let i = 0; i < 600 && p1.attack; i++) { g.step(STEP); lt = p1.attack?.t ?? lt; if (p1.attack && p1.attack.t > LOCK_LIVE_BOW + .05) break; }
+    assert.ok(!p1.king, 'the bow takes the costume off');
+  }
+  {
+    const { g, p1 } = fresh(300, 700);
+    p1.energy = 200;
+    assert.ok(g.attack(p1, 5), 'L starts before the interruption');
+    run(g, 1);
+    assert.ok(g.effects.some(e => e.type === 'lock-galaxy'), 'the stage lights are running');
+    p1.attack = null;
+    run(g, .5);
+    assert.ok(!g.effects.some(e => e.type === 'lock-dim' || e.type === 'lock-galaxy'), 'an interrupted L leaves no stage lights');
+  }
 }
 
 // masking: RAS 的鼓手 MASKING。U rides the bike through bodies and skids; I pinches cheeks and leaves them

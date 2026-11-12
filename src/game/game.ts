@@ -1,6 +1,6 @@
 import type { CharacterData, Skill, StageData } from '../data/types.ts';
 import type { Attack, Fighter } from './fighter.ts';
-import { DECAY_TIMERS, formTune, gainEnergy, makeFighter, meterCap, skillsOf } from './fighter.ts';
+import { DECAY_TIMERS, dropForm, formTune, gainEnergy, makeFighter, meterCap, skillsOf } from './fighter.ts';
 import { AIR_SKILLS } from '../data/skills.ts';
 import { bandMembers, ROSTER_BY_ID } from '../data/characters.ts';
 import type { BandId } from '../data/bands.ts';
@@ -518,7 +518,9 @@ export class FightGame {
       if (f.rootLevel === 'freeze' || this.skillFor(f, index).type === 'dash') return false;
     }
     if (f.basic && index >= 2) return false;
-    if (f.king && index >= 2) return false;
+    if (f.king && index >= 2 && !f.data.frenzy?.skills) return false;
+    // 沉默: no U I O L; J, K and a breakout still come out.
+    if (index >= 2 && !breakout && has(f, 'silence')) return false;
     // 带骨肉之人: one chunk on the field. A second press does nothing until she touches it.
     const skillNow = this.skillFor(f, index);
     // 舞台装置: the I slot is shut while her device stands, whatever shortens cooldowns.
@@ -1097,9 +1099,11 @@ export class FightGame {
     if (f.hp <= 0) { this.retire(f); this.fall(f, dt); return; }
     // ponytail: the 7s timer can die mid-swing. Hold a sliver so the king sheet lasts that one staff hit, then drop it.
     if (f.king && f.frenzy <= 0) {
-      const swinging = !!f.attack && f.attack.index <= 1;
+      // A form with its own U I O (frenzy.skills) also finishes those in costume; L draws from the special sheet.
+      const open = !!f.data.frenzy?.skills;
+      const swinging = !!f.attack && (f.attack.index <= 1 || (open && f.attack.index <= 4));
       if (swinging) f.frenzy = .05;
-      else f.king = false;
+      else dropForm(f);
     }
     if (f.root > 0) {
       f.root = Math.max(0, f.root - dt);

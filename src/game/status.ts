@@ -1,4 +1,4 @@
-/* 异常: the five reusable statuses — 烧焦 burn, 冻僵 chill, 冻住 freeze, 混乱 confuse, 跟班 follow.
+/* 异常: the six reusable statuses — 烧焦 burn, 冻僵 chill, 冻住 freeze, 混乱 confuse, 跟班 follow, 沉默 silence.
    Mechanics are keyed by kind and live here; the look is keyed by mark and lives in
    src/render/statusMarks.ts. A move picks the kind and may name a mark; a second character who wants
    the same status in a different look writes the same kind with its own mark and registers one drawer.
@@ -13,7 +13,7 @@ import { hit } from './combat.ts';
 
 /** The look a status wears when the move names none. Neutral on purpose: anyone may lay these. */
 export const DEFAULT_MARK: Readonly<Record<StatusKind, string>> = {
-  burn: 'burn', chill: 'frost', freeze: 'ice-block', confuse: 'dizzy-q', follow: 'follow-flag',
+  burn: 'burn', chill: 'frost', freeze: 'ice-block', confuse: 'dizzy-q', follow: 'follow-flag', silence: 'hush',
 };
 
 /** The word that pops once when a status is fresh. Same names as the glossary (index.html 术语). */
@@ -23,6 +23,7 @@ export const STATUS_WORD: Readonly<Record<StatusKind, { text: string; color: str
   freeze: { text: '冻住!', color: '#e8f8ff' },
   confuse: { text: '混乱', color: '#cbb8ff' },
   follow: { text: '跟班', color: '#ffb3d6' },
+  silence: { text: '沉默', color: '#dfe6f0' },
 };
 
 export const BURN_TICK = .5;
@@ -43,12 +44,13 @@ export function hasStatus(f: Fighter, kind: StatusKind): boolean {
     case 'freeze': return f.root > 0 && f.rootLevel === 'freeze';
     case 'confuse': return has(f, 'confuse');
     case 'follow': return has(f, 'follow');
+    case 'silence': return has(f, 'silence');
   }
 }
 
-const KINDS: readonly StatusKind[] = ['burn', 'chill', 'freeze', 'confuse', 'follow'];
+const KINDS: readonly StatusKind[] = ['burn', 'chill', 'freeze', 'confuse', 'follow', 'silence'];
 
-/** The kinds this body carries as bits, in KINDS order (burn 1, chill 2, freeze 4, confuse 8, follow 16). */
+/** The kinds this body carries as bits, in KINDS order (burn 1, chill 2, freeze 4, confuse 8, follow 16, silence 32). */
 export function statusMask(f: Fighter): number {
   let m = 0;
   KINDS.forEach((k, i) => { if (hasStatus(f, k)) m |= 1 << i; });
@@ -93,6 +95,9 @@ export function layStatus(g: FightGame, attacker: Fighter, defender: Fighter, st
       break;
     case 'confuse':
       addMod(defender, 'confuse', st.time, { mark, max: true });
+      break;
+    case 'silence':
+      addMod(defender, 'silence', st.time, { mark, max: true });
       break;
     case 'follow': {
       // The 部下 number counts up across the match for whoever recruits (the league had three before).
@@ -140,7 +145,7 @@ export function extendStatus(g: FightGame, attacker: Fighter, f: Fighter, more: 
   if (!(more > 0)) return false;
   let any = false;
   for (const m of f.mods) {
-    if (m.left <= 0 || (m.kind !== 'burn' && m.kind !== 'slow' && m.kind !== 'confuse')) continue;
+    if (m.left <= 0 || (m.kind !== 'burn' && m.kind !== 'slow' && m.kind !== 'confuse' && m.kind !== 'silence')) continue;
     m.left += m.left * more;
     any = true;
     if (m.mark) g.effect(m.mark + '@apply', f.x, f.y, attacker.data.color, .6, { follow: f.id, ox: 0, oy: 0 });

@@ -19,7 +19,7 @@ export type ReactKind = 'none' | 'stand' | 'pin' | 'float' | 'knockdown' | 'laun
  *  chill rides the shared 减速 mod and freeze the 禁足-tier 定身, so 冻僵 and 冻住 are the same clocks
  *  as every other slow and lock; burn and confuse are mods of their own. follow (跟班) is a mod too: the
  *  body loses its controls and walks behind whoever laid it (game.ts stepFollow). */
-export type StatusKind = 'burn' | 'chill' | 'freeze' | 'confuse' | 'follow';
+export type StatusKind = 'burn' | 'chill' | 'freeze' | 'confuse' | 'follow' | 'silence';
 
 /** One status a clean hit lays. Parameters are read by kind; anything a kind does not use is ignored. */
 export interface StatusApply {
@@ -418,6 +418,12 @@ export interface CharacterData {
     swingFx?: string;
     /** Pixels the ground K carries her forward, spread over the windup and the strike (伊泽枣's pounce). */
     heavyLunge?: number;
+    /** While the king sheet is up, these six answer J K U I O L instead of `skills`, and U I O L stay open.
+     *  Unset: the king form locks U I O L. Moves here should draw from common cells (the king sheet swaps
+     *  those), so the form never needs a second special sheet (LOCK 的演出服). */
+    skills?: Skill[];
+    /** Once the king form drops, this slot waits this long before it can raise the form again. */
+    recast?: { slot: number; time: number };
   };
 }
 

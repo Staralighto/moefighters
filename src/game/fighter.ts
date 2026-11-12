@@ -263,7 +263,17 @@ export function meterCap(data: CharacterData): number {
 
 /** 一人二役: the six moves of the form that is up. Every kernel read of a character's list goes through here. */
 export function skillsOf(f: Fighter): Skill[] {
+  if (f.king && f.data.frenzy?.skills) return f.data.frenzy.skills;
   return f.form && f.data.forms ? f.data.forms.alt.skills : f.data.skills;
+}
+
+/** The king form ends now: the clock, the sheet, and the recast wait its data asks for. */
+export function dropForm(f: Fighter): void {
+  f.frenzy = 0;
+  if (!f.king) return;
+  f.king = false;
+  const rc = f.data.frenzy?.recast;
+  if (rc) f.cooldowns[rc.slot] = Math.max(f.cooldowns[rc.slot], rc.time * f.cdMul);
 }
 
 /** The half-width hits test against: 38 for everyone, wider for a big form (FormTune.girth). */

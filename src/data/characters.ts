@@ -31,6 +31,59 @@ const mocaSlow = {
   slow: 5, slowMul: .5, slowJump: .65, slowAtk: .7, slowMark: 'bubble',
 };
 
+/* LOCK（朝日六花）: the street-clothes list, and the costume's (frenzy.skills) — J K O L are the same moves,
+   U becomes 戴回眼镜 and I the louder shout on the stage sheet's K cells (src/game/lock.ts). */
+const LOCK_SKILLS = [
+  // 先辈好！（对谁都叫「〇〇先辈」）: the bow is the headbutt; in costume the same press is a headbang.
+  skill(0, 'light', '先辈好！'),
+  // 幸运E（萌娘百科「饱尝艰辛的幸运E」）: she trips forward into them.
+  skill(1, 'heavy', '幸运E', { range: 136 }),
+  // 限制器解除（萌娘百科: 平常戴着的眼镜和发带是能力限制器）.
+  skill(2, 'endure', '限制器解除', {
+    damage: 20, range: 150, start: .3, duration: .78, cd: 1, knock: 320, fx: 'lock-unseal', react: { kind: 'stand', stun: .3 },
+    brief: '摘眼镜发圈震开周围，换装狂化；倒地后放更久',
+    detail: '摘下眼镜和发圈，震开身边的人 20 伤害，换上演出服狂化 8 秒：J / K 变成甩头，更快更痛，三下 J 自动接 K；I 变成更大的怒吼，U 变成戴回眼镜提前结束；被击倒后 3 秒内放，狂化 +3 秒且震开范围更大；狂化结束后 10 秒才能再放',
+  }),
+  // 给我安静听着（第三季: 最没自信的她在台上对着起哄的人吼了回去）.
+  skill(3, 'heavy', '给我安静听着', {
+    damage: 30, range: 175, start: .28, duration: .8, cd: 7, knock: 140, fx: 'lock-hush', react: { kind: 'stand', stun: .35 },
+    status: [{ kind: 'silence', time: 2 }],
+    brief: '对前方大吼，命中让对方沉默',
+    detail: '对前方大吼 30 伤害，命中让对方沉默 2 秒（放不出 U / I / O / L，普通攻击和解控照常）；可格挡',
+  }),
+  // 护六出动（B 站「护六狂魔 mas王」）.
+  skill(4, 'heavy', '护六出动', {
+    damage: 52, range: 74, start: .2, duration: 1.1, cd: 9, knock: 380, fx: 'lock-rescue',
+    react: { kind: 'knockdown', vy: -240, knocked: .7 },
+    brief: '后跳，MASKING 骑摩托冲出撞人；跳起可躲',
+    detail: '向后小跳（前半段无敌），MASKING 骑死亡银河号从身后冲过全场，撞到的人 52 伤害并击倒；可格挡，跳起可躲',
+  }),
+  // 少女乐团大时代（「这就是……这就是，大少女乐团时代呀！」，游戏里的鬼叫语音表情）.
+  skill(5, 'light', '少女乐团大时代', {
+    cost: 150, damage: 16, range: 640, start: .58, duration: 3.67, fx: 'lock-live', knock: 0, gain: 0, noBlock: true, holdEndure: true,
+    finale: { damage: 85, knock: 520, react: { kind: 'knockdown', vy: -340, knocked: 1 } },
+    brief: '鬼叫定住全场，甩头五连击，星星爆开击倒；不能格挡',
+    detail: '鬼叫让全场对手定身约 2 秒（15 伤害，跳不掉），随后甩头五下，各 16 伤害，最后星星爆开 85 伤害并击倒；不能格挡；平时放会先摘眼镜，演出服时直接开唱；结束时戴回眼镜，狂化随之结束',
+  }),
+];
+const LOCK_STAGE = [
+  LOCK_SKILLS[0],
+  LOCK_SKILLS[1],
+  skill(2, 'endure', '戴回眼镜', {
+    damage: 0, range: 0, start: .22, duration: .5, cd: 0, fx: 'lock-reseal',
+    brief: '戴回眼镜，提前结束狂化',
+    detail: '戴回眼镜，提前结束演出服狂化；之后 10 秒才能再次限制器解除',
+  }),
+  skill(3, 'heavy', '给我安静听着！', {
+    damage: 44, range: 240, start: .22, duration: .66, cd: 7, knock: 400, fx: 'lock-roar',
+    react: { kind: 'knockdown', vy: -200, knocked: .6 }, status: [{ kind: 'silence', time: 2 }],
+    brief: '演出服怒吼：更远，击倒并沉默',
+    detail: '演出服下的怒吼，更远更响：44 伤害并击倒，命中让对方沉默 2 秒；可格挡',
+  }),
+  LOCK_SKILLS[4],
+  LOCK_SKILLS[5],
+];
+
 export const ROSTER: CharacterData[] = [
   {
     id: 'uika', name: '三角初华', title: '忠犬 / 悲伤', quote: '我毋畏悲伤。', color: '#BB9955',
@@ -1410,6 +1463,24 @@ export const ROSTER: CharacterData[] = [
         detail: '起步后摩托冲锋，撞上第一个人并顶着一路推到画面边缘，途中每 0.13 秒 10 伤害；到边后跃起飞踢 140 伤害并击倒；没撞到人则在前方踢地 77 伤害；不能格挡，跳起可躲',
       }),
     ],
+  },
+  {
+    id: 'lock', name: 'LOCK', title: '吉他 / 吉他狂战士', quote: '这就是……这就是，大少女乐团时代呀！', color: '#AAEE22',
+    bands: ['raise-a-suilen'],
+    ...stats('rush'),
+    // 朝日六花（萌娘百科）: 岐阜出身、住在澡堂旭汤、Popipa 铁粉、幸运E。眼镜和发圈是「能力限制器」，摘下就是吉他狂战士。
+    // The costume is the king sheet (stage.png) and frenzy.skills: in it every key draws from common cells.
+    frenzy: {
+      rate: 1.25, rangeMul: 1.2, cdMul: .7, damageMul: 1.3, chain: true, time: 8, tint: '#AAEE22', swingFx: 'lock-hair',
+      skills: LOCK_STAGE, recast: { slot: 2, time: 10 },
+    },
+    view: {
+      kind: 'sprite', common: '/sprites/lock/common.png', special: '/sprites/lock/special.png', height: 171, lift: 5,
+      king: '/sprites/lock/stage.png', kingScale: 176 / 171,
+      // 护六出动 draws MASKING from her own sheet on her own bike.
+      extras: ['/sprites/masking/special.png', '/sprites/masking/bike.png'],
+    },
+    skills: LOCK_SKILLS,
   },
   {
     id: 'mashiro', name: '仓田真白', title: '主唱 / 幻视', quote: '如果平凡的我也能找到属于我的“特别”就好了', color: '#6677CC',

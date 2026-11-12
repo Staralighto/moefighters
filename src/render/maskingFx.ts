@@ -114,7 +114,7 @@ function bikeShapes(ctx: CanvasRenderingContext2D, w: number): void {
   ctx.fillRect(-w * .14, -w * .3, w * .2, w * .04);
 }
 /** bike.png (or the shapes) with the seat at the origin and the tyres on the floor; facing applied by the caller. */
-function drawBike(ctx: CanvasRenderingContext2D, im: HTMLImageElement | undefined): void {
+export function drawBike(ctx: CanvasRenderingContext2D, im: HTMLImageElement | undefined): void {
   if (im) {
     const h = BIKE_W * im.naturalHeight / im.naturalWidth;
     ctx.imageSmoothingEnabled = true;
@@ -125,7 +125,7 @@ function drawBike(ctx: CanvasRenderingContext2D, im: HTMLImageElement | undefine
   }
 }
 /** Two dark arcs turning on each wheel: the spin reads even on a still picture. */
-function wheelSpin(ctx: CanvasRenderingContext2D, el: number, speed: number): void {
+export function wheelSpin(ctx: CanvasRenderingContext2D, el: number, speed: number): void {
   const wr = AXLE_V * BIKE_W, ay = -wr;
   ctx.strokeStyle = 'rgba(240,236,228,.55)';
   ctx.lineWidth = 2;

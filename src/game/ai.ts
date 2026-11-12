@@ -100,6 +100,8 @@ function pushAttack(f: Fighter, index: number): void {
 function buffLive(f: Fighter, fx: string): boolean {
   if (fx === 'dream' || fx === 'declaration') return f.frenzy > 0;
   if (fx === 'king') return !!f.king;
+  // 戴回眼镜: the CPU keeps LOCK's costume on until it is nearly over.
+  if (fx === 'lock-reseal') return f.frenzy > 1.5;
   if (fx === 'box') return f.box > 0;
   if (fx === 'feast') return f.feast > 0;
   if (fx === 'infinite') return f.debt > 0;

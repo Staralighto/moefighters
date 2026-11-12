@@ -710,6 +710,67 @@ function applyDoodle(ctx: CanvasRenderingContext2D, e: Effect, age: number): voi
   drawDoodleLand(ctx, e.x, e.y - 175, age);
 }
 
+
+/* ---------- 沉默 (neutral): the sound taken out of them — a few small rests (休止符) drifting down past the face
+   and fading, soft grey motes, and a faint hush glow over the mouth. Thin strokes, never an outlined icon ---------- */
+const HUSH = ['#eef2f8', '#c9d2e0', '#a9b4c6'] as const;
+/** One quarter rest, about `s` tall, drawn as a thin zigzag with a hooked foot. */
+function rest(ctx: CanvasRenderingContext2D, x: number, y: number, s: number): void {
+  ctx.beginPath();
+  ctx.moveTo(x - s * .12, y - s * .5);
+  ctx.lineTo(x + s * .18, y - s * .2);
+  ctx.lineTo(x - s * .14, y + s * .05);
+  ctx.lineTo(x + s * .16, y + s * .3);
+  ctx.quadraticCurveTo(x - s * .22, y + s * .22, x - s * .02, y + s * .52);
+  ctx.stroke();
+}
+function auraHush(ctx: CanvasRenderingContext2D, f: Fighter, left: number, t: number): void {
+  const h = bodyH(f);
+  const fade = Math.min(1, left / .3);
+  ctx.save();
+  // The hush over the mouth: a cool, low glow that breathes slowly.
+  ctx.globalAlpha = fade * (.22 + .06 * Math.sin(t * 3));
+  glow(ctx, f.x + f.facing * 8, f.y - h * .82, 16, '200,212,232');
+  // Rests sinking past the face, slow, each one fading as it falls.
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 1.8;
+  for (let i = 0, m = n(4); i < m; i++) {
+    const k = cycle(t, 1.6, i, 41);
+    ctx.globalAlpha = fade * Math.sin(k * Math.PI) * .85;
+    ctx.strokeStyle = HUSH[i % 3];
+    const x = f.x + (hash(i, 42) - .5) * 50;
+    rest(ctx, x, f.y - h * (1.02 - .3 * k), 9 + hash(i, 43) * 4);
+  }
+  // Grey motes, falling rather than rising: the opposite of a shout.
+  for (let i = 0, m = n(6); i < m; i++) {
+    const k = cycle(t, 1.1, i, 44);
+    ctx.globalAlpha = fade * (1 - k) * .6;
+    ctx.fillStyle = HUSH[(i + 1) % 3];
+    dot(ctx, f.x + (hash(i, 45) - .5) * 44, f.y - h * (.95 - .35 * k), 1.8);
+  }
+  ctx.restore();
+}
+function applyHush(ctx: CanvasRenderingContext2D, e: Effect, age: number): void {
+  // The moment it lands: two rings close in on the mouth (the sound sucked away), and a puff of grey motes.
+  ctx.save();
+  const y = e.y - 150;
+  ctx.strokeStyle = '#e6ecf5';
+  for (let i = 0; i < 2; i++) {
+    const k = Math.min(1, Math.max(0, (age - i * .08) / .3));
+    if (k <= 0 || k >= 1) continue;
+    ctx.globalAlpha = (1 - k) * .75;
+    ctx.lineWidth = 2.2 * (1 - k) + .6;
+    ctx.beginPath(); ctx.arc(e.x, y, 54 * (1 - k) + 6, 0, TAU); ctx.stroke();
+  }
+  burst(age, 46, { n: n(12), speed: [40, 120], life: .55, gravity: 70, drag: .4 }, (x, yy, k, i) => {
+    ctx.globalAlpha = (1 - k) * .8;
+    ctx.fillStyle = HUSH[i % 3];
+    dot(ctx, x, yy, 2.2);
+  }, e.x, y);
+  ctx.restore();
+}
+
 export const STATUS_MARKS: Record<string, MarkDrawer> = {
   'follow-flag': { aura: auraFollow, apply: applyFollow, expire: expireFollow },
   'recruit-badge': { aura: auraBadge },
@@ -717,6 +778,7 @@ export const STATUS_MARKS: Record<string, MarkDrawer> = {
   frost: { aura: auraFrost, apply: applyFrost },
   'ice-block': { aura: auraIce, apply: applyIce, expire: expireIce, body: ICE_BODY },
   'dizzy-q': { aura: auraDizzy, apply: applyDizzy },
+  hush: { aura: auraHush, apply: applyHush },
   blush: { aura: auraBlush, apply: applyBlush },
   cuffs: { aura: auraCuffs, apply: applyCuffs, expire: expireCuffs },
   'lisa-cat': { aura: auraCatMess, apply: applyCatMess },
@@ -734,7 +796,7 @@ export function statusMarkOf(mark: string | undefined): MarkDrawer | undefined {
   return mark ? STATUS_MARKS[mark] : undefined;
 }
 
-const STATUS_MOD_KINDS = new Set(['burn', 'slow', 'confuse', 'follow', 'recruit']);
+const STATUS_MOD_KINDS = new Set(['burn', 'slow', 'confuse', 'follow', 'recruit', 'silence']);
 
 /** Every status aura on this body, and whether the slow and the root were drawn here (so the old
  *  petal / heart drawings stay off for them). */

@@ -952,6 +952,39 @@ export function lectureSquash(f: Fighter): { x: number; y: number } | undefined 
 
 export const LISA_CAT_BODY = 22;
 
+
+/* ---- LOCK（朝日六花）: shared by src/game/lock.ts, the cell picks below and render/lockFx.ts ---- */
+/** 限制器解除: after the cast's start, the throw cell holds this long (the flash) before the stage pose. */
+export const LOCK_UNSEAL_FLASH = .14;
+/** 护六出动: her hop back, MASKING's ride (speed px/s, how far behind her he starts, half-width the bike
+ *  hits on, the longest ride). */
+export const LOCK_HOP = .34;
+export const LOCK_RIDE = { speed: 980, back: 170, reach: 74, time: .9 } as const;
+/** 少女乐团大时代: the timeline on the attack clock. The intro (glasses off) only plays from street clothes;
+ *  cast in costume, the clock starts at `intro`. */
+export const LOCK_LIVE = { intro: .4, inhale: .18, scream: .55, bang: .26, bangs: 5, star: .32, bow: .6, settle: .32 } as const;
+export const LOCK_LIVE_SCREAM = LOCK_LIVE.intro + LOCK_LIVE.inhale;
+export const LOCK_LIVE_BANGS = LOCK_LIVE_SCREAM + LOCK_LIVE.scream;
+export const LOCK_LIVE_STAR = LOCK_LIVE_BANGS + LOCK_LIVE.bang * LOCK_LIVE.bangs;
+export const LOCK_LIVE_BOW = LOCK_LIVE_STAR + LOCK_LIVE.star;
+export const LOCK_LIVE_END = LOCK_LIVE_BOW + LOCK_LIVE.bow + LOCK_LIVE.settle;
+/** Within one headbang, the head goes down (the hit) this far into the beat. */
+export const LOCK_BANG_HIT = .45;
+/** The Galaxy 开业 bands, then her own: one colour per headbang (bands.ts). */
+export const LOCK_BAND_COLORS = ['#4455BB', '#FFEE22', '#EE0022', '#FF5522', '#CC0000'] as const;
+/** The special cells: U and I columns are street clothes; U's last cell, the O column and L are the stage outfit. */
+function lockLiveCell(t: number): Clip {
+  if (t < LOCK_LIVE.intro) return at('special', 0, t < LOCK_LIVE.intro * .55 ? 0 : 1);
+  if (t < LOCK_LIVE_SCREAM) return at('special', 2, 0);
+  if (t < LOCK_LIVE_BANGS) return at('special', 3, 0);
+  if (t < LOCK_LIVE_STAR) {
+    const k = ((t - LOCK_LIVE_BANGS) / LOCK_LIVE.bang) % 1;
+    return at('special', 3, k < LOCK_BANG_HIT ? 2 : 1);
+  }
+  if (t < LOCK_LIVE_BOW) return at('special', 3, 2);
+  return at('special', 2, t < LOCK_LIVE_BOW + LOCK_LIVE.bow ? 1 : 2);
+}
+
 export function clipFor(f: Fighter): Clip {
   // 有必要说教一下呢: whoever is being lectured sits it out on the standing cell (squashed by spriteView).
   if (!f.attack && f.mods.some(m => m.kind === 'lecture' && m.left > 0)) return loco('idle');
@@ -1349,6 +1382,26 @@ export function clipFor(f: Fighter): Clip {
       const s = f.attack.skill;
       return at('special', f.attack.index - 2, bloodRow(f.attack.t, s.start, s.interval ?? .13, s.duration));
     }
+    // LOCK: 限制器解除 — hand to the glasses, the throw (the flash), the stage pose in costume.
+    if (f.attack.skill.fx === 'lock-unseal') {
+      const a = f.attack, s = a.skill;
+      return at('special', 0, a.t < s.start ? 0 : a.t < s.start + LOCK_UNSEAL_FLASH ? 1 : 2);
+    }
+    // 戴回眼镜: the standing cell either side of the flash; the king sheet swaps it for the costume until then.
+    if (f.attack.skill.fx === 'lock-reseal') return loco('idle');
+    // 给我安静听着: the breath, the shout, both hands over the mouth.
+    if (f.attack.skill.fx === 'lock-hush') {
+      const a = f.attack, s = a.skill;
+      return at('special', 1, a.t < s.start ? 0 : a.t < s.duration - .2 ? 1 : 2);
+    }
+    // In costume the shout rides the K cells (the king sheet): the wind-up, the head thrown forward, back up.
+    if (f.attack.skill.fx === 'lock-roar') {
+      const a = f.attack, s = a.skill;
+      return at('common', NORMAL.heavy.c + (a.t < s.start ? 0 : a.t < s.duration - .15 ? 1 : 2), NORMAL.heavy.r);
+    }
+    // 护六出动: the hop back is the dodge cell; then she just watches him go.
+    if (f.attack.skill.fx === 'lock-rescue') return loco(f.attack.t < LOCK_HOP ? 'dodge' : 'idle');
+    if (f.attack.skill.fx === 'lock-live') return lockLiveCell(f.attack.t);
     // 筑紫四列都要把命中姿势留住：土笔蹲着、闹钟抛完、滚轮一直跑、姐姐叉腰。
     if (f.attack.skill.fx === 'sprout' || f.attack.skill.fx === 'clock' || f.attack.skill.fx === 'wheel' || f.attack.skill.fx === 'sisters'
       || f.attack.skill.fx === 'sandwich' || f.attack.skill.fx === 'excuse' || f.attack.skill.fx === 'skip'

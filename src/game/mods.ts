@@ -15,6 +15,10 @@ export type ModKind =
   | 'burn'
   /** 异常·混乱: left and right swap on the stick (game.ts reads moveSign). */
   | 'confuse'
+  /** 异常·沉默: U I O L will not come out; J, K and breakouts still do (game.ts canAttack). */
+  | 'silence'
+  /** 不同意我就不回去: the window after a knockdown that strengthens LOCK's next unseal. */
+  | 'comeback'
   /** 异常·跟班: no controls; the body walks behind `from` (game.ts stepFollow). v is the 部下 number. */
   | 'follow'
   /** 跟班 just ended: the body cannot be made a follower again while this holds. */
