@@ -26,6 +26,8 @@ import { drawShizukuFx, drawShizukuShot } from '../src/render/shizukuFx.ts';
 import { drawSaayaFx, drawSaayaShot } from '../src/render/saayaFx.ts';
 import { drawKanonFx, drawKanonShot } from '../src/render/kanonFx.ts';
 import { wanderAt } from '../src/game/kanonPath.ts';
+import { drawAkoFx, drawAkoShot } from '../src/render/akoFx.ts';
+import { AKO_CHANT } from '../src/game/akoPath.ts';
 import { drawChieriFx } from '../src/render/chieriFx.ts';
 import { assetUrl, easeLoad, imageSources, linkRate, liteFight, liteSrc, nextSrc, portraitSrc, SLOW_RATE, stageThumbSrc } from '../src/assets/loader.ts';
 import { acceptBlank, isTouchJump, matchStickTouch, stickFingerGone, thumbBandTop, touchRelease, turnedStickDelta } from '../src/game/input.ts';
@@ -178,11 +180,11 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const breaksAt: Record<string, number> = {
     nyamu: 4, sakiko: 10, anon: 5, rana: 10, soyo: 3, kokoro: 3, miyako: 5,
-    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5, toko: 4, kanon: 7,
+    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5, toko: 4, kanon: 7, ako: 9,
   };
   const segments: Record<string, number> = {
     nyamu: 4, sakiko: 16, anon: 6, rana: 22, soyo: 3, kokoro: 3, miyako: 6,
-    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7, toko: 5, kanon: 13,
+    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7, toko: 5, kanon: 13, ako: 9,
   };
   for (const [id, breakAt] of Object.entries(breaksAt)) {
     const s = ROSTER[at(id)].skills[5];
@@ -10524,6 +10526,133 @@ for (const order of [[2, 3], [3, 2]]) {
           for (const p of g.projectiles) {
             assert.ok(drawKanonShot(ctx, p, lite), 'Kanon draws ' + p.fx);
             assert.equal(depth, 0, 'Kanon restores the canvas after ' + p.fx);
+          }
+        }
+      }
+    }
+  }
+}
+
+// ako: 宇田川亚子。U is a spiral wave that roots (定身) in the 'ako-hypno' look; I's chant sticks for a moment with no
+// armour — a hit then breaks it and gives back half the wait, otherwise 燐子 prompts, armour comes on and the orb
+// knocks down; O is two little hits and, if one landed, 巴's heavy third; L sends eight homing spirits that do not
+// flinch, then the big one drops and knocks down.
+{
+  const ak = at('ako');
+  const data = ROSTER[ak];
+  assert.ok(ak === at('lisa') + 1 && ak === at('kokoro') - 1, '宇田川亚子 sits with Roselia, after 莉莎');
+  assert.equal(data.title, '鼓手 / 大魔姬', 'title from 暗之大魔姬');
+  assert.equal(data.trait, 'beat', 'the drummer keeps the beat');
+  assert.ok(data.view.kind === 'sprite' && data.view.height === 171 && data.view.extras?.includes('/sprites/ako/rinko.png') && data.view.extras.includes('/sprites/himari/friends.png'), '燐子 is her one new picture; 巴 is borrowed');
+  assert.ok(!!STATUS_MARKS['ako-hypno'], 'the asleep look is registered');
+  const fresh = (p1x = 300, p2x = 500) => {
+    const g = newGame(ak, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = p1x; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  // U: roots for a second, worn as asleep.
+  {
+    const { g, p1, p2 } = fresh(300, 520);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    let root = 0;
+    for (let i = 0; i < 120; i++) { g.step(STEP); root = Math.max(root, p2.root); if (p2.rootMark === 'ako-hypno') break; }
+    assert.ok(hp > p2.hp && root > .9, 'U hits and roots: ' + root.toFixed(2));
+    assert.equal(p2.rootMark, 'ako-hypno', 'worn as asleep');
+  }
+  // I, left alone: no armour while stuck, armour after the prompt, and the orb knocks down.
+  {
+    const { g, p1, p2 } = fresh(300, 620);
+    g.attack(p1, 3);
+    run(g, (AKO_CHANT.stuckFrom + AKO_CHANT.stuckTo) / 2);
+    assert.ok(p1.mods.some(m => m.kind === 'chant' && m.left > 0), 'I: stuck mid-line');
+    assert.ok(!p1.mods.some(m => m.kind === 'poise' && m.left > 0), 'no armour while stuck');
+    run(g, AKO_CHANT.stuckTo - (AKO_CHANT.stuckFrom + AKO_CHANT.stuckTo) / 2 + STEP * 3);
+    assert.ok(p1.mods.some(m => m.kind === 'poise' && m.left > 0), '燐子 prompts: armour on');
+    let down = false;
+    for (let i = 0; i < 200; i++) { g.step(STEP); if (p2.knocked > 0) down = true; }
+    assert.ok(down, 'the orb knocks down');
+  }
+  // I, hit while stuck: the cast is gone and half the wait comes back.
+  {
+    const { g, p1, p2 } = fresh(300, 380);
+    const wait = data.skills[3].cd * p1.cdMul;
+    g.attack(p1, 3);
+    run(g, (AKO_CHANT.stuckFrom + AKO_CHANT.stuckTo) / 2);
+    p2.cooldowns[0] = 0;
+    g.attack(p2, 0);
+    let broke = false;
+    for (let i = 0; i < 40; i++) { g.step(STEP); if (!p1.attack || p1.attack.skill.fx !== 'ako-chant') { broke = true; break; } }
+    run(g, .2);
+    assert.ok(broke, 'a jab breaks the stuck chant');
+    assert.ok(!g.projectiles.some(p => p.fx === 'ako-chant'), 'no orb goes out');
+    assert.ok(p1.cooldowns[3] < wait * .5 && p1.cooldowns[3] > wait * .3, 'half the wait comes back: ' + p1.cooldowns[3].toFixed(2));
+  }
+  // O: 巴 comes only when one of the first two landed, and her third knocks down.
+  {
+    const { g, p1, p2 } = fresh(300, 400);
+    g.attack(p1, 4);
+    let tomoe = false, down = false;
+    for (let i = 0; i < 90; i++) { g.step(STEP); if (g.effects.some(e => e.type === 'ako-tomoe')) tomoe = true; if (p2.knocked > 0) down = true; }
+    assert.ok(tomoe && down, 'O: 巴 rises and knocks them down');
+  }
+  {
+    const { g, p1 } = fresh(300, 900);
+    g.attack(p1, 4);
+    let tomoe = false;
+    for (let i = 0; i < 90; i++) { g.step(STEP); if (g.effects.some(e => e.type === 'ako-tomoe')) tomoe = true; }
+    assert.ok(!tomoe, 'O: a whiff leaves 巴 at home');
+  }
+  // L: eight spirits that home in without a flinch, then the big one knocks down.
+  {
+    const { g, p1, p2 } = fresh(300, 620);
+    p1.energy = 200;
+    g.attack(p1, 5);
+    let spirits = 0, big = false, clear = false;
+    for (let i = 0; i < 600 && (p1.attack || g.projectiles.length); i++) {
+      g.step(STEP);
+      spirits = Math.max(spirits, g.projectiles.filter(p => p.fx === 'ako-spirit').length);
+      if (p2.knocked > 0) big = true;
+      if (g.effects.some(e => e.type === 'ako-clear')) clear = true;
+    }
+    assert.ok(spirits >= 6, 'L: the spirits are out together, ' + spirits);
+    assert.ok(big && clear, 'the big one knocks down: STAGE 1 CLEAR');
+  }
+  // Every picture draws and restores the canvas.
+  {
+    let depth = 0;
+    const methods = new Map<string, (...args: unknown[]) => unknown>();
+    const ctx = new Proxy({ globalAlpha: 1 } as Record<string, unknown>, {
+      get(o, key: string) {
+        if (key in o) return o[key];
+        if (!methods.has(key)) methods.set(key, (...args: unknown[]) => {
+          for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value), `Ako ${key} stays finite`);
+          if (key === 'save') depth++;
+          if (key === 'restore') depth--;
+          if (key === 'arc') assert.ok(Number(args[2]) >= 0, 'Ako arc radius');
+          if (key === 'ellipse') assert.ok(Number(args[2]) >= 0 && Number(args[3]) >= 0, 'Ako ellipse radii');
+          if (key === 'createLinearGradient' || key === 'createRadialGradient') return { addColorStop() {} };
+        });
+        return methods.get(key);
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    for (const lite of [false, true]) for (const dir of [-1, 1]) {
+      for (const type of ['eye', 'circle', 'sigil', 'scroll', 'sweat', 'rinko', 'glint', 'relight', 'impact', 'fizzle', 'jab', 'tomoe', 'sister-hit', 'medals', 'dim', 'gate', 'nfo', 'nfo-circle', 'dmg', 'crit', 'warn', 'burst', 'clear']) {
+        for (let i = 0; i <= 24; i++) {
+          const e = { type: 'ako-' + type, x: 450, y: FLOOR, color: '#DD0088', max: 1.3, life: 1.3 - i * 1.3 / 24, age: 0, radius: 181, dir, n: i % 3, hit: i % 2 === 0, t0: type === 'eye' ? .3 : type === 'glint' || type === 'relight' ? .22 : undefined };
+          assert.ok(drawAkoFx(ctx, e, lite), `Ako draws ${type}`);
+          assert.equal(depth, 0, 'Ako restores the canvas after ' + type);
+        }
+      }
+      for (const slot of [2, 3, 5]) {
+        const { g, p1 } = fresh(300, 900);
+        p1.energy = 200;
+        g.attack(p1, slot);
+        for (let i = 0; i < 300; i++) {
+          g.step(STEP);
+          for (const p of g.projectiles) {
+            assert.ok(drawAkoShot(ctx, p, lite), 'Ako draws ' + p.fx);
+            assert.equal(depth, 0, 'Ako restores the canvas after ' + p.fx);
           }
         }
       }

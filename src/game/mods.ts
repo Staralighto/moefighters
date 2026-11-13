@@ -50,7 +50,10 @@ export type ModKind =
   /** 还想再看看你: on 丰川瑞穗, v 0 while the wish is still unspent, 1 after (game/mizuho.ts). */
   | 'wish'
   /** 崩坏: on 后藤一里, v is the game age her next collapse is ready (game/bocchi.ts). */
-  | 'crumble';
+  | 'crumble'
+  /** 暗黑咏唱·提词版: on 宇田川亚子 while the chant is stuck; v is the slot. A hit that drops the cast while it holds
+   *  breaks the chant (game/ako.ts). */
+  | 'chant';
 
 /**
  * One running buff.

@@ -943,6 +943,57 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'ako', name: '宇田川亚子', title: '鼓手 / 大魔姬', quote: '吾乃暗之大魔姬……呃、那个……总之就是超——帅的！', color: '#DD0088',
+    bands: ['roselia'],
+    ...stats('beat'),
+    view: {
+      kind: 'sprite', common: '/sprites/ako/common.png', special: '/sprites/ako/special.png', height: 171, lift: 5,
+      extras: ['/sprites/ako/rinko.png', '/sprites/himari/friends.png'],
+    },
+    // 宇田川亚子（萌娘百科）: Roselia 的鼓手，别号「暗之大魔姬」；极度中二，但中二台词总卡壳，要燐子「提词姬」救场；
+    // 自称姐姐巴之下的「世界第二强鼓手」；和燐子在网游 NFO 认识（官方小游戏「邪灵大法师-宇田川亚子」）；
+    // 《元祖！BanG Dream Chan》#25「宇田川催眠波」。全部空手；燐子是 rinko.png 一张，巴复用绯玛丽的 friends.png，
+    // 其余由 akoFx.ts 绘制（src/game/ako.ts）。
+    skills: [
+      // 暗之…呃: a chuuni hand sign, and the line never finishes.
+      skill(0, 'light', '暗之…呃'),
+      // 堕天之踵 (圣堕天使): the little one jumps into a downward heel.
+      skill(1, 'heavy', '堕天之踵'),
+      // 宇田川催眠波 (元祖！BanG Dream Chan #25「你会越来越困～」): a spiral wave that puts them to sleep.
+      skill(2, 'projectile', '宇田川催眠波', {
+        damage: 18, speed: 520, size: 90, life: 1.2, start: .3, duration: .55, cd: 8, knock: 0,
+        fx: 'ako-hypno', solid: false, root: 1,
+        brief: '放出螺旋催眠波，命中让对手睡着定身；跳起可躲',
+        detail: '向前放出紫粉螺旋波，命中让对手睡着，定身 1 秒；可格挡，跳起可躲',
+      }),
+      // 暗黑咏唱·提词版 (中二台词卡壳，燐子提词): stuck mid-line, then 燐子 slips her the rest.
+      skill(3, 'projectile', '暗黑咏唱·提词版', {
+        damage: 48, speed: 600, size: 110, life: 1.3, start: .95, duration: 1.3, cd: 10, knock: 320,
+        fx: 'ako-chant', solid: false,
+        react: { kind: 'knockdown', vy: -220, knocked: .8 },
+        brief: '卡壳时挨打会失败；燐子提词后放魔弹击倒',
+        detail: '咏唱中途卡壳 0.4 秒，这时没有霸体，受击则技能失败、冷却返还一半；撑过去后燐子提词，获得霸体并放出暗之魔弹，命中击倒；可格挡，跳起可躲',
+      }),
+      // 世界第二强 (自称姐姐之下的「世界第二强鼓手」): two little hits, then 巴 throws the big one.
+      skill(4, 'heavy', '世界第二强', {
+        damage: 10, count: 3, interval: .2, range: 150, start: .18, duration: .95, cd: 8, knock: 40,
+        fx: 'ako-sister', solid: false,
+        finale: { damage: 36, knock: 420, react: { kind: 'knockdown', vy: -260, knocked: .9 } },
+        brief: '打两下，命中后姐姐巴补一记重拳击飞',
+        detail: '亚子先打两下，各 10 伤害；任一下命中，姐姐巴的剪影在身后出现，补一记重拳击飞；可格挡',
+      }),
+      // 邪灵大法师·降临 (NFO 小游戏「邪灵大法师-宇田川亚子」;「用 ako 通过第一关最难」): spirits, then the big one.
+      skill(5, 'projectile', '邪灵大法师·降临', {
+        damage: 6, count: 8, interval: .12, size: 60, life: 1.4, start: .5, duration: 2.3, knock: 0, gain: 1,
+        fx: 'ako-nfo', solid: false, contact: 'pass',
+        finale: { damage: 90, knock: 320, react: { kind: 'knockdown', vy: -260, knocked: 1, stun: .5 }, shake: 10 },
+        guardPlan: [6, 6, 8, 10, 12, 14, 16, 18, 30],
+        brief: '灵体追向对手不打断；大灵体扑下击倒',
+        detail: '进入 NFO 网游画面，召唤 8 只小灵体追向对手，不打断，可走位躲开；预警后大灵体从上方扑下并击倒，跳不过；可格挡',
+      }),
+    ],
+  },
+  {
     id: 'kokoro', name: '弦卷心', title: '主唱 / 微笑', quote: '为世界带来笑容！', color: '#FFEE22',
     bands: ['hello-happy'],
     ...stats('rush'),
