@@ -13,6 +13,7 @@ import type { ImageCache } from '../assets/loader.ts';
 import { TAU, burst, cycle, dot, flame, glow, glyph, hash, snowflake, soap, sparkle, stampText, streak, tri } from './fxParticles.ts';
 import { isLiteFx } from './fxQuality.ts';
 import { drawDoodleDizzy, drawDoodleLand } from './chisatoFx.ts';
+import { applyMaze, applyZap, auraMaze, auraZap } from './kanonFx.ts';
 
 /** A status that changes the body itself, painted by the renderer with the view's own outline and tint:
  *  the outline replaces the team rim, each wash is the sprite's silhouette in one colour laid over it, and the
@@ -926,6 +927,9 @@ export const STATUS_MARKS: Record<string, MarkDrawer> = {
   'chisato-doodle': { aura: auraDoodle, apply: applyDoodle },
   sleepy: { aura: auraSleepy, apply: applySleepy, expire: expireSleepy },
   'saaya-toast': { aura: auraToast, apply: applyToast, body: TOAST_BODY },
+  // 松原花音: lost on her footprints (混乱), stung by her jellyfish (定身). Drawn in kanonFx.ts.
+  'kanon-maze': { aura: (ctx, f, left, t) => auraMaze(ctx, f, bodyH(f), left, t), apply: applyMaze },
+  'kanon-zap': { aura: (ctx, f, left, t) => auraZap(ctx, f, bodyH(f), left, t), apply: applyZap },
 };
 
 /** Live marks this body wears that the table knows. Older looks (摩卡's bubble, the petals) are not in the

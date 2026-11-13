@@ -24,6 +24,8 @@ import { DEFAULT_MARK, hasStatus, isRecruit, statusCount, statusMask } from '../
 import { STATUS_MARKS, drawStatusAuras, drawStatusEffect } from '../src/render/statusMarks.ts';
 import { drawShizukuFx, drawShizukuShot } from '../src/render/shizukuFx.ts';
 import { drawSaayaFx, drawSaayaShot } from '../src/render/saayaFx.ts';
+import { drawKanonFx, drawKanonShot } from '../src/render/kanonFx.ts';
+import { wanderAt } from '../src/game/kanonPath.ts';
 import { drawChieriFx } from '../src/render/chieriFx.ts';
 import { assetUrl, easeLoad, imageSources, linkRate, liteFight, liteSrc, nextSrc, portraitSrc, SLOW_RATE, stageThumbSrc } from '../src/assets/loader.ts';
 import { acceptBlank, isTouchJump, matchStickTouch, stickFingerGone, thumbBandTop, touchRelease, turnedStickDelta } from '../src/game/input.ts';
@@ -176,11 +178,11 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const breaksAt: Record<string, number> = {
     nyamu: 4, sakiko: 10, anon: 5, rana: 10, soyo: 3, kokoro: 3, miyako: 5,
-    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5, toko: 4,
+    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5, toko: 4, kanon: 7,
   };
   const segments: Record<string, number> = {
     nyamu: 4, sakiko: 16, anon: 6, rana: 22, soyo: 3, kokoro: 3, miyako: 6,
-    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7, toko: 5,
+    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7, toko: 5, kanon: 13,
   };
   for (const [id, breakAt] of Object.entries(breaksAt)) {
     const s = ROSTER[at(id)].skills[5];
@@ -10373,6 +10375,159 @@ for (const order of [[2, 3], [3, 2]]) {
     for (let i = 0; i < 500; i++) { if (i === 70) p2.vy = -750; g.step(STEP); }
     assert.equal(p2.hp, hp, 'a jump gets out from under the cookie');
     assert.ok(!live(p2, 'mustard'), 'and there is no mustard');
+  }
+}
+
+// kanon: 松原花音。U wanders to one of three random spots (untouchable on the way) and leaves footprints that 混乱 a
+// foe who walks onto them ('kanon-maze', longer on 千圣); I is four ふぇぇ glyphs; O leaves one bobbing jellyfish that
+// 定身s in the 'kanon-zap' look; L raises twelve little jellyfish and drops a big one that knocks down; at 30% hp or
+// less U I O come out with 霸体 and 10% more damage (越慌越稳).
+{
+  const ka = at('kanon');
+  const data = ROSTER[ka];
+  assert.ok(ka === at('kokoro') + 1 && ka === at('misaki') - 1, '松原花音 sits with HHW, between 心 and 美咲');
+  assert.equal(data.title, '鼓手 / 迷宫水母', 'title from 迷宫水母');
+  assert.equal(data.trait, 'beat', 'the drummer keeps the beat');
+  assert.ok(data.view.kind === 'sprite' && data.view.height === 187 && data.view.extras?.includes('/sprites/kanon/jellyfish.png'), 'the jellyfish is her one prop picture');
+  assert.ok(!!STATUS_MARKS['kanon-maze'] && !!STATUS_MARKS['kanon-zap'], 'the lost and stung looks are registered');
+  const fresh = (p1x = 300, p2x = 500, foe = at('boulder')) => {
+    const g = newGame(ka, foe); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = p1x; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  const confused = (f: Fighter) => f.mods.some(m => m.kind === 'confuse' && m.left > 0 && m.mark === 'kanon-maze');
+  {
+    const freshPt = wanderAt(120, 640, .42);
+    const reused = { x: 0, dy: 0 };
+    assert.equal(wanderAt(120, 640, .42, reused), reused, 'the walk can write into a point it is given');
+    assert.equal(reused.x, freshPt.x, 'reused walk x matches a fresh point');
+    assert.equal(reused.dy, freshPt.dy, 'reused walk depth matches a fresh point');
+  }
+  // U: every seed lands on one of the three spots, she cannot be hit on the way, and all three spots come up.
+  {
+    const seen = new Set<number>();
+    for (let seed = 1; seed <= 24; seed++) {
+      const g = new FightGame([ROSTER[ka], ROSTER[at('boulder')]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: rng(Math.imul(seed, 2654435761) >>> 0) });
+      run(g, 2.3);
+      const [p1, p2] = g.fighters; dummy(g);
+      p1.x = 300; p2.x = 500; p1.facing = 1;
+      g.attack(p1, 2);
+      let untouchable = true;
+      for (let i = 0; i < 140 && p1.attack; i++) {
+        g.step(STEP);
+        const a = p1.attack;
+        if (a && a.mode === 1 && a.t - a.tossAt < .4 && p1.invuln <= 0) untouchable = false;
+      }
+      assert.ok(untouchable, 'U: untouchable while she wanders');
+      const d = p1.x - 300;
+      const spot = Math.abs(p1.x - 590) < 1 ? 0 : Math.abs(d) <= 70.5 ? 1 : Math.abs(p1.x - 0) < 1 || Math.abs(d + 300) < 1 ? 2 : -1;
+      assert.ok(spot >= 0 || p1.x === X_MIN, 'U lands behind the foe, near where she stood, or far away: ' + p1.x.toFixed(1));
+      seen.add(spot);
+      assert.ok(g.projectiles.some(p => p.fx === 'kanon-trail'), 'U leaves its footprints');
+    }
+    assert.equal(seen.size, 3, 'all three landings come up');
+  }
+  // U: the footprints 混乱 a foe who walks onto them, not one who stands still; 千圣 gets it longer.
+  for (const foe of [at('boulder'), at('chisato')]) {
+    const { g, p1, p2 } = fresh(300, 360, foe);
+    g.attack(p1, 2);
+    run(g, .8);
+    assert.ok(!confused(p2), 'standing still on the trail does nothing');
+    p2.vx = 200;
+    run(g, STEP * 2);
+    const m = p2.mods.find(x => x.kind === 'confuse' && x.left > 0);
+    assert.ok(!!m && confused(p2), 'walking onto the trail gets them lost');
+    if (foe === at('chisato')) assert.ok(m!.left > 2.3, '一起迷路了: 千圣 is lost longer, ' + m!.left.toFixed(2));
+    else assert.ok(m!.left > 1.3 && m!.left <= 1.5, 'lost 1.5 s, ' + m!.left.toFixed(2));
+  }
+  // I: four glyphs, the first ふ.
+  {
+    const { g, p1 } = fresh(300, 900);
+    g.attack(p1, 3);
+    run(g, .6);
+    const shots = g.projectiles.filter(p => p.fx === 'kanon-fuee');
+    assert.equal(shots.length, 4, 'I: four glyphs');
+    assert.deepEqual(shots.map(p => p.wave), [0, 1, 2, 3], 'in order');
+    assert.ok(shots[3].size > shots[0].size, 'they grow down the line');
+  }
+  // O: one jellyfish, bobbing ahead of her; touching it roots in the 'kanon-zap' look; a second replaces the first.
+  {
+    const { g, p1, p2 } = fresh(300, 452);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    let root = 0;
+    for (let i = 0; i < 240; i++) { g.step(STEP); root = Math.max(root, p2.root); if (p2.rootMark === 'kanon-zap') break; }
+    assert.ok(hp > p2.hp && root > .7, 'O stings and roots: ' + root.toFixed(2));
+    assert.equal(p2.rootMark, 'kanon-zap', 'worn as the zap');
+  }
+  {
+    const { g, p1 } = fresh(300, 900);
+    g.attack(p1, 4); run(g, 1);
+    p1.cooldowns[4] = 0;
+    g.attack(p1, 4); run(g, 1);
+    assert.equal(g.projectiles.filter(p => p.fx === 'kanon-jelly').length, 1, 'O: one jellyfish on the field');
+  }
+  // L: twelve little ones rise without a flinch, then the big one knocks down; a jump does not clear it.
+  {
+    const { g, p1, p2 } = fresh(300, 520);
+    p1.energy = 200;
+    g.attack(p1, 5);
+    let small = 0, big = false;
+    for (let i = 0; i < 600 && (p1.attack || g.projectiles.length); i++) {
+      g.step(STEP);
+      small = Math.max(small, g.projectiles.filter(p => p.fx === 'kanon-sea-small').length);
+      if (p2.knocked > 0) big = true;
+    }
+    assert.ok(small >= 10, 'L: the little ones rise together, ' + small);
+    assert.ok(big, 'the big one knocks down');
+  }
+  // 越慌越稳: at 30% hp U I O carry 霸体; above it they do not.
+  for (const low of [false, true]) {
+    const { g, p1 } = fresh(300, 900);
+    p1.hp = p1.data.hp * (low ? .3 : .6);
+    g.attack(p1, 3);
+    assert.equal(p1.mods.some(m => m.kind === 'poise' && m.left > 0), low, low ? 'low hp: 霸体' : 'healthy: no 霸体');
+    assert.equal(p1.attack!.skill.damage, low ? Math.round(9 * 1.1) : 9, 'and 10% more damage when low');
+  }
+  // Every picture draws and restores the canvas.
+  {
+    let depth = 0;
+    const methods = new Map<string, (...args: unknown[]) => unknown>();
+    const ctx = new Proxy({ globalAlpha: 1 } as Record<string, unknown>, {
+      get(o, key: string) {
+        if (key in o) return o[key];
+        if (!methods.has(key)) methods.set(key, (...args: unknown[]) => {
+          for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value), `Kanon ${key} stays finite`);
+          if (key === 'save') depth++;
+          if (key === 'restore') depth--;
+          if (key === 'arc') assert.ok(Number(args[2]) >= 0, 'Kanon arc radius');
+          if (key === 'ellipse') assert.ok(Number(args[2]) >= 0 && Number(args[3]) >= 0, 'Kanon ellipse radii');
+          if (key === 'createLinearGradient' || key === 'createRadialGradient') return { addColorStop() {} };
+        });
+        return methods.get(key);
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    for (const lite of [false, true]) for (const dir of [-1, 1]) {
+      for (const type of ['pin', 'huh', 'stepped', 'chisato', 'cloud', 'bloom', 'sting', 'sea', 'hug', 'warn', 'shock', 'steady']) {
+        for (let i = 0; i <= 24; i++) {
+          const e = { type: 'kanon-' + type, x: 450, y: FLOOR, color: '#44DDFF', max: 1, life: 1 - i / 24, age: i / 24, radius: 181, dir };
+          assert.ok(drawKanonFx(ctx, e, lite), `Kanon draws ${type}`);
+          assert.equal(depth, 0, 'Kanon restores the canvas after every effect');
+        }
+      }
+      for (const slot of [2, 3, 4, 5]) {
+        const { g, p1 } = fresh(300, 900);
+        p1.energy = 200;
+        g.attack(p1, slot);
+        for (let i = 0; i < 300; i++) {
+          g.step(STEP);
+          for (const p of g.projectiles) {
+            assert.ok(drawKanonShot(ctx, p, lite), 'Kanon draws ' + p.fx);
+            assert.equal(depth, 0, 'Kanon restores the canvas after ' + p.fx);
+          }
+        }
+      }
+    }
   }
 }
 

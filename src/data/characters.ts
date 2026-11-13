@@ -976,6 +976,55 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'kanon', name: '松原花音', title: '鼓手 / 迷宫水母', quote: '呼诶诶……这、这里是哪里？', color: '#44DDFF',
+    bands: ['hello-happy'],
+    ...stats('beat'),
+    passive: ['鼓点 · 越慌越稳', '命中叠节拍，每层冷却加快、移速提高，被击中掉 2 层；血量不高于 30% 时 U I O 霸体，伤害提高 10%'],
+    view: {
+      kind: 'sprite', common: '/sprites/kanon/common.png', special: '/sprites/kanon/special.png', height: 187, lift: 5, specialScale: .95,
+      extras: ['/sprites/kanon/jellyfish.png'],
+    },
+    // 松原花音（萌娘百科）: HHW 的鼓手，别号「迷宫水母」，十米之内都能迷路的路痴，口癖「呼诶诶」（Roselia×『シャルル』的
+    // 空耳「雲のふぇぇ」），水母痴；心说她平时战战兢兢惯了，关键时刻反而最有胆量（越慌越稳）。全部空手；水母是
+    // jellyfish.png 一张，其余由 kanonFx.ts 绘制（src/game/kanon.ts）。
+    skills: [
+      // 慌慌张张: eyes shut, flailing.
+      skill(0, 'light', '慌慌张张'),
+      // 对、对不起！: she is always apologising — the bow is the headbutt.
+      skill(1, 'heavy', '对、对不起！'),
+      // 十米迷路 (路痴, 别号迷宫水母): wanders a looping trail of footprints to a random spot; stepping on it is getting lost too.
+      skill(2, 'dash', '十米迷路', {
+        damage: 0, range: 0, start: .1, duration: .62, cd: 8, knock: 0, fx: 'kanon-lost', noSparks: true,
+        status: [{ kind: 'confuse', time: 1.5, mark: 'kanon-maze' }],
+        brief: '乱走到随机落点，途中无敌；踩到脚印的对手混乱',
+        detail: '沿绕圈脚印乱走，随机落在对手身后、原地附近或远处，途中无敌；脚印留 3 秒，对手踩到混乱 1.5 秒（左右颠倒）',
+      }),
+      // 云之呼诶 (『シャルル』空耳「雲のふぇぇ」): a string of ふぇぇ pushed across the stage.
+      skill(3, 'projectile', '云之呼诶', {
+        damage: 9, count: 4, interval: .09, speed: 620, size: 80, life: 1.4, start: .3, duration: .66, cd: 7, knock: 40,
+        fx: 'kanon-fuee', solid: false,
+        brief: '喊出一串「ふぇぇ」推过全场；跳起可躲',
+        detail: '喊出一串「ふぇぇ」大字推过全场，末字推开对手；可格挡，跳起可躲',
+      }),
+      // 迷宫水母 (水母痴): a jellyfish bobbing in front of her; touch it and it stings.
+      skill(4, 'projectile', '迷宫水母', {
+        damage: 22, speed: 0, size: 80, life: 4, start: .28, duration: .5, cd: 9, knock: 40, fx: 'kanon-jelly',
+        root: .8, solid: false,
+        brief: '身前漂浮一只水母，碰到电麻定身；限一只',
+        detail: '在身前放一只上下漂浮的水母，持续 4 秒，对手碰到即定身 0.8 秒；场上限一只，可格挡',
+      }),
+      // 水母之海 (迷宫水母; 生日收到水母坐垫当场睡着): the night aquarium — little jellyfish rise, the big one drops.
+      skill(5, 'projectile', '水母之海', {
+        cost: 120, damage: 6, count: 12, interval: .1, size: 60, life: 2.4, start: .45, duration: 2.5,
+        knock: 0, gain: 1, fx: 'kanon-sea', solid: false, contact: 'pass',
+        finale: { damage: 100, knock: 300, react: { kind: 'knockdown', vy: -260, knocked: .9, stun: .5 }, shake: 10 },
+        guardPlan: [5, 8, 12, 16, 20, 24, 30, 40],
+        brief: '小水母从地面浮起不打断；巨型水母罩下击倒',
+        detail: '小水母从地面随机浮起，不打断，可走位躲开；预警后巨型水母罩住对手并击倒，跳不过；可格挡',
+      }),
+    ],
+  },
+  {
     // 一人二役: 米歇尔 is the base form (the bear on stage, where every match starts); 美咲 is the alt.
     // Each O swaps to the other form; the pair shares one wait (combat.ts swapForm).
     id: 'misaki', name: '奥泽美咲', title: 'DJ / 熊熊侠', quote: '不会飞的熊，就只是普通的熊！', color: '#DD33CC',

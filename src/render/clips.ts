@@ -1111,6 +1111,19 @@ export function clipFor(f: Fighter): Clip {
       const row = t < s.start ? 0 : t >= s.duration - .22 ? 2 : 1;
       return at('special', f.attack.index - 2, row);
     }
+    // 十米迷路 (src/game/kanon.ts): looking round, the first unsure stride, then her own walk cycle while she wanders
+    // (a.mode 1), then 「呼诶？」.
+    if (f.attack.skill.fx === 'kanon-lost') {
+      const a = f.attack;
+      if (a.mode === 1 && a.t - a.tossAt < .12) return at('special', 0, 1);
+      if (a.mode === 1) return loco((['run0', 'run1', 'run2', 'run3'] as const)[Math.floor((a.t - a.tossAt) * 11) % 4]);
+      return at('special', 0, a.mode === 2 ? 2 : 0);
+    }
+    // 水母之海: arms open, then hugging the cushion for the whole sea, looking up as the big one comes down.
+    if (f.attack.skill.fx === 'kanon-sea') {
+      const a = f.attack;
+      return at('special', 3, a.t < a.skill.start ? 0 : (a.mode ?? 0) >= 1 ? 2 : 1);
+    }
     if (f.attack.skill.fx === 'vow') return at('special', f.attack.index - 2, vowRow(f.attack.t, f.attack.tossAt));
     if (f.attack.skill.fx === 'riot') {
       const s = f.attack.skill;

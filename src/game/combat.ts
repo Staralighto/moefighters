@@ -20,6 +20,7 @@ import './chisato.ts';
 import './mizuho.ts';
 import './bocchi.ts';
 import './lock.ts';
+import './kanon.ts';
 import { applyStatus, applyStatusBlocked, extendStatus, isRecruit, statusMask } from './status.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
