@@ -28,6 +28,8 @@ import { drawKanonFx, drawKanonShot } from '../src/render/kanonFx.ts';
 import { wanderAt } from '../src/game/kanonPath.ts';
 import { drawAkoFx, drawAkoShot } from '../src/render/akoFx.ts';
 import { AKO_CHANT } from '../src/game/akoPath.ts';
+import { drawRinkoFx, drawRinkoShot } from '../src/render/rinkoFx.ts';
+import { RINKO_DOT_GAP, RINKO_TENT } from '../src/game/rinkoPath.ts';
 import { drawChieriFx } from '../src/render/chieriFx.ts';
 import { assetUrl, easeLoad, imageSources, linkRate, liteFight, liteSrc, nextSrc, portraitSrc, SLOW_RATE, stageThumbSrc } from '../src/assets/loader.ts';
 import { acceptBlank, isTouchJump, matchStickTouch, stickFingerGone, thumbBandTop, touchRelease, turnedStickDelta } from '../src/game/input.ts';
@@ -180,11 +182,11 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const breaksAt: Record<string, number> = {
     nyamu: 4, sakiko: 10, anon: 5, rana: 10, soyo: 3, kokoro: 3, miyako: 5,
-    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5, toko: 4, kanon: 7, ako: 9,
+    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5, toko: 4, kanon: 7, ako: 9, rinko: 6,
   };
   const segments: Record<string, number> = {
     nyamu: 4, sakiko: 16, anon: 6, rana: 22, soyo: 3, kokoro: 3, miyako: 6,
-    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7, toko: 5, kanon: 13, ako: 9,
+    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7, toko: 5, kanon: 13, ako: 9, rinko: 7,
   };
   for (const [id, breakAt] of Object.entries(breaksAt)) {
     const s = ROSTER[at(id)].skills[5];
@@ -10540,7 +10542,7 @@ for (const order of [[2, 3], [3, 2]]) {
 {
   const ak = at('ako');
   const data = ROSTER[ak];
-  assert.ok(ak === at('lisa') + 1 && ak === at('kokoro') - 1, '宇田川亚子 sits with Roselia, after 莉莎');
+  assert.ok(ak === at('lisa') + 1 && ak === at('rinko') - 1, '宇田川亚子 sits with Roselia, after 莉莎');
   assert.equal(data.title, '鼓手 / 大魔姬', 'title from 暗之大魔姬');
   assert.equal(data.trait, 'beat', 'the drummer keeps the beat');
   assert.ok(data.view.kind === 'sprite' && data.view.height === 171 && data.view.extras?.includes('/sprites/ako/rinko.png') && data.view.extras.includes('/sprites/himari/friends.png'), '燐子 is her one new picture; 巴 is borrowed');
@@ -10653,6 +10655,133 @@ for (const order of [[2, 3], [3, 2]]) {
           for (const p of g.projectiles) {
             assert.ok(drawAkoShot(ctx, p, lite), 'Ako draws ' + p.fx);
             assert.equal(depth, 0, 'Ako restores the canvas after ' + p.fx);
+          }
+        }
+      }
+    }
+  }
+}
+
+// rinko: 白金燐子。U drops a tent over her: half pace, a fifth of the damage, no flinch, no moves; when it runs out
+// she flings it and it knocks down. I drops three 「……」 and the third silences ('rinko-hush'). O fires eight kaomoji,
+// the last pushes back. L: keys run along the floor (a jump clears them); whoever they reach is held through five
+// roses and the big one launches them.
+{
+  const rk = at('rinko');
+  const data = ROSTER[rk];
+  assert.ok(rk === at('ako') + 1 && rk === at('kokoro') - 1, '白金燐子 closes Roselia, after 亚子');
+  assert.equal(data.title, '键盘 / 提词姬', 'title from 亚子的提词姬');
+  assert.equal(data.trait, 'focus', 'the keyboardist keeps the focus trait');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/rinko/tent.png'), 'the tent is her one extra picture');
+  assert.ok(!!STATUS_MARKS['rinko-hush'], 'the hush look is registered');
+  assert.equal(data.skills[3].interval, RINKO_DOT_GAP, 'the bubble empties at the pace the dots drop');
+  const fresh = (p1x = 300, p2x = 500) => {
+    const g = newGame(rk, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = p1x; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  // U: in the tent she takes a fifth, nothing comes out, and the flung tent knocks down.
+  {
+    const { g, p1, p2 } = fresh(300, 520);
+    g.attack(p1, 2);
+    run(g, .5);
+    assert.ok(p1.mods.some(m => m.kind === 'tent' && m.left > 0), 'U: in the tent');
+    p1.cooldowns[0] = 0;
+    assert.ok(!g.canAttack(p1, 0), 'nothing comes out of the tent');
+    const before = p1.hp;
+    hit(g, p2, p1, p2.data.skills[1], { hit: new Set() });
+    const loss = before - p1.hp;
+    assert.ok(loss > 0 && loss < 53 * p2.data.power * .3, 'a fifth of the kick gets through: ' + loss.toFixed(1));
+    assert.ok(p1.stun <= 0 && p1.knocked <= 0, 'and it does not stagger her');
+    let flung = false, down = false;
+    for (let i = 0; i < 400; i++) { g.step(STEP); if (g.projectiles.some(p => p.fx === 'rinko-tent-fly')) flung = true; if (p2.knocked > 0) down = true; }
+    assert.ok(flung && down, 'the tent is flung and knocks down');
+    assert.ok(!p1.mods.some(m => m.kind === 'tent' && m.left > 0) && !p1.mods.some(m => m.tag === 'rinko-tent' && m.left > 0), 'out of the tent, the guard comes off');
+    assert.ok(RINKO_TENT.time > 1, 'the tent lasts a while');
+  }
+  // I: the third dot silences in the hush look.
+  {
+    const { g, p1, p2 } = fresh(300, 560);
+    g.attack(p1, 3);
+    let silenced = false;
+    for (let i = 0; i < 500; i++) { g.step(STEP); if (p2.mods.some(m => m.kind === 'silence' && m.left > 0 && m.mark === 'rinko-hush')) { silenced = true; break; } }
+    assert.ok(silenced, 'I: the last 「……」 silences');
+    p2.cooldowns[2] = 0;
+    assert.ok(!g.canAttack(p2, 2), 'a silenced foe has no U');
+  }
+  // O: eight kaomoji, and some of them land.
+  {
+    const { g, p1, p2 } = fresh(300, 900);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    let most = 0;
+    for (let i = 0; i < 300; i++) { g.step(STEP); most = Math.max(most, g.projectiles.filter(p => p.fx === 'rinko-chat').length); }
+    assert.ok(most >= 4 && p2.hp < hp, 'O: a barrage of kaomoji, and it hurts: ' + most + ' / ' + (hp - p2.hp).toFixed(0));
+  }
+  // L: the keys reach them, five roses hold them, the big one launches.
+  {
+    const { g, p1, p2 } = fresh(300, 620);
+    p1.energy = 200;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    let roses = 0, launched = false;
+    for (let i = 0; i < 700 && (p1.attack || g.projectiles.length); i++) {
+      g.step(STEP);
+      roses = Math.max(roses, g.effects.filter(e => e.type === 'rinko-note').length);
+      if (p2.y < FLOOR - 60) launched = true;
+    }
+    assert.ok(roses >= 3, 'L: the notes of the arpeggio land on them, ' + roses);
+    assert.ok(launched, 'the big rose launches them');
+    assert.ok(hp - p2.hp > 50, 'the keys, five roses and the big one all land: ' + (hp - p2.hp).toFixed(0));
+  }
+  // L: a jump clears the keys.
+  {
+    const { g, p1, p2 } = fresh(300, 620);
+    p1.energy = 200;
+    g.attack(p1, 5);
+    let held = false;
+    for (let i = 0; i < 700 && p1.attack; i++) {
+      if (p1.attack.t > data.skills[5].start - .05 && p2.y >= FLOOR - .5 && p2.vy >= 0 && !held) { p2.vy = -900; p2.y = FLOOR - 1; }
+      g.step(STEP);
+      if (p1.attack?.mode === 2) held = true;
+    }
+    assert.ok(!held, 'L: jumping over the keys escapes the roses');
+  }
+  // Every picture draws and restores the canvas.
+  {
+    let depth = 0;
+    const methods = new Map<string, (...args: unknown[]) => unknown>();
+    const ctx = new Proxy({ globalAlpha: 1 } as Record<string, unknown>, {
+      get(o, key: string) {
+        if (key in o) return o[key];
+        if (!methods.has(key)) methods.set(key, (...args: unknown[]) => {
+          for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value), `Rinko ${key} stays finite`);
+          if (key === 'save') depth++;
+          if (key === 'restore') depth--;
+          if (key === 'arc') assert.ok(Number(args[2]) >= 0, 'Rinko arc radius');
+          if (key === 'ellipse') assert.ok(Number(args[2]) >= 0 && Number(args[3]) >= 0, 'Rinko ellipse radii');
+          if (key === 'createLinearGradient' || key === 'createRadialGradient') return { addColorStop() {} };
+        });
+        return methods.get(key);
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    for (const lite of [false, true]) for (const dir of [-1, 1]) {
+      for (const type of ['tent', 'tent-drop', 'tent-fold', 'tent-crash', 'bubble', 'muster', 'hush-pop', 'chat', 'spot', 'shiver', 'chord', 'keyboard', 'ring', 'note', 'glass', 'petals', 'smile']) {
+        for (let i = 0; i <= 24; i++) {
+          const e = { type: 'rinko-' + type, x: 450, y: FLOOR, color: '#BBBBBB', max: 1.3, life: 1.3 - i * 1.3 / 24, age: 0, radius: 100, dir, n: i % 3, tx: dir * i * 20, t0: .4 };
+          assert.ok(drawRinkoFx(ctx, e, lite), `Rinko draws ${type}`);
+          assert.equal(depth, 0, 'Rinko restores the canvas after ' + type);
+        }
+      }
+      for (const slot of [2, 3, 4, 5]) {
+        const { g, p1 } = fresh(300, 900);
+        p1.energy = 200;
+        g.attack(p1, slot);
+        for (let i = 0; i < 400; i++) {
+          g.step(STEP);
+          for (const p of g.projectiles) {
+            assert.ok(drawRinkoShot(ctx, p, lite), 'Rinko draws ' + p.fx);
+            assert.equal(depth, 0, 'Rinko restores the canvas after ' + p.fx);
           }
         }
       }

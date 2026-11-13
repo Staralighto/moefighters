@@ -22,6 +22,8 @@ import './bocchi.ts';
 import './lock.ts';
 import './kanon.ts';
 import './ako.ts';
+import './rinko.ts';
+import { RINKO_TENT } from './rinkoPath.ts';
 import { applyStatus, applyStatusBlocked, extendStatus, isRecruit, statusMask } from './status.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
@@ -242,6 +244,8 @@ const SWING_RING = [
 
 /** 哭泣的紫罗兰: she does not exist between the vanish and the reappear — no body is drawn. */
 export function violetHidden(f: Fighter): boolean {
+  // 帐篷出行: once the tent has dropped over her she is inside it; the tent draws in her place.
+  for (const m of f.mods) if (m.kind === 'tent' && m.left > 0 && (m.acc ?? 0) < RINKO_TENT.time - RINKO_TENT.cover) return true;
   const a = f.attack;
   const hide = a ? SCRIPTS[a.skill.fx]?.hideWhile : undefined;
   if (a && hide) return hide(a);

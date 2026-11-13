@@ -21,6 +21,7 @@ import { drawTokoFx, drawTokoShot } from './tokoFx.ts';
 import { drawChisatoFx, drawChisatoShot } from './chisatoFx.ts';
 import { drawKanonFx, drawKanonShot } from './kanonFx.ts';
 import { drawAkoFx, drawAkoShot } from './akoFx.ts';
+import { drawRinkoFx, drawRinkoShot } from './rinkoFx.ts';
 import { drawMizuhoFx, drawMizuhoShot } from './mizuhoFx.ts';
 import { drawBocchiFx, drawBocchiShot } from './bocchiFx.ts';
 import { drawStatusEffect } from './statusMarks.ts';
@@ -1031,6 +1032,8 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
   if (drawKanonFx(ctx, e, liteFx, images)) return;
   // 宇田川亚子 too.
   if (drawAkoFx(ctx, e, liteFx, images)) return;
+  // 白金燐子 too.
+  if (drawRinkoFx(ctx, e, liteFx, images)) return;
   // 异常: `<mark>@apply` / `<mark>@expire`, drawn by the status table.
   if (drawStatusEffect(ctx, e)) return;
   // 四宫宁月's accidents keep their own module too.
@@ -6204,6 +6207,7 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   if (drawChisatoShot(ctx, p, images)) return;
   if (drawKanonShot(ctx, p, liteFx, images)) return;
   if (drawAkoShot(ctx, p, liteFx, images)) return;
+  if (drawRinkoShot(ctx, p, liteFx, images)) return;
   if (drawBocchiShot(ctx, p, liteFx)) return;
   if (p.fx.startsWith('mizuho-')) {
     const im = p.fx === 'mizuho-shiro' ? images?.get(SHIRO_SRC) : undefined;

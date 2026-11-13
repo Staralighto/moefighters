@@ -521,6 +521,8 @@ export class FightGame {
     if (f.king && index >= 2 && !f.data.frenzy?.skills) return false;
     // 沉默: no U I O L; J, K and a breakout still come out.
     if (index >= 2 && !breakout && has(f, 'silence')) return false;
+    // 帐篷出行: nothing comes out of the tent until it is flung; a breakout still does.
+    if (!breakout && has(f, 'tent')) return false;
     // 带骨肉之人: one chunk on the field. A second press does nothing until she touches it.
     const skillNow = this.skillFor(f, index);
     // 舞台装置: the I slot is shut while her device stands, whatever shortens cooldowns.

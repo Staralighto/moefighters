@@ -53,7 +53,10 @@ export type ModKind =
   | 'crumble'
   /** 暗黑咏唱·提词版: on 宇田川亚子 while the chant is stuck; v is the slot. A hit that drops the cast while it holds
    *  breaks the chant (game/ako.ts). */
-  | 'chant';
+  | 'chant'
+  /** 帐篷出行: on 白金燐子 while she is in the tent; acc its seconds left. No moves come out (game.ts canAttack); her
+   *  step watcher flings the tent when it runs out or she is knocked down (game/rinko.ts). */
+  | 'tent';
 
 /**
  * One running buff.

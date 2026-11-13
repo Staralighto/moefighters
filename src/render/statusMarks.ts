@@ -15,6 +15,7 @@ import { isLiteFx } from './fxQuality.ts';
 import { drawDoodleDizzy, drawDoodleLand } from './chisatoFx.ts';
 import { applyMaze, applyZap, auraMaze, auraZap } from './kanonFx.ts';
 import { applyHypno, auraHypno } from './akoFx.ts';
+import { applyRinkoHush, auraRinkoHush } from './rinkoFx.ts';
 
 /** A status that changes the body itself, painted by the renderer with the view's own outline and tint:
  *  the outline replaces the team rim, each wash is the sprite's silhouette in one colour laid over it, and the
@@ -933,6 +934,8 @@ export const STATUS_MARKS: Record<string, MarkDrawer> = {
   'kanon-zap': { aura: (ctx, f, left, t) => auraZap(ctx, f, bodyH(f), left, t), apply: applyZap },
   // 宇田川亚子: put to sleep by her 催眠波 (定身). Drawn in akoFx.ts.
   'ako-hypno': { aura: (ctx, f, left, t) => auraHypno(ctx, f, bodyH(f), left, t), apply: applyHypno },
+  // 白金燐子: left with nothing to say by her 「……」 (沉默). Drawn in rinkoFx.ts.
+  'rinko-hush': { aura: (ctx, f, left, t) => auraRinkoHush(ctx, f, bodyH(f), left, t), apply: applyRinkoHush },
 };
 
 /** Live marks this body wears that the table knows. Older looks (摩卡's bubble, the petals) are not in the

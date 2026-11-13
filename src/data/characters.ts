@@ -994,6 +994,62 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'rinko', name: '白金燐子', title: '键盘 / 提词姬', quote: '我……真的可以吗？', color: '#BBBBBB',
+    bands: ['roselia'],
+    ...stats('focus'),
+    view: {
+      kind: 'sprite', common: '/sprites/rinko/common.png', special: '/sprites/rinko/special.png', height: 177, lift: 5,
+      extras: ['/sprites/rinko/tent.png'],
+    },
+    // 白金燐子（萌娘百科）: Roselia 的键盘手，别号「燐燐」「亚子的提词姬」；社恐，平时说话 0.5 倍速、满口「……」（官方统计
+    // 2018 年说了 2521 次），网游 NFO 里却打字飞快、颜文字满天飞；一个人上街就带着帐篷才不怕生；小时候钢琴比赛失利留下阴影，
+    // 后来以同一首曲子重回赛场。全部空手；帐篷是外置图 tent.png，对话框、颜文字、琴键和白玫瑰都由代码画（rinkoFx.ts、game/rinko.ts）。
+    skills: [
+      // 那个…… (语速 0.5 倍).
+      skill(0, 'light', '那个……'),
+      // 请、请让开…… (社恐的一推).
+      skill(1, 'heavy', '请、请让开……'),
+      // 帐篷出行 (萌娘百科: 带着帐篷到街上就不会怕生; 莉莎: 反而更显眼了): in the tent she plods on, takes a fifth of every
+      // hit and cannot be staggered; when it runs out she flings the whole tent.
+      skill(2, 'endure', '帐篷出行', {
+        damage: 30, speed: 560, size: 120, life: .6, start: .16, duration: .34, cd: 11, knock: 300, fx: 'rinko-tent',
+        react: { kind: 'knockdown', vy: -260, knocked: .7 },
+        brief: '躲进帐篷减伤霸体；结束时甩出帐篷击倒',
+        detail: '钻进帐篷 1.8 秒：移动减半、受到伤害减 80%、霸体，不能出招；结束时帐篷翻滚着甩向前方，命中 30 伤害并击倒；可格挡，跳起可躲',
+      }),
+      // 键盘手有话要说 (2521 次「……」;「注意！我们伟大的键盘手有话要说：……」): three dots out of a speech bubble,
+      // the last one leaves them with nothing to say.
+      skill(3, 'projectile', '键盘手有话要说', {
+        damage: 10, count: 3, interval: .26, speed: 380, size: 54, life: 2.2, start: .42, duration: 1.15, cd: 9, knock: 40,
+        fx: 'rinko-dots', solid: false,
+        react: { kind: 'stand', stun: .3 },
+        finale: { damage: 18, size: 78, knock: 160, react: { kind: 'stand', stun: .5 }, status: [{ kind: 'silence', time: 2, mark: 'rinko-hush' }] },
+        brief: '飞出三个「……」；第三个命中沉默',
+        detail: '依次放出三颗慢速「……」，各 10 / 10 / 18 伤害；第三颗命中沉默 2 秒（只能用 J、K）；可格挡，跳起可躲',
+      }),
+      // 线上话痨模式 (0.5 倍速的她在网游里打字飞快、满屏颜文字): a chat window, and a barrage of kaomoji out of it.
+      skill(4, 'projectile', '线上话痨模式', {
+        damage: 5, count: 8, interval: .1, speed: 760, size: 46, life: 1.2, start: .3, duration: 1.25, cd: 8, knock: 0,
+        fx: 'rinko-chat', solid: false,
+        react: { kind: 'stand', stun: .16 },
+        finale: { damage: 9, knock: 160, react: { kind: 'stand', stun: .4 } },
+        brief: '聊天窗口连射颜文字；最后一发击退',
+        detail: '站定打字 1 秒，连射 8 发颜文字，各 5 伤害，最后一发 9 伤害并击退；可格挡，跳起可躲',
+      }),
+      // 燐燐开花 (Ringing Bloom;「再次演出的序曲」里以同一首曲子重回钢琴比赛; 代表色白玫瑰): the spotlight and the
+      // stillness of the crowd, then keys of light run along the floor; whoever they reach is held while white roses open
+      // round them, and the last, great rose throws them.
+      skill(5, 'projectile', '燐燐开花', {
+        damage: 8, count: 6, interval: .14, speed: 1100, size: 70, life: .9, start: .9, duration: 2.75, knock: 0, gain: 1,
+        fx: 'rinko-bloom', solid: false, contact: 'pass', holdEndure: true,
+        finale: { damage: 72, knock: 260, react: { kind: 'launch', vy: -760, knocked: 1 }, shake: 10 },
+        guardPlan: [6, 8, 16, 20, 26, 30, 40],
+        brief: '琴键贴地奔出可跳躲；踩中被玫瑰连击击飞',
+        detail: '0.9 秒后光之琴键贴地冲出，跳起可躲；琴键命中 8 伤害并定住对手，随后 5 朵白玫瑰各 8 伤害，最后一朵大玫瑰 72 伤害并击飞；可格挡；全程霸体',
+      }),
+    ],
+  },
+  {
     id: 'kokoro', name: '弦卷心', title: '主唱 / 微笑', quote: '为世界带来笑容！', color: '#FFEE22',
     bands: ['hello-happy'],
     ...stats('rush'),

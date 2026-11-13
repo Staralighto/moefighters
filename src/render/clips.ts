@@ -2,6 +2,7 @@ import type { Attack, Fighter } from '../game/fighter.ts';
 import { attackPhase, stateFor } from '../game/animState.ts';
 import { YOKAN_OX } from './miyakoSheet.ts';
 import { RIB_OX, SKEWER_OX, STEAK_OX } from './ritsuSheet.ts';
+import { RINKO_BLOOM, RINKO_TOSS } from '../game/rinkoPath.ts';
 
 /** Square cell. Img2img replacements must keep this size and the grids below.
  *  Common is 8×3 so the sheet is 2048×768 (8:3), under the 3:1 upload limit.
@@ -1343,6 +1344,17 @@ export function clipFor(f: Fighter): Clip {
       const el = a.t - a.tossAt;
       const pressing = el < BAKE_OVEN_AT || (el >= BAKE_PUSH_AT && el < BAKE_ROAST_AT);
       return at('special', a.index - 2, pressing ? 1 : 0);
+    }
+    // 帐篷出行: hands over her head going in; crouched (under the tent); flinging it off — also the toss pose after.
+    if (f.attack.skill.fx === 'rinko-tent') {
+      const a = f.attack;
+      if (a.mode === RINKO_TOSS.mode) return at('special', a.index - 2, 2);
+      return at('special', a.index - 2, a.t < a.skill.start ? 0 : 1);
+    }
+    // 燐燐开花: frozen in the spotlight; hands down on the keys through the run and the roses; the small bow.
+    if (f.attack.skill.fx === 'rinko-bloom') {
+      const a = f.attack, m = a.mode ?? RINKO_BLOOM.fright;
+      return at('special', a.index - 2, m === RINKO_BLOOM.fright ? 0 : m === RINKO_BLOOM.done || m === RINKO_BLOOM.miss ? 2 : 1);
     }
     // 元气辣妹☆: the low lean; the sweep only while she is still sliding; the V sign from the moment she stops.
     if (f.attack.skill.fx === 'lisa-gal') {
