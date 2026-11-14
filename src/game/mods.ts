@@ -56,7 +56,10 @@ export type ModKind =
   | 'chant'
   /** 帐篷出行: on 白金燐子 while she is in the tent; acc its seconds left. No moves come out (game.ts canAttack); her
    *  step watcher flings the tent when it runs out or she is knocked down (game/rinko.ts). */
-  | 'tent';
+  | 'tent'
+  /** 我的心是巧克力螺: rolled flat by 牛込里美's giant cornet; `from` is her. The squash reads it (render/clips.ts flatSquash);
+   *  her step watcher lifts it once the roll is no longer running (game/rimi.ts). */
+  | 'flat';
 
 /**
  * One running buff.

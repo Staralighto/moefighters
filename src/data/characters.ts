@@ -810,6 +810,57 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'rimi', name: '牛込里美', title: '贝斯 / 告一段螺', quote: '我的心，就是巧克力螺～', color: '#FF55BB',
+    bands: ['poppin-party'],
+    ...stats('focus'),
+    view: {
+      kind: 'sprite', common: '/sprites/rimi/common.png', special: '/sprites/rimi/special.png', height: 172, lift: 5, specialScale: 1.1,
+      extras: ['/sprites/rimi/cornet.png', '/sprites/rimi/cornet-rimi.png', '/sprites/rimi/tv.png', '/sprites/rimi/ghost.png'],
+    },
+    // 牛込里美（萌娘百科）: Poppin'Party 的贝斯，P 团最矮（150cm），黑色短发齐刘海、发夹；胆小认生，一紧张就冒关西腔；山吹面包房的
+    // 常客，「生活就是巧克力螺」，别号「告一段"螺"」；恐怖片爱好者、濑田薰的铁粉。称号取别号，quote 取角色歌《私の心はチョココロネ》。
+    // 全部空手：巧克力螺、巨型螺、老电视、幽灵是四张外置图，其余由代码画（rimiFx.ts、game/rimi.ts）。全套不用飘字。
+    skills: [
+      // 请、请多指教 (认生的一推).
+      skill(0, 'light', '请、请多指教'),
+      // 关西腔吐槽 (一紧张就冒关西腔): a backhand なんでやねん chop.
+      skill(1, 'heavy', '关西腔吐槽'),
+      // 今晚放映恐怖片 (game/rimi.ts step_tv; PICO Fever #15「ポピモニロードショー」, 弹幕「队友被打还叫好的屑里美」): an old TV,
+      // a ghost crawling out of it along the floor; the ankle it reaches is held (定身, 'rimi-hands').
+      skill(2, 'projectile', '今晚放映恐怖片', {
+        damage: 12, speed: 160, range: 520, size: 80, start: .32, duration: .75, cd: 10, knock: 0, fx: 'rimi-tv', solid: false,
+        root: 1.8, rootPin: true,
+        brief: '老电视爬出幽灵贴地抓脚踝定身；跳起可躲',
+        detail: '放下老电视，幽灵从屏幕爬出贴地慢慢前进，碰到脚踝 12 伤害并定身 1.8 秒，受击两次解除；只打地面，跳起可躲，被格挡则消散；同屏至多一只',
+      }),
+      // 巧克力螺，请收下！ (game/rimi.ts step_toss; PICO 片头往观众席撒巧克力螺): four cornets in arcs; the ones that miss lie
+      // on the floor and she eats them (hp and 气).
+      skill(3, 'projectile', '巧克力螺，请收下！', {
+        damage: 14, count: 4, size: 40, start: .26, duration: .62, cd: 7, knock: 60, fx: 'rimi-cornet', solid: false,
+        react: { kind: 'stand', stun: .25 },
+        brief: '撒出四只巧克力螺；落地的走过去吃掉回血回气',
+        detail: '抛物线撒出四只巧克力螺，每只 14 伤害；落空的螺留在地上 4 秒，里美走过去吃掉回 8 血、加 10 气，场上至多 4 只；可格挡，跳起可躲',
+      }),
+      // 告一段"螺" (game/rimi.ts step_drill; 别号「告一段"螺"」, B 站「海螺包是最卑鄙的女人」): a cornet as a drill, then a
+      // chocolate spray (冻僵, 'rimi-choco').
+      skill(4, 'dash', '告一段"螺"', {
+        damage: 9, range: 260, speed: 560, start: .2, duration: 1, cd: 6, knock: 0, fx: 'rimi-drill',
+        finale: { damage: 22, knock: 220, react: { kind: 'stand', stun: .4 }, status: [{ kind: 'chill', time: 3, mark: 'rimi-choco', move: .6, jump: .75, atk: .8 }] },
+        brief: '大螺钻头突进多段，末段喷巧克力冻僵；可格挡',
+        detail: '双手托起大螺向前钻进，4 段各 9 伤害并推着对手走，末段喷出巧克力 22 伤害并冻僵 3 秒；可格挡',
+      }),
+      // 我的心是巧克力螺 (game/rimi.ts step_roll; PICO #09「チョココロネだいすき」): she turns into a giant cornet that rolls to
+      // the wall and back; whoever it rolls over is flattened, the second pass throws them.
+      skill(5, 'projectile', '我的心是巧克力螺', {
+        damage: 9, start: .75, duration: 4.2, knock: 0, gain: 1, fx: 'rimi-roll', solid: false,
+        finale: { damage: 66, knock: 260, react: { kind: 'launch', vy: -760, knocked: 1 }, shake: 10 },
+        guardPlan: [6, 8, 18, 26, 42],
+        brief: '变成巨螺来回碾过全场，压扁后击飞；跳起可躲',
+        detail: '咬一口变成巨型巧克力螺，滚到墙边掉头再滚回；碾到的对手被压扁，每趟 3 段各 9 伤害，第二趟最后一段 66 伤害并击飞；途中吸走地上的巧克力螺，每只末段 +8 伤害；只打地面，跳起可躲；可格挡；全程霸体',
+      }),
+    ],
+  },
+  {
     id: 'yukina', name: '凑友希那', title: '主唱 / 顶点', quote: '目标只有一个，就是顶点。', color: '#4455BB',
     bands: ['roselia'],
     ...stats('rush'),

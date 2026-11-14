@@ -3,6 +3,7 @@ import { attackPhase, stateFor } from '../game/animState.ts';
 import { YOKAN_OX } from './miyakoSheet.ts';
 import { RIB_OX, SKEWER_OX, STEAK_OX } from './ritsuSheet.ts';
 import { RINKO_BLOOM, RINKO_TOSS } from '../game/rinkoPath.ts';
+import { RIMI_FLAT, RIMI_ROLL, rimiRow } from '../game/rimiPath.ts';
 
 /** Square cell. Img2img replacements must keep this size and the grids below.
  *  Common is 8×3 so the sheet is 2048×768 (8:3), under the 3:1 upload limit.
@@ -1026,8 +1027,15 @@ export function kneadSquash(f: Fighter): { x: number; y: number } | undefined {
   return { x: 1 + (1 - y) * .6, y };
 }
 /** The squash a body wears right now: 正坐 or the dough. */
+/** 我的心是巧克力螺: rolled flat under the giant cornet — pressed down fast, and it stays down until the mod lifts. */
+export function flatSquash(f: Fighter): { x: number; y: number } | undefined {
+  const m = f.mods.find(x => x.kind === 'flat' && x.left > 0);
+  if (!m) return undefined;
+  const k = Math.min(1, Math.max(0, RIMI_ROLL.flat - m.left) / RIMI_FLAT.ease);
+  return { x: 1 + (RIMI_FLAT.x - 1) * k, y: 1 - (1 - RIMI_FLAT.y) * k };
+}
 export function bodySquash(f: Fighter): { x: number; y: number } | undefined {
-  return lectureSquash(f) ?? kneadSquash(f);
+  return lectureSquash(f) ?? kneadSquash(f) ?? flatSquash(f);
 }
 
 
@@ -1065,7 +1073,7 @@ function lockLiveCell(t: number): Clip {
 
 export function clipFor(f: Fighter): Clip {
   // 有必要说教一下呢: whoever is being lectured sits it out on the standing cell (squashed by spriteView).
-  if (!f.attack && f.mods.some(m => (m.kind === 'lecture' || m.kind === 'knead') && m.left > 0)) return loco('idle');
+  if (!f.attack && f.mods.some(m => (m.kind === 'lecture' || m.kind === 'knead' || m.kind === 'flat') && m.left > 0)) return loco('idle');
   if (f.attack) {
     // 狂化: ground J/K read the frenzy sheet. A king or box reskin keeps the common cells and swaps the image.
     const crowned = f.data.view.kind === 'sprite' && (!!f.data.view.king || !!f.data.view.box);
@@ -1344,6 +1352,11 @@ export function clipFor(f: Fighter): Clip {
       const el = a.t - a.tossAt;
       const pressing = el < BAKE_OVEN_AT || (el >= BAKE_PUSH_AT && el < BAKE_ROAST_AT);
       return at('special', a.index - 2, pressing ? 1 : 0);
+    }
+    // 牛込里美: each column picks its own row (rimiPath.ts rimiRow); the roll hides her body, the spit pops her out.
+    if (f.attack.skill.fx.startsWith('rimi-')) {
+      const a = f.attack, s = a.skill;
+      return at('special', a.index - 2, rimiRow(s.fx, a.t, s.start, s.duration, a.mode, a.tossAt));
     }
     // 帐篷出行: hands over her head going in; crouched (under the tent); flinging it off — also the toss pose after.
     if (f.attack.skill.fx === 'rinko-tent') {

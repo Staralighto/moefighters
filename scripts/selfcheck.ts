@@ -29,6 +29,9 @@ import { wanderAt } from '../src/game/kanonPath.ts';
 import { drawAkoFx, drawAkoShot } from '../src/render/akoFx.ts';
 import { AKO_CHANT } from '../src/game/akoPath.ts';
 import { drawRinkoFx, drawRinkoShot } from '../src/render/rinkoFx.ts';
+import { drawRimiFx, drawRimiShot } from '../src/render/rimiFx.ts';
+import { RIMI_POSE, RIMI_TOSS } from '../src/game/rimiPath.ts';
+import { SCRIPTS as RIMI_SCRIPTS } from '../src/game/scripts.ts';
 import { RINKO_DOT_GAP, RINKO_TENT } from '../src/game/rinkoPath.ts';
 import { drawChieriFx } from '../src/render/chieriFx.ts';
 import { assetUrl, easeLoad, imageSources, linkRate, liteFight, liteSrc, nextSrc, portraitSrc, SLOW_RATE, stageThumbSrc } from '../src/assets/loader.ts';
@@ -182,11 +185,11 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const breaksAt: Record<string, number> = {
     nyamu: 4, sakiko: 10, anon: 5, rana: 10, soyo: 3, kokoro: 3, miyako: 5,
-    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5, toko: 4, kanon: 7, ako: 9, rinko: 6,
+    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5, toko: 4, kanon: 7, ako: 9, rinko: 6, rimi: 5,
   };
   const segments: Record<string, number> = {
     nyamu: 4, sakiko: 16, anon: 6, rana: 22, soyo: 3, kokoro: 3, miyako: 6,
-    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7, toko: 5, kanon: 13, ako: 9, rinko: 7,
+    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7, toko: 5, kanon: 13, ako: 9, rinko: 7, rimi: 6,
   };
   for (const [id, breakAt] of Object.entries(breaksAt)) {
     const s = ROSTER[at(id)].skills[5];
@@ -10785,6 +10788,166 @@ for (const order of [[2, 3], [3, 2]]) {
           }
         }
       }
+    }
+  }
+}
+
+
+// rimi: 牛込里美。U sets down a TV and a ghost crawls out along the floor; the ankle it reaches is held ('rimi-hands').
+// I throws four cornets; the ones that land lie there and she eats them (hp and 气). O drills forward and the spray
+// chills ('rimi-choco'). L: a giant cornet rolls to the wall and back; whoever it rolls over is flattened and the
+// second pass throws them.
+{
+  const ri = at('rimi');
+  const data = ROSTER[ri];
+  assert.ok(ri === at('saaya') + 1, '牛込里美 sits with Poppin\'Party, after 沙绫');
+  assert.equal(data.title, '贝斯 / 告一段螺', 'title from 告一段"螺"');
+  assert.equal(data.quote, '我的心，就是巧克力螺～', 'quote from her song');
+  assert.equal(data.trait, 'focus', 'the bassist keeps the focus trait');
+  assert.ok(data.view.kind === 'sprite' && data.view.height === 172, 'the smallest of Poppin\'Party');
+  assert.ok(data.view.kind === 'sprite' && data.view.specialScale === RIMI_POSE, 'the specials play at the size her hand-held fx assume');
+  for (const name of ['cornet', 'cornet-rimi', 'tv', 'ghost']) {
+    assert.ok(data.view.kind === 'sprite' && !!data.view.extras?.includes(`/sprites/rimi/${name}.png`), name + ' is one of her prop pictures');
+  }
+  assert.ok(!!STATUS_MARKS['rimi-hands'] && !!STATUS_MARKS['rimi-choco'], 'the hands and the chocolate looks are registered');
+  const fresh = (p1x = 300, p2x = 500) => {
+    const g = newGame(ri, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = p1x; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  // U: the ghost crawls to them and holds the ankle; one on the field.
+  {
+    const { g, p1, p2 } = fresh(300, 620);
+    g.attack(p1, 2);
+    run(g, .5);
+    assert.ok(g.projectiles.some(p => p.fx === 'rimi-tv'), 'U: the ghost is out');
+    assert.ok(g.effects.some(e => e.type === 'rimi-tvset'), 'U: the TV is on the floor');
+    run(g, .5);
+    p1.cooldowns[2] = 0;
+    assert.ok(!g.canAttack(p1, 2), 'U: one ghost on the field');
+    let held = false;
+    for (let i = 0; i < 900; i++) { g.step(STEP); if (p2.root > 0 && p2.rootMark === 'rimi-hands') { held = true; break; } }
+    assert.ok(held, 'U: the ghost holds the ankle');
+    assert.ok(!g.projectiles.some(p => p.fx === 'rimi-tv' && p.life > 0), 'U: and goes back into the TV');
+  }
+  // I: four cornets; the ones that miss lie on the floor, and she eats one.
+  {
+    const { g, p1 } = fresh(300, 900);
+    g.attack(p1, 3);
+    run(g, .4);
+    assert.equal(g.projectiles.filter(p => p.fx === 'rimi-cornet').length, 4, 'I: four cornets');
+    run(g, 1);
+    const lying = g.projectiles.filter(p => p.fx === 'rimi-cornet' && p.settled && p.life > 0);
+    assert.ok(lying.length >= 3, 'I: the misses lie on the floor, ' + lying.length);
+    p1.hp -= 100; p1.energy = 0;
+    const hp = p1.hp;
+    p1.x = lying[0].x;
+    run(g, .1);
+    assert.ok(p1.hp >= hp + RIMI_TOSS.heal - .01 && p1.energy >= RIMI_TOSS.energy - .01, 'I: she eats it, hp and 气');
+    run(g, RIMI_TOSS.settle + .2);
+    assert.ok(!g.projectiles.some(p => p.fx === 'rimi-cornet' && p.life > 0), 'I: the rest go stale');
+  }
+  // I: a cornet that hits them breaks.
+  {
+    const { g, p1, p2 } = fresh(300, 560);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    run(g, 1.5);
+    assert.ok(p2.hp < hp, 'I: a cornet lands on them');
+  }
+  // O: the drill carries them and the spray chills in the chocolate look.
+  {
+    const { g, p1, p2 } = fresh(300, 400);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    let chilled = false;
+    for (let i = 0; i < 200; i++) { g.step(STEP); if (p2.mods.some(m => m.kind === 'slow' && m.left > 0 && m.mark === 'rimi-choco')) chilled = true; }
+    assert.ok(chilled, 'O: the spray chills');
+    assert.ok(hp - p2.hp > 40, 'O: the drill and the spray land: ' + (hp - p2.hp).toFixed(0));
+    assert.ok(p1.x > 380, 'O: she drove forward');
+  }
+  // L: rolled over twice, flattened in between, thrown at the end; hidden while rolling, back out after.
+  {
+    const { g, p1, p2 } = fresh(300, 520);
+    p1.energy = 200;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    let flat = false, hidden = false, thrown = false, turned = false;
+    for (let i = 0; i < 900 && p1.attack; i++) {
+      g.step(STEP);
+      if (p2.mods.some(m => m.kind === 'flat' && m.left > 0)) flat = true;
+      if (p1.attack?.mode === 2) turned = true;
+      if (p1.attack && RIMI_SCRIPTS['rimi-roll'].hideWhile?.(p1.attack)) hidden = true;
+      if (p2.y < FLOOR - 60) thrown = true;
+    }
+    assert.ok(flat && hidden && turned, 'L: flattened, rolling hidden, turned at the wall');
+    assert.ok(thrown, 'L: the second pass throws them');
+    assert.ok(hp - p2.hp > 80, 'L: both passes land: ' + (hp - p2.hp).toFixed(0));
+    assert.ok(!p2.mods.some(m => m.kind === 'flat' && m.left > 0), 'L: nobody stays flat after it');
+    assert.ok(!p1.attack, 'L: the roll ends');
+  }
+  // L: the cornets on the floor are rolled up into the throw.
+  {
+    const plain = (() => {
+      const { g, p1, p2 } = fresh(300, 520);
+      p1.energy = 200; const hp = p2.hp; g.attack(p1, 5);
+      for (let i = 0; i < 900 && p1.attack; i++) g.step(STEP);
+      return hp - p2.hp;
+    })();
+    const { g, p1, p2 } = fresh(300, 900);
+    g.attack(p1, 3);
+    run(g, 1.4);
+    p2.x = 520; p1.energy = 200; p1.cooldowns[5] = 0;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    for (let i = 0; i < 900 && p1.attack; i++) g.step(STEP);
+    assert.ok(!g.projectiles.some(p => p.fx === 'rimi-cornet' && p.life > 0), 'L: the cornets are rolled up');
+    assert.ok(hp - p2.hp > plain, 'L: and the throw is harder for them: ' + (hp - p2.hp).toFixed(0) + ' > ' + plain.toFixed(0));
+  }
+  // Every picture draws and restores the canvas.
+  {
+    let depth = 0;
+    const methods = new Map<string, (...args: unknown[]) => unknown>();
+    const ctx = new Proxy({ globalAlpha: 1 } as Record<string, unknown>, {
+      get(o, key: string) {
+        if (key in o) return o[key];
+        if (!methods.has(key)) methods.set(key, (...args: unknown[]) => {
+          for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value), `Rimi ${key} stays finite`);
+          if (key === 'save') depth++;
+          if (key === 'restore') depth--;
+          if (key === 'arc') assert.ok(Number(args[2]) >= 0, 'Rimi arc radius');
+          if (key === 'ellipse') assert.ok(Number(args[2]) >= 0 && Number(args[3]) >= 0, 'Rimi ellipse radii');
+          if (key === 'createLinearGradient' || key === 'createRadialGradient') return { addColorStop() {} };
+        });
+        return methods.get(key);
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    for (const lite of [false, true]) for (const dir of [-1, 1]) {
+      for (const type of ['tvdim', 'tvset', 'ghostpuff', 'cheer', 'crumb', 'plop', 'yum', 'drill', 'drillgo', 'grind', 'spray', 'drop', 'bite', 'poof', 'giant', 'squish', 'press', 'launch', 'slurp', 'wall', 'spit']) {
+        for (let i = 0; i <= 24; i++) {
+          const e = { type: 'rimi-' + type, x: 450, y: FLOOR, color: '#FF55BB', max: 1.3, life: 1.3 - i * 1.3 / 24, age: i * .07, radius: 100, dir, n: i % 3, tx: dir };
+          assert.ok(drawRimiFx(ctx, e, lite), `Rimi draws ${type}`);
+          assert.equal(depth, 0, 'Rimi restores the canvas after ' + type);
+        }
+      }
+      for (const slot of [2, 3, 4, 5]) {
+        const { g, p1 } = fresh(300, 900);
+        p1.energy = 200;
+        g.attack(p1, slot);
+        for (let i = 0; i < 500; i++) {
+          g.step(STEP);
+          for (const p of g.projectiles) {
+            assert.ok(drawRimiShot(ctx, p, lite), 'Rimi draws ' + p.fx);
+            assert.equal(depth, 0, 'Rimi restores the canvas after ' + p.fx);
+          }
+        }
+      }
+    }
+    const f = fresh().p2;
+    for (const t of [0, .3, 1.1]) {
+      STATUS_MARKS['rimi-hands'].aura(ctx, f, .5, t);
+      STATUS_MARKS['rimi-choco'].aura(ctx, f, .5, t);
+      assert.equal(depth, 0, 'Rimi marks restore the canvas');
     }
   }
 }

@@ -23,6 +23,7 @@ import './lock.ts';
 import './kanon.ts';
 import './ako.ts';
 import './rinko.ts';
+import './rimi.ts';
 import { RINKO_TENT } from './rinkoPath.ts';
 import { applyStatus, applyStatusBlocked, extendStatus, isRecruit, statusMask } from './status.ts';
 

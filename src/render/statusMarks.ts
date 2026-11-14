@@ -16,6 +16,7 @@ import { drawDoodleDizzy, drawDoodleLand } from './chisatoFx.ts';
 import { applyMaze, applyZap, auraMaze, auraZap } from './kanonFx.ts';
 import { applyHypno, auraHypno } from './akoFx.ts';
 import { applyRinkoHush, auraRinkoHush } from './rinkoFx.ts';
+import { applyRimiChoco, applyRimiHands, auraRimiChoco, auraRimiHands } from './rimiFx.ts';
 
 /** A status that changes the body itself, painted by the renderer with the view's own outline and tint:
  *  the outline replaces the team rim, each wash is the sprite's silhouette in one colour laid over it, and the
@@ -936,6 +937,9 @@ export const STATUS_MARKS: Record<string, MarkDrawer> = {
   'ako-hypno': { aura: (ctx, f, left, t) => auraHypno(ctx, f, bodyH(f), left, t), apply: applyHypno },
   // 白金燐子: left with nothing to say by her 「……」 (沉默). Drawn in rinkoFx.ts.
   'rinko-hush': { aura: (ctx, f, left, t) => auraRinkoHush(ctx, f, bodyH(f), left, t), apply: applyRinkoHush },
+  // 牛込里美: ankles held by the ghost of her 今晚放映恐怖片 (定身), and chocolate dripping off after 告一段"螺" (冻僵). Drawn in rimiFx.ts.
+  'rimi-hands': { aura: (ctx, f, left, t) => auraRimiHands(ctx, f, bodyH(f), left, t), apply: applyRimiHands },
+  'rimi-choco': { aura: (ctx, f, left, t) => auraRimiChoco(ctx, f, bodyH(f), left, t), apply: applyRimiChoco },
 };
 
 /** Live marks this body wears that the table knows. Older looks (摩卡's bubble, the petals) are not in the
