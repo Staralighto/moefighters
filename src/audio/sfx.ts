@@ -2,7 +2,7 @@ import { assetUrl } from '../assets/loader.ts';
 import type { SfxKind } from '../game/game.ts';
 
 /* Synthesised arcade blips. No sample files to ship — except the horn, see whistle(). */
-const TONES: Record<Exclude<SfxKind, `blood-${string}`>, [number, number]> = {
+const TONES: Record<Exclude<SfxKind, `blood-${string}` | `finale-${string}`>, [number, number]> = {
   light: [380, .07], heavy: [140, .18], hit: [180, .1], block: [680, .055], parry: [430, .1], super: [780, .55],
   select: [650, .06], jump: [260, .12], ko: [105, .65], cast: [470, .17], key: [880, .05],
   whistle: [310, .55], slam: [95, .16], engine: [60, 1], 'engine-rev': [60, 1.5],
@@ -34,6 +34,19 @@ const BLOOD_PHRASE = [
 /** Overall level of the 血月的奏鸣 music, about −12 dB under the note gains below: felt more than heard. */
 const BLOOD_LEVEL = .25;
 const BLOOD_BASS = [73.42, 116.54, 98, 110];
+/** 终幕 cues' overall level: under the BGM's loudest moments, over the frozen fight. */
+const FINALE_LEVEL = .55;
+/** 终幕 recorded cues, all Freesound CC0 (free for commercial use, no credit required), cut from their
+ *  HQ previews to just the slice that plays (mono 112 kbps, ~200 KB together; cut points in
+ *  public/sfx/CREDITS.txt). `at` / `dur` can still pick a slice, `gain` sets it against the rest (peaks
+ *  sit near 0 dB, so level × gain stays under 1).
+ *  Until a file has loaded (or if it fails) the synthesised cue in finale() plays instead.
+ *    shatter  "Glass Break"                        unfa            freesound.org/s/221528
+ *  The other seven recorded cues are archived with their credits in 素材/finale-sfx/. */
+const FINALE_SAMPLES: Partial<Record<SfxKind, { src: string; at: number; dur: number; gain: number; fadeIn?: number; fadeOut?: number; lowpass?: number }>> = {
+  // A decoration, not an event: well under the music, the brittle top rolled off so it never stings.
+  'finale-shatter': { src: '/sfx/finale/shatter.mp3', at: 0, dur: 1.6, gain: .45, fadeOut: .5, lowpass: 4200 },
+};
 
 /** Select-screen cues. Not SfxKind: the match never plays these. */
 export type UiSound = 'hover' | 'swish' | 'confirm' | 'deny' | 'land' | 'whoosh' | 'vs';
@@ -58,9 +71,52 @@ export class Sfx {
     } catch { /* no audio on this device */ }
   }
 
+  /** 终幕: fetch and decode the recorded cues. Called when a match has a character with a cut-in,
+   *  so nobody else downloads them. Safe to call again. */
+  private finaleBufs = new Map<string, AudioBuffer | null>();
+  preloadFinale(): void {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    for (const spec of Object.values(FINALE_SAMPLES)) {
+      if (!spec || this.finaleBufs.has(spec.src)) continue;
+      this.finaleBufs.set(spec.src, null);
+      fetch(assetUrl(spec.src))
+        .then(r => { if (!r.ok) throw new Error(spec.src + ' ' + r.status); return r.arrayBuffer(); })
+        .then(ab => ctx.decodeAudioData(ab))
+        .then(buf => { this.finaleBufs.set(spec.src, buf); })
+        .catch(() => { this.finaleBufs.delete(spec.src); });
+    }
+  }
+
+  /** Play the recorded slice for a cut-in cue; false when it is not loaded (the synth plays instead). */
+  private finaleSample(kind: SfxKind): boolean {
+    const spec = FINALE_SAMPLES[kind];
+    const buf = spec && this.finaleBufs.get(spec.src);
+    if (!spec || !buf) return false;
+    const ctx = this.ctx!, t = ctx.currentTime;
+    const src = ctx.createBufferSource(), g = ctx.createGain();
+    src.buffer = buf;
+    const level = FINALE_LEVEL * spec.gain;
+    const dur = Math.min(spec.dur, buf.duration - spec.at);
+    g.gain.setValueAtTime(spec.fadeIn ? .0001 : level, t);
+    if (spec.fadeIn) g.gain.exponentialRampToValueAtTime(level, t + spec.fadeIn);
+    if (spec.fadeOut) { g.gain.setValueAtTime(level, t + Math.max(0, dur - spec.fadeOut)); g.gain.exponentialRampToValueAtTime(.0001, t + dur); }
+    let head: AudioNode = src;
+    if (spec.lowpass) {
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = spec.lowpass;
+      head = src.connect(lp);
+    }
+    head.connect(g).connect(ctx.destination);
+    src.start(t, spec.at, dur);
+    return true;
+  }
+
   play(kind: SfxKind): void {
     if (this.muted || !this.ctx) return;
     if (kind.startsWith('blood-')) { this.blood(kind); return; }
+    if (kind.startsWith('finale-')) { if (!this.finaleSample(kind)) this.finale(kind); return; }
     if (kind === 'whistle') { this.whistle(); return; }
     if (kind === 'slam') { this.slam(); return; }
     if (kind === 'engine' || kind === 'engine-rev') { this.engine(kind); return; }
@@ -277,6 +333,94 @@ export class Sfx {
     this.key(hz, t, .9, .04, out);
     // Every chord's first note carries its bass an octave and a fifth down, so the harmony moves.
     if (i % 4 === 0) this.key(BLOOD_BASS[(i / 4) | 0] ?? 73.42, t, 1.1, .028, out);
+  }
+
+  /** 终幕: the cut-in's sound. Freeze is a sub drop under a reversed swell and a single bell (time
+   *  stops); the eye opening brings a D-minor organ and a rising shimmer; three heartbeats; the glass
+   *  creaks, then shatters over a deep hit and a D-minor stab; the name lands on a drum and a ring;
+   *  the slash is a fast swish into a thud. Synthesised fallbacks for the recorded cues (FINALE_SAMPLES). */
+  private finale(kind: SfxKind): void {
+    const ctx = this.ctx!;
+    const t = ctx.currentTime;
+    const out = ctx.createGain();
+    out.gain.value = FINALE_LEVEL;
+    out.connect(ctx.destination);
+    const tone = (type: OscillatorType, f0: number, f1: number, at: number, dur: number, gain: number, to: AudioNode = out) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(f0, t + at);
+      o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + at + dur);
+      g.gain.setValueAtTime(.0001, t + at);
+      g.gain.exponentialRampToValueAtTime(gain, t + at + Math.min(.01, dur / 4));
+      g.gain.exponentialRampToValueAtTime(.0001, t + at + dur);
+      o.connect(g).connect(to);
+      o.start(t + at);
+      o.stop(t + at + dur + .02);
+    };
+    const noise = (at: number, dur: number, gain: number, type: BiquadFilterType, f0: number, f1: number, swell = false) => {
+      const n = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+      n.buffer = this.noiseBuffer();
+      n.loop = true;
+      f.type = type;
+      f.Q.value = .7;
+      f.frequency.setValueAtTime(f0, t + at);
+      f.frequency.exponentialRampToValueAtTime(f1, t + at + dur);
+      g.gain.setValueAtTime(.0001, t + at);
+      if (swell) { g.gain.exponentialRampToValueAtTime(gain, t + at + dur * .92); g.gain.exponentialRampToValueAtTime(.0001, t + at + dur); }
+      else { g.gain.exponentialRampToValueAtTime(gain, t + at + .008); g.gain.exponentialRampToValueAtTime(.0001, t + at + dur); }
+      n.connect(f).connect(g).connect(out);
+      n.start(t + at);
+      n.stop(t + at + dur + .02);
+    };
+    switch (kind) {
+      case 'finale-freeze':
+        tone('sine', 90, 28, 0, .7, .35);
+        noise(0, .4, .09, 'bandpass', 300, 3200, true);
+        tone('sine', 1318.5, 1318.5, .02, 1.6, .05, this.hall());
+        tone('sine', 2637, 2637, .02, 1, .02, this.hall());
+        break;
+      case 'finale-rise':
+        // One long organ chord (D minor, low and open) under the moon's opening, ending on the break.
+        for (const [hz, gain] of [[36.71, .05], [73.42, .07], [110, .04], [146.83, .045], [174.61, .025], [220, .02]] as const) this.organ(hz, t, 2.3, gain, this.hall());
+        break;
+      case 'finale-beat':
+        tone('sine', 62, 34, 0, .2, .4);
+        tone('sine', 58, 32, .15, .22, .28);
+        break;
+      case 'finale-crack':
+        for (let i = 0; i < 7; i++) noise(i * .045 + Math.random() * .02, .035, .14, 'highpass', 2500, 5000);
+        tone('sawtooth', 180, 900, 0, .35, .02);
+        break;
+      case 'finale-shatter': {
+        noise(0, .55, .26, 'highpass', 2600, 7000);
+        noise(0, .2, .18, 'bandpass', 900, 300);
+        tone('sine', 110, 26, 0, 1, .5);
+        for (let i = 0; i < 14; i++) {
+          const hz = 2200 + Math.random() * 4200;
+          tone('sine', hz, hz * .98, .02 + Math.random() * .4, .12 + Math.random() * .15, .03);
+        }
+        const hall = this.hall();
+        // The chord the silence rings on.
+        for (const [hz, gain] of [[146.83, .05], [220, .045], [293.66, .045], [349.23, .04], [440, .04], [587.33, .035]] as const) this.key(hz, t + .02, 3, gain, hall);
+        break;
+      }
+      case 'finale-bloom':
+        // Moonlight reaching her: a high, slow D-minor swell with a soft shimmer, then air.
+        for (const [hz, gain] of [[587.33, .02], [698.46, .016], [880, .014], [1174.66, .008]] as const) this.organ(hz, t, 2.6, gain, this.hall());
+        noise(0, 1.8, .02, 'highpass', 6000, 9000, true);
+        break;
+      case 'finale-stamp':
+        // The name writing itself in: three soft bell tones, no drum.
+        tone('sine', 1174.66, 1174.66, 0, 1.4, .03, this.hall());
+        tone('sine', 1396.91, 1396.91, .18, 1.3, .025, this.hall());
+        tone('sine', 1760, 1760, .36, 1.6, .025, this.hall());
+        break;
+      case 'finale-slash':
+        noise(0, .22, .22, 'bandpass', 700, 6000);
+        tone('sine', 95, 35, .16, .4, .35);
+        noise(.16, .15, .1, 'lowpass', 1200, 300);
+        break;
+    }
   }
 
   /** One keyboard note. */

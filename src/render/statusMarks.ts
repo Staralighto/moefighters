@@ -15,6 +15,7 @@ import { isLiteFx } from './fxQuality.ts';
 import { drawDoodleDizzy, drawDoodleLand } from './chisatoFx.ts';
 import { applyMaze, applyZap, auraMaze, auraZap } from './kanonFx.ts';
 import { applyHypno, auraHypno } from './akoFx.ts';
+import { applyTomoeHeart, auraTomoeHeart } from './tomoeFx.ts';
 import { applyRinkoHush, auraRinkoHush } from './rinkoFx.ts';
 import { applyRimiChoco, applyRimiHands, auraRimiChoco, auraRimiHands } from './rimiFx.ts';
 
@@ -934,6 +935,8 @@ export const STATUS_MARKS: Record<string, MarkDrawer> = {
   'kanon-maze': { aura: (ctx, f, left, t) => auraMaze(ctx, f, bodyH(f), left, t), apply: applyMaze },
   'kanon-zap': { aura: (ctx, f, left, t) => auraZap(ctx, f, bodyH(f), left, t), apply: applyZap },
   // 宇田川亚子: put to sleep by her 催眠波 (定身). Drawn in akoFx.ts.
+  // 宇田川巴: their heart skips under her 壁咚 (定身). Drawn in tomoeFx.ts.
+  'tomoe-heart': { aura: (ctx, f, left, t) => auraTomoeHeart(ctx, f, bodyH(f), left, t), apply: applyTomoeHeart },
   'ako-hypno': { aura: (ctx, f, left, t) => auraHypno(ctx, f, bodyH(f), left, t), apply: applyHypno },
   // 白金燐子: left with nothing to say by her 「……」 (沉默). Drawn in rinkoFx.ts.
   'rinko-hush': { aura: (ctx, f, left, t) => auraRinkoHush(ctx, f, bodyH(f), left, t), apply: applyRinkoHush },

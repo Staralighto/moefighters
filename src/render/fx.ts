@@ -17,6 +17,7 @@ import { drawTaeFx, drawTaeShot } from './taeFx.ts';
 import { drawSaayaFx, drawSaayaShot } from './saayaFx.ts';
 import { drawLisaFx, drawLisaShot } from './lisaFx.ts';
 import { drawHimariFx, drawHimariShot } from './himariFx.ts';
+import { drawTomoeFx } from './tomoeFx.ts';
 import { drawTokoFx, drawTokoShot } from './tokoFx.ts';
 import { drawChisatoFx, drawChisatoShot } from './chisatoFx.ts';
 import { drawKanonFx, drawKanonShot } from './kanonFx.ts';
@@ -1022,6 +1023,8 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
   if (drawLisaFx(ctx, e, liteFx, images)) return;
   // 上原绯玛丽 too.
   if (drawHimariFx(ctx, e, liteFx, images)) return;
+  // 宇田川巴 too.
+  if (drawTomoeFx(ctx, e, liteFx, images)) return;
   // 桐谷透子 too.
   if (drawTokoFx(ctx, e, liteFx, images)) return;
   // 白鹭千圣 too.
@@ -6008,7 +6011,7 @@ function cssRgba(c: Rgb, a: number): string {
 }
 
 /** A quaver: dark outline, the body in `color`, a pale shine on the head. `ink` is the outline. */
-function noteGlyph(ctx: CanvasRenderingContext2D, s: number, color: string, ink = '#16141f', shine = '#f7f1e4'): void {
+export function noteGlyph(ctx: CanvasRenderingContext2D, s: number, color: string, ink = '#16141f', shine = '#f7f1e4'): void {
   ctx.fillStyle = ink;
   ctx.fillRect(s * .32, -s * 1.4, s * .34, s * 1.55);
   ctx.beginPath(); ctx.ellipse(-s * .08, s * .18, s * .78, s * .52, -.5, 0, Math.PI * 2); ctx.fill();

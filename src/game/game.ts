@@ -17,7 +17,23 @@ import { clipFor } from '../render/clips.ts';
 /* Fixed-step arcade simulation. This module never touches the DOM or a canvas; it emits effects as data. */
 
 export type Mode = 'cpu' | 'training' | 'team' | 'challenge';
-export type Phase = 'intro' | 'fight' | 'roundend' | 'finished';
+export type Phase = 'intro' | 'fight' | 'finale' | 'roundend' | 'finished';
+
+/** 终幕: how long the cut-in holds the match (s), how long a press is ignored after it starts
+ *  (players are still mashing at the kill), and how long the 「再点一次跳过」 prompt waits. */
+export const FINALE_TIME = 6.2;
+/** 终幕 sound cues, seconds into the cut-in. Every lead-in shares this beat: it reveals the
+ *  picture at 2.7 s (render/finaleLeads.ts), the picture holds, the slash exit starts at 5.65 s. */
+/** 终幕 sound, kept sparse on purpose (2026-11-14): one long organ tone as the moon opens, the glass
+ *  breaking at the break, silence everywhere else. sfx.ts still holds the other cues (finale() synth,
+ *  FINALE_SAMPLES) and their recordings are archived in 素材/finale-sfx/. */
+export const FINALE_SOUND = true;
+export const FINALE_CUES: readonly (readonly [number, SfxKind])[] = [
+  [0.3, 'finale-rise'],
+  [2.35, 'finale-shatter'],
+];
+export const FINALE_DEAF = .8;
+export const FINALE_HINT = 2;
 
 const DUO_SPAWN = [
   { x: 265, facing: 1 as const, team: 0, controller: 0 as number | null },
@@ -74,6 +90,8 @@ const ECHO_FADE = .4;
 export type SfxKind = 'light' | 'heavy' | 'hit' | 'block' | 'parry' | 'super' | 'select' | 'jump' | 'ko' | 'cast' | 'key' | 'whistle' | 'slam'
   /** MASKING's bike: a short kick start and pull-away (死亡银河号), and two revs before the charge (银河流星踢). */
   | 'engine' | 'engine-rev'
+  /** 终幕: the cut-in's own cues (sfx.ts finale()). */
+  | 'finale-freeze' | 'finale-rise' | 'finale-beat' | 'finale-crack' | 'finale-shatter' | 'finale-bloom' | 'finale-stamp' | 'finale-slash'
   /** 血月的奏鸣: the organ pedal under the performance, the i-th note of the phrase, and the closing chord.
    *  The index rides in the name, so the online echo and its dedup see each note as its own sound. */
   | 'blood-intro' | `blood-${number}` | 'blood-end';
@@ -278,6 +296,15 @@ export class FightGame {
   /** Move that eliminated each team's last body this round; empty for unattributed deaths. */
   roundFin = ['', ''];
   winnerTeam = -1;
+  /** 终幕: the fighter whose L finished the round while the cut-in plays, and the `age` it began at. */
+  finaleBy: number | null = null;
+  finaleAt = 0;
+  /** 终幕: seconds left on the 「再点一次跳过」 prompt (offline only). */
+  finaleHint = 0;
+  /** 终幕: the next sound cue to play. */
+  private finaleCue = 0;
+  /** 终幕: the losers were thrown on the way back, so their fall carries sideways too. */
+  private finaleFlight = false;
   keys = new Set<string>();
 
   private accumulator = 0;
@@ -346,6 +373,9 @@ export class FightGame {
   /* ---- round lifecycle ---- */
   resetRound(): void {
     this.roundFin = ['', ''];
+    this.finaleBy = null;
+    this.finaleHint = 0;
+    this.finaleFlight = false;
     const spawn = this.mode === 'team' ? TEAM_SPAWN
       : this.mode === 'challenge' ? (this.characters.length === 2 ? DUO_SPAWN : CHALLENGE_SPAWN)
       : DUO_SPAWN;
@@ -710,7 +740,8 @@ export class FightGame {
     if (this.bannerLeft > 0) { this.bannerLeft -= dt; if (this.bannerLeft <= 0) this.setBanner(''); }
     this.updateVisuals(dt);
 
-    if (this.phase !== 'fight') {
+    // 终幕: the arena holds on the killing frame under the cut-in.
+    if (this.phase !== 'fight' && this.phase !== 'finale') {
       for (const f of this.fighters) {
         if (this.phase === 'roundend' && f.hp <= 0) this.fall(f, dt);
         advanceAnim(f, dt);
@@ -720,6 +751,14 @@ export class FightGame {
       this.phaseTime -= dt;
       if (this.phaseTime < .75 && this.lastBanner !== 'FIGHT!') { this.setBanner('FIGHT!', '开打！'); this.audio.play('super'); }
       if (this.phaseTime <= 0) { this.phase = 'fight'; this.setBanner(''); }
+      return;
+    }
+    if (this.phase === 'finale') {
+      this.phaseTime -= dt;
+      this.finaleHint = Math.max(0, this.finaleHint - dt);
+      const s = this.age - this.finaleAt;
+      while (FINALE_SOUND && this.finaleCue < FINALE_CUES.length && FINALE_CUES[this.finaleCue][0] <= s) this.audio.play(FINALE_CUES[this.finaleCue++][1]);
+      if (this.phaseTime <= 0) this.endFinale();
       return;
     }
     if (this.phase === 'roundend') {
@@ -785,6 +824,61 @@ export class FightGame {
     this.projectiles = [];
     this.sealVolleys = [];
     for (const f of this.fighters) { f.queue = []; f.attack = null; }
+    const finale = draw || this.time <= 0 ? undefined : this.finaleFinisher(winner);
+    if (finale) {
+      this.phase = 'finale';
+      this.phaseTime = FINALE_TIME;
+      this.finaleBy = finale.id;
+      this.finaleAt = this.age;
+      this.finaleHint = 0;
+      this.finaleCue = 0;
+      this.setBanner('');
+      this.options.onHUD?.(this);
+      return;
+    }
+    this.koBanner(draw, winner);
+  }
+
+  /** 终幕: a winner whose L made the kill, when that character has a cut-in. */
+  private finaleFinisher(winner: number): Fighter | undefined {
+    const fin = this.roundFin[1 - winner];
+    if (!fin) return undefined;
+    return this.fighters.find(f => f.team === winner && !f.minion && !f.echo && f.data.finale && skillsOf(f)[5]?.name === fin);
+  }
+
+  /** 终幕 over (played out or skipped): back on the arena, the losers are thrown, then the normal K.O. */
+  endFinale(): void {
+    if (this.phase !== 'finale') return;
+    const by = this.finaleBy === null ? undefined : this.fighterById(this.finaleBy);
+    const winner = by?.team ?? (this.teamHealth(0) > this.teamHealth(1) ? 0 : 1);
+    this.finaleBy = null;
+    this.finaleHint = 0;
+    this.phase = 'roundend';
+    this.phaseTime = this.wins.some(n => n >= this.roundsToWin) ? 1.8 : 2.6;
+    for (const f of this.fighters) {
+      if (f.team === winner || f.hp > 0) continue;
+      const away = by ? Math.sign(f.x - by.x) || -by.facing : (f.team === 0 ? -1 : 1);
+      f.vx = away * 420;
+      f.vy = -560;
+      f.y = Math.min(f.y, FLOOR - 1);
+    }
+    this.finaleFlight = true;
+    this.shake = 14;
+    this.flash = .25;
+    this.audio.play('heavy');
+    this.koBanner(false, winner);
+  }
+
+  /** 终幕 skip, offline only: presses in the first moment are ignored, the first later press only
+   *  raises the prompt, a second one inside it skips. */
+  finalePress(): void {
+    if (this.phase !== 'finale' || this.netRole) return;
+    if (this.age - this.finaleAt < FINALE_DEAF) return;
+    if (this.finaleHint > 0) this.endFinale();
+    else this.finaleHint = FINALE_HINT;
+  }
+
+  private koBanner(draw: boolean, winner: number): void {
     const title = draw ? 'DRAW' : this.time <= 0 ? 'TIME UP' : 'K.O.';
     this.setBanner(title, draw ? '平局 · 再战一回合' : this.teamNames(winner) + ' 赢下本回合');
     this.audio.play('ko');
@@ -1048,6 +1142,10 @@ export class FightGame {
   }
 
   private fall(f: Fighter, dt: number): void {
+    if (this.finaleFlight && f.vx) {
+      f.x = clamp(f.x + f.vx * dt, X_MIN, X_MAX);
+      if (f.y >= FLOOR) f.vx *= Math.max(0, 1 - dt * 6);
+    }
     f.vy += GRAVITY * dt;
     f.y = Math.min(FLOOR, f.y + f.vy * dt);
     if (f.y === FLOOR) f.vy = 0;

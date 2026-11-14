@@ -2,3 +2,8 @@ ship-horn.mp3
 Source: Freesound.org — qubodup, "Fog Horn" (https://freesound.org/people/qubodup/sounds/181949/)
 License: Creative Commons 0 (https://creativecommons.org/publicdomain/zero/1.0/)
 Changes: trimmed to the first 0.9 s blast, 15 ms fade-in and 0.4 s fade-out, re-encoded 128 kbps MP3.
+
+finale/shatter.mp3
+Source: Freesound.org — unfa, "Glass Break" (https://freesound.org/s/221528/)
+License: Creative Commons 0 (https://creativecommons.org/publicdomain/zero/1.0/)
+Changes: cut from the HQ preview at 0.25 s for 1.6 s, mono 44.1 kHz 112 kbps MP3; fade-out at playback.

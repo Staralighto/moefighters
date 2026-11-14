@@ -17,7 +17,7 @@ const PROJECTILE_SNAPSHOT_SKIP: ReadonlySet<string> = new Set(['trail']);
 /** Game-level fields the guest paints from. */
 export const GAME_FIELDS = [
   'phase', 'time', 'round', 'wins', 'shake', 'flash', 'timeStop', 'age', 'hitstop',
-  'bannerTitle', 'bannerSub', 'netEnd', 'winnerTeam', 'domainBg',
+  'bannerTitle', 'bannerSub', 'netEnd', 'winnerTeam', 'domainBg', 'finaleBy', 'finaleAt',
 ] as const;
 
 /** Effects age on the guest; their clock is sent once, when they appear. */
@@ -29,7 +29,7 @@ export const PART_BYTES = 1100;
 /** Entity key ('g', 'f<id>', 'p<id>', 'e<id>') → field → JSON text. */
 export type WireState = Map<string, Map<string, string>>;
 
-const PHASES: readonly Phase[] = ['intro', 'fight', 'roundend', 'finished'];
+const PHASES: readonly Phase[] = ['intro', 'fight', 'finale', 'roundend', 'finished'];
 export const isWireField = (key: string): boolean => key !== '__proto__' && key !== 'constructor' && key !== 'prototype';
 
 function round(n: number): number {
@@ -250,7 +250,7 @@ export function applyState(g: FightGame, s: WireState, prev: WireState | null, o
       if (prev?.get('g')?.get(k) === game.get(k)) continue;
       const v = field(game, k);
       if (k === 'phase' && !PHASES.includes(v as Phase)) continue;
-      rec[k] = v ?? (k === 'netEnd' || k === 'timeStop' ? null : rec[k]);
+      rec[k] = v ?? (k === 'netEnd' || k === 'timeStop' || k === 'finaleBy' ? null : rec[k]);
     }
   }
   const fighters: Fighter[] = [];

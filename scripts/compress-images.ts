@@ -11,7 +11,7 @@ const STAGE_Q = 80;
 const IDLE = 256;
 /** Slow-link stand-in: half size, lossy. Soft, but a fight can start on it; the near-lossless sheet replaces it. */
 const LITE_Q = 70;
-const DIRS = ['sprites', 'stages', 'icons', 'avatars'];
+const DIRS = ['sprites', 'stages', 'icons', 'avatars', 'finale'];
 
 function pngs(dir: string): string[] {
   const out: string[] = [];
@@ -48,6 +48,11 @@ let webpBytes = 0;
 await pool(files, 4, async file => {
   const rel = file.replaceAll('\\', '/');
   pngBytes += statSync(file).size;
+  // 终幕 illustrations: full-screen paintings, lossy like the stages, no thumbnail.
+  if (rel.includes('/finale/')) {
+    webpBytes += (await sharp(file).webp({ quality: STAGE_Q, effort: 5 }).toFile(file.slice(0, -4) + '.webp')).size;
+    return;
+  }
   if (rel.includes('/stages/')) {
     const info = await sharp(file).webp({ quality: STAGE_Q, effort: 5, alphaQuality: 90 }).toFile(file.slice(0, -4) + '.webp');
     await sharp(file).resize({ width: 480, withoutEnlargement: true }).webp({ quality: STAGE_Q, effort: 4, alphaQuality: 80 }).toFile(file.slice(0, -4) + '-thumb.webp');

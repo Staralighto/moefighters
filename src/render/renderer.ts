@@ -8,6 +8,7 @@ import { unbowedRage, violetHidden } from '../game/combat.ts';
 import { BURDEN_Y, encoreDark, IAIDO_PHASE, iaidoCharge, RARE_TIME, RARE_Y, UNBOWED_MAX, unbowedStacks } from './clips.ts';
 import { drawBanSign, drawCombo, drawEffect, drawMoonlight, drawGauge, drawHoldNote, drawKuji, drawLayerBass, drawParticles, drawProjectile, drawRainbowBack, drawRainbowFront, drawRootFx, drawSister, drawTexts, drawWheel, UI_FONT, zoomAbout } from './fx.ts';
 import { isLiteFx } from './fxQuality.ts';
+import { drawFinale } from './finale.ts';
 import { SAKIKO_BACK, SAKIKO_SCREEN_BACK } from './sakikoFx.ts';
 import { MIKU_BACK, MIKU_SCREEN_BACK } from './mikuFx.ts';
 import { drawStatusAuras, statusBodyOf } from './statusMarks.ts';
@@ -22,6 +23,7 @@ import { AKO_BACK, AKO_SCREEN_BACK, AKO_SCREEN_FRONT } from './akoFx.ts';
 import { RINKO_BACK, RINKO_SCREEN_BACK, RINKO_SCREEN_FRONT } from './rinkoFx.ts';
 import { RIMI_BACK } from './rimiFx.ts';
 import { HIMARI_BACK, HIMARI_SCREEN_BACK, HIMARI_SCREEN_FRONT } from './himariFx.ts';
+import { TOMOE_BACK, TOMOE_SCREEN_BACK, TOMOE_SCREEN_FRONT } from './tomoeFx.ts';
 import { drawTokoSoloLight, TOKO_BACK } from './tokoFx.ts';
 import { CHISATO_BACK, CHISATO_SCREEN_BACK, CHISATO_SCREEN_FRONT } from './chisatoFx.ts';
 import { MIZUHO_BACK, MIZUHO_SCREEN_BACK } from './mizuhoFx.ts';
@@ -47,10 +49,10 @@ export function portraitBodyScale(padSplit: boolean): number {
 /** Hard 1px rim, yellow for the left team and green for the right. */
 const TEAM_GLOW = SIDE;
 /** Effects painted under every body: 和泉朋花's coffin and her spotlights. */
-const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK, ...MIZUHO_BACK, ...MIKU_BACK, ...SHIZUKU_BACK, ...CHIERI_BACK, ...YOMOGI_BACK, ...MASKING_BACK, ...TAE_BACK, ...SAAYA_BACK, ...HIMARI_BACK, ...TOKO_BACK, ...CHISATO_BACK, ...BOCCHI_BACK, ...LOCK_BACK, ...KANON_BACK, ...AKO_BACK, ...RINKO_BACK, ...RIMI_BACK]);
+const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK, ...MIZUHO_BACK, ...MIKU_BACK, ...SHIZUKU_BACK, ...CHIERI_BACK, ...YOMOGI_BACK, ...MASKING_BACK, ...TAE_BACK, ...SAAYA_BACK, ...HIMARI_BACK, ...TOMOE_BACK, ...TOKO_BACK, ...CHISATO_BACK, ...BOCCHI_BACK, ...LOCK_BACK, ...KANON_BACK, ...AKO_BACK, ...RINKO_BACK, ...RIMI_BACK]);
 /** Screen-space layers that ignore the body zoom: behind every body, and in front of them. */
-const SCREEN_BACK = new Set(['encore-stage', 'family-dim', ...SAKIKO_SCREEN_BACK, ...MIZUHO_SCREEN_BACK, ...MIKU_SCREEN_BACK, ...YOMOGI_SCREEN_BACK, ...MASKING_SCREEN_BACK, ...TAE_SCREEN_BACK, ...SAAYA_SCREEN_BACK, ...HIMARI_SCREEN_BACK, ...CHISATO_SCREEN_BACK, ...BOCCHI_SCREEN_BACK, ...LOCK_SCREEN_BACK, ...KANON_SCREEN_BACK, ...AKO_SCREEN_BACK, ...RINKO_SCREEN_BACK]);
-const SCREEN_FRONT = new Set(['encore-rain', 'encore-crowd', 'encore-call', 'slap-flash', ...CHIERI_SCREEN_FRONT, ...YOMOGI_SCREEN_FRONT, ...HIMARI_SCREEN_FRONT, ...CHISATO_SCREEN_FRONT, ...AKO_SCREEN_FRONT, ...RINKO_SCREEN_FRONT]);
+const SCREEN_BACK = new Set(['encore-stage', 'family-dim', ...SAKIKO_SCREEN_BACK, ...MIZUHO_SCREEN_BACK, ...MIKU_SCREEN_BACK, ...YOMOGI_SCREEN_BACK, ...MASKING_SCREEN_BACK, ...TAE_SCREEN_BACK, ...SAAYA_SCREEN_BACK, ...HIMARI_SCREEN_BACK, ...TOMOE_SCREEN_BACK, ...CHISATO_SCREEN_BACK, ...BOCCHI_SCREEN_BACK, ...LOCK_SCREEN_BACK, ...KANON_SCREEN_BACK, ...AKO_SCREEN_BACK, ...RINKO_SCREEN_BACK]);
+const SCREEN_FRONT = new Set(['encore-rain', 'encore-crowd', 'encore-call', 'slap-flash', ...CHIERI_SCREEN_FRONT, ...YOMOGI_SCREEN_FRONT, ...HIMARI_SCREEN_FRONT, ...TOMOE_SCREEN_FRONT, ...CHISATO_SCREEN_FRONT, ...AKO_SCREEN_FRONT, ...RINKO_SCREEN_FRONT]);
 /** 安可是主唱的: the eye line on the 175 px body, measured up from the feet. */
 const ENCORE_EYE_Y = 152;
 
@@ -389,6 +391,8 @@ export class Renderer {
         if (f.hp > 0) for (const m of f.mods) {
           if (m.left <= 0) continue;
           if (m.mark === 'praise') drawEffect(c, { type: 'praise-aura', x: f.x, y: f.y - 182, color: '#ff8fd8', life: 1, max: 1, age: g.age });
+          // 宇田川巴's 爱之深，责之切: a little grey cloud of drizzle over the scolded head.
+          else if (m.mark === 'tomoe-scold') drawEffect(c, { type: 'tomoe-scold-aura', x: f.x, y: f.y - (f.data.view.kind === 'sprite' ? f.data.view.height : 181) - 30, color: '#9a9aa8', life: 1, max: 1, age: g.age });
           else if (m.mark === 'spotlight') drawEffect(c, { type: 'spot-aura', x: f.x, y: footY, color: '#fff2fb', life: 1, max: 1, age: g.age });
           // 马桥心玖's 珍稀动物认证: the tag over their head; the upgrade flips it over to 奇葩神兽.
           else if (m.mark === 'rare' || m.mark === 'beast') drawEffect(c, { type: 'rare-tag', x: f.x, y: f.y - RARE_Y, color: '#22CCFF', life: m.left, max: RARE_TIME, n: m.mark === 'beast' ? 1 : 0, age: RARE_TIME - m.left });
@@ -524,6 +528,27 @@ export class Renderer {
       });
       c.restore();
     }
+  }
+
+  /** 终幕: paint (or hide) the cut-in overlay. Its canvas covers the visible arena whatever the layout;
+   *  the picture is letterboxed inside it (render/finale.ts). */
+  drawFinaleCut(cv: HTMLCanvasElement, g: FightGame): void {
+    const on = g.phase === 'finale' && g.finaleBy !== null;
+    if (cv.hidden !== !on) cv.hidden = !on;
+    if (!on) return;
+    const cw = cv.clientWidth, ch = cv.clientHeight;
+    if (!cw || !ch) return;
+    const dpr = backingScale(window.devicePixelRatio || 1, document.body.classList.contains('touch'), isLiteFx());
+    const w = Math.max(1, Math.round(cw * dpr)), h = Math.max(1, Math.round(ch * dpr));
+    if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+    const c = cv.getContext('2d');
+    if (!c) return;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.clearRect(0, 0, w, h);
+    // The killing frame as it sits on screen, in the overlay's pixels: the cut-in opens by freezing it.
+    const gr = this.canvas.getBoundingClientRect(), or = cv.getBoundingClientRect();
+    const k = w / (or.width || 1);
+    drawFinale(c, w, h, g, this.images, { img: this.canvas, x: (gr.left - or.left) * k, y: (gr.top - or.top) * k, w: gr.width * k, h: gr.height * k });
   }
 
   /** `?fps` readout for phone testing: the last sampled average frame gap, and the lite tier. */

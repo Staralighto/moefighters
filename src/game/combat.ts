@@ -15,6 +15,7 @@ import './saaya.ts';
 // 今井莉莎 too.
 import './lisa.ts';
 import './himari.ts';
+import './tomoe.ts';
 import './toko.ts';
 import './chisato.ts';
 import './mizuho.ts';

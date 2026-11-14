@@ -266,11 +266,10 @@ export class SpriteView implements FighterView {
         ctx.imageSmoothingQuality = bakeQuality();
         ctx.drawImage(hardRim(im, cell.sx, cell.sy, cs, h, outline), ax - RIM_PAD, -h - RIM_PAD);
       }
-      // Source cell is 256, baked once per raster size (see hs); the per-draw cost is a
-      // nearest-neighbour 1:1 blit. Smoothing stays off so the blit cannot soften the pixels.
-      // 必杀表被放大时打开平滑，避免最近邻把边缘打成台阶。
-      ctx.imageSmoothingEnabled = !!sheetScale;
-      if (sheetScale) ctx.imageSmoothingQuality = bakeQuality();
+      // The cached size is rounded, but the final transform can still land between device
+      // pixels. Filter that last blit too, so mirrored portraits do not jump at landing.
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = bakeQuality();
       if (tint) drawTint(ctx, im, cell.sx, cell.sy, cs, h, hs, tint);
       else {
         const baked = prescaledCell(im, cell.sx, cell.sy, cs, hs);

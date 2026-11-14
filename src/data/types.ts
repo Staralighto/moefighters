@@ -336,6 +336,14 @@ export interface FormPair {
   };
 }
 
+export interface FinaleSpec {
+  fx: string;
+  art?: string;
+  anchor?: { x: number; y: number; r: number };
+  /** Her face in the art (fractions of width / height): the spotlight closes on it. */
+  focus?: { x: number; y: number };
+}
+
 export interface CharacterData {
   id: string;
   name: string;
@@ -372,6 +380,11 @@ export interface CharacterData {
    *  which replaces the generic slash).
    *  Data, so the kernel never reads a character id. Keep these quiet: they play all match long. */
   aura?: { step?: string; swing?: string };
+  /** 终幕: the cut-in played when her L makes the round's kill. `fx` keys her own lead-in
+   *  (render/finale.ts); `art` is the finished 16:9 illustration, unset draws a placeholder; `anchor` is
+   *  the hand-off point in the art the lead-in lands on, as fractions of the art's width and height
+   *  (`r` of its height). Docs: docs/finale-sop.md. */
+  finale?: FinaleSpec;
   /** 二号资源条 (打气): declared per character, charged by the kernel's hit gates, spent by moves.
    *  Absent means the fighter has no gauge and nothing is drawn or charged. */
   gauge?: GaugeSpec;

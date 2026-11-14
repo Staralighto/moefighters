@@ -221,6 +221,9 @@ export const ROSTER: CharacterData[] = [
     ...stats('rush'),
     // The goddess walks: each footfall rings faintly on the floor, each J / K leaves a thin silver moon.
     aura: { step: 'saki-step', swing: 'saki-swing' },
+    // 终幕: a blood moon opens like an eye and shatters onto the illustration; the anchor is that
+    // picture's moon (1672×941, measured from its red disc).
+    finale: { fx: 'blood-eye', art: '/finale/sakiko.png', anchor: { x: .263, y: .281, r: .218 }, focus: { x: .694, y: .234 } },
     view: {
       kind: 'sprite', common: '/sprites/sakiko/common.png', special: '/sprites/sakiko/special.png', height: 165, lift: 2,
       extras: ['/sprites/sakiko/shiro.png'],
@@ -1459,7 +1462,7 @@ export const ROSTER: CharacterData[] = [
     // cdMul .2: normals' cooldown drops to 20% (an 80% cut). Was .6, a drop to 60%.
     frenzy: { rate: 1.4, rangeMul: 1.15, cdMul: .2, damageMul: 1.25, chain: false, time: 8, tint: '#EE0022' },
     view: {
-      kind: 'sprite', common: '/sprites/mitake/common.png', special: '/sprites/mitake/special.png', height: 181,
+      kind: 'sprite', common: '/sprites/mitake/common.png', special: '/sprites/mitake/special.png', height: 181, lift: 5,
       frenzy: '/sprites/mitake/frenzy.png',
       extras: ['/sprites/mitake/guitar.png'],
     },
@@ -1588,6 +1591,54 @@ export const ROSTER: CharacterData[] = [
         finale: { damage: 130, knock: 420, react: { kind: 'knockdown', vy: -320, knocked: 1 } },
         brief: '队友应答连打击倒；不能格挡，前两下可跳，委屈加伤',
         detail: '霸体喊两声 A！各 16 伤害，跳起可躲；四位队友依次应答各 16 伤害，最后五色声浪 130 伤害并击倒；不能格挡；每层委屈末击加 15 伤害，用后清空',
+      }),
+    ],
+  },
+  {
+    id: 'tomoe', name: '宇田川巴', title: '鼓手 / 团爸', quote: 'ソイヤ！商店街的祭典，可不能少了我！', color: '#BB0033',
+    bands: ['afterglow'],
+    ...stats('armor'),
+    view: {
+      kind: 'sprite', common: '/sprites/tomoe/common.png', special: '/sprites/tomoe/special.png', height: 190, lift: 5,
+      // 火男面具·潜入的面具、神轿出巡的神轿：各一张独立 PNG。
+      extras: ['/sprites/tomoe/hyottoko.png', '/sprites/tomoe/mikoshi.png'],
+    },
+    // 宇田川巴（萌娘百科）: Afterglow 的鼓手，别号 soiya / 巴姐；有胸的帅哥（B 站「邦邦三大帅哥」）、AG 团爸爸（因为爱而骂人，
+    // 骂完马上反省道歉）、商店街祭典打和太鼓；差点戴着火男面具潜入弦卷家。全部空手；面具和神轿各一张 PNG，
+    // 其余由 tomoeFx.ts 绘制（src/game/tomoe.ts）。
+    skills: [
+      // 打起来！ (Afterglow 表情包「打起来！」).
+      skill(0, 'light', '打起来！'),
+      // 大姐头踢 (萌娘百科: 看上去有点像不良少女，实际上是温柔的大姐姐).
+      skill(1, 'heavy', '大姐头踢'),
+      // 火男面具·潜入 (萌娘百科: 差一点就要戴着火男面具潜入弦卷家): the mask, the sneak, the punch from behind.
+      skill(2, 'dash', '火男面具·潜入', {
+        damage: 28, range: 460, start: .2, duration: 1, cd: 9, knock: 220, fx: 'tomoe-mask', noBlock: true,
+        react: { kind: 'stand', stun: .4 },
+        brief: '戴上火男面具潜到对手身后，背后一拳；无视格挡',
+        detail: '戴上火男面具潜行 0.4 秒，期间不会被打中，绕到前方最近的对手身后打出背后直拳并小击飞；无视格挡，跳起可躲',
+      }),
+      // 这句话要听多少遍 (绯玛丽想倒追她，巴：「这句话我到底还要听多少遍」; B 站「有胸的帅哥」、牛郎团活动): the 壁咚.
+      skill(3, 'grab', '这句话要听多少遍', {
+        damage: 8, range: 130, speed: 520, start: .2, duration: 1, cd: 12, knock: 0, fx: 'tomoe-kabedon',
+        root: 1.4, rootBreak: 0, rootPin: true, react: { kind: 'stand' },
+        brief: '帅哥壁咚，对手心跳定身；跳起可躲',
+        detail: '上前壁咚抓住对手，对手心跳定身 1.4 秒；抓投不吃格挡，跳起可躲',
+      }),
+      // 爱之深，责之切 (萌娘百科: 会因为爱而骂人，骂人的时候真的很恐怖，下一秒就会反省道歉; AG 团爸爸).
+      skill(4, 'endure', '爱之深，责之切', {
+        damage: 30, range: 300, start: .35, duration: 1.1, cd: 10, knock: 300, fx: 'tomoe-scold', noBlock: true, holdEndure: true,
+        react: { kind: 'stand', stun: .35 },
+        curse: { kind: 'dmgDealt', time: 5, v: .75, mark: 'tomoe-scold' },
+        brief: '怒吼击退削弱对手再鞠躬；不可格挡，跳起可躲',
+        detail: '身前怒吼击退，对手挨骂 5 秒，造成的伤害降低 25%；随后九十度鞠躬道歉，全程霸体；不可格挡，跳起可躲',
+      }),
+      // 嘿哟！神轿出巡 (萌娘百科别号 soiya、商店街祭典): lanterns, the shrine on her shoulder, three rams to the wall, the uppercut.
+      skill(5, 'dash', '嘿哟！神轿出巡', {
+        cost: 150, damage: 18, range: 116, start: .5, duration: 3, knock: 0, gain: 2, fx: 'tomoe-mikoshi', superArmor: true, noSparks: true,
+        finale: { damage: 66, knock: 380, react: { kind: 'knockdown', vy: -340, knocked: 1 } },
+        brief: '扛神轿三撞推向版边，上抛直拳击倒；霸体，跳起可躲',
+        detail: '提灯亮起后扛起神轿前冲，撞上对手后顶着推向版边连撞三下，第三撞不可格挡；最后上抛直拳击倒，夜空炸开巴纹烟花；没撞到人则在前方出拳，伤害较低；全程霸体，跳起可躲',
       }),
     ],
   },

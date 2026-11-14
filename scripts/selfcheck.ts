@@ -27,6 +27,7 @@ import { drawSaayaFx, drawSaayaShot } from '../src/render/saayaFx.ts';
 import { drawKanonFx, drawKanonShot } from '../src/render/kanonFx.ts';
 import { wanderAt } from '../src/game/kanonPath.ts';
 import { drawAkoFx, drawAkoShot } from '../src/render/akoFx.ts';
+import { drawTomoeFx } from '../src/render/tomoeFx.ts';
 import { AKO_CHANT } from '../src/game/akoPath.ts';
 import { drawRinkoFx, drawRinkoShot } from '../src/render/rinkoFx.ts';
 import { drawRimiFx, drawRimiShot } from '../src/render/rimiFx.ts';
@@ -9930,6 +9931,113 @@ for (const order of [[2, 3], [3, 2]]) {
   assert.ok(plain.down && plain.dmg > 110, 'the answers knock down through a guard: ' + plain.dmg.toFixed(1));
   assert.ok(sore.dmg - plain.dmg > 15 && sore.left === 0, 'three 委屈 hit harder and are spent: ' + (sore.dmg - plain.dmg).toFixed(1));
   assert.ok(plain.early > 20 && hop.early === 0, 'an early jump clears her own two shouts: ' + plain.early.toFixed(1) + ' / ' + hop.early.toFixed(1));
+}
+
+// tomoe: 宇田川巴。U puts on the hyottoko mask, sneaks (untouchable) behind the foe and punches through a guard; I is the
+// 壁咚 — a grab that roots 1.4 s in the 'tomoe-heart' look; O roars them back through a guard and cuts their damage
+// (削弱, curse mark 'tomoe-scold') with armour through the bow; L (150 气) carries them on the shrine poles to the
+// wall, three rams, and an uppercut that knocks down.
+{
+  const to = at('tomoe');
+  const data = ROSTER[to];
+  assert.ok(to === at('himari') + 1, '宇田川巴 sits with Afterglow, after 绯玛丽');
+  assert.equal(data.trait, 'armor', 'she takes a hit');
+  assert.ok(data.view.kind === 'sprite' && data.view.height === 190 && data.view.extras?.includes('/sprites/tomoe/hyottoko.png') && data.view.extras.includes('/sprites/tomoe/mikoshi.png'), 'the mask and the shrine are preloaded pictures');
+  assert.ok(!!STATUS_MARKS['tomoe-heart'], 'her 定身 look is registered');
+  const fresh = (p2x = 520) => {
+    const g = newGame(to, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  // U: behind them, through a guard, and untouchable on the way
+  {
+    const { g, p1, p2 } = fresh(560);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    run(g, .4);
+    assert.ok(p1.invuln > 0, 'the sneak cannot be touched');
+    for (let i = 0; i < 240; i++) { p2.blocking = true; g.step(STEP); }
+    assert.ok(p1.x > p2.x - 5 || p1.facing === -1, 'she comes up behind them: ' + p1.x.toFixed(0) + ' vs ' + p2.x.toFixed(0));
+    assert.ok(hp - p2.hp > 20, 'the punch from behind ignores the guard: ' + (hp - p2.hp).toFixed(1));
+  }
+  // I: the 壁咚 roots about 1.4 s in her look
+  {
+    const { g, p1, p2 } = fresh(400);
+    g.attack(p1, 3);
+    let held = 0, look = false;
+    for (let i = 0; i < 360; i++) { g.step(STEP); if (p2.root > 0) { held += STEP; if (p2.rootMark === 'tomoe-heart') look = true; } }
+    assert.ok(held > 1.25 && held < 1.55, 'the 壁咚 holds about 1.4 s: ' + held.toFixed(2));
+    assert.ok(look, 'in her heart look');
+  }
+  // O: through a guard, 削弱 for about 5 s; a jump clears it
+  {
+    const { g, p1, p2 } = fresh(450);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    let cut = 0;
+    for (let i = 0; i < 840; i++) { p2.blocking = true; g.step(STEP); if (p2.mods.some(m => m.kind === 'dmgDealt' && m.left > 0 && m.mark === 'tomoe-scold')) cut += STEP; }
+    assert.ok(hp - p2.hp > 20, 'the roar goes through a guard: ' + (hp - p2.hp).toFixed(1));
+    assert.ok(cut > 4.7 && cut < 5.3, 'the scolding lasts about 5 s: ' + cut.toFixed(2));
+  }
+  {
+    const { g, p1, p2 } = fresh(450);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    run(g, .1);
+    p2.vy = -720;
+    run(g, .5);
+    assert.equal(hp, p2.hp, 'a jump clears the roar');
+  }
+  // L: 150 气, carried to the wall, knocked down
+  {
+    const { g, p1, p2 } = fresh();
+    assert.equal(p1.energyMax, 150);
+    p1.energy = 149;
+    assert.equal(g.attack(p1, 5), false, '149 energy cannot cast 神轿出巡');
+    p1.energy = 150;
+    const hp = p2.hp;
+    assert.equal(g.attack(p1, 5), true, '150 energy casts 神轿出巡');
+    let down = false;
+    for (let i = 0; i < 480; i++) { g.step(STEP); if (p2.knocked > 0) down = true; }
+    assert.ok(down && hp - p2.hp > 90, 'three rams and the uppercut knock down: ' + (hp - p2.hp).toFixed(1));
+  }
+  // Every picture draws and restores the canvas, and every effect her moves spawn is one of hers.
+  {
+    let depth = 0;
+    const methods = new Map<string, (...args: unknown[]) => unknown>();
+    const ctx = new Proxy({ globalAlpha: 1 } as Record<string, unknown>, {
+      get(o, key: string) {
+        if (key in o) return o[key];
+        if (!methods.has(key)) methods.set(key, (...args: unknown[]) => {
+          for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value), `Tomoe ${key} stays finite`);
+          if (key === 'save') depth++;
+          if (key === 'restore') depth--;
+          if (key === 'arc') assert.ok(Number(args[2]) >= 0, 'Tomoe arc radius');
+          if (key === 'ellipse') assert.ok(Number(args[2]) >= 0 && Number(args[3]) >= 0, 'Tomoe ellipse radii');
+          if (key === 'createLinearGradient' || key === 'createRadialGradient') return { addColorStop() {} };
+        });
+        return methods.get(key);
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    const seen = new Set<string>();
+    for (const slot of [2, 3, 4, 5]) {
+      const { g, p1 } = fresh(520);
+      p1.energy = 200;
+      g.attack(p1, slot);
+      for (let i = 0; i < 480; i++) { g.step(STEP); for (const e of g.effects) if (e.type.startsWith('tomoe-') && !e.type.endsWith('@expire')) seen.add(e.type); }
+    }
+    for (const type of ['mask', 'mask-on', 'pop', 'sneak', 'step', 'mask-fly', 'arc', 'wall', 'manga', 'shine', 'heart@apply', 'crest', 'roar', 'bow', 'night', 'lanterns', 'mikoshi', 'dust', 'ram', 'confetti', 'upper', 'firework']) {
+      assert.ok(seen.has('tomoe-' + type), 'her moves spawn tomoe-' + type);
+    }
+    seen.add('tomoe-scold-aura');
+    for (const lite of [false, true]) for (const dir of [-1, 1]) for (const type of seen) {
+      for (let i = 0; i <= 24; i++) {
+        const e = { type, x: 450, y: FLOOR, color: '#BB0033', max: 1.3, life: 1.3 - i * 1.3 / 24, age: i * .05, radius: 190, dir, n: i % 3, hit: i % 2 === 0, t0: .2 };
+        assert.ok(drawTomoeFx(ctx, e, lite), `Tomoe draws ${type}`);
+        assert.equal(depth, 0, 'Tomoe restores the canvas after ' + type);
+      }
+    }
+  }
 }
 
 // Stage light must add energy at crossings, and illuminate only the casting fighter's silhouette.

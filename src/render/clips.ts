@@ -907,6 +907,23 @@ export const HIMARI_FRIENDS: readonly HimariFriend[] = [
   { name: '兰', color: '#EE0022', height: 181 },
 ];
 
+/* ---- 宇田川巴 ---- */
+/** 火男面具·潜入: the mask goes on (until Skill.start), the sneak she cannot be touched in, the punch from behind. */
+export const TOMOE_SNEAK = { mask: 0, sneak: 1, punch: 2 } as const;
+export const TOMOE_SNEAK_TIME = .4;
+/** 这句话要听多少遍: the step in, the hand on the wall, the brush of the sideburn. */
+export const TOMOE_KABEDON = { lunge: 0, held: 1, done: 2 } as const;
+export const TOMOE_KABEDON_LUNGE = .25;
+export const TOMOE_KABEDON_TAIL = .3;
+/** 嘿哟！神轿出巡: up on the shoulder, the charge, the carry (a ram every TOMOE_RAM_GAP), the uppercut (TOMOE_TOSS), done. */
+export const TOMOE_MIKOSHI = { lift: 0, charge: 1, carry: 2, toss: 3, done: 4 } as const;
+export const TOMOE_MIKOSHI_CHARGE = .9;
+export const TOMOE_RAM_GAP = .3;
+export const TOMOE_TOSS = .18;
+export const TOMOE_MIKOSHI_TAIL = .45;
+export const TOMOE_HYOTTOKO_SRC = '/sprites/tomoe/hyottoko.png';
+export const TOMOE_MIKOSHI_SRC = '/sprites/tomoe/mikoshi.png';
+
 /** 这张必火: the lunge, the arm round their shoulders until the flash, the look at the phone. Shared by game/toko.ts and the cell pick. */
 export const TOKO_SELFIE = { lunge: 0, held: 1, done: 2 } as const;
 export const TOKO_SELFIE_LUNGE = .3;
@@ -1418,6 +1435,26 @@ export function clipFor(f: Fighter): Clip {
     if (f.attack.skill.fx === 'himari-call') {
       const a = f.attack;
       return at('special', a.index - 2, a.t < HIMARI_CALL_A[0] - .05 ? 0 : a.t < HIMARI_CALL_TURN ? 1 : 2);
+    }
+    // 火男面具·潜入: the mask up to the face through the mask-on and the sneak; the punch from behind; the shake-off.
+    if (f.attack.skill.fx === 'tomoe-mask') {
+      const a = f.attack, mode = a.mode ?? TOMOE_SNEAK.mask;
+      return at('special', a.index - 2, mode !== TOMOE_SNEAK.punch ? 0 : a.t < a.liftAt + .25 ? 1 : 2);
+    }
+    // 这句话要听多少遍: the reach; the hand on the wall; the sideburn.
+    if (f.attack.skill.fx === 'tomoe-kabedon') {
+      const a = f.attack, mode = a.mode ?? TOMOE_KABEDON.lunge;
+      return at('special', a.index - 2, mode === TOMOE_KABEDON.lunge ? 0 : mode === TOMOE_KABEDON.held ? 1 : 2);
+    }
+    // 爱之深，责之切: the breath in; the roar; the bow.
+    if (f.attack.skill.fx === 'tomoe-scold') {
+      const a = f.attack, s = a.skill;
+      return at('special', a.index - 2, a.t < s.start ? 0 : a.t < s.start + .3 ? 1 : 2);
+    }
+    // 嘿哟！神轿出巡: lifting it; the charge, the rams and the uppercut; the thumbs-up.
+    if (f.attack.skill.fx === 'tomoe-mikoshi') {
+      const a = f.attack, mode = a.mode ?? TOMOE_MIKOSHI.lift;
+      return at('special', a.index - 2, mode === TOMOE_MIKOSHI.lift ? 0 : mode === TOMOE_MIKOSHI.done ? 2 : 1);
     }
     // 这明明是狗: drawing, the page turned out, the sketchbook hugged.
     // 铁壁微笑: hand to the mouth, the smile with hands folded, the little bow.

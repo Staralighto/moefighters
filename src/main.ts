@@ -320,6 +320,9 @@ async function startGame(setup: MatchSetup): Promise<void> {
   // Lite form sheets first (an ultimate can come early), then the full set replaces the soft one.
   if (lite) queue.soon([...lite.rest, ...srcs]);
   if (missing.length) console.warn('缺图，已回退色块人形：' + missing.join(', '));
+  // 终幕 illustrations load behind the fight: a picture not in yet just means that kill skips the cut-in art.
+  for (const c of setup.characters) if (c.finale?.art) void loadInto(images, c.finale.art);
+  if (setup.characters.some(c => c.finale)) sfx.preloadFinale();
   lastSetup = setup;
 
   cancelAnimationFrame(raf);
@@ -524,11 +527,13 @@ let gapCount = 0;
 let avgGap = 0;
 
 const endOverlay = $('end');
+const finaleCut = $('finale-cut') as HTMLCanvasElement;
 
 function frame(now: number): void {
   if (!game || !renderer) return;
   const gap = lastNow ? now - lastNow : 0;
   lastNow = now;
+  document.body.classList.toggle('in-finale', game.phase === 'finale');
   if (game.netRole === 'lock') netLockFrame(now);
   else if (game.netRole === 'guest') netAfter(game, now);
   else {
@@ -546,6 +551,7 @@ function frame(now: number): void {
   // The result poster covers the arena: once it is up, the frozen last frame stays and the canvas rests.
   if (game.phase !== 'finished' || !endOverlay.classList.contains('has-report') || endOverlay.hidden) {
     renderer.draw(game);
+    renderer.drawFinaleCut(finaleCut, game);
     if (showFps) renderer.drawFps(avgGap);
   }
   raf = requestAnimationFrame(frame);
@@ -1005,4 +1011,7 @@ document.addEventListener('pointerdown', e => {
   nudgeMusic();
 }, { capture: true });
 document.addEventListener('keydown', e => { if (!e.repeat) { sfx.unlock(); nudgeMusic(); } }, { capture: true });
+// 终幕 skip: every press counts; finalePress ignores the first moment, and only a second press inside the prompt skips.
+document.addEventListener('pointerdown', () => game?.finalePress(), { capture: true });
+document.addEventListener('keydown', e => { if (!e.repeat) game?.finalePress(); }, { capture: true });
 // 选区、放大镜、双击缩放由 body.touch 的 CSS 关掉。这里再 preventDefault 会把正在进行的点击作废。
