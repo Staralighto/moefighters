@@ -5,8 +5,8 @@ import { CELL, COMMON_COLS, COMMON_LABELS, COMMON_ROWS, SPECIAL_COLS, SPECIAL_RO
 import { DIMS, NECK, torsoPoints, torsoRadii, type Pt, SHEET_SCALE } from '../src/render/proportions.ts';
 
 /* Colour-block Anon only. Do not import write-sheets.ts — that script redraws the whole cast.
-   U sprint, I wide strum, O faces the camera, L grips an empty spin. Guitar, notes and the heart are separate images.
-   ponytail: one front-view drawer for the wink column. Ceiling = CELL. */
+   U sprint, I wide strum, O side-view wink and heart gesture, L grips an empty spin. Guitar, notes and the heart are separate images.
+   Ceiling = CELL. */
 
 type Limb = [number, number];
 interface Pose {
@@ -32,15 +32,16 @@ const SPRINT_W: Pose = { lean: -.18, crouch: 8, look: .2, armF: [-.35, -.4], arm
 const SPRINT_H: Pose = { lean: .55, crouch: 6, look: .58, armF: [-1.05, -.45], armB: [-1.25, -.35], legF: [1.05, -.25], legB: [-.95, .5] };
 const SPRINT_R: Pose = { lean: .16, crouch: 4, look: .4, armF: [-.25, -.35], armB: [.35, -.45], legF: [.65, -.1], legB: [-.3, .12] };
 
-const STRUM_W: Pose = { lean: -.04, crouch: 0, look: .4, armF: [-.2, -1.35], armB: [.35, 1.15], legF: [.62, .04], legB: [-.62, .04] };
-const STRUM_H: Pose = { lean: .06, crouch: 0, look: .5, armF: [1.15, .35], armB: [.4, 1.2], legF: [.62, .04], legB: [-.62, .04] };
-const STRUM_R: Pose = { lean: .02, crouch: 0, look: .45, armF: [.45, -.7], armB: [.38, 1.15], legF: [.62, .04], legB: [-.62, .04] };
+const STRUM_W: Pose = { lean: -.04, crouch: 0, look: .4, armF: [-2.7, 0], armB: [.35, 1.15], legF: [.62, .04], legB: [-.62, .04] };
+const STRUM_H: Pose = { lean: .06, crouch: 0, look: .5, armF: [1.0, -2.5], armB: [.4, 1.2], legF: [.62, .04], legB: [-.62, .04] };
+const STRUM_R: Pose = { lean: .02, crouch: 0, look: .45, armF: [-2.5, 0], armB: [.38, 1.15], legF: [.62, .04], legB: [-.62, .04] };
 
 const SPIN_W: Pose = { lean: -.08, crouch: 2, look: .3, armF: [.15, -1.15], armB: [-.05, -1.05], legF: [.28, 0], legB: [-.22, 0] };
 const SPIN_H: Pose = { lean: .02, crouch: 1, look: .45, armF: [.85, .55], armB: [.55, .85], legF: [.32, 0], legB: [-.28, 0] };
 const SPIN_R: Pose = { lean: .04, crouch: 0, look: .4, armF: [.4, 1.15], armB: [.2, 1.35], legF: [.24, 0], legB: [-.2, 0] };
 
-const FACE: Pose = { lean: 0, crouch: 0, armF: [0, 0], armB: [0, 0], legF: [0, 0], legB: [0, 0] };
+const O_WIND: Pose = { ...IDLE, armF: [1.4, 1.5], armB: [.1, -.3] };
+const O_HIT: Pose = { ...IDLE, armF: [1.25, -2.8], armB: [1.0, -2.8] };
 
 const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 function mix(a: Pose, b: Pose, k: number): Pose {
@@ -231,7 +232,7 @@ function commonPose(label: string): Pose | null {
 const SPECIAL: Pose[][] = [
   [SPRINT_W, SPRINT_H, SPRINT_R],
   [STRUM_W, STRUM_H, STRUM_R],
-  [{ ...FACE, front: 'wink' }, { ...FACE, front: 'heart' }, { ...FACE, front: 'back' }],
+  [O_WIND, O_HIT, IDLE],
   [SPIN_W, SPIN_H, SPIN_R],
 ];
 

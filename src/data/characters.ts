@@ -299,14 +299,16 @@ export const ROSTER: CharacterData[] = [
     bands: ['mygo'],
     ...stats('rush'),
     view: {
-      kind: 'sprite', common: '/sprites/anon/common.png', special: '/sprites/anon/special.png', height: 181,
+      kind: 'sprite', common: '/sprites/anon/common.png', special: '/sprites/anon/special.png', height: 181, lift: 5, specialScale: 1.05,
       extras: ['/sprites/anon/note.png', '/sprites/anon/heart.png', '/sprites/anon/guitar.png'],
     },
+    // 闪光灯与自拍滤镜：J / K 留下粉色月牙与闪粉（render/anonFx.ts）。
+    aura: { swing: 'anon-swing' },
     skills: [
       skill(0, 'light', '轻点'),
       skill(1, 'heavy', '横踢'),
       skill(2, 'dash', '羽丘跑女', {
-        damage: 22, cd: 2.2, speed: 1450, start: .08, duration: .46, range: 100,
+        damage: 22, cd: 2.2, speed: 1450, start: .08, duration: .46, range: 100, fx: 'anon-run',
         brief: '超长距离冲刺', detail: '超长距离冲刺',
       }),
       skill(3, 'projectile', 'C和弦', {
@@ -314,7 +316,7 @@ export const ROSTER: CharacterData[] = [
         knock: 160, knockOnBlock: true,
         brief: '追踪音符；按住连发至十二发', detail: '追踪音符；按住连发至十二发',
       }),
-      skill(4, 'projectile', '爱音之光', {
+      skill(4, 'projectile', '多夸夸我嘛', {
         damage: 28, speed: 460, size: 56, start: .35, duration: .9, cd: 7, life: 2.2, fx: 'heart',
         root: 3, rootPin: true, knock: 0, knockOnBlock: true, control: true,
         brief: '命中定身；再受击两次解除', detail: '命中定身 3 秒；再受击两次解除',

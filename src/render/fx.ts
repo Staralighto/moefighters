@@ -21,6 +21,7 @@ import { drawTomoeFx } from './tomoeFx.ts';
 import { drawTokoFx, drawTokoShot } from './tokoFx.ts';
 import { drawChisatoFx, drawChisatoShot } from './chisatoFx.ts';
 import { drawKanonFx, drawKanonShot } from './kanonFx.ts';
+import { drawAnonFx, drawAnonShot } from './anonFx.ts';
 import { drawAkoFx, drawAkoShot } from './akoFx.ts';
 import { drawRinkoFx, drawRinkoShot } from './rinkoFx.ts';
 import { drawRimiFx, drawRimiShot } from './rimiFx.ts';
@@ -1034,6 +1035,8 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
   if (drawBocchiFx(ctx, e, liteFx, images)) return;
   // 松原花音 too.
   if (drawKanonFx(ctx, e, liteFx, images)) return;
+  // 千早爱音 too.
+  if (drawAnonFx(ctx, e, liteFx)) return;
   // 宇田川亚子 too.
   if (drawAkoFx(ctx, e, liteFx, images)) return;
   // 白金燐子 too.
@@ -6212,6 +6215,7 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   if (drawTokoShot(ctx, p, liteFx)) return;
   if (drawChisatoShot(ctx, p, images)) return;
   if (drawKanonShot(ctx, p, liteFx, images)) return;
+  if (drawAnonShot(ctx, p, liteFx)) return;
   if (drawAkoShot(ctx, p, liteFx, images)) return;
   if (drawRinkoShot(ctx, p, liteFx, images)) return;
   if (drawRimiShot(ctx, p, liteFx, images)) return;

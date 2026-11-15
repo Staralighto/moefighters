@@ -2083,7 +2083,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   r2.x = r1.x + 90; r2.facing = -1;
   root.keyDown('KeyO');
   run(root, .8);
-  assert.ok(r2.root > 2, `爱音之光 roots, left ${r2.root}`);
+  assert.ok(r2.root > 2, `多夸夸我嘛 roots, left ${r2.root}`);
   const locked = r2.x;
   root.keys.add('ArrowRight');
   run(root, .4);

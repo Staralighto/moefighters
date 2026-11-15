@@ -84,7 +84,7 @@ export interface Fighter {
   /** 直接无限大: seconds left on the bill window. Damage taken is stored in debtDmg, not subtracted yet. */
   debt: number;
   debtDmg: number;
-  /** Seconds 爱音之光 keeps the fighter from walking, jumping, dodging, or dashing. */
+  /** Seconds 多夸夸我嘛 keeps the fighter from walking, jumping, dodging, or dashing. */
   root: number;
   /** Clean hits taken during the current root. Cleared when the root ends. */
   rootHits: number;

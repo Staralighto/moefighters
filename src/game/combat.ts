@@ -22,6 +22,7 @@ import './mizuho.ts';
 import './bocchi.ts';
 import './lock.ts';
 import './kanon.ts';
+import './anon.ts';
 import './ako.ts';
 import './rinko.ts';
 import './rimi.ts';

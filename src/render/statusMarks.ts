@@ -18,6 +18,7 @@ import { applyHypno, auraHypno } from './akoFx.ts';
 import { applyTomoeHeart, auraTomoeHeart } from './tomoeFx.ts';
 import { applyRinkoHush, auraRinkoHush } from './rinkoFx.ts';
 import { applyRimiChoco, applyRimiHands, auraRimiChoco, auraRimiHands } from './rimiFx.ts';
+import { applyAnonLight, auraAnonLight, expireAnonLight } from './anonFx.ts';
 
 /** A status that changes the body itself, painted by the renderer with the view's own outline and tint:
  *  the outline replaces the team rim, each wash is the sprite's silhouette in one colour laid over it, and the
@@ -943,6 +944,8 @@ export const STATUS_MARKS: Record<string, MarkDrawer> = {
   // 牛込里美: ankles held by the ghost of her 今晚放映恐怖片 (定身), and chocolate dripping off after 告一段"螺" (冻僵). Drawn in rimiFx.ts.
   'rimi-hands': { aura: (ctx, f, left, t) => auraRimiHands(ctx, f, bodyH(f), left, t), apply: applyRimiHands },
   'rimi-choco': { aura: (ctx, f, left, t) => auraRimiChoco(ctx, f, bodyH(f), left, t), apply: applyRimiChoco },
+  // 千早爱音: wrapped in the heart bubble of 多夸夸我嘛 (定身); it cracks on the first shake-off hit. Drawn in anonFx.ts.
+  'anon-light': { aura: (ctx, f, left, t) => auraAnonLight(ctx, f, left, t, isLiteFx()), apply: applyAnonLight, expire: expireAnonLight },
 };
 
 /** Live marks this body wears that the table knows. Older looks (摩卡's bubble, the petals) are not in the
