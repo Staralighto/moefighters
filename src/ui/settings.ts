@@ -11,17 +11,21 @@ export interface TrainPrefs {
   noCd: boolean;
   /** The super meter stays full. */
   infiniteUlt: boolean;
+  /** 木桩一直按住格挡：练削防、破防、完美格挡和抓投。 */
+  dummyGuard: boolean;
+  /** 连段一断（脱离受击 1 秒）就回满血，每套连段都从满血算。 */
+  quickHeal: boolean;
 }
 
-const prefs: TrainPrefs = { noCd: true, infiniteUlt: true };
+const prefs: TrainPrefs = { noCd: true, infiniteUlt: true, dummyGuard: false, quickHeal: false };
+const FLAGS = ['noCd', 'infiniteUlt', 'dummyGuard', 'quickHeal'] as const;
 
 function loadTrain(): void {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return;
     const s = JSON.parse(raw) as Partial<TrainPrefs>;
-    if (typeof s.noCd === 'boolean') prefs.noCd = s.noCd;
-    if (typeof s.infiniteUlt === 'boolean') prefs.infiniteUlt = s.infiniteUlt;
+    for (const k of FLAGS) if (typeof s[k] === 'boolean') prefs[k] = s[k];
   } catch { /* private mode, or no localStorage */ }
 }
 loadTrain();
@@ -29,8 +33,7 @@ loadTrain();
 export function trainPrefs(): TrainPrefs { return prefs; }
 
 export function setTrainPrefs(patch: Partial<TrainPrefs>): void {
-  if (typeof patch.noCd === 'boolean') prefs.noCd = patch.noCd;
-  if (typeof patch.infiniteUlt === 'boolean') prefs.infiniteUlt = patch.infiniteUlt;
+  for (const k of FLAGS) if (typeof patch[k] === 'boolean') prefs[k] = patch[k];
   try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* private mode */ }
 }
 
@@ -184,4 +187,88 @@ export function bindTip(popId: string): void {
   window.visualViewport?.addEventListener('resize', reposition);
   window.visualViewport?.addEventListener('scroll', reposition);
   pop.closest('dialog')?.addEventListener('scroll', reposition);
+}
+
+/** Two or three options: a segmented row (`.seg`, role=radiogroup). Every option is visible, one tap
+ *  picks. Returns its re-sync for state another control can also change. */
+export function bindSeg(groupId: string, binding: PickBinding): () => void {
+  const group = document.getElementById(groupId);
+  if (!group) return () => {};
+  const options = [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
+  const sync = (): void => {
+    const value = binding.get();
+    for (const opt of options) {
+      const on = opt.dataset.value === value;
+      opt.classList.toggle('active', on);
+      opt.setAttribute('aria-checked', String(on));
+      opt.tabIndex = on ? 0 : -1;
+    }
+  };
+  for (const opt of options) {
+    opt.addEventListener('click', () => {
+      const value = opt.dataset.value;
+      if (!value || value === binding.get()) return;
+      binding.set(value);
+      sync();
+    });
+  }
+  group.addEventListener('keydown', e => {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+    const i = options.indexOf(document.activeElement as HTMLButtonElement);
+    if (i < 0) return;
+    e.preventDefault();
+    const step = e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 1;
+    const next = options[(i + step + options.length) % options.length];
+    next.focus({ preventScroll: true });
+    next.click();
+  });
+  sync();
+  return sync;
+}
+
+/** On / off: a switch (role=switch). Returns its re-sync. */
+export function bindSwitch(id: string, binding: { get(): boolean; set(on: boolean): void }): () => void {
+  const btn = document.getElementById(id) as HTMLButtonElement | null;
+  if (!btn) return () => {};
+  const sync = (): void => btn.setAttribute('aria-checked', String(binding.get()));
+  btn.addEventListener('click', () => {
+    if (btn.disabled) return;
+    binding.set(!binding.get());
+    sync();
+  });
+  sync();
+  return sync;
+}
+
+/** Settings tabs. All panes share one grid cell so the dialog keeps the tallest pane's height and
+ *  never jumps between tabs. Returns the opener: `show('controls')`. A hidden tab is skipped. */
+export function bindTabs(dialog: HTMLElement): (tab?: string) => void {
+  const tabs = [...dialog.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+  const panes = [...dialog.querySelectorAll<HTMLElement>('[role="tabpanel"]')];
+  const show = (name?: string, focus = false): void => {
+    const live = tabs.filter(t => !t.hidden);
+    const tab = live.find(t => t.dataset.tab === name) ?? live.find(t => t.classList.contains('active')) ?? live[0];
+    if (!tab) return;
+    for (const t of tabs) {
+      const on = t === tab;
+      t.classList.toggle('active', on);
+      t.setAttribute('aria-selected', String(on));
+      t.tabIndex = on ? 0 : -1;
+    }
+    for (const p of panes) p.classList.toggle('on', p.dataset.tab === tab.dataset.tab);
+    if (focus) tab.focus({ preventScroll: true });
+    for (const m of dialog.querySelectorAll<HTMLElement>('.tip-pop')) closePopover(m);
+  };
+  for (const t of tabs) t.addEventListener('click', () => show(t.dataset.tab));
+  dialog.querySelector('[role="tablist"]')?.addEventListener('keydown', e => {
+    const k = (e as KeyboardEvent).key;
+    if (k !== 'ArrowLeft' && k !== 'ArrowRight') return;
+    const live = tabs.filter(t => !t.hidden);
+    const i = live.indexOf(document.activeElement as HTMLButtonElement);
+    if (i < 0) return;
+    e.preventDefault();
+    show(live[(i + (k === 'ArrowLeft' ? -1 : 1) + live.length) % live.length].dataset.tab, true);
+  });
+  show();
+  return tab => show(tab);
 }

@@ -51,9 +51,43 @@ const FINALE_SAMPLES: Partial<Record<SfxKind, { src: string; at: number; dur: nu
 /** Select-screen cues. Not SfxKind: the match never plays these. */
 export type UiSound = 'hover' | 'swish' | 'confirm' | 'deny' | 'land' | 'whoosh' | 'vs';
 
+const VOLUME_KEY = 'mf-sfx-volume';
+function readVolume(): number {
+  try {
+    const v = Number(localStorage.getItem(VOLUME_KEY));
+    return localStorage.getItem(VOLUME_KEY) !== null && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
+  } catch { return 1; }
+}
+
 export class Sfx {
   muted = false;
   private ctx: AudioContext | null = null;
+  /** 所有音效都经过这一个总音量，设置里的「音效音量」只动它。 */
+  private out: GainNode | null = null;
+  private vol = readVolume();
+  private saveTimer = 0;
+
+  /** 0–1。存在本地，下次打开还是这个音量。 */
+  get volume(): number { return this.vol; }
+  set volume(v: number) {
+    this.vol = Math.min(1, Math.max(0, v));
+    // 拖滑条时每个 input 事件都会进来：存档合并到停手后再写一次。
+    clearTimeout(this.saveTimer);
+    this.saveTimer = window.setTimeout(() => {
+      try { localStorage.setItem(VOLUME_KEY, String(this.vol)); } catch { /* private mode */ }
+    }, 250);
+    if (this.out && this.ctx) this.out.gain.setTargetAtTime(this.vol, this.ctx.currentTime, .02);
+  }
+
+  private dest(): AudioNode {
+    const ctx = this.ctx!;
+    if (!this.out) {
+      this.out = ctx.createGain();
+      this.out.gain.value = this.vol;
+      this.out.connect(ctx.destination);
+    }
+    return this.out;
+  }
   private horn: AudioBuffer | null = null;
   private hornBroken = false;
 
@@ -108,7 +142,7 @@ export class Sfx {
       lp.frequency.value = spec.lowpass;
       head = src.connect(lp);
     }
-    head.connect(g).connect(ctx.destination);
+    head.connect(g).connect(this.dest());
     src.start(t, spec.at, dur);
     return true;
   }
@@ -128,7 +162,7 @@ export class Sfx {
     o.frequency.exponentialRampToValueAtTime(Math.max(35, freq / 3), t + duration);
     g.gain.setValueAtTime(.06, t);
     g.gain.exponentialRampToValueAtTime(.0001, t + duration);
-    o.connect(g).connect(this.ctx.destination);
+    o.connect(g).connect(this.dest());
     o.start(t);
     o.stop(t + duration);
   }
@@ -153,7 +187,7 @@ export class Sfx {
         lp.frequency.value = lowpass;
         head = o.connect(lp);
       }
-      head.connect(g).connect(ctx.destination);
+      head.connect(g).connect(this.dest());
       o.start(t + at);
       o.stop(t + at + dur + .02);
     };
@@ -167,7 +201,7 @@ export class Sfx {
       g.gain.setValueAtTime(.0001, t + at);
       g.gain.exponentialRampToValueAtTime(gain, t + at + dur * .35);
       g.gain.exponentialRampToValueAtTime(.0001, t + at + dur);
-      n.connect(bp).connect(g).connect(ctx.destination);
+      n.connect(bp).connect(g).connect(this.dest());
       n.start(t + at);
       n.stop(t + at + dur + .02);
     };
@@ -211,7 +245,7 @@ export class Sfx {
     lp.Q.value = .7;
     gb.gain.setValueAtTime(.075, t);
     gb.gain.exponentialRampToValueAtTime(.0001, t + .1);
-    blip.connect(lp).connect(gb).connect(ctx.destination);
+    blip.connect(lp).connect(gb).connect(this.dest());
     blip.start(t); blip.stop(t + .1);
     const body = ctx.createOscillator(), gt = ctx.createGain();
     body.type = 'sine';
@@ -219,7 +253,7 @@ export class Sfx {
     body.frequency.exponentialRampToValueAtTime(60, t + .12);
     gt.gain.setValueAtTime(.11, t);
     gt.gain.exponentialRampToValueAtTime(.0001, t + .13);
-    body.connect(gt).connect(ctx.destination);
+    body.connect(gt).connect(this.dest());
     body.start(t); body.stop(t + .13);
   }
 
@@ -270,7 +304,7 @@ export class Sfx {
     fire.connect(depth).connect(pulse.gain);
     body.connect(pulse);
     sub.connect(subGain).connect(pulse);
-    pulse.connect(lp).connect(out).connect(ctx.destination);
+    pulse.connect(lp).connect(out).connect(this.dest());
     // Exhaust breath: band-passed noise riding the same envelope, a little quieter.
     // The shared 0.6 s noise, looped: no new buffer per rev.
     const noise = ctx.createBufferSource();
@@ -302,8 +336,8 @@ export class Sfx {
     click.frequency.exponentialRampToValueAtTime(180, t + .04);
     gc.gain.setValueAtTime(.05, t);
     gc.gain.exponentialRampToValueAtTime(.0001, t + .045);
-    body.connect(gb).connect(ctx.destination);
-    click.connect(gc).connect(ctx.destination);
+    body.connect(gb).connect(this.dest());
+    click.connect(gc).connect(this.dest());
     body.start(t); body.stop(t + .16);
     click.start(t); click.stop(t + .05);
   }
@@ -344,7 +378,7 @@ export class Sfx {
     const t = ctx.currentTime;
     const out = ctx.createGain();
     out.gain.value = FINALE_LEVEL;
-    out.connect(ctx.destination);
+    out.connect(this.dest());
     const tone = (type: OscillatorType, f0: number, f1: number, at: number, dur: number, gain: number, to: AudioNode = out) => {
       const o = ctx.createOscillator(), g = ctx.createGain();
       o.type = type;
@@ -484,10 +518,10 @@ export class Sfx {
     wet.gain.value = .22;
     damp.type = 'lowpass';
     damp.frequency.value = 2600;
-    input.connect(ctx.destination);
+    input.connect(this.dest());
     input.connect(delay);
     delay.connect(damp).connect(fb).connect(delay);
-    damp.connect(wet).connect(ctx.destination);
+    damp.connect(wet).connect(this.dest());
     return this.hallIn = input;
   }
 
@@ -499,7 +533,7 @@ export class Sfx {
       const src = ctx.createBufferSource(), g = ctx.createGain();
       src.buffer = this.horn;
       g.gain.value = HORN_GAIN;
-      src.connect(g).connect(ctx.destination);
+      src.connect(g).connect(this.dest());
       src.start();
       return;
     }
@@ -514,7 +548,7 @@ export class Sfx {
       g.gain.exponentialRampToValueAtTime(gain, t + .07);
       g.gain.setValueAtTime(gain, t + dur - .14);
       g.gain.exponentialRampToValueAtTime(.0001, t + dur);
-      o.connect(g).connect(ctx.destination);
+      o.connect(g).connect(this.dest());
       o.start(t);
       o.stop(t + dur);
     }

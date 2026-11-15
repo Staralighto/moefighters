@@ -52,6 +52,7 @@
   <symbol id="i-arrow-left" viewBox="0 0 256 256"><path fill="currentColor" d="M224,128a8,8,0,0,1-8,8H59.31l58.35,58.34a8,8,0,0,1-11.32,11.32l-72-72a8,8,0,0,1,0-11.32l72-72a8,8,0,0,1,11.32,11.32L59.31,120H216A8,8,0,0,1,224,128Z"/></symbol>
   <symbol id="i-arrow-right" viewBox="0 0 256 256"><path fill="currentColor" d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z"/></symbol>
   <symbol id="i-arrow-clockwise" viewBox="0 0 256 256"><path fill="currentColor" d="M240,56v48a8,8,0,0,1-8,8H184a8,8,0,0,1,0-16H211.4L184.81,71.64l-.25-.24a80,80,0,1,0-1.67,114.78,8,8,0,0,1,11,11.63A95.44,95.44,0,0,1,128,224h-1.32A96,96,0,1,1,195.75,60L224,85.8V56a8,8,0,1,1,16,0Z"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 256 256"><path fill="currentColor" d="M247.31,124.76c-.35-.79-8.82-19.58-27.65-38.41C194.57,61.26,162.88,48,128,48S61.43,61.26,36.34,86.35C17.51,105.18,9,124,8.69,124.76a8,8,0,0,0,0,6.5c.35.79,8.82,19.57,27.65,38.4C61.43,194.74,93.12,208,128,208s66.57-13.26,91.66-38.34c18.83-18.83,27.3-37.61,27.65-38.4A8,8,0,0,0,247.31,124.76ZM128,192c-30.78,0-57.67-11.19-79.93-33.25A133.47,133.47,0,0,1,25,128,133.33,133.33,0,0,1,48.07,97.25C70.33,75.19,97.22,64,128,64s57.67,11.19,79.93,33.25A133.46,133.46,0,0,1,231.05,128C223.84,141.46,192.43,192,128,192Zm0-112a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Z"/></symbol>
   <symbol id="i-pause" viewBox="0 0 256 256"><path fill="currentColor" d="M200,32H160a16,16,0,0,0-16,16V208a16,16,0,0,0,16,16h40a16,16,0,0,0,16-16V48A16,16,0,0,0,200,32Zm0,176H160V48h40ZM96,32H56A16,16,0,0,0,40,48V208a16,16,0,0,0,16,16H96a16,16,0,0,0,16-16V48A16,16,0,0,0,96,32Zm0,176H56V48H96Z"/></symbol>
   <symbol id="i-play" viewBox="0 0 256 256"><path fill="currentColor" d="M232.4,114.49,88.32,26.35a16,16,0,0,0-16.2-.3A15.86,15.86,0,0,0,64,39.87V216.13A15.94,15.94,0,0,0,80,232a16.07,16.07,0,0,0,8.36-2.35L232.4,141.51a15.81,15.81,0,0,0,0-27ZM80,215.94V40l143.83,88Z"/></symbol>
   <symbol id="i-users" viewBox="0 0 256 256"><path fill="currentColor" d="M117.25,157.92a60,60,0,1,0-66.5,0A95.83,95.83,0,0,0,3.53,195.63a8,8,0,1,0,13.4,8.74,80,80,0,0,1,134.14,0,8,8,0,0,0,13.4-8.74A95.83,95.83,0,0,0,117.25,157.92ZM40,108a44,44,0,1,1,44,44A44.05,44.05,0,0,1,40,108Zm210.14,98.7a8,8,0,0,1-11.07-2.33A79.83,79.83,0,0,0,172,168a8,8,0,0,1,0-16,44,44,0,1,0-16.34-84.87,8,8,0,1,1-5.94-14.85,60,60,0,0,1,55.53,105.64,95.83,95.83,0,0,1,47.22,37.71A8,8,0,0,1,250.14,206.7Z"/></symbol>
@@ -307,10 +308,6 @@
     </div>
     <div class="game-banner" id="banner">
       <small id="banner-sub"></small><strong id="banner-text"></strong>
-      <small id="deck-label" class="deck-label" hidden></small>
-      <button id="resume" class="icon-btn" type="button" hidden aria-label="继续战斗"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-play"/></svg><span class="btn-label">继续战斗</span></button>
-      <button id="wide-exit" class="icon-btn" type="button" hidden aria-label="退出宽屏"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-corners-in"/></svg><span class="btn-label">退出宽屏</span></button>
-      <button id="pause-quit" class="icon-btn" type="button" hidden aria-label="返回选人"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-arrow-left"/></svg><span class="btn-label">返回选人</span></button>
     </div>
     <div class="end-overlay" id="end" hidden>
       <div class="end-report" id="end-report" hidden></div>
@@ -331,6 +328,38 @@
         <button type="button" class="sk s3" data-pad="s3" data-key="KeyO" aria-label="技能3"><img alt="" loading="lazy" src="/icons/grab.png"></button>
         <button type="button" class="atk" data-pad="atk" data-atk aria-label="短按轻击，长按重击"><img alt="" loading="lazy" src="/icons/light.png"></button>
         <button type="button" class="guard" data-pad="guard" data-guard aria-label="格挡"><img alt="" loading="lazy" src="/icons/guard.png"></button>
+        <button type="button" class="sk hvy" data-pad="hvy" data-key="KeyK" aria-label="重击"><img alt="" loading="lazy" src="/icons/heavy.png"></button>
+        <button type="button" class="sk evade" data-pad="evade" data-evade aria-label="后撤"><img alt="" loading="lazy" src="/icons/dodge.png"></button>
+      </div>
+    </div>
+    <nav class="pause-menu" id="pause-menu" aria-label="暂停菜单" hidden>
+      <strong class="pause-title">PAUSED</strong>
+      <small id="deck-label" class="deck-label" hidden></small>
+      <button id="resume" class="icon-btn" type="button" aria-label="继续战斗"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-play"/></svg><span class="btn-label">继续战斗</span></button>
+      <button id="pause-reset" class="icon-btn" type="button" aria-label="重置位置" hidden><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-arrow-clockwise"/></svg><span class="btn-label">重置位置</span></button>
+      <button id="pause-settings" class="icon-btn" type="button" aria-label="设置"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-gear-six"/></svg><span class="btn-label">设置</span></button>
+      <button id="wide-exit" class="icon-btn" type="button" hidden aria-label="退出宽屏"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-corners-in"/></svg><span class="btn-label">退出宽屏</span></button>
+      <button id="pause-peek" class="icon-btn" type="button" aria-label="观察"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-eye"/></svg><span class="btn-label">观察</span></button>
+      <button id="pause-quit" class="icon-btn" type="button" aria-label="返回选人"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-arrow-left"/></svg><span class="btn-label">返回选人</span></button>
+    </nav>
+    <div class="pause-peek" id="pause-peek-layer" hidden><span class="pause-chip"><svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-pause"/></svg>PAUSED</span></div>
+    <div class="pad-editor" id="pad-editor" hidden>
+      <div class="pe-bar pe-ui" role="toolbar" aria-label="布局编辑"><button type="button" class="pe-ico" id="pe-undo" aria-label="撤销" title="撤销"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button><button type="button" class="pe-ico" id="pe-redo" aria-label="重做" title="重做"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button><i class="pe-sep" aria-hidden="true"></i><button type="button" class="pe-ico" id="pe-all" aria-label="全选" title="全选"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="3" stroke-dasharray="3 3"/><rect x="8" y="8" width="8" height="8" rx="1.5"/></svg><b class="pe-badge" id="pe-count" hidden></b></button><button type="button" class="pe-ico" id="pe-snap" aria-label="吸附" title="吸附" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h4v7a3 3 0 0 0 6 0V4h4v7a7 7 0 0 1-14 0Z"/><path d="M5 8h4M15 8h4"/></svg></button><button type="button" class="pe-ico" id="pe-mirror" aria-label="左右镜像" title="左右镜像"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18" stroke-dasharray="2 2.5"/><path d="M8.5 7 3.5 12l5 5Z"/><path d="m15.5 7 5 5-5 5Z"/></svg></button><i class="pe-sep" aria-hidden="true"></i><button type="button" class="pe-ico" id="pe-alpha-btn" aria-label="透明度" title="透明度" aria-haspopup="true" aria-expanded="false" aria-controls="pe-alpha-pop"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 0 0 17Z" class="fill"/></svg></button><button type="button" class="pe-ico" id="pe-preset-btn" aria-label="预设" title="预设" aria-haspopup="true" aria-expanded="false" aria-controls="pe-preset-pop"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg></button><i class="pe-sep" aria-hidden="true"></i><button type="button" class="pe-ico" id="pe-reset" aria-label="恢复默认" title="恢复默认"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.9-6.4"/><path d="M3.5 4v5h5"/></svg></button><i class="pe-sep" aria-hidden="true"></i><button type="button" class="pe-ico" id="pe-cancel" aria-label="取消" title="取消"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg></button><button type="button" class="pe-ico pe-save" id="pe-save" aria-label="保存" title="保存"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></button></div>
+      <div class="pe-pop pe-ui" id="pe-alpha-pop" hidden>
+        <span class="pe-chips" role="group" aria-label="透明度"><button type="button" data-a="1">100</button><button type="button" data-a=".8">80</button><button type="button" data-a=".6">60</button><button type="button" data-a=".4">40</button></span>
+      </div>
+      <div class="pe-pop pe-ui" id="pe-preset-pop" hidden>
+        <div class="pe-pop-row"><span class="pe-label" id="pe-size-label">全部大小</span><span class="pe-chips" role="group" aria-labelledby="pe-size-label"><button type="button" data-size=".85">小</button><button type="button" data-size="1">中</button><button type="button" data-size="1.15">大</button></span></div>
+        <div class="pe-pop-row"><span class="pe-label" id="pe-preset-label">布局</span><span class="pe-chips" role="group" aria-labelledby="pe-preset-label"><button type="button" data-preset="compact">紧凑</button><button type="button" data-preset="roomy">宽松</button><button type="button" data-preset="tablet">平板</button></span></div>
+      </div>
+      <span class="pe-warn" id="pe-warn" hidden>按键重叠</span>
+      <div class="pe-toast" id="pe-toast" hidden></div>
+      <div class="pe-hint" id="pe-hint" hidden>拖动移动 · 拉角上的圆点改大小 · 空白处拖动多选</div>
+      <div class="pe-confirm pe-ui" id="pe-confirm" hidden>
+        <div class="pe-confirm-card" role="alertdialog" aria-labelledby="pe-confirm-title">
+          <b id="pe-confirm-title">恢复默认布局？</b>
+          <span class="pe-confirm-actions"><button type="button" id="pe-confirm-no">取消</button><button type="button" id="pe-confirm-yes" class="set-primary">恢复默认</button></span>
+        </div>
       </div>
     </div>
   </div>
@@ -493,112 +522,133 @@
 
 <dialog id="settings-dialog">
   <div class="dialog-head"><h2>设置</h2><button id="close-settings" aria-label="关闭">×</button></div>
-  <section class="setting-group">
-    <h3 class="setting-title">外观</h3>
-    <div class="setting-row">
-      <b id="set-theme">主题</b>
-      <button type="button" class="pick-btn" popovertarget="set-theme-menu" aria-haspopup="listbox" aria-expanded="false" aria-controls="set-theme-menu" aria-labelledby="set-theme set-theme-value">
-        <span class="pick-value" id="set-theme-value">暗色</span>
-      </button>
-      <div id="set-theme-menu" class="pick-menu" popover role="listbox" aria-labelledby="set-theme">
-        <button type="button" role="option" data-value="dark" aria-selected="true">暗色</button>
-        <button type="button" role="option" data-value="light" aria-selected="false">亮色</button>
-        <button type="button" role="option" data-value="system" aria-selected="false">跟随系统</button>
+  <div class="seg set-tabs" role="tablist" aria-label="设置分类">
+    <button type="button" role="tab" id="set-tab-general" data-tab="general" aria-controls="set-pane-general" aria-selected="true" class="active">通用</button>
+    <button type="button" role="tab" id="set-tab-controls" data-tab="controls" aria-controls="set-pane-controls" aria-selected="false" tabindex="-1">操控</button>
+    <button type="button" role="tab" id="set-tab-train" data-tab="train" aria-controls="set-pane-train" aria-selected="false" tabindex="-1">训练场</button>
+    <button type="button" role="tab" id="set-tab-audio" data-tab="audio" aria-controls="set-pane-audio" aria-selected="false" tabindex="-1">音频</button>
+    <button type="button" role="tab" id="set-tab-online" data-tab="online" aria-controls="set-pane-online" aria-selected="false" tabindex="-1">联机</button>
+  </div>
+  <div class="set-panes">
+    <section class="set-pane" role="tabpanel" id="set-pane-general" aria-labelledby="set-tab-general" data-tab="general">
+      <h3 class="setting-title">外观</h3>
+      <div class="set-card">
+        <div class="setting-row">
+          <b id="set-theme">主题</b>
+          <span class="seg set-seg set-icons" id="set-theme-seg" role="radiogroup" aria-labelledby="set-theme"><button type="button" role="radio" data-value="dark" aria-label="暗色" title="暗色"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.6A8.2 8.2 0 0 1 9.4 4 8.2 8.2 0 1 0 20 14.6Z"/></svg></button><button type="button" role="radio" data-value="light" aria-label="亮色" title="亮色"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg></button><button type="button" role="radio" data-value="system" aria-label="跟随系统" title="跟随系统"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12.5" rx="2"/><path d="M8.5 20.5h7M12 16.5v4"/></svg></button></span>
+        </div>
       </div>
-    </div>
-  </section>
-  <section class="setting-group">
-    <h3 class="setting-title">名册</h3>
-    <div class="setting-row">
-      <b id="set-roster">名册显示</b>
-      <button type="button" class="pick-btn" popovertarget="set-roster-menu" aria-haspopup="listbox" aria-expanded="false" aria-controls="set-roster-menu" aria-labelledby="set-roster set-roster-value">
-        <span class="pick-value" id="set-roster-value">直接排开</span>
-      </button>
-      <div id="set-roster-menu" class="pick-menu" popover role="listbox" aria-labelledby="set-roster">
-        <button type="button" role="option" data-value="flat" aria-selected="true">直接排开</button>
-        <button type="button" role="option" data-value="band" aria-selected="false">按乐队分组</button>
+      <h3 class="setting-title">名册</h3>
+      <div class="set-card">
+        <div class="setting-row">
+          <b id="set-roster">名册显示</b>
+          <span class="seg set-seg" id="set-roster-seg" role="radiogroup" aria-labelledby="set-roster"><button type="button" role="radio" data-value="flat">直接排开</button><button type="button" role="radio" data-value="band">按乐队分组</button></span>
+        </div>
+        <div class="setting-row">
+          <b id="set-thumb">名册卡面</b>
+          <span class="seg set-seg" id="set-thumb-seg" role="radiogroup" aria-labelledby="set-thumb"><button type="button" role="radio" data-value="sprite">全身</button><button type="button" role="radio" data-value="face">头像</button></span>
+        </div>
+        <div class="setting-row">
+          <b id="set-strip">印章色条</b>
+          <button type="button" class="switch" id="set-strip-switch" role="switch" aria-checked="true" aria-labelledby="set-strip"><i aria-hidden="true"></i></button>
+        </div>
+        <div class="setting-row">
+          <b id="set-hidden">显示隐藏角色</b>
+          <button type="button" class="switch" id="set-hidden-switch" role="switch" aria-checked="false" aria-labelledby="set-hidden"><i aria-hidden="true"></i></button>
+        </div>
       </div>
-    </div>
-    <div class="setting-row">
-      <b id="set-thumb">名册卡面</b>
-      <button type="button" class="pick-btn" popovertarget="set-thumb-menu" aria-haspopup="listbox" aria-expanded="false" aria-controls="set-thumb-menu" aria-labelledby="set-thumb set-thumb-value">
-        <span class="pick-value" id="set-thumb-value">全身</span>
-      </button>
-      <div id="set-thumb-menu" class="pick-menu" popover role="listbox" aria-labelledby="set-thumb">
-        <button type="button" role="option" data-value="sprite" aria-selected="true">全身</button>
-        <button type="button" role="option" data-value="face" aria-selected="false">头像</button>
+    </section>
+    <section class="set-pane" role="tabpanel" id="set-pane-controls" aria-labelledby="set-tab-controls" data-tab="controls">
+      <h3 class="setting-title">键位方案</h3>
+      <div class="scheme-pick" id="set-scheme-pick" role="radiogroup" aria-label="键位方案">
+        <button type="button" role="radio" class="scheme-card" data-value="basic" aria-checked="true">
+          <svg viewBox="0 0 160 90" aria-hidden="true"><rect class="sc-screen" x="1" y="1" width="158" height="88" rx="10"/><circle class="sc-ring" cx="26" cy="64" r="15"/><circle class="sc-knob" cx="26" cy="64" r="6"/><circle class="sc-key" cx="84" cy="74" r="7"/><circle class="sc-key" cx="102" cy="74" r="7"/><circle class="sc-key" cx="120" cy="74" r="7"/><circle class="sc-main" cx="144" cy="68" r="12"/><circle class="sc-key" cx="144" cy="46" r="7"/></svg>
+          <span>基础</span>
+        </button>
+        <button type="button" role="radio" class="scheme-card" data-value="advanced" aria-checked="false">
+          <svg viewBox="0 0 160 90" aria-hidden="true"><rect class="sc-screen" x="1" y="1" width="158" height="88" rx="10"/><circle class="sc-ring" cx="26" cy="64" r="15"/><circle class="sc-knob" cx="26" cy="64" r="6"/><circle class="sc-key" cx="84" cy="74" r="7"/><circle class="sc-key" cx="102" cy="74" r="7"/><circle class="sc-key" cx="120" cy="74" r="7"/><circle class="sc-main" cx="144" cy="68" r="12"/><circle class="sc-key" cx="144" cy="46" r="7"/><circle class="sc-new" cx="125.6" cy="53.6" r="7"/><circle class="sc-new" cx="144" cy="28" r="6"/></svg>
+          <span>进阶</span>
+        </button>
       </div>
-    </div>
-    <div class="setting-row">
-      <b id="set-strip">印章色条</b>
-      <button type="button" class="pick-btn" popovertarget="set-strip-menu" aria-haspopup="listbox" aria-expanded="false" aria-controls="set-strip-menu" aria-labelledby="set-strip set-strip-value">
-        <span class="pick-value" id="set-strip-value">显示</span>
-      </button>
-      <div id="set-strip-menu" class="pick-menu" popover role="listbox" aria-labelledby="set-strip">
-        <button type="button" role="option" data-value="on" aria-selected="true">显示</button>
-        <button type="button" role="option" data-value="off" aria-selected="false">隐藏</button>
+      <div class="set-card" id="set-blank-row">
+        <div class="setting-row">
+          <b id="set-blank">空白处手势</b>
+          <button type="button" class="switch" id="set-blank-switch" role="switch" aria-checked="true" aria-labelledby="set-blank"><i aria-hidden="true"></i></button>
+        </div>
       </div>
-    </div>
-    <div class="setting-row">
-      <b id="set-hidden">显示隐藏角色</b>
-      <button type="button" class="pick-btn" popovertarget="set-hidden-menu" aria-haspopup="listbox" aria-expanded="false" aria-controls="set-hidden-menu" aria-labelledby="set-hidden set-hidden-value">
-        <span class="pick-value" id="set-hidden-value">关</span>
-      </button>
-      <div id="set-hidden-menu" class="pick-menu" popover role="listbox" aria-labelledby="set-hidden">
-        <button type="button" role="option" data-value="on" aria-selected="false">开</button>
-        <button type="button" role="option" data-value="off" aria-selected="true">关</button>
+      <h3 class="setting-title">自定义布局</h3>
+      <div class="set-actions">
+        <button type="button" id="set-layout-reset">恢复默认</button>
+        <button type="button" id="set-layout-edit" class="set-primary">编辑布局</button>
       </div>
-    </div>
-  </section>
-  <section class="setting-group">
-    <h3 class="setting-title">训练场</h3>
-    <div class="setting-row">
-      <b id="set-nocd">无技能冷却</b>
-      <button type="button" class="pick-btn" popovertarget="set-nocd-menu" aria-haspopup="listbox" aria-expanded="false" aria-controls="set-nocd-menu" aria-labelledby="set-nocd set-nocd-value">
-        <span class="pick-value" id="set-nocd-value">开</span>
-      </button>
-      <div id="set-nocd-menu" class="pick-menu" popover role="listbox" aria-labelledby="set-nocd">
-        <button type="button" role="option" data-value="on" aria-selected="true">开</button>
-        <button type="button" role="option" data-value="off" aria-selected="false">关</button>
+    </section>
+    <section class="set-pane" role="tabpanel" id="set-pane-train" aria-labelledby="set-tab-train" data-tab="train">
+      <h3 class="setting-title">技能</h3>
+      <div class="set-card">
+        <div class="setting-row">
+          <b id="set-nocd">无技能冷却</b>
+          <button type="button" class="switch" id="set-nocd-switch" role="switch" aria-checked="true" aria-labelledby="set-nocd"><i aria-hidden="true"></i></button>
+        </div>
+        <div class="setting-row">
+          <b id="set-ult">无限大招</b>
+          <button type="button" class="switch" id="set-ult-switch" role="switch" aria-checked="true" aria-labelledby="set-ult"><i aria-hidden="true"></i></button>
+        </div>
       </div>
-    </div>
-    <div class="setting-row">
-      <b id="set-ult">无限大招</b>
-      <button type="button" class="pick-btn" popovertarget="set-ult-menu" aria-haspopup="listbox" aria-expanded="false" aria-controls="set-ult-menu" aria-labelledby="set-ult set-ult-value">
-        <span class="pick-value" id="set-ult-value">开</span>
-      </button>
-      <div id="set-ult-menu" class="pick-menu" popover role="listbox" aria-labelledby="set-ult">
-        <button type="button" role="option" data-value="on" aria-selected="true">开</button>
-        <button type="button" role="option" data-value="off" aria-selected="false">关</button>
+      <h3 class="setting-title">木桩</h3>
+      <div class="set-card">
+        <div class="setting-row">
+          <b id="set-dummy-guard">一直格挡</b>
+          <button type="button" class="switch" id="set-dummy-guard-switch" role="switch" aria-checked="false" aria-labelledby="set-dummy-guard"><i aria-hidden="true"></i></button>
+        </div>
+        <div class="setting-row">
+          <b id="set-quick-heal">连段后回满血</b>
+          <button type="button" class="switch" id="set-quick-heal-switch" role="switch" aria-checked="false" aria-labelledby="set-quick-heal"><i aria-hidden="true"></i></button>
+        </div>
       </div>
-    </div>
-  </section>
-  <section class="setting-group">
-    <h3 class="setting-title">音乐</h3>
-    <div class="setting-row">
-      <div class="setting-name">
-        <b id="set-fight-shuffle">开打换曲</b>
-        <button type="button" class="tip" popovertarget="set-fight-shuffle-tip" aria-label="开打换曲说明">?</button>
-        <div id="set-fight-shuffle-tip" class="tip-pop" popover>只在随机播放时生效，其他时候不能改。</div>
+    </section>
+    <section class="set-pane" role="tabpanel" id="set-pane-audio" aria-labelledby="set-tab-audio" data-tab="audio">
+      <h3 class="setting-title">音量</h3>
+      <div class="set-card">
+        <div class="setting-row vol-row">
+          <b id="set-music-vol">音乐</b>
+          <span class="set-range">
+            <button type="button" class="vol-mute" id="set-music-switch" role="switch" aria-checked="true" aria-label="音乐开关"><svg class="vol-ico on" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-speaker-high"/></svg><svg class="vol-ico off" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-speaker-slash"/></svg></button>
+            <input type="range" id="set-music-vol-range" min="0" max="100" step="5" aria-labelledby="set-music-vol">
+            <output id="set-music-vol-value" for="set-music-vol-range"></output>
+          </span>
+        </div>
+        <div class="setting-row vol-row">
+          <b id="set-sfx-vol">音效</b>
+          <span class="set-range">
+            <button type="button" class="vol-mute" id="set-sfx-switch" role="switch" aria-checked="true" aria-label="音效开关"><svg class="vol-ico on" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-speaker-high"/></svg><svg class="vol-ico off" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-speaker-slash"/></svg></button>
+            <input type="range" id="set-sfx-vol-range" min="0" max="100" step="5" aria-labelledby="set-sfx-vol">
+            <output id="set-sfx-vol-value" for="set-sfx-vol-range"></output>
+          </span>
+        </div>
       </div>
-      <button type="button" class="pick-btn" popovertarget="set-fight-shuffle-menu" aria-haspopup="listbox" aria-expanded="false" aria-controls="set-fight-shuffle-menu" aria-labelledby="set-fight-shuffle set-fight-shuffle-value" disabled>
-        <span class="pick-value" id="set-fight-shuffle-value">开</span>
-      </button>
-      <div id="set-fight-shuffle-menu" class="pick-menu" popover role="listbox" aria-labelledby="set-fight-shuffle">
-        <button type="button" role="option" data-value="on" aria-selected="true">开</button>
-        <button type="button" role="option" data-value="off" aria-selected="false">关</button>
+      <h3 class="setting-title">播放</h3>
+      <div class="set-card">
+        <div class="setting-row">
+          <div class="setting-name">
+            <b id="set-fight-shuffle">开打换曲</b>
+            <button type="button" class="tip" popovertarget="set-fight-shuffle-tip" aria-label="开打换曲说明">?</button>
+          <div id="set-fight-shuffle-tip" class="tip-pop" popover>只在随机播放时生效，其他时候不能改。</div>
+          </div>
+          <button type="button" class="switch" id="set-fight-shuffle-switch" role="switch" aria-checked="true" aria-labelledby="set-fight-shuffle"><i aria-hidden="true"></i></button>
+        </div>
       </div>
-    </div>
-  </section>
-  <section class="setting-group" id="set-online-group">
-    <h3 class="setting-title">联机</h3>
-    <div class="setting-row">
-      <b id="set-codename">联机代号</b>
-      <button type="button" class="codename-open-btn" id="open-codename" aria-labelledby="set-codename set-codename-value">
-        <span class="pick-value" id="set-codename-value">修改代号</span>
-      </button>
-    </div>
-  </section>
+    </section>
+    <section class="set-pane" role="tabpanel" id="set-pane-online" aria-labelledby="set-tab-online" data-tab="online">
+      <div class="set-card">
+        <div class="setting-row">
+          <b id="set-codename">联机代号</b>
+          <button type="button" class="codename-open-btn" id="open-codename" aria-labelledby="set-codename set-codename-value">
+            <span class="pick-value" id="set-codename-value">修改代号</span>
+          </button>
+        </div>
+      </div>
+    </section>
+  </div>
 </dialog>
 
 <dialog id="codename-dialog">

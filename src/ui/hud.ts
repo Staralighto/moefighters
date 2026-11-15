@@ -37,6 +37,7 @@ const AVATAR_HIT: Keyframe[] = [
 
 let hudEl: HTMLElement | null = null;
 let touchKeys: HTMLElement[] | null = null;
+let touchEvade: HTMLElement | null = null;
 let touchUlt: HTMLElement | null = null;
 /** Rebuilt by setBattleGuide whenever the movelist HTML is replaced. */
 let skillRows: HTMLElement[] = [];
@@ -185,6 +186,9 @@ export function updateHUD(g: FightGame): void {
       const i = CONTROLS[0].attacks.indexOf(b.dataset.key!);
       paintCd(b, i >= 0 ? me.cooldowns[i] : 0);
     }
+    // 进阶键位的后撤键：后撤自己的冷却，跟技能键同一套显示。
+    touchEvade ??= $m('touchpad').querySelector<HTMLElement>('.evade');
+    if (touchEvade && document.body.classList.contains('pad-adv')) paintCd(touchEvade, me.dodgeCd);
     touchUlt ??= $m('touchpad').querySelector<HTMLElement>('.ult');
     if (touchUlt) {
       const ready = me.energy >= ultCost;
@@ -221,6 +225,8 @@ export function updateHUD(g: FightGame): void {
 }
 
 export function showBanner(title: string, sub = ''): void {
+  // 暂停有自己的左侧菜单（标题在菜单里），画面正中不再压一行 PAUSED。
+  if (title === 'PAUSED') title = '';
   $('banner-text').textContent = title;
   $('banner-sub').textContent = sub;
   $('banner').classList.toggle('super-call', sub.includes('SUPER'));

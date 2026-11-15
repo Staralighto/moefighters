@@ -2,7 +2,8 @@
   color-scheme: dark;
   /* 只写暗色。亮色由 src/theme/palette.ts 按角色推导，规则见那里的文件头：
      中性暗底 = 面，中性亮字 = 字，彩色 = 强调色（自动带 -ink），--on-* 不变，--shade* 阴影遮罩，--wash* 提亮层。
-     强调色当填充用 var(--p1)；当文字、描边、选中圈用 var(--p1-ink)。暗色里两者相同。 */
+     主操作色当填充用 var(--primary)；当文字、描边、选中圈用 var(--primary-ink)。暗色里两者相同。
+     --p1 黄色只表示 1P 一侧和必杀 / 能量，--p2 绿色表示 2P。 */
   --bg: #0b0e1a;
   --well: #070912;
   --panel: #121729;
@@ -11,9 +12,12 @@
   --text: #eef0fa;
   --text-strong: #fff;
   --muted: #97a1c3;
-  /* BanG Dream 粉：只做装饰（编号、引子、页签），不当大面积底色。 */
+  /* BanG Dream 粉：装饰用（编号、引子、页签）。按钮填充走下面压深一档的 --primary。 */
   --brand: #ff3b7f;
   --on-brand: #fff;
+  /* 主操作色：开打、继续、保存、开关打开、选中态。比品牌粉压深一档，白字到 4.5:1。
+     黄色 --p1 只留给 1P 一侧和必杀 / 能量。 */
+  --primary: #dc2a66;
   --p1: #FDE979;
   --p2: #C8F181;
   --cyan: #76e7ff;
@@ -21,6 +25,7 @@
   /* 结算海报的大师金：只做印章填充。 */
   --gold: #E9C46A;
   --on-accent: #14140c;
+  --on-primary: #fff;
   --shade: rgb(0 0 0 / 45%);
   --shade-strong: rgb(0 0 0 / 80%);
   --shade-scrim: rgb(0 0 0 / 67%);
@@ -70,7 +75,7 @@ button { font: inherit; color: inherit; background: var(--panel-2); border: 1px 
 button:hover { border-color: var(--muted); }
 /* 按下即顿：50ms 内压到底并提亮，松手由上面的弹簧曲线回弹过冲。 */
 button:active:not(.touchpad button) { transform: scale(0.95); filter: brightness(1.18); transition-duration: .15s, .15s, .15s, .05s, .15s, .05s; }
-button.active { background: var(--p1); color: var(--on-accent); border-color: var(--p1); font-weight: 700; }
+button.active { background: var(--primary); color: var(--on-primary); border-color: var(--primary); font-weight: 700; }
 .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 .btn-icon { display: none; width: 22px; height: 22px; }
 /* Buttons that show the SVG alone at every width instead of their caption: the caption stays on as
@@ -152,9 +157,9 @@ kbd { font: 700 13px/1 var(--font); background: var(--well); border: 1px solid v
   background: var(--panel-2);
 }
 .net-action-btn.primary {
-  background: var(--p1);
-  color: var(--on-accent);
-  border-color: var(--p1);
+  background: var(--primary);
+  color: var(--on-primary);
+  border-color: var(--primary);
   font-weight: 800;
 }
 .net-action-btn.primary:hover {
@@ -237,10 +242,10 @@ kbd { font: 700 13px/1 var(--font); background: var(--well); border: 1px solid v
   font-weight: 900;
 }
 .net-dialog-submit {
-  background: var(--p1);
-  color: var(--on-accent);
+  background: var(--primary);
+  color: var(--on-primary);
   font-weight: 800;
-  border: 1px solid var(--p1);
+  border: 1px solid var(--primary);
   border-radius: 8px;
   padding: .5em 1.2em;
   font-size: 14px;
@@ -328,13 +333,13 @@ kbd { font: 700 13px/1 var(--font); background: var(--well); border: 1px solid v
   text-shadow: 0 2px 6px #000, 0 0 12px #000;
 }
 .net-card-view { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 100%; }
-.net-badge { font-size: 12px; font-weight: 800; color: var(--p1-ink); letter-spacing: .1em; text-transform: uppercase; }
+.net-badge { font-size: 12px; font-weight: 800; color: var(--primary-ink); letter-spacing: .1em; text-transform: uppercase; }
 .net-code-box { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 2px 0; }
 .net-code-num { font: 900 28px/1 monospace, var(--font); color: var(--cyan-ink); letter-spacing: 0.16em; text-shadow: 0 2px 8px #000, 0 0 16px #000; }
 .net-copy-btn { font-size: 12px; font-weight: 700; padding: .3em .75em; border-radius: 6px; background: rgba(13, 12, 20, 0.78); border: 1px solid var(--line); color: var(--text); cursor: pointer; text-shadow: none; }
 .net-copy-btn:hover { border-color: var(--muted); }
 .net-step-row { display: flex; align-items: center; justify-content: center; gap: 8px; max-width: 100%; font-size: 14px; font-weight: 800; color: var(--text); }
-.net-pulse-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--p1); box-shadow: 0 0 8px var(--p1); animation: net-pulse 1.4s ease-in-out infinite; }
+.net-pulse-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 8px var(--primary); animation: net-pulse 1.4s ease-in-out infinite; }
 @keyframes net-pulse { 0%, 100% { opacity: .35; transform: scale(.85); } 50% { opacity: 1; transform: scale(1.15); } }
 .net-timer-row { font-size: 13px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
 .net-note-text { font-size: 12px; color: var(--muted); }
@@ -342,7 +347,7 @@ kbd { font: 700 13px/1 var(--font); background: var(--well); border: 1px solid v
 .net-fail-desc { font-size: 13px; font-weight: 700; color: var(--text); max-width: 92%; }
 .net-fail-btns { display: flex; gap: 8px; margin-top: 6px; text-shadow: none; }
 .net-fail-btn { font-size: 13px; font-weight: 700; padding: .4em 1em; border-radius: 8px; background: rgba(13, 12, 20, 0.85); border: 1px solid var(--line); color: var(--text); cursor: pointer; }
-.net-fail-btn.retry { background: var(--p1); color: var(--on-accent); border-color: var(--p1); }
+.net-fail-btn.retry { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
 .net-steps-compat { display: none; }
 
 body.net-locked #roster,
@@ -355,7 +360,7 @@ body.net-ready-phase #stage-grid { pointer-events: none; opacity: .55; transitio
 header { display: flex; justify-content: space-between; align-items: center; padding: max(10px, env(safe-area-inset-top, 0px)) max(22px, env(safe-area-inset-right, 0px)) 10px max(22px, env(safe-area-inset-left, 0px)); border-bottom: 1px solid var(--line); container-type: inline-size; }
 .brand { display: flex; gap: 10px; align-items: center; text-decoration: none; color: inherit; font-weight: 800; letter-spacing: .06em; }
 .brand small { display: block; font-weight: 400; color: var(--muted); letter-spacing: 0; }
-.brand-icon { display: grid; place-items: center; width: 34px; height: 34px; background: var(--p1); color: var(--on-accent); border-radius: 8px; }
+.brand-icon { display: grid; place-items: center; width: 34px; height: 34px; background: var(--primary); color: var(--on-primary); border-radius: 8px; }
 .brand-icon svg { display: block; width: 100%; height: 100%; }
 nav { display: flex; gap: 8px; align-items: center; }
 /* 音乐设置浮层：summary 是导航里的音符按钮，点开下方面板。开/关与音量都在面板里；
@@ -378,7 +383,7 @@ nav { display: flex; gap: 8px; align-items: center; }
 /* output 默认是 inline，min-width 不生效，百分比进位会把面板撑宽；inline-block + 4ch 预留
    加等宽数字，宽度在任何数值下都不变。 */
 .music-pop-row output { display: inline-block; min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
-#music-volume { width: auto; flex: 1; min-width: 0; accent-color: var(--p1-ink); touch-action: none; cursor: pointer; }
+#music-volume { width: auto; flex: 1; min-width: 0; accent-color: var(--primary-ink); touch-action: none; cursor: pointer; }
 /* 设置弹窗宽度写死，不跟文案变。窄屏用百分比收缩，视口宽度单位含滚动条，会把页面撑出横向滚动再跳回来。
    每行是同一套两列：左边名称吃剩余空间，右边下拉是同一条 min(16em, 46%)。
    以后名称或选项变长，多出来的字进这截留白，列宽和弹窗宽都不变。 */
@@ -433,16 +438,92 @@ nav { display: flex; gap: 8px; align-items: center; }
 .mini-seal circle { fill: none; stroke: var(--seal-ink); stroke-width: 1.5; opacity: .55; }
 .mini-seal text { fill: var(--seal-ink); font: 900 14px var(--font-display); }
 #settings-dialog { width: min(760px, calc(100% - 2rem)); max-width: min(760px, calc(100% - 2rem)); max-height: calc(100% - 2rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); padding: 26px 36px 32px; overflow: auto; overscroll-behavior: contain; }
-#settings-dialog .setting-group:first-of-type { margin-top: 26px; }
-#settings-dialog .setting-group + .setting-group { margin-top: 28px; }
-#settings-dialog .setting-title { margin: 0 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 700; color: var(--muted); }
+/* 设置分页：顶部一条胶囊页签（同选人页的 .seg），下面各页叠在同一个格子里，弹窗按最高的一页定高，切页不跳。 */
+/* 页签不是设置项：去掉胶囊和底色，只靠字色和底部一道粉色横条区分当前页（--brand 本就留给页签）。
+   横条复用 .seg 的滑块，切页时滑过去。 */
+#settings-dialog .set-tabs { margin-top: 16px; padding: 0; gap: 0; background: transparent; border: 0; border-radius: 0; box-shadow: inset 0 -1px 0 var(--line); }
+#settings-dialog .set-tabs button { flex: 1 1 0; padding: .75em .4em; border-radius: 0; color: var(--muted); font-weight: 800; }
+#settings-dialog .set-tabs button:hover:not(.active) { background: transparent; color: var(--text); }
+#settings-dialog .set-tabs button.active { color: var(--text-strong); }
+#settings-dialog .set-tabs .seg-thumb { top: auto; bottom: 0; height: 3px; border-radius: 3px 3px 0 0; background: var(--brand); width: calc(var(--w, 0px) * .5); transform: translateX(calc(var(--x, 0px) + var(--w, 0px) * .25)); }
+/* 设置项里的分段按钮用圆角矩形，跟胶囊形的选人页动作条分开。 */
+/* 音量：滑条占满右列，百分比贴在右边。 */
+.set-range { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.set-range input { flex: 1; width: auto; min-width: 0; accent-color: var(--primary-ink); touch-action: none; cursor: pointer; }
+.set-range output { flex: none; min-width: 3.2em; text-align: right; color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
+#settings-dialog .set-seg { border-radius: 10px; padding: 3px; }
+#settings-dialog .set-seg button, #settings-dialog .set-seg .seg-thumb { border-radius: 7px; }
+/* 主题三选一用图标：月亮、太阳、显示器。窄列放三段文字会被截断。 */
+#settings-dialog .set-seg.set-icons { justify-self: end; width: auto; }
+#settings-dialog .set-icons button { flex: none; display: grid; place-items: center; width: 46px; padding: .4em 0; color: var(--muted); }
+#settings-dialog .set-icons button.active { color: var(--text-strong); }
+#settings-dialog .set-icons svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* 焦点环走强调色；鼠标点过的不留黑框。 */
+#settings-dialog .seg button:focus { outline: none; }
+#settings-dialog .seg button:focus-visible, #settings-dialog .switch:focus-visible, #settings-dialog .scheme-card:focus-visible { outline: 2px solid var(--primary-ink); outline-offset: 2px; }
+#settings-dialog .set-tabs button[hidden] { display: none; }
+.set-panes { display: grid; margin-top: 18px; }
+/* 标题和页签固定在弹窗顶上，只有下面的页内容滚动：不用吸顶，也就没有吸顶漏边的问题。 */
+#settings-dialog[open] { display: flex; flex-direction: column; overflow: hidden; }
+#settings-dialog .dialog-head, #settings-dialog .set-tabs { flex: none; }
+#settings-dialog .set-panes { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin-right: -8px; padding-right: 8px; }
+.set-pane { grid-area: 1 / 1; min-width: 0; visibility: hidden; }
+.set-pane.on { visibility: visible; animation: pane-in .2s cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes pane-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+/* 分组：小标题不再画线（页签下已经有一道），每组设置收进一块圆角卡片，组与组靠留白和卡片边界分开。 */
+#settings-dialog .setting-title { margin: 20px 4px 8px; padding: 0; border: 0; font-size: 12px; font-weight: 700; letter-spacing: .06em; color: var(--muted); }
+#settings-dialog .set-pane > .setting-title:first-child { margin-top: 2px; }
+.set-card { padding: 4px 16px; border-radius: 14px; background: var(--panel-2); }
+.set-card + .set-card { margin-top: 12px; }
+.set-pane > .set-card:first-child { margin-top: 2px; }
+#settings-dialog .set-card[hidden] { display: none; }
+#settings-dialog .set-card .setting-row { padding: 11px 0; }
+/* 音量行：短名字 + 静音钮 + 滑条 + 百分比，滑条吃掉剩下的宽度。 */
+#settings-dialog .setting-row.vol-row { grid-template-columns: 4em minmax(0, 1fr); column-gap: 16px; }
+.vol-mute { flex: none; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border-radius: 50%; background: transparent; border-color: transparent; color: var(--text); }
+.vol-mute:hover { background: var(--wash); border-color: transparent; }
+.vol-ico { display: block; width: 20px; height: 20px; }
+.vol-mute .off, .vol-mute[aria-checked="false"] .on { display: none; }
+.vol-mute[aria-checked="false"] .off { display: block; }
+.vol-mute[aria-checked="false"] { color: var(--muted); }
+.vol-row:has(.vol-mute[aria-checked="false"]) input, .vol-row:has(.vol-mute[aria-checked="false"]) output { opacity: .45; }
+#settings-dialog .set-seg { width: 100%; }
+/* 开关：二值设置一点就生效。开是强调色填充，圆钮滑到右边。 */
+.switch { justify-self: end; position: relative; flex: none; width: 52px; height: 30px; padding: 0; border-radius: 999px; background: var(--well); border: 1px solid var(--line); }
+.switch i { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: var(--muted); transition: transform .26s cubic-bezier(.34, 1.45, .5, 1), background-color .15s ease; }
+.switch[aria-checked="true"] { background: var(--primary); border-color: transparent; }
+.switch[aria-checked="true"] i { transform: translateX(22px); background: var(--on-primary); }
+.switch:disabled { opacity: .45; cursor: not-allowed; }
+.switch:disabled:hover { border-color: var(--line); }
+/* 键位方案：两张布局缩略图，图就是说明。选中的描强调色边。 */
+.scheme-pick { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.scheme-pick + .set-card { margin-top: 12px; }
+.scheme-card { display: grid; justify-items: center; gap: 8px; min-width: 0; padding: 12px 12px 10px; border-radius: 14px; background: var(--panel-2); border: 1px solid var(--line); font-weight: 800; color: var(--muted); }
+.scheme-card.active, .scheme-card[aria-checked="true"] { background: var(--panel-2); color: var(--text-strong); border-color: var(--primary-ink); box-shadow: inset 0 0 0 1px var(--primary-ink); font-weight: 800; }
+.scheme-card svg { display: block; width: 100%; height: auto; }
+.sc-screen { fill: var(--well); stroke: var(--line); stroke-width: 1.5; }
+.sc-ring { fill: var(--wash); stroke: var(--muted); stroke-width: 1.5; }
+.sc-knob, .sc-key { fill: var(--line); stroke: var(--muted); stroke-width: 1.5; }
+.sc-main { fill: var(--muted); }
+.sc-new { fill: var(--primary); }
+/* 自定义布局的两个按钮占满整行、各占一半，窄屏上文字也放得下。 */
+.set-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.set-actions button { min-width: 0; padding: .65em .8em; border-radius: 12px; white-space: nowrap; font-weight: 700; }
+.set-primary { background: var(--primary); color: var(--on-primary); border-color: transparent; font-weight: 800; }
+.set-primary:disabled { opacity: .45; cursor: not-allowed; }
+@media (max-width: 620px) {
+  #settings-dialog { padding: 20px 18px 24px; }
+  #settings-dialog .set-tabs button { padding: .7em .2em; font-size: 13px; }
+  /* 窄屏上文字分段按钮放不下右列，挪到名字下面占满一行。图标分段照旧靠右。 */
+  #settings-dialog .setting-row:has(> .set-seg:not(.set-icons)) { grid-template-columns: minmax(0, 1fr); row-gap: 8px; }
+}
 #settings-dialog .setting-row,
 #codename-dialog .setting-row { display: grid; grid-template-columns: minmax(0, 1fr) min(16em, 46%); align-items: center; column-gap: 32px; margin: 0; padding: 12px 0; border-top: 0; }
 #settings-dialog .setting-row > b,
 #settings-dialog .setting-name > b,
 #codename-dialog .setting-row > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #codename-dialog { width: min(520px, calc(100% - 2rem)); max-width: min(520px, calc(100% - 2rem)); max-height: calc(100% - 2rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); padding: 22px 28px 26px; overflow: auto; overscroll-behavior: contain; }
-.codename-preview { margin: 16px 0 8px; padding: 10px 14px; background: var(--well); border: 1px solid var(--line); border-radius: 10px; text-align: center; color: var(--p1-ink); font-variant-numeric: tabular-nums; }
+.codename-preview { margin: 16px 0 8px; padding: 10px 14px; background: var(--well); border: 1px solid var(--line); border-radius: 10px; text-align: center; color: var(--primary-ink); font-variant-numeric: tabular-nums; }
 .codename-open-btn { display: flex; align-items: center; justify-content: center; width: 100%; min-width: 0; text-align: center; font-weight: 700; }
 .codename-num-lock { color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
 .setting-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -664,7 +745,7 @@ body.no-seal-strip .character[data-seal] .seal-strip { display: none; }
 .stage-card { padding: 0; overflow: hidden; display: flex; flex-direction: column; text-align: left; min-width: 0; outline: none; transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease; }
 .stage-card:focus, .stage-card:hover { transform: translateY(-2px); border-color: var(--muted); box-shadow: 0 6px 16px var(--shade); }
 .stage-card:active { transform: translateY(0) scale(0.98); }
-.stage-card.active, .stage-card[aria-pressed="true"] { border-color: var(--p1-ink); box-shadow: 0 0 10px rgba(253, 233, 121, 0.25); }
+.stage-card.active, .stage-card[aria-pressed="true"] { border-color: var(--primary-ink); box-shadow: 0 0 10px rgb(220 42 102 / 30%); }
 .stage-card img, .stage-random-art { width: 100%; height: 78px; object-fit: cover; image-rendering: pixelated; pointer-events: none; }
 .stage-card b { font-size: 14px; padding: 7px 9px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stage-random-art { display: grid; place-items: center; background: repeating-linear-gradient(135deg, var(--panel-2) 0 12px, var(--panel) 12px 24px); font-weight: 800; font-size: 40px; color: var(--p1-ink); }
@@ -676,7 +757,7 @@ body.no-seal-strip .character[data-seal] .seal-strip { display: none; }
 /* Select-screen movelist: three cards a row under the roster, the way the reference lays moves out. */
 #skills { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .skill { display: flex; align-items: flex-start; gap: 8px; padding: 9px 8px; background: var(--panel-2); border-left: 2px solid var(--line); position: relative; border-radius: 6px; transition: background-color .15s ease, border-color .15s ease, transform .12s ease; }
-#skills .skill:hover { background: var(--panel); border-left-color: var(--p1-ink); transform: translateX(2px); }
+#skills .skill:hover { background: var(--panel); border-left-color: var(--primary-ink); transform: translateX(2px); }
 .skill kbd { min-width: 23px; height: 23px; display: grid; place-items: center; padding: 0; color: var(--p1-ink); font-size: 12px; }
 .skill b { display: block; font-size: 14px; }
 .skill p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
@@ -685,9 +766,9 @@ body.no-seal-strip .character[data-seal] .seal-strip { display: none; }
 .skill.super { border-left-color: var(--p1-ink); }
 .skill.super kbd { background: var(--p1); color: var(--on-accent); border-color: var(--p1); }
 .skill .cooldown { position: absolute; right: 0; top: 8px; font: 700 13px monospace; color: var(--cyan-ink); }
-.start { position: relative; overflow: hidden; background: var(--p1); color: var(--on-accent); border-color: var(--p1); font-weight: 800; font-size: 18px; padding: .8em 1em; transition: transform .26s cubic-bezier(.34, 1.7, .5, 1), filter .15s ease, box-shadow .15s ease; }
+.start { position: relative; overflow: hidden; background: var(--primary); color: var(--on-primary); border-color: var(--primary); font-weight: 800; font-size: 18px; padding: .8em 1em; transition: transform .26s cubic-bezier(.34, 1.7, .5, 1), filter .15s ease, box-shadow .15s ease; }
 .start span { display: inline-block; transition: transform .15s ease; }
-.start:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 0 16px rgba(253, 233, 121, 0.38); transform: translateY(-1px); }
+.start:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 0 16px rgb(220 42 102 / 45%); transform: translateY(-1px); }
 .start:hover:not(:disabled) span { transform: translate(2px, -2px); }
 .start:active:not(:disabled) { transform: translateY(1px) scale(0.98); filter: brightness(0.96); box-shadow: none; }
 #random .btn-icon { transition: transform .35s cubic-bezier(0.34, 1.56, 0.64, 1); }
@@ -864,13 +945,32 @@ body.touch.turned.in-battle .hud { --face: 64px; }
 .game-banner strong { font: italic 900 64px Impact, sans-serif; font-size: clamp(22px, 6.7vw, 64px); font-size: clamp(22px, 6.7cqw, 64px); text-shadow: 0 4px 0 #000; }
 .game-banner.super-call strong { font: 900 64px "Noto Sans SC", "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif; font-size: clamp(22px, 6.7vw, 64px); font-size: clamp(22px, 6.7cqw, 64px); }
 .game-banner strong:empty, .game-banner small:empty { display: none; }
-/* 暂停浮层的按钮一律等宽，电脑和手机都是图标在左、文字在右。 */
-.game-banner button { pointer-events: auto; margin: 12px auto 0; width: 11em; }
-.game-banner .icon-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: .45em .9em; line-height: 1.2; }
-.game-banner .icon-btn .btn-icon { display: block; }
-.game-banner .icon-btn .btn-label { display: inline; }
+/* 暂停菜单贴在左侧：只压暗左边一条，画面中间留给战斗。按钮一律等宽，图标在左、文字在右。
+   竖屏分板时铺在按键板上（脚本写 --pm-top / --pm-h），画面完全不挡。 */
+.pause-menu { position: absolute; z-index: 6; top: 0; bottom: 0; left: 0; display: flex; flex-direction: column; justify-content: center; justify-content: safe center; overflow-y: auto; overscroll-behavior: contain; align-items: flex-start; gap: 10px; width: min(100%, max(17em, 32%)); padding: 20px 24px 20px max(24px, env(safe-area-inset-left, 0px)); background: linear-gradient(90deg, var(--shade-strong), var(--shade) 62%, transparent); animation: pause-in .24s cubic-bezier(0.16, 1, 0.3, 1); }
+.pause-menu[hidden] { display: none; }
+@keyframes pause-in { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: translateX(0); } }
+.pause-title { font: italic 900 44px Impact, sans-serif; font-size: clamp(26px, 4.2vw, 44px); line-height: 1; color: var(--text-strong); text-shadow: 0 3px 0 #000; margin-bottom: 6px; }
+.pause-menu .icon-btn { display: inline-flex; align-items: center; justify-content: flex-start; gap: 10px; width: 12em; padding: .5em 1em; line-height: 1.2; font-weight: 700; }
+.pause-menu .icon-btn[hidden] { display: none; }
+.pause-menu .icon-btn .btn-icon { display: block; width: 20px; height: 20px; }
+.pause-menu .icon-btn .btn-label { display: inline; }
+.pause-menu #resume { background: var(--primary); color: var(--on-primary); border-color: transparent; font-weight: 800; }
+.pause-menu #pause-quit { margin-top: 8px; }
 /* The deck line under the PAUSED title: quiet body text, not the stroked banner font. */
-.game-banner .deck-label { font: 13px/1.5 var(--font); letter-spacing: 0; -webkit-text-stroke: 0; text-shadow: 0 1px 0 #000; color: var(--muted); margin-top: 10px; }
+.pause-menu .deck-label { font: 13px/1.5 var(--font); max-width: 16em; text-shadow: 0 1px 0 #000; color: var(--muted); margin: -4px 0 4px; }
+body.pad-split .pause-menu { top: var(--pm-top, auto); bottom: auto; height: var(--pm-h, auto); width: 100%; flex-flow: row wrap; align-content: center; justify-content: center; gap: 8px; padding: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; animation-name: pause-up; }
+@keyframes pause-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+body.pad-split .pause-title { flex-basis: 100%; text-align: center; font-size: 28px; margin: 0 0 2px; }
+body.pad-split .pause-menu .deck-label { flex-basis: 100%; max-width: none; text-align: center; margin: 0; }
+body.pad-split .pause-menu .icon-btn { width: calc(50% - 4px); justify-content: center; }
+body.pad-split .pause-menu #pause-quit { margin-top: 0; }
+/* 观察：菜单和按键都收起，只留左上角一枚角标，点画面任意处回来。 */
+.pause-peek { position: absolute; z-index: 6; top: 0; right: 0; bottom: 0; left: 0; inset: 0; cursor: pointer; }
+.pause-peek[hidden] { display: none; }
+.pause-chip { position: absolute; top: max(12px, env(safe-area-inset-top, 0px)); left: max(12px, env(safe-area-inset-left, 0px)); display: inline-flex; align-items: center; gap: 6px; padding: .35em .85em; border-radius: 999px; background: var(--shade-strong); color: var(--text-strong); font: 700 13px var(--font-display); letter-spacing: .12em; }
+.pause-chip .btn-icon { display: block; width: 14px; height: 14px; }
+body.pause-peek-on .touchpad { visibility: hidden; }
 .end-overlay { position: absolute; top: 0; right: 0; bottom: 0; left: 0; inset: 0; display: grid; place-content: center; text-align: center; background: #0b0a12eb; gap: 6px; }
 .end-overlay:not([hidden]) { animation: end-overlay-in .25s ease-out; }
 @keyframes end-overlay-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
@@ -1023,7 +1123,7 @@ body.touch.turned.in-battle .hud { --face: 64px; }
 .buff-card b { font-size: 16px; }
 .buff-stat { color: var(--muted); font-size: 12px; }
 .buff-owned { position: absolute; top: 6px; right: 6px; font: 800 11px/1.4 var(--font); font-style: normal; background: var(--well); border-radius: 5px; padding: 1px 6px; color: var(--p1-ink); }
-.buff-card:hover { border-color: var(--p1-ink); transform: translateY(-3px); box-shadow: 0 8px 24px rgba(253, 233, 121, 0.22); }
+.buff-card:hover { border-color: var(--primary-ink); transform: translateY(-3px); box-shadow: 0 8px 24px rgb(220 42 102 / 25%); }
 .buff-card:active { transform: translateY(0) scale(0.97); }
 .buff-picker:not([hidden]) { animation: buff-picker-in .22s ease-out; }
 @keyframes buff-picker-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
@@ -1086,7 +1186,7 @@ dialog[open]::backdrop { animation: backdrop-fade .18s ease-out; }
 .help-body details { border-top: 1px solid var(--line); padding: 10px 0; }
 .help-body details:first-of-type { margin-top: 16px; }
 .help-body summary { cursor: pointer; font-weight: 700; padding: 6px 4px; border-radius: 6px; transition: color .15s ease, background-color .15s ease; user-select: none; }
-.help-body summary:hover { color: var(--p1-ink); background: rgba(253, 233, 121, 0.06); }
+.help-body summary:hover { color: var(--primary-ink); background: rgb(220 42 102 / 8%); }
 .help-body details[open] ul { animation: help-expand .18s ease-out; }
 @keyframes help-expand { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
 .help-body details ul { margin-top: 8px; }
@@ -1124,15 +1224,15 @@ body.wide.in-battle .timer { pointer-events: auto; touch-action: none; position:
 body.touch.in-battle .timer::before,
 body.wide.in-battle .timer::before { content: ''; position: absolute; inset: -18px -36px; }
 .touchpad .tp-tune { position: absolute; z-index: 6; top: max(8px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left)); width: auto; height: 32px; padding: 0 10px; border-radius: 8px; font-size: 12px; pointer-events: auto; }
-body.pad-tune .touchpad [data-pad] { outline: 2px dashed var(--p1-ink); outline-offset: 3px; }
-body.pad-tune .tp-tune { background: var(--p1); color: var(--on-accent); }
+body.pad-tune .touchpad [data-pad] { outline: 2px dashed var(--primary-ink); outline-offset: 3px; }
+body.pad-tune .tp-tune { background: var(--primary); color: var(--on-primary); }
 /* 横屏触屏的按键：攻击键在背景右下角，技能 1/2/3 在它左边排成一排，格挡叠在攻击键上方。
    必杀攒满后排在三个技能左侧，尺寸与技能相同。
    尺寸全部由 --atk 派生（--atk 由 battleFrame 按场地宽度算），所以整块按键整体缩放。
    点按屏幕空白处 = 后撤。跳跃没有按键：摇杆推到外缘起跳。 */
 .touchpad.in-tower .tp-stick { position: absolute; left: var(--x, 12%); top: var(--y, 82%); transform: translate(-50%, -50%); }
 .touchpad.in-tower .tp-actions {
-  /* 第一行是 --atk 的 vmin 回退：JS 会写上精确像素值，这里只是没有写上时的兜底。 */
+  /* --atk 只由这里的 vmin 夹值决定（宽屏另有一档），脚本不写它；自定义布局以它为单位。 */
   --atk: clamp(54px, 16vmin, 86px);
   --btn: calc(var(--atk) * 1.4); --sk: calc(var(--atk) * .56);
   /* 贴背景图右缘，不跟屏幕黑边走。背景和触控层都铺满竞技场，所以相对触控层定位即可。 */
@@ -1412,7 +1512,7 @@ header nav .icon-btn, header nav summary { border-radius: 999px; }
 /* 胶囊和箭头圆标只属于选人页的开打。结算的「再来一局」也挂 .start 取黄色，
    套这两条会把整句收进 1.5em 圆里裁掉。 */
 #start { border-radius: 999px; }
-#start > span { display: inline-grid; place-items: center; width: 1.5em; height: 1.5em; margin-left: .3em; border-radius: 50%; background: var(--on-accent); color: var(--on-brand); font-size: .8em; }
+#start > span { display: inline-grid; place-items: center; width: 1.5em; height: 1.5em; margin-left: .3em; border-radius: 50%; background: var(--on-primary); color: var(--primary-ink); font-size: .8em; }
 
 /* 名册：干净的圆角卡。卡里一个圆垫在缩略图后，平时是中性色，悬停和选中时才变成角色色；
    未选中的卡不带任何代表色，整片名册只有选中的那几张是彩色的。未选中的圆只留三成底色，远看几乎隐形，主体是角色。 */
@@ -1848,3 +1948,124 @@ dialog { border-radius: 18px; }
 }
 @keyframes vs-unfade { from { opacity: 1; } to { opacity: 0; } }
 @keyframes diff-bump { 0% { transform: scale(.85); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }
+
+/* ==== 操控：进阶键位、自定义布局、布局编辑器 ==== */
+/* 进阶键位的重击和后撤只在横屏叠键里出现。后撤、格挡、攻击三个键的中心排在同一条竖线上。
+   重击放在以攻击键为圆心的扇面里，填技能行和格挡之间的空：
+   - 方向：三号技能方向（约 196.7°）和格挡方向（90°）的角平分线，约 143.4°；两边留缝一样宽。
+   - 半径：格挡半径（0.8 × --btn + 8px）和三号技能半径（约 1.313 × --atk）的平均，落在同一条弧带上。
+   以 --atk 为单位展开成 right / bottom（换算见 docs/controls-plan.md）。 */
+.touchpad .tp-actions .hvy, .touchpad .tp-actions .evade { display: none; }
+body.pad-adv .touchpad.in-tower .tp-actions .hvy,
+body.pad-adv .touchpad.in-tower .tp-actions .evade { display: grid; position: absolute; }
+body.pad-adv .touchpad.in-tower .tp-actions .hvy { width: calc(var(--btn) * .6); height: calc(var(--btn) * .6); right: calc(var(--atk) * 1.2561 + 3.21px); bottom: calc(var(--atk) * 1.0058 + 2.39px); }
+body.pad-adv .touchpad.in-tower .tp-actions .evade { right: calc(var(--btn) * .5 - var(--sk) * .575); bottom: calc(100% + 16px + var(--btn) * .6); }
+body.wide.keys .touchpad .tp-actions .hvy, body.wide.keys .touchpad .tp-actions .evade { display: none; }
+/* 自定义布局：挪过的键改绝对定位。--r / --b 是键中心到 .tp-actions 右下角的距离（脚本按场地算）。 */
+#touchpad.in-tower .tp-actions [data-pad].free { position: absolute; top: auto; left: auto; right: var(--r, 0px); bottom: var(--b, 0px); margin: 0; transform: translate(50%, 50%) scale(var(--k, 1)); }
+#touchpad.in-tower .tp-actions [data-pad].free.held { transform: translate(50%, 50%) scale(calc(var(--k, 1) * .92)); }
+.touchpad.in-tower .tp-actions [data-pad] { opacity: calc(var(--a, 1) * var(--pad-a, 1)); }
+.touchpad.in-tower .tp-stick { transform: translate(-50%, -50%) scale(var(--k, 1)); opacity: calc(var(--a, 1) * var(--pad-a, 1)); }
+/* 编辑中：所有键都摆出来（必杀不等攒满），虚线框标出可拖的东西，选中的描强调色，重叠的描红。 */
+body.pad-edit #touchpad .tp-actions .ult { display: grid; }
+body.pad-edit #touchpad [data-pad] { outline: 2px dashed var(--muted); outline-offset: 3px; cursor: grab; }
+body.pad-edit #touchpad .tp-stick { border-radius: 50%; }
+body.pad-edit #touchpad [data-pad].picked { outline: 2px solid var(--primary-ink); }
+body.pad-edit #touchpad [data-pad].clash { outline: 2px solid var(--danger-ink); }
+body.pad-edit .pause-menu, body.pad-edit .pause-peek, body.pad-edit .game-banner { display: none; }
+body.pad-edit .hud { opacity: .3; }
+/* 编辑层：跟按键板同一套本地坐标（转屏也跟着转）。只有拉手接手指，其余都穿透。 */
+.pe-layer { position: absolute; top: 0; right: 0; bottom: 0; left: 0; inset: 0; z-index: 4; pointer-events: none; }
+.pe-layer > [hidden] { display: none; }
+.pe-box { position: absolute; border: 1.5px solid var(--primary-ink); border-radius: 12px; background: rgb(220 42 102 / 6%); }
+.pe-marquee { position: absolute; border: 1.5px dashed var(--primary-ink); border-radius: 6px; background: rgb(220 42 102 / 12%); }
+/* 拉手做大一圈的热区：画出来 22px，手指能按到的有 44px。 */
+.pe-handle { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 3px var(--on-primary), 0 2px 8px var(--shade); pointer-events: auto; touch-action: none; cursor: nwse-resize; }
+.pe-handle::before { content: ''; position: absolute; inset: -11px; border-radius: 50%; }
+.pe-guide { position: absolute; border: 0 dashed var(--cyan-ink); }
+.pe-guide.v { border-left-width: 1px; }
+.pe-guide.h { border-top-width: 1px; }
+.pe-readout { position: absolute; transform: translate(-50%, calc(-100% - 18px)); padding: .2em .6em; border-radius: 999px; background: var(--shade-strong); color: var(--text-strong); font: 800 13px var(--font-display); white-space: nowrap; }
+/* 编辑器外壳铺满战斗画面，本身不接手指；只有工具条、弹层、确认框接（.pe-ui）。 */
+.pad-editor { position: absolute; z-index: 7; top: 0; right: 0; bottom: 0; left: 0; inset: 0; pointer-events: none; color: var(--text); font-size: 13px; }
+.pad-editor[hidden] { display: none; }
+.pad-editor [hidden] { display: none; }
+.pe-ui { pointer-events: auto; }
+/* 工具条：画面上方正中一条胶囊，只放图标，竖线分组。选中的键挪到它底下时换到画面下沿（.pe-low）。 */
+.pe-bar { position: absolute; top: max(10px, env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 2px; padding: 5px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 8px 24px var(--shade); transition: opacity .18s ease; animation: pe-drop .2s cubic-bezier(0.16, 1, 0.3, 1); }
+.pad-editor.pe-low .pe-bar { top: auto; bottom: max(10px, env(safe-area-inset-bottom, 0px)); }
+.pad-editor.pe-busy .pe-bar, .pad-editor.pe-busy .pe-pop { opacity: .2; pointer-events: none; }
+.pe-sep { flex: none; width: 1px; height: 22px; margin: 0 4px; background: var(--line); }
+.pe-ico { position: relative; flex: none; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border-radius: 50%; background: transparent; border-color: transparent; color: var(--text); }
+.pe-ico:hover { background: var(--wash); border-color: transparent; }
+.pe-ico[aria-disabled="true"] { opacity: .3; }
+/* 按下就有反馈：底色压一下、缩一点。 */
+.pe-ico:active, .pe-chips button:active, .pe-ico.down, .pe-chips button.down, .pe-confirm-actions button.down { background: var(--line); transform: scale(.9); transition-duration: .05s; }
+/* 工具条上的按钮不让浏览器拿去当滑动或双击缩放：手指一抬就算点到，不等、不丢。 */
+.pe-ui button { touch-action: none; }
+.pe-ico svg { display: block; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.pe-ico svg .fill { fill: currentColor; stroke: none; }
+.pe-ico[aria-pressed="true"], .pe-ico[aria-expanded="true"] { background: var(--panel-2); color: var(--primary-ink); }
+.pe-ico.pe-save { background: var(--primary); color: var(--on-primary); }
+.pe-ico.pe-save[aria-disabled="true"] { opacity: .35; }
+.pe-badge { position: absolute; top: 1px; right: 1px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--primary); color: var(--on-primary); font: 800 10px/16px var(--font-display); }
+/* 弹层挂在按钮正下方，工具条在下沿时挂在正上方。 */
+.pe-pop { position: absolute; top: calc(max(10px, env(safe-area-inset-top, 0px)) + 60px); transform: translateX(-50%); display: grid; gap: 8px; padding: 8px 10px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 8px 24px var(--shade); animation: pe-drop .16s cubic-bezier(0.16, 1, 0.3, 1); }
+.pad-editor.pe-low .pe-pop { top: auto; bottom: calc(max(10px, env(safe-area-inset-bottom, 0px)) + 60px); }
+.pe-pop-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pe-label { color: var(--muted); font-weight: 700; white-space: nowrap; }
+.pe-chips { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--well); border: 1px solid var(--line); }
+.pe-chips button { min-width: 3em; padding: .35em .7em; border-radius: 7px; background: transparent; border-color: transparent; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pe-chips button.active { background: var(--primary); color: var(--on-primary); }
+.pe-warn { position: absolute; top: calc(max(10px, env(safe-area-inset-top, 0px)) + 56px); left: 50%; transform: translateX(-50%); padding: .25em .8em; border-radius: 999px; background: var(--shade-strong); color: var(--danger-ink); font-weight: 800; white-space: nowrap; }
+.pad-editor.pe-low .pe-warn { top: auto; bottom: calc(max(10px, env(safe-area-inset-bottom, 0px)) + 56px); }
+/* 工具条和弹层自己带 translateX(-50%) 居中：入场动画要把这一项写进关键帧，不然动画期间会偏到右边再跳回来。 */
+@keyframes pe-drop { from { opacity: 0; transform: translate(-50%, -6px) scale(.97); } to { opacity: 1; transform: translate(-50%, 0); } }
+/* 提示：点完图标说一句刚做了什么；第一次进来说一次基本手势。都在画面正中偏上，自己消失。 */
+.pe-toast, .pe-hint { position: absolute; top: 34%; left: 50%; transform: translate(-50%, -50%); padding: .5em 1.1em; border-radius: 999px; background: var(--shade-strong); color: var(--text-strong); font-weight: 700; white-space: nowrap; pointer-events: none; }
+.pe-toast.show { animation: pe-toast 1.4s ease forwards; }
+@keyframes pe-toast { 0% { opacity: 0; transform: translate(-50%, -40%); } 12%, 75% { opacity: 1; transform: translate(-50%, -50%); } 100% { opacity: 0; } }
+.pe-hint { top: 46%; font-size: 14px; animation: pe-fade .3s ease; }
+@keyframes pe-fade { from { opacity: 0; } }
+/* 恢复默认的二次确认：压暗整块画面，正中一张小卡。 */
+.pe-confirm { position: absolute; top: 0; right: 0; bottom: 0; left: 0; inset: 0; display: grid; place-items: center; background: var(--shade-scrim); }
+.pe-confirm-card { display: grid; gap: 14px; min-width: 15em; padding: 18px 20px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 12px 32px var(--shade); animation: dialog-appear .18s cubic-bezier(0.16, 1, 0.3, 1); }
+.pe-confirm-card b { font-size: 15px; }
+.pe-confirm-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pe-confirm-actions button { padding: .55em 1em; border-radius: 10px; font-weight: 700; white-space: nowrap; }
+
+/* 跟随镜头（比 16:9 高的平板 / 窗口）：画布按高度铺满、左上角对齐，镜头只写 transform。
+   拉远时露出的那条用站点底色，和按键台版式同色。 */
+body.stage-cam.in-battle .arena { background: var(--bg); }
+/* 镜头拉远时画布缩到下面，上方露出的是同一张场景图按高度铺满、贴底对齐（压一层和场景同样的暗），
+   画布上沿 56px 渐隐过去，看起来像远景的天空，没有黑边也没有硬接缝。 */
+body.stage-cam.in-battle .arena-view { background: linear-gradient(rgb(16 16 27 / 30%), rgb(16 16 27 / 30%)), var(--stage-art, none) center bottom / cover no-repeat, var(--bg); }
+body.stage-cam.in-battle .arena canvas { transform-origin: 0 0; will-change: transform; }
+body.stage-cam.in-battle #game.cam-out { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 56px); mask-image: linear-gradient(to bottom, transparent, #000 56px); }
+
+/* ==== 审查后的补丁：转屏安全区、设置弹窗矮屏 / 窄屏 ==== */
+/* 转屏时盒子的左边是手机的物理顶边（刘海所在）：暂停菜单、观察角标、编辑工具条按旋转后的方向取安全区，
+   映射同 .touchpad / .hud（盒子上 = 屏幕右，右 = 下，下 = 左，左 = 上）。 */
+body.touch.turned.in-battle .pause-menu { padding: max(20px, env(safe-area-inset-right, 0px)) 24px max(20px, env(safe-area-inset-left, 0px)) max(24px, env(safe-area-inset-top, 0px)); }
+body.touch.turned.in-battle .pause-chip { top: max(12px, env(safe-area-inset-right, 0px)); left: max(12px, env(safe-area-inset-top, 0px)); }
+body.touch.turned.in-battle .pe-bar { top: max(10px, env(safe-area-inset-right, 0px)); }
+body.touch.turned.in-battle .pad-editor.pe-low .pe-bar { top: auto; bottom: max(10px, env(safe-area-inset-left, 0px)); }
+/* 开关、图标分段只要自己那么宽，名字列多让出来；六个字的名字在 320px 宽的手机上也不截断。 */
+#settings-dialog .setting-row:has(> .switch), #settings-dialog .setting-row:has(> .set-icons) { grid-template-columns: minmax(0, 1fr) auto; }
+@media (max-width: 400px) {
+  #settings-dialog .setting-row.vol-row { grid-template-columns: 2.6em minmax(0, 1fr); column-gap: 8px; }
+  .set-range { gap: 6px; }
+  .set-range output { min-width: 2.8em; }
+  #settings-dialog .set-icons button { width: 40px; }
+}
+/* 横屏手机（矮）：不要「设置」大标题，页签直接放到关闭按钮左边，省出一整行给内容；键位缩略图压扁一些。 */
+@media (max-height: 480px) {
+  #settings-dialog { padding: 10px 20px 16px; }
+  #settings-dialog .dialog-head { position: absolute; top: 10px; right: 20px; height: 40px; display: flex; align-items: center; }
+  #settings-dialog .dialog-head h2 { display: none; }
+  #settings-dialog .set-tabs { margin: 0 52px 0 0; }
+  #settings-dialog .set-tabs button { height: 40px; padding: 0 .4em; }
+  #settings-dialog .set-panes { margin-top: 12px; }
+  .scheme-card { padding: 8px 10px 6px; gap: 4px; }
+  .scheme-card svg { width: auto; max-width: 100%; height: 64px; }
+}

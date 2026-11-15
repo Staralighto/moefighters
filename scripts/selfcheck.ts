@@ -54,6 +54,7 @@ import { miniSeal, readStamps, recordClear, recordMatchClear, renderStampBook, s
 import { checkDevice } from './device-selfcheck.ts';
 import { checkSelect } from './select-selfcheck.ts';
 import { TOUCH_LAYOUT } from '../src/ui/touchLayout.data.ts';
+import { cameraTarget, CAM_MIN_RATIO } from '../src/ui/battleCamera.ts';
 import { DEFAULT_ULT_ICON, ultIcon } from '../src/ui/touchIcons.ts';
 import { assignSlotWho, guideIndex, parseRosterThumb, skillHTML, stageCover } from '../src/ui/select.ts';
 import { BLOCKED_CODE_HASHES, CODE_SALT, CODENAME_ADJS, CODENAME_CHARS, READY_SECONDS, formatCodename, hashCodeNum, isBlockedCodeNum, rollCodeNum, validCodenameText } from '../src/ui/online.ts';
@@ -2735,14 +2736,20 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const end = html.indexOf('</dialog>', start);
     assert.ok(start >= 0 && end > start, 'settings dialog exists');
     const dialogHtml = html.slice(start, end);
-    const onlineGroup = dialogHtml.match(/<section class="setting-group" id="set-online-group">[\s\S]*?<\/section>/)?.[0] ?? '';
-    assert.equal(onlineGroup.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(), '联机 联机代号 修改代号', 'online codename setting row has control name and button only');
-    const visible = dialogHtml.replace(onlineGroup, '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-    assert.equal(visible, '设置 × 外观 主题 暗色 暗色 亮色 跟随系统 名册 名册显示 直接排开 直接排开 按乐队分组 名册卡面 全身 全身 头像 印章色条 显示 显示 隐藏 显示隐藏角色 关 开 关 训练场 无技能冷却 开 开 关 无限大招 开 开 关 音乐 开打换曲 ? 只在随机播放时生效，其他时候不能改。 开 开 关', 'settings dialog keeps control names, plus the fight-shuffle tip (with #set-online-group exempted)');
+    const text = (h: string) => h.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    const onlinePane = dialogHtml.match(/<section class="set-pane"[^>]*id="set-pane-online"[\s\S]*?<\/section>/)?.[0] ?? '';
+    assert.equal(text(onlinePane), '联机代号 修改代号', 'online codename setting row has control name and button only');
+    const visible = text(dialogHtml.replace(onlinePane, ''));
+    assert.equal(visible, '设置 × 通用 操控 训练场 音频 联机 外观 主题 名册 名册显示 直接排开 按乐队分组 名册卡面 全身 头像 印章色条 显示隐藏角色 键位方案 基础 进阶 空白处手势 自定义布局 恢复默认 编辑布局 技能 无技能冷却 无限大招 木桩 一直格挡 连段后回满血 音量 音乐 音效 播放 开打换曲 ? 只在随机播放时生效，其他时候不能改。', 'settings dialog keeps control names and option names, plus the fight-shuffle tip (the online pane exempted)');
+    // 二值项是开关，两三个选项是分段按钮，页签切页：设置弹窗里不再有下拉。
+    assert.ok(!dialogHtml.includes('pick-btn') && (dialogHtml.match(/role="switch"/g) ?? []).length === 10, 'settings on/off rows are switches, not dropdowns');
+    assert.ok(['暗色', '亮色', '跟随系统'].every(n => dialogHtml.includes(`aria-label="${n}"`)), 'theme icons keep their names for screen readers');
+    assert.ok((dialogHtml.match(/role="tabpanel"/g) ?? []).length === 5 && dialogHtml.includes('role="tablist"'), 'settings split into five tabs');
     const css = readFileSync('src/style.css', 'utf8');
     assert.ok(css.includes('width: min(760px, calc(100% - 2rem))'), 'settings dialog width is reserved, not content-sized');
     assert.ok(css.includes('#start > span') && !/\.start span \{ display: inline-grid/.test(css), 'the start arrow badge does not restyle the rematch label');
-    assert.ok(css.includes('minmax(0, 1fr) min(16em, 46%)'), 'settings dropdowns share one column so their lengths stay aligned');
+    assert.ok(css.includes('minmax(0, 1fr) min(16em, 46%)'), 'settings controls share one column so their lengths stay aligned');
+    assert.ok(/\.set-pane \{[^}]*grid-area: 1 \/ 1/.test(css), 'settings tabs stack in one grid cell so switching tabs never changes the dialog height');
     assert.ok(css.includes('popover') || html.includes('popover'), 'settings menus are popovers so opening one does not grow the dialog');
     assert.ok(css.includes('inset: unset'), 'popover menus drop the browser centering that flashes mid-screen');
     assert.ok(!css.includes('100vw'), 'dialog width must not use 100vw; it includes the scrollbar and shifts the page');
@@ -2865,7 +2872,18 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(!html.includes('rotate-hint'), 'portrait plays on the split pad instead of a turn-the-phone cover');
   assert.ok(cssText.includes('body.pad-split .touchpad') && cssText.includes('body.pad-split .tp-actions .atk'), 'a portrait fight puts a fan pad under the arena');
   assert.ok(!readFileSync('src/main.ts', 'utf8').includes('portraitHold'), 'portrait fights stay playable instead of force-pausing');
-  assert.ok(cssText.includes('.game-banner .icon-btn .btn-label { display: inline; }'), 'a phone pause menu keeps the words next to the icons');
+  // 跟随镜头：4:3 平板上双方贴两边墙也都要在画面里；站在中间时画面铺满（z = 1）。
+  {
+    const vw = 1024, vh = 768, k = vh / 540;
+    const near = cameraTarget([400, 560], vw, vh);
+    assert.equal(near.z, 1, 'a 4:3 tablet fills the screen while the fighters are close');
+    const far = cameraTarget([44, 916], vw, vh);
+    const half = vw / (k * far.z) / 2;
+    assert.ok(far.z < 1 && far.cx - half <= 44 && far.cx + half >= 916, 'fighters at opposite walls both stay in the picture');
+    assert.ok(CAM_MIN_RATIO > 1 && CAM_MIN_RATIO < 4 / 3, 'square screens keep the deck layout, 4:3 tablets get the camera');
+  }
+  assert.ok(cssText.includes('body.pad-adv .touchpad.in-tower .tp-actions .evade { display: grid; position: absolute; }'), 'the advanced heavy and back-step keys show up on the landscape pad');
+  assert.ok(cssText.includes('.pause-menu .icon-btn .btn-label { display: inline; }'), 'a phone pause menu keeps the words next to the icons');
   // Stage rows follow the stage's own width. A short landscape phone is wide enough for one row;
   // tying the 2x2 to max-height put every phone landscape into two rows.
   const atRuleBody = (css: string, needle: string): string => {

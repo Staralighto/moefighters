@@ -7,6 +7,7 @@ import { comboAnchor } from '../ui/battleFrame.ts';
 import { unbowedRage, violetHidden } from '../game/combat.ts';
 import { BURDEN_Y, encoreDark, IAIDO_PHASE, iaidoCharge, RARE_TIME, RARE_Y, UNBOWED_MAX, unbowedStacks } from './clips.ts';
 import { drawBanSign, drawCombo, drawEffect, drawMoonlight, drawGauge, drawHoldNote, drawKuji, drawLayerBass, drawParticles, drawProjectile, drawRainbowBack, drawRainbowFront, drawRootFx, drawSister, drawTexts, drawWheel, UI_FONT, zoomAbout } from './fx.ts';
+import { cameraView } from '../ui/battleCamera.ts';
 import { isLiteFx } from './fxQuality.ts';
 import { drawFinale } from './finale.ts';
 import { SAKIKO_BACK, SAKIKO_SCREEN_BACK } from './sakikoFx.ts';
@@ -187,6 +188,16 @@ export class Renderer {
       bottom = Math.max(bottom, host.offsetTop + avatar.offsetTop + avatar.offsetHeight * (1 + 22 / 96));
     }
     return this.comboY = comboAnchor(bottom - canvas.offsetTop + 8, scale);
+  }
+
+  /** 切到界面坐标并返回界面的宽高（世界单位）。没有跟随镜头时就是 960×540 的世界坐标。
+   *  有镜头时：屏幕 = tx + z × 画布；界面点 u 要落在屏幕 k·u，所以画布上的世界坐标 = (u − tx/k) / z。 */
+  private uiSpace(): { w: number; h: number } {
+    const cam = cameraView();
+    const c = this.ctx;
+    if (!cam) { c.setTransform(this.sx, 0, 0, this.sy, 0, 0); return { w: W, h: H }; }
+    c.setTransform(this.sx / cam.z, 0, 0, this.sy / cam.z, -cam.tx / cam.k / cam.z * this.sx, -cam.ty / cam.k / cam.z * this.sy);
+    return { w: cam.w / cam.k, h: cam.h / cam.k };
   }
 
   /** Size the backing store to the on-screen box × devicePixelRatio, so the compositor blits
@@ -452,13 +463,17 @@ export class Renderer {
     drawParticles(c, g.particles, bodyScale);
     drawTexts(c, g.texts, bodyScale);
     drawKuji(c, g, bodyScale);
+    c.restore();
+    // 界面层：连击数、训练提示是贴在屏幕上的，不跟镜头走、不跟震屏和必杀聚焦走。
+    // 跟随镜头开着时把镜头的位移和缩放反着乘回去，界面坐标就是「屏幕 ÷ 画面倍率」。
+    const ui = this.uiSpace();
     if (g.mode === 'training') {
       c.textAlign = 'center'; c.font = `14px ${UI_FONT}`; c.fillStyle = '#ddd9ee';
-      c.fillText('训练模式 · 无限能量 · 停手后对手恢复', W / 2, 520);
+      c.fillText('训练模式 · 无限能量 · 停手后对手恢复', ui.w / 2, ui.h - 20);
     }
-    c.restore();
     // After the shake and the super zoom, so the line stays under the portraits instead of sliding into them.
-    drawCombo(c, g, this.comboBaseline());
+    drawCombo(c, g, this.comboBaseline(), ui.w);
+    c.setTransform(this.sx, 0, 0, this.sy, 0, 0);
 
     if (g.flash > 0) { c.fillStyle = `rgba(255,248,221,${g.flash * 2.3})`; c.fillRect(0, 0, W, H); }
     // 此即世界: the stage goes dark, two spotlights pin her — the cone leaves her lit, not veiled.

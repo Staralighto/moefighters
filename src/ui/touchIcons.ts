@@ -43,4 +43,5 @@ export function applyTouchIcons(c: CharacterData): void {
   put('[data-pad="s3"]', typeIcon[c.skills[4].type], c.skills[4].name);
   put('[data-pad="ult"]', ultIcon(c.id), c.skills[5].name);
   put('[data-pad="atk"]', typeIcon.light);
+  put('[data-pad="hvy"]', typeIcon.heavy);
 }

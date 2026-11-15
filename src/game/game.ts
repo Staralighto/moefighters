@@ -190,7 +190,7 @@ export interface GameOptions {
   random?: () => number;
   /** Live training switches. The same object is mutated from the settings dialog.
    *  Absent keeps both on, so a training match with no prefs still has no skill cooldown and a full meter. */
-  training?: { noCd: boolean; infiniteUlt: boolean };
+  training?: { noCd: boolean; infiniteUlt: boolean; dummyGuard?: boolean; quickHeal?: boolean };
   /** Online role. Guest games are painted from snapshots and do not step. */
   netRole?: 'host' | 'guest' | 'lock';
   onHUD?(g: FightGame): void;
@@ -440,6 +440,18 @@ export class FightGame {
       this.step(STEP);
       this.accumulator -= STEP;
     }
+  }
+
+  /** 训练场「连段回满」：每个人脱离受击多久了。 */
+  private readonly trainCalm = new WeakMap<Fighter, number>();
+
+  /** 训练场的「重置位置」：双方回到开局站位、满血满状态，跳过回合开场直接开打。 */
+  trainingReset(): void {
+    if (this.mode !== 'training' || this.phase === 'finished') return;
+    this.resetRound();
+    this.phase = 'fight';
+    this.phaseTime = 0;
+    this.setBanner('');
   }
 
   togglePause(force?: boolean): void {
@@ -801,8 +813,15 @@ export class FightGame {
 
     if (this.mode === 'training') {
       // Empty bar refills. Damage in between just sticks; stopping the combo does not heal.
+      const heal = this.options.training?.quickHeal === true;
       for (const f of this.fighters) {
-        if (f.hp <= 0) { f.hp = f.data.hp; f.stun = .5; this.text('训练恢复', f.x, f.y - 185, SIDE[1]); }
+        if (f.hp <= 0) { f.hp = f.data.hp; f.stun = .5; this.text('训练恢复', f.x, f.y - 185, SIDE[1]); continue; }
+        if (!heal) continue;
+        // 连段回满：脱离受击满 1 秒就回满血，下一套连段从满血算。
+        const hit = f.stun > 0 || f.knocked > 0;
+        const calm = hit ? 0 : (this.trainCalm.get(f) ?? 0) + dt;
+        this.trainCalm.set(f, calm);
+        if (calm >= 1 && f.hp < f.data.hp) f.hp = f.data.hp;
       }
     } else if (!this.teamAlive(0) || !this.teamAlive(1) || this.time <= 0) {
       this.endRound();
@@ -1236,7 +1255,10 @@ export class FightGame {
       f.recTape.push({ t: RECORD_TIME - f.recLeft, kind: 'move', v: move });
       f.recMove = move;
     }
-    const blockHeld = !following && (human ? !!c && this.keys.has(c.block) : (this.mode !== 'training' || f.minion) && f.ai.block > 0);
+    const blockHeld = !following && (human ? !!c && this.keys.has(c.block)
+      : this.mode !== 'training' || f.minion ? f.ai.block > 0
+      // 训练场的木桩：设置里打开「木桩格挡」就一直按住格挡。
+      : !f.echo && this.options.training?.dummyGuard === true);
 
     if (f.dodgeRequest) { f.dodgeBuffer = INPUT_BUFFER; f.dodgeRequest = false; }
     // Humans can cut recovery into a block or a dodge once the move has already hit. CPU stays committed.

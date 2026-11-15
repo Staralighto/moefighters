@@ -19,11 +19,14 @@ import { setIconBtn } from './ui/iconBtn.ts';
 import { hideVersus, showVersus, versusHeld, versusProgress, versusSides } from './ui/versusCut.ts';
 import { mountSegThumbs } from './ui/segThumb.ts';
 import { applyTouchDevice, watchTouch } from './ui/device.ts';
-import { applyTouchLayout, bindBattleFrame } from './ui/touchLayout.ts';
+import { applyTouchLayout, bindBattleFrame, onBattleLayout } from './ui/touchLayout.ts';
+import { resetCamera, stepCamera } from './ui/battleCamera.ts';
 import { onMediaChange } from './ui/media.ts';
 import { bindDialogFallback, closePopover } from './ui/overlays.ts';
 import { bindSwipeGuard } from './ui/swipeBack.ts';
-import { bindPick, bindTip, setTrainPrefs, trainPrefs } from './ui/settings.ts';
+import { bindPick, bindSeg, bindSwitch, bindTabs, bindTip, setTrainPrefs, trainPrefs } from './ui/settings.ts';
+import { blankGesture, hasCustom, onControls, resetLayout, scheme, setBlankGesture, setScheme, type Scheme } from './ui/controls.ts';
+import { abortPadEditor, openPadEditor, padEditing } from './ui/padEditor.ts';
 import { setThemePref, themePref, type ThemePref } from './ui/theme.ts';
 import { bindOnline, CODENAME_ADJS, CODENAME_CHARS, ensureCodename, formatCodename, setCodenameWords, type NetPlan } from './ui/online.ts';
 import { beginNet, endNet, keepLink, netAfter, netAudio, netBefore, netEpoch, netHidden, netLock, netLockFrame, netLog, netRematch, noteEnd, type NetEnd } from './net/play.ts';
@@ -347,8 +350,8 @@ async function startGame(setup: MatchSetup): Promise<void> {
   setRoundLabel(setup.mode === 'challenge' ? '第 ' + setup.stageNumber + ' 关' : '');
   setBattleGuide(setup.characters, setup.online === 'guest' ? [null, 0] : setup.controllers);
   setIconBtn($('pause'), '暂停 ESC');
-  $('resume').hidden = true;
-  $('pause-quit').hidden = true;
+  showPauseMenu(false);
+  resetCamera();
   $('wide-exit').hidden = true;
   setIconBtn($('rematch'), '再来一局 ↻');
   $('rematch').hidden = false;
@@ -397,10 +400,9 @@ async function startGame(setup: MatchSetup): Promise<void> {
     },
     onPause: paused => {
       setIconBtn($('pause'), paused ? '继续 ESC' : '暂停 ESC');
-      $('resume').hidden = !paused;
-      $('pause-quit').hidden = !paused;
+      showPauseMenu(paused);
       showLayoutExit(paused);
-      // The deck line rides the pause banner; challenge stages with a deck only.
+      // The deck line rides the pause menu; challenge stages with a deck only.
       const deck = paused && game?.mode === 'challenge' ? deckLabel(challenge?.picks ?? []) : '';
       $('deck-label').hidden = !deck;
       $('deck-label').textContent = deck;
@@ -439,6 +441,10 @@ async function startGame(setup: MatchSetup): Promise<void> {
   hostTicker(setup.online === 'host' || !!setup.lock);
   // previewViews covers the whole roster: a 诗超绊 bandmate borrows their sheets mid-match.
   renderer = new render.Renderer($('game') as HTMLCanvasElement, previewViews, setup.stage, images);
+  // 跟随镜头拉远时，画布外面垫的是同一张场景图（CSS 背景），不是黑边。
+  const art = setup.stage.image ? images.get(setup.stage.image)?.src || setup.stage.image : '';
+  if (art) $('arena').style.setProperty('--stage-art', `url("${art}")`);
+  else $('arena').style.removeProperty('--stage-art');
   lastNow = gapSum = gapCount = 0;
   raf = requestAnimationFrame(frame);
   if (!document.body.classList.contains('touch')) {
@@ -550,7 +556,9 @@ function frame(now: number): void {
   }
   // The result poster covers the arena: once it is up, the frozen last frame stays and the canvas rests.
   if (game.phase !== 'finished' || !endOverlay.classList.contains('has-report') || endOverlay.hidden) {
-    renderer.draw(game);
+    stepCamera(game);
+    // 摆键时战斗是暂停的、画面不会变：不重画整张画布，手机上拖键更跟手。
+    if (!(game.paused && document.body.classList.contains('pad-edit'))) renderer.draw(game);
     renderer.drawFinaleCut(finaleCut, game);
     if (showFps) renderer.drawFps(avgGap);
   }
@@ -613,6 +621,8 @@ function menuUp(): boolean {
 
 /** Leave the battle screen for the select one; any waiting run stays parked, storage untouched. */
 function restBack(): void {
+  abortPadEditor();
+  showPauseMenu(false);
   endNet();
   paintConnection('battle-connection', null);
   hostTicker(false);
@@ -708,10 +718,66 @@ onMediaChange(battleOrientation, () => {
 document.querySelector<HTMLElement>('.timer')?.addEventListener('pointerdown', e => {
   if (e.button !== 0) return;
   const body = document.body;
+  if (body.classList.contains('pad-edit')) return;
   if (body.classList.contains('touch') || body.classList.contains('wide')) game?.togglePause();
 });
 $('resume').onclick = () => { if (menuUp()) game?.togglePause(false); };
 $('pause-quit').onclick = battleExit;
+$('pause-reset').onclick = () => {
+  if (!game || game.mode !== 'training' || game.netRole) return;
+  game.trainingReset();
+  game.togglePause(false);
+};
+$('pause-settings').onclick = () => openSettings(document.body.classList.contains('touch') ? 'controls' : undefined);
+
+/** 暂停菜单。联机时暂停只是菜单、对局照跑，所以不给设置和观察。
+ *  竖屏分板铺在按键板上：量出按键板在竞技场里的位置写给 CSS，画面一点不挡。 */
+function showPauseMenu(on: boolean): void {
+  const menu = $('pause-menu');
+  if (!on) hidePeek();
+  menu.hidden = !on;
+  if (!on) return;
+  const online = !!game?.netRole;
+  $('pause-settings').hidden = online;
+  $('pause-reset').hidden = online || game?.mode !== 'training';
+  $('pause-peek').hidden = online || document.body.classList.contains('pad-split');
+  placePauseMenu();
+}
+function placePauseMenu(): void {
+  const menu = $('pause-menu');
+  if (menu.hidden || !document.body.classList.contains('pad-split')) {
+    menu.style.removeProperty('--pm-top');
+    menu.style.removeProperty('--pm-h');
+    return;
+  }
+  const arena = $('arena').getBoundingClientRect();
+  const pad = $('touchpad').getBoundingClientRect();
+  if (pad.height < 2) return;
+  menu.style.setProperty('--pm-top', `${Math.round(pad.top - arena.top)}px`);
+  menu.style.setProperty('--pm-h', `${Math.round(pad.height)}px`);
+}
+window.addEventListener('resize', () => requestAnimationFrame(placePauseMenu));
+// 版式换了（退出横屏回到分板、按键台变化）不一定有 resize：跟着战斗版式重放一次，「观察」在分板下也随之收起。
+onBattleLayout(() => { if (!$('pause-menu').hidden) showPauseMenu(true); });
+function hidePeek(): void {
+  $('pause-peek-layer').hidden = true;
+  document.body.classList.remove('pause-peek-on');
+}
+$('pause-peek').onclick = () => {
+  if (!game?.paused || game.netRole) return;
+  $('pause-menu').hidden = true;
+  $('pause-peek-layer').hidden = false;
+  document.body.classList.add('pause-peek-on');
+};
+// 点画面任意处回到菜单。按下即回，跟计时暂停一样不等 click。
+// 菜单在按下时就回来了；吞掉触摸后补发的 click，不然它会落在刚出现的菜单按钮上（比如「返回选人」）。
+$('pause-peek-layer').addEventListener('touchend', e => { if (e.cancelable) e.preventDefault(); }, { passive: false });
+$('pause-peek-layer').addEventListener('pointerdown', e => {
+  e.preventDefault();
+  e.stopPropagation();
+  hidePeek();
+  if (menuUp()) showPauseMenu(true);
+});
 
 const quitDialog = $('quit-dialog') as HTMLDialogElement;
 let quitAction: (() => void) | null = null;
@@ -730,6 +796,34 @@ function unlockScroll(): void {
   document.documentElement.classList.remove('modal-open');
   document.documentElement.style.removeProperty('--scrollbar-gap');
 }
+/* 弹窗开着时，手指在弹窗上下滑不能拖动后面的页面。overscroll-behavior 只管得住「本身能滚」的盒子，
+   内容不够长时滑动照样链到页面上，所以这里自己拦：从手指下往上找到弹窗为止，有能朝这个方向滚的盒子
+   就放行，没有就吞掉这次滑动。滑条横拖不拦。 */
+let modalTouchX = 0;
+let modalTouchY = 0;
+document.addEventListener('touchstart', e => { modalTouchX = e.touches[0]?.clientX ?? 0; modalTouchY = e.touches[0]?.clientY ?? 0; }, { passive: true });
+document.addEventListener('touchmove', e => {
+  if (!document.documentElement.classList.contains('modal-open')) return;
+  const target = e.target instanceof Element ? e.target : null;
+  if (target?.closest('input[type="range"]')) return;
+  // 双指（捏合缩放）和横向滑动不归这里管，只拦竖向的滚动链。
+  if (e.touches.length > 1) return;
+  const x = e.touches[0]?.clientX ?? modalTouchX;
+  const y = e.touches[0]?.clientY ?? modalTouchY;
+  const dx = x - modalTouchX;
+  const dy = y - modalTouchY;
+  modalTouchX = x;
+  modalTouchY = y;
+  if (Math.abs(dx) > Math.abs(dy)) return;
+  const dialog = target?.closest('dialog');
+  for (let el = target; el && dialog && dialog.contains(el); el = el.parentElement) {
+    if (!(el instanceof HTMLElement) || el.scrollHeight <= el.clientHeight + 1) continue;
+    if (!/(auto|scroll)/.test(getComputedStyle(el).overflowY)) continue;
+    const up = el.scrollTop > 0, down = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+    if ((dy > 0 && up) || (dy < 0 && down) || dy === 0) return;
+  }
+  if (e.cancelable) e.preventDefault();
+}, { passive: false });
 const dialogTriggers = new WeakMap<HTMLDialogElement, HTMLElement | null>();
 function openDialog(dialog: HTMLDialogElement): void {
   if (dialog.open) return;
@@ -844,6 +938,7 @@ function toggleSound(): void {
   $('sound-toggle').textContent = sfx.muted ? '♪ 音效关' : '♪ 音效开';
   $('sound-toggle').setAttribute('aria-pressed', String(!sfx.muted));
   if (!sfx.muted) { sfx.unlock(); sfx.play('select'); }
+  syncAudioSettings();
 }
 $('sound').onclick = toggleSound;
 $('sound-toggle').onclick = toggleSound;
@@ -873,8 +968,39 @@ function syncMusicUi(): void {
     const out = $('music-volume-value') as HTMLOutputElement;
     const text = ($('music-volume') as HTMLInputElement).value + '%';
     if (out.textContent !== text) out.textContent = text;
+    syncAudioSettings();
   });
 }
+
+/* 设置「音频」页：音乐和音效各一行，左边喇叭是开关，右边是音量。跟顶栏音乐弹层是同一份状态，哪边改了两边都刷。
+   横屏战斗里顶栏收起来了，这里是对局中调声音的入口（暂停 → 设置 → 音频）。 */
+function syncAudioSettings(): void {
+  $('set-music-switch').setAttribute('aria-checked', String(musicEnabled()));
+  $('set-sfx-switch').setAttribute('aria-checked', String(!sfx.muted));
+  const mv = Math.round(musicVolume() * 100), sv = Math.round(sfx.volume * 100);
+  const mr = $('set-music-vol-range') as HTMLInputElement, sr = $('set-sfx-vol-range') as HTMLInputElement;
+  if (document.activeElement !== mr) mr.value = String(mv);
+  if (document.activeElement !== sr) sr.value = String(sv);
+  $('set-music-vol-value').textContent = mv + '%';
+  $('set-sfx-vol-value').textContent = sv + '%';
+}
+$('set-music-switch').onclick = () => { setMusicEnabled(!musicEnabled()); syncMusicUi(); };
+$('set-sfx-switch').onclick = toggleSound;
+$('set-music-vol-range').oninput = () => {
+  const v = Number(($('set-music-vol-range') as HTMLInputElement).value);
+  // 静音时拖音量就是想听：顺手打开。
+  if (!musicEnabled()) setMusicEnabled(true);
+  setMusicVolume(v / 100);
+  ($('music-volume') as HTMLInputElement).value = String(v);
+  syncMusicUi();
+};
+$('set-sfx-vol-range').oninput = () => {
+  sfx.volume = Number(($('set-sfx-vol-range') as HTMLInputElement).value) / 100;
+  if (sfx.muted) toggleSound();
+  syncAudioSettings();
+};
+// 松手时响一声，按新音量听一下。
+$('set-sfx-vol-range').onchange = () => { if (!sfx.muted) { sfx.unlock(); sfx.play('select'); } };
 $('music-toggle').onclick = () => { setMusicEnabled(!musicEnabled()); syncMusicUi(); };
 $('music-order').onclick = () => { setMusicOrder(cycleMusicOrder(musicOrder())); syncMusicUi(); syncFightShuffleLock(); };
 $('music-prev').onclick = () => { sfx.play('key'); stepMusic(-1); syncMusicUi(); };
@@ -937,63 +1063,136 @@ $('open-codename').onclick = () => {
   openDialog(codenameDialog);
 };
 $('close-codename').onclick = () => codenameDialog.close();
-$('settings').onclick = () => {
+/** 打开设置。战斗中打开会先暂停；从暂停菜单进来的触屏玩家默认停在「操控」页。 */
+function openSettings(tab?: string): void {
   syncFightShuffleLock();
+  syncAudioSettings();
   syncCodenameUi();
+  syncControlsUi();
   if (game && !game.paused) game.togglePause(true);
+  showSettingsTab(tab);
   openDialog(settingsDialog);
-};
+}
+$('settings').onclick = () => openSettings();
 $('close-settings').onclick = () => settingsDialog.close();
+const showSettingsTab = bindTabs(settingsDialog);
+mountSegThumbs(settingsDialog);
+settingsDialog.addEventListener('close', () => {
+  for (const m of settingsDialog.querySelectorAll<HTMLElement>('.tip-pop')) closePopover(m);
+});
 
-/* 设置里每一行都是左名、右下拉。名册显示改分组后名册重渲染，SelectScreen 自己重挂滚动预加载观察器。
-   训练场两项写进同一份 prefs，进行中的对局下一帧就生效。 */
-bindPick('set-theme-menu', {
+/* 设置里每一行都是左名、右控件：两三个选项用分段按钮，开关用 switch。名册显示改分组后名册重渲染，
+   SelectScreen 自己重挂滚动预加载观察器。训练场两项写进同一份 prefs，进行中的对局下一帧就生效。 */
+bindSeg('set-theme-seg', {
   get: themePref,
   set: value => setThemePref(value as ThemePref),
 });
-bindPick('set-roster-menu', {
+bindSeg('set-roster-seg', {
   get: () => select.isGrouped ? 'band' : 'flat',
   set: value => select.setRosterGrouped(value === 'band'),
 });
-const syncThumbPick = bindPick('set-thumb-menu', {
+const syncThumbPick = bindSeg('set-thumb-seg', {
   get: () => select.rosterThumb,
   set: value => select.setRosterThumb(parseRosterThumb(value)),
 });
 // The roster title row has its own quick switch; whichever control flips it, both show the same value.
 select.onThumb = syncThumbPick;
-bindPick('set-strip-menu', {
-  get: () => stripOn() ? 'on' : 'off',
-  set: value => setStripOn(value === 'on'),
+bindSwitch('set-strip-switch', {
+  get: stripOn,
+  set: on => setStripOn(on),
 });
-bindPick('set-hidden-menu', {
-  get: () => select.showsHidden ? 'on' : 'off',
-  set: value => {
-    select.setShowHidden(value === 'on');
+bindSwitch('set-hidden-switch', {
+  get: () => select.showsHidden,
+  set: on => {
+    select.setShowHidden(on);
     if (!select.showsHidden && challenge?.char.hidden && !$('buff-picker').hidden) restBack();
   },
 });
-bindPick('set-nocd-menu', {
-  get: () => trainPrefs().noCd ? 'on' : 'off',
-  set: value => { setTrainPrefs({ noCd: value === 'on' }); select.refresh(); },
+bindSwitch('set-nocd-switch', {
+  get: () => trainPrefs().noCd,
+  set: on => { setTrainPrefs({ noCd: on }); select.refresh(); },
 });
-bindPick('set-ult-menu', {
-  get: () => trainPrefs().infiniteUlt ? 'on' : 'off',
-  set: value => { setTrainPrefs({ infiniteUlt: value === 'on' }); select.refresh(); },
+bindSwitch('set-ult-switch', {
+  get: () => trainPrefs().infiniteUlt,
+  set: on => { setTrainPrefs({ infiniteUlt: on }); select.refresh(); },
 });
-bindPick('set-fight-shuffle-menu', {
-  get: () => fightShuffle() ? 'on' : 'off',
-  set: value => { setFightShuffle(value === 'on'); },
+bindSwitch('set-dummy-guard-switch', {
+  get: () => trainPrefs().dummyGuard,
+  set: on => setTrainPrefs({ dummyGuard: on }),
+});
+bindSwitch('set-quick-heal-switch', {
+  get: () => trainPrefs().quickHeal,
+  set: on => setTrainPrefs({ quickHeal: on }),
+});
+bindSwitch('set-fight-shuffle-switch', {
+  get: fightShuffle,
+  set: on => setFightShuffle(on),
 });
 bindTip('set-fight-shuffle-tip');
 function syncFightShuffleLock(): void {
-  const btn = document.querySelector<HTMLButtonElement>('[popovertarget="set-fight-shuffle-menu"]');
-  const menu = document.getElementById('set-fight-shuffle-menu');
-  if (!btn) return;
-  const locked = musicOrder() !== 'shuffle';
-  btn.disabled = locked;
-  if (locked && menu) closePopover(menu);
+  const btn = $('set-fight-shuffle-switch') as HTMLButtonElement;
+  btn.disabled = musicOrder() !== 'shuffle';
 }
 syncFightShuffleLock();
+
+/* 操控页：键位方案、进阶下的空白处手势、横屏自定义布局。只有触屏用得上，键鼠不显示这一页。 */
+const syncScheme = bindSeg('set-scheme-pick', {
+  get: scheme,
+  set: value => { setScheme(value as Scheme); syncControlsUi(); },
+});
+bindSwitch('set-blank-switch', { get: blankGesture, set: setBlankGesture });
+function syncControlsUi(): void {
+  syncScheme();
+  $('set-tab-controls').hidden = !document.body.classList.contains('touch');
+  $('set-blank-row').hidden = scheme() !== 'advanced';
+  ($('set-layout-reset') as HTMLButtonElement).disabled = !hasCustom(scheme());
+  // 联机对局停不下来，不能在上面摆键。
+  ($('set-layout-edit') as HTMLButtonElement).disabled = !!game?.netRole;
+}
+onControls(() => { if (!padEditing()) syncControlsUi(); });
+syncControlsUi();
+$('set-layout-reset').onclick = () => { resetLayout(scheme()); syncControlsUi(); };
+$('set-layout-edit').onclick = () => { void editPadLayout(); };
+
+/** 在真实战斗画面上摆键：战斗中就用这一局（先暂停），不在战斗中开一局训练场。
+ *  竖屏手机转成横屏再摆，摆完转回来；结束后回到设置的「操控」页。 */
+async function editPadLayout(): Promise<void> {
+  if (game?.netRole || padEditing()) return;
+  settingsDialog.close();
+  // 结算画面上停不下来，回选人再开一局训练场。
+  if (game && game.phase === 'finished') restBack();
+  const fresh = !game;
+  if (fresh) {
+    const base = select.setup();
+    try {
+    // 固定 RiNG 夜景：画面暗，按键看得清；亮的场景会把半透明的键吃掉。
+    const stage = STAGES.find(s => s.id === 'ring') ?? base.stage;
+      await startGame({ ...base, stage, mode: 'training', difficulty: 1, characters: base.characters.slice(0, 2), controllers: [0, null], mods: undefined, challengeKind: undefined, stageNumber: undefined });
+    } catch (err) {
+      console.warn('布局编辑：训练场没开起来', err);
+      return;
+    }
+  }
+  const g = game;
+  if (!g || g.netRole) return;
+  if (!g.paused) g.togglePause(true);
+  hidePeek();
+  const body = document.body.classList;
+  const turnedByUs = body.contains('touch') && body.contains('pad-split');
+  if (turnedByUs) body.add('turned');
+  // 版式要先落定：转屏后按键板在下一帧才是横屏叠键。
+  await new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+  // 等的这两帧里战斗可能已经被收掉或换了一局（回选人、开了新局）：那就不开了。
+  if (game !== g || !document.body.classList.contains('in-battle')) {
+    if (turnedByUs) body.remove('turned');
+    return;
+  }
+  openPadEditor(() => {
+    if (turnedByUs) body.remove('turned');
+    if (fresh && game === g) restBack();
+    openSettings('controls');
+  });
+}
 
 document.addEventListener('visibilitychange', () => setMusicSuspended(document.hidden));
 window.addEventListener('blur', () => setMusicSuspended(true));

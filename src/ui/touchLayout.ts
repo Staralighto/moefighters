@@ -2,6 +2,9 @@ import { battleFrame, pictureHud } from './battleFrame.ts';
 import { clampStick } from './stageFit.ts';
 import { TOUCH_LAYOUT } from './touchLayout.data.ts';
 import { onMediaChange } from './media.ts';
+import { applyControls, onControls, stickSpot } from './controls.ts';
+import { CAM_MIN_RATIO, setCameraBox } from './battleCamera.ts';
+import { H, W } from '../game/constants.ts';
 
 /** Paint saved centers onto the pad. Inline styles win over the CSS defaults. Only the stick is free-placed now. */
 export function applyTouchLayout(): void {
@@ -34,6 +37,8 @@ function visualPin(): { top: number; height: number } | null {
   const vv = window.visualViewport;
   const layout = window.innerHeight;
   if (!vv || !(vv.height >= 2) || !Number.isFinite(layout) || layout < 2) return null;
+  // 转屏途中两套视口数各说各的（一个已经横了、一个还竖着）：这时钉高度必错，宁可不钉，等数落定再量。
+  if ((vv.width > vv.height) !== (window.innerWidth > window.innerHeight)) return null;
   if (vv.height >= layout - 2) return null;
   const top = Math.min(Math.max(0, vv.offsetTop || 0), Math.max(0, layout - vv.height));
   return { top: Math.round(top), height: Math.round(vv.height) };
@@ -65,6 +70,10 @@ function hudClearance(arena: HTMLElement): number {
 /** 宽高比达到这个值就不再上下分板。 */
 export const SPLIT_MAX_RATIO = 0.8;
 
+const layoutHooks: (() => void)[] = [];
+/** 战斗版式每排完一次就通知（转屏、退出横屏、按键台变化……）：跟着版式走的浮层（暂停菜单）在这里重放。 */
+export function onBattleLayout(fn: () => void): void { layoutHooks.push(fn); }
+
 export function bindBattleFrame(): void {
   const arena = document.getElementById('arena');
   const canvas = document.getElementById('game');
@@ -77,12 +86,40 @@ export function bindBattleFrame(): void {
     for (const p of ['top', 'height', 'bottom']) arena.style.removeProperty(p);
     canvas.style.top = '';
     canvas.style.height = '';
+    canvas.style.width = '';
+    canvas.style.left = '';
+    setCameraBox(canvas, 0, 0);
     pad.classList.remove('in-tower');
     setClass('stage-deck', false);
+    setClass('stage-cam', false);
     // 竖屏画面只有手机那么宽。血条按桌面像素画会占掉上沿，这里跟画面宽度走，再留 1.2 倍。
     if (split && arena.clientWidth >= 2) setStyle(arena, '--hud', pictureHud(arena.clientWidth).toFixed(4));
     else arena.style.removeProperty('--hud');
     applyTouchLayout();
+    applyControls();
+    for (const fn of layoutHooks) fn();
+  };
+
+  /** 摇杆中心按场地夹紧，矮窗口里 1.25 倍环的盒子不探出边。每次从原始中心重算。
+   *  拆出来单独用：布局编辑器拖摇杆时只重放摇杆，不重跑整套战斗排版（那会按拖动中的键重量按键台，画面跟着上下滑）。 */
+  let lastDeck = false;
+  const placeStick = () => {
+    if (stick) {
+      const frame = { deck: lastDeck };
+      const viewW = arena.clientWidth, viewH = arena.clientHeight;
+      const ring = pad.querySelector('.tp-ring')?.getBoundingClientRect().width ?? 0;
+      // 有按键台时摇杆也落到台上：环的盒子贴底（和技能键同样留 6px），不再悬在画面地面中段。
+      // 摇杆按控件层夹紧：控件层已经扣掉刘海和 home 条，画面本身铺到屏幕边。
+      const padW = pad.clientWidth || viewW;
+      const padH = pad.clientHeight || viewH;
+      // 玩家摆过的摇杆照摆的位置放，不再被按键台往下压。
+      const own = stickSpot();
+      let y = own ? own.y : TOUCH_LAYOUT.stick.y;
+      if (!own && frame.deck && ring > 0) y = Math.max(y, (padH - 6 - ring * 1.25 / 2) / padH * 100);
+      const placed = clampStick(own ? own.x : TOUCH_LAYOUT.stick.x, y, ring, padW, padH);
+      setStyle(stick, '--x', `${Math.round(placed.x * 10) / 10}%`);
+      setStyle(stick, '--y', `${Math.round(placed.y * 10) / 10}%`);
+    }
   };
 
   const apply = () => {
@@ -115,6 +152,8 @@ export function bindBattleFrame(): void {
     const viewH = arena.clientHeight;
     if (viewW < 2 || viewH < 2) return;
     pad.classList.add('in-tower');
+    // 方案和自定义布局先落位：按键台的高度要按挪过的键来量。
+    applyControls();
 
     // 先定 HUD 比例，再量 HUD 有多高，画面才知道往下让多少。
     const probe = battleFrame(viewW, viewH);
@@ -124,7 +163,20 @@ export function bindBattleFrame(): void {
     setStyle(arena, '--hud', hud.toFixed(4));
     let shift = 0;
     let frame = probe;
-    if (probe.deck) {
+    // 比 16:9 高、但不算方：画面按高度铺满，左右交给跟随镜头（ui/battleCamera.ts）。
+    const cam = probe.deck && viewW / viewH >= CAM_MIN_RATIO;
+    setClass('stage-cam', cam);
+    if (cam) {
+      frame = { ...probe, deck: false, top: 0, imageH: viewH, scale: viewH / H };
+      setStyle(canvas, 'width', `${Math.round(W * viewH / H)}px`);
+      setStyle(canvas, 'left', '0px');
+      setCameraBox(canvas, viewW, viewH);
+    } else {
+      canvas.style.width = '';
+      canvas.style.left = '';
+      setCameraBox(canvas, 0, 0);
+    }
+    if (probe.deck && !cam) {
       // HUD 可能已经被上一次排版往下推过，量的时候扣回去。
       const prior = Number.parseFloat(arena.style.getPropertyValue('--deck-shift')) || 0;
       const hudClear = Math.ceil(hudClearance(arena) - prior) + 6;
@@ -148,19 +200,10 @@ export function bindBattleFrame(): void {
     setStyle(canvas, 'height', `${Math.round(frame.imageH)}px`);
     setStyle(canvas, 'top', `${Math.round(frame.top)}px`);
 
-    // 摇杆中心按场地夹紧，矮窗口里 1.25 倍环的盒子不探出边。每次从原始中心重算。
-    if (stick) {
-      const ring = pad.querySelector('.tp-ring')?.getBoundingClientRect().width ?? 0;
-      // 有按键台时摇杆也落到台上：环的盒子贴底（和技能键同样留 6px），不再悬在画面地面中段。
-      // 摇杆按控件层夹紧：控件层已经扣掉刘海和 home 条，画面本身铺到屏幕边。
-      const padW = pad.clientWidth || viewW;
-      const padH = pad.clientHeight || viewH;
-      let y = TOUCH_LAYOUT.stick.y;
-      if (frame.deck && ring > 0) y = Math.max(y, (padH - 6 - ring * 1.25 / 2) / padH * 100);
-      const placed = clampStick(TOUCH_LAYOUT.stick.x, y, ring, padW, padH);
-      setStyle(stick, '--x', `${Math.round(placed.x * 10) / 10}%`);
-      setStyle(stick, '--y', `${Math.round(placed.y * 10) / 10}%`);
-    }
+    lastDeck = frame.deck;
+    placeStick();
+    applyControls();
+    for (const fn of layoutHooks) fn();
   };
 
   // 同一帧合并。apply 自己写的类和样式会再触发观察者，值不变时 setStyle / setClass 不写，循环自然停下。
@@ -169,12 +212,34 @@ export function bindBattleFrame(): void {
     if (queued) return;
     queued = requestAnimationFrame(() => { queued = 0; apply(); });
   };
-  // 转屏、全屏、回到前台之后，不少浏览器的视口数要过几帧才落定，且不一定再发 resize。
-  // 之后再补量几次；apply 幂等，值没变什么也不写。
+  /* 转屏、进全屏、回前台之后视口数要过一阵才落定，而且落定那一下不一定再发任何事件。
+     以前只在 120 / 350 / 800ms 补量三次：全屏动画或转屏慢的手机落定得更晚，最后一次量到的还是半途的数，
+     画面就按那个高度钉住，上下留出大黑边，直到再转一次屏触发新事件才恢复。
+     现在之后 2.5 秒内每帧比一次视口和竞技场尺寸，有变化就重排；战斗中再每秒巡检一次兜底。 */
+  const viewSig = (): string => {
+    const vv = window.visualViewport;
+    return [window.innerWidth, window.innerHeight, vv?.width, vv?.height, vv?.offsetTop, arena.clientWidth, arena.clientHeight]
+      .map(n => Math.round(n ?? 0)).join(',');
+  };
+  let lastSig = '';
+  let settleUntil = 0;
+  let settleRaf = 0;
+  const settleTick = () => {
+    settleRaf = 0;
+    const now = viewSig();
+    if (now !== lastSig) { lastSig = now; apply(); }
+    if (performance.now() < settleUntil) settleRaf = requestAnimationFrame(settleTick);
+  };
   const settle = () => {
     schedule();
-    for (const ms of [120, 350, 800]) setTimeout(schedule, ms);
+    settleUntil = performance.now() + 2500;
+    if (!settleRaf) settleRaf = requestAnimationFrame(settleTick);
   };
+  setInterval(() => {
+    if (document.hidden || !document.body.classList.contains('in-battle')) return;
+    const now = viewSig();
+    if (now !== lastSig) { lastSig = now; schedule(); }
+  }, 1000);
   if (typeof ResizeObserver !== 'undefined') {
     const ro = new ResizeObserver(schedule);
     ro.observe(arena);
@@ -188,6 +253,7 @@ export function bindBattleFrame(): void {
   });
   window.addEventListener('resize', settle);
   window.addEventListener('orientationchange', settle);
+  screen.orientation?.addEventListener?.('change', settle);
   window.addEventListener('pageshow', settle);
   document.addEventListener('fullscreenchange', settle);
   document.addEventListener('webkitfullscreenchange', settle);
@@ -203,5 +269,6 @@ export function bindBattleFrame(): void {
     if (inBattle && !wasBattle) settle();
     wasBattle = inBattle;
   }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  onControls(() => { if (document.body.classList.contains('pad-edit')) placeStick(); else schedule(); });
   apply();
 }

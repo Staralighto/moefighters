@@ -1,6 +1,7 @@
 import { assignImage } from '../assets/loader.ts';
 import type { FightGame } from './game.ts';
 import { atkIcon } from '../ui/touchIcons.ts';
+import { advancedLive, blankLive } from '../ui/controls.ts';
 
 /* Keyboard → game. Also pauses when the tab loses focus so nobody gets hit while alt-tabbed. */
 export class KeyboardInput {
@@ -58,7 +59,13 @@ const JUMP_IN = .6;
 /** And the push has to be mostly upward, not a sideways drag past the edge. */
 const JUMP_UP = .8;
 /** Nothing here may swallow a blank-screen press: the keys, the stick, the HUD and every overlay. */
-const NOT_BLANK = '.hud, .tp-actions, .tp-stick, [data-pad], .game-banner, .end-overlay, dialog';
+const NOT_BLANK = '.hud, .tp-actions, .tp-stick, [data-pad], .game-banner, .end-overlay, .pause-menu, .pause-peek, .pad-editor, dialog';
+
+/** The dev key tuner or the player's layout editor owns the pad: presses move keys, they do not fight. */
+function padBusy(): boolean {
+  const b = document.body.classList;
+  return b.contains('pad-tune') || b.contains('pad-edit');
+}
 
 /** Where the stick sits, as a share of the ring radius, and whether that spot means "jump". */
 export interface StickPush { out: number; up: boolean }
@@ -149,6 +156,8 @@ export class TouchInput {
    *  faster than the display — re-querying the DOM on every event was pure waste. */
   private stickBox: DOMRect | null = null;
   private stickKnob: HTMLElement | null = null;
+  /** 自定义布局里摇杆的缩放。环的盒子量出来已经是缩放后的像素，旋钮又挂在缩放里面，位移要除回去。 */
+  private stickK = 1;
   private touchMoveOn = false;
   /** Non-zero while a follow frame is queued. Round reset and pause wipe `keys` without a pointermove. */
   private follow = 0;
@@ -162,18 +171,28 @@ export class TouchInput {
   private readonly atkHeavy = new Set<number>();
   /** 完美格挡: attack presses already sent on touch-down because the player was guarding. */
   private readonly atkParry = new Set<number>();
+  /** 进阶键位：攻击键按下即出轻击，J 一直按住到松手（吉他类招式靠按住续射）。 */
+  private readonly atkHold = new Set<number>();
   private readonly down = (e: PointerEvent) => {
-    if (document.body.classList.contains('pad-tune')) return;
+    if (padBusy()) return;
     const g = this.getGame();
     if (!g) return;
     const el = e.target as HTMLElement;
-    const b = el.closest<HTMLElement>('[data-key], [data-atk], [data-guard]');
+    const b = el.closest<HTMLElement>('[data-key], [data-atk], [data-guard], [data-evade]');
     if (b && this.pad.contains(b)) {
       e.preventDefault();
       try { b.setPointerCapture(e.pointerId); } catch { /* window still hears the lift */ }
       b.classList.add('held');
       this.held.set(e.pointerId, b);
-      if (b.hasAttribute('data-atk')) {
+      if (b.hasAttribute('data-atk') && advancedLive()) {
+        // 完美格挡也在这里：格挡中按下攻击，引擎在 keyDown 里开判定窗口。
+        this.atkHold.add(e.pointerId);
+        g.keyDown('KeyJ');
+      } else if (b.hasAttribute('data-evade')) {
+        // 后撤键 = 格挡键的一次短按，按下即发。走引擎原有的短按后撤，联机线协议不变。
+        // 已经在格挡（按住格挡键或空白处）时不动：那根手指松开时再决定是格挡还是后撤。
+        if (!g.keys.has('KeyS')) { g.keyDown('KeyS'); g.keyUp('KeyS', true); }
+      } else if (b.hasAttribute('data-atk')) {
         const id = e.pointerId;
         // 完美格挡: while guarding, the press is the timing read, so it goes out on touch-down, not on release.
         if (g.fighters.some(f => f.controller === 0 && f.blocking)) { g.keyDown('KeyJ'); g.keyUp('KeyJ'); this.atkParry.add(id); return; }
@@ -201,7 +220,7 @@ export class TouchInput {
   };
   private readonly move = (e: PointerEvent) => {
     if (e.pointerId !== this.stickId) return;
-    if (document.body.classList.contains('pad-tune')) { this.releaseStick(); return; }
+    if (padBusy()) { this.releaseStick(); return; }
     // WebKit reports buttons as 0 for a live touch, so this only catches a mouse release
     // that arrived as a move and never as a pointerup.
     if (e.pointerType !== 'touch' && e.buttons === 0) { this.releaseStick(); return; }
@@ -217,7 +236,9 @@ export class TouchInput {
   };
   /** Blank screen: a tap shorter than the engine's DODGE_TAP becomes a back-dodge, a longer hold becomes a block. */
   private readonly guardDown = (e: PointerEvent) => {
-    if (document.body.classList.contains('pad-tune') || this.guardId !== null) return;
+    if (padBusy() || this.guardId !== null) return;
+    // 进阶键位可以关掉空白处手势：后撤和格挡都有自己的键了。
+    if (!blankLive()) return;
     const el = e.target as HTMLElement;
     if (!acceptBlank(document.body.classList.contains('pad-split'), this.pad.contains(el))) return;
     if (el.closest(NOT_BLANK)) return;
@@ -308,6 +329,7 @@ export class TouchInput {
 
   /** Short release queues a light. A hold past HEAVY_HOLD already queued a heavy and just lets go. */
   private releaseAtk(id: number, b: HTMLElement, fireLight: boolean): void {
+    if (this.atkHold.delete(id)) { this.upKey('KeyJ'); return; }
     if (this.atkParry.delete(id)) return;
     const timer = this.atkTimer.get(id);
     if (timer) window.clearTimeout(timer);
@@ -397,6 +419,7 @@ export class TouchInput {
     this.stickTouch = paired;
     if (paired !== null) this.pendingTouch = null;
     this.stickKnob = this.pad.querySelector<HTMLElement>('.tp-knob-move');
+    this.stickK = Number.parseFloat(stick.style.getPropertyValue('--k')) || 1;
     const ring = this.pad.querySelector<HTMLElement>('.tp-ring');
     this.stickBox = ring ? ring.getBoundingClientRect() : null;
     this.armTouchMove();
@@ -446,7 +469,7 @@ export class TouchInput {
     try { if (b.hasPointerCapture(id)) b.releasePointerCapture(id); } catch { /* already gone */ }
     if (b.hasAttribute('data-atk')) this.releaseAtk(id, b, light);
     else if (b.hasAttribute('data-guard')) this.upKey('KeyS', false);
-    else this.upKey(b.dataset.key!);
+    else if (b.dataset.key) this.upKey(b.dataset.key);
   }
 
   private endGuard(dodge: boolean): void {
@@ -485,7 +508,8 @@ export class TouchInput {
     if (!(max > 0)) return;
     const len = Math.hypot(dx, dy) || 1;
     const travel = Math.min(len, max * KNOB_TRAVEL);
-    this.stickKnob.style.transform = `translate(${dx / len * travel}px, ${dy / len * travel}px)`;
+    const kt = travel / this.stickK;
+    this.stickKnob.style.transform = `translate(${dx / len * kt}px, ${dy / len * kt}px)`;
 
     const out = len / max;
     const jump = isTouchJump({ out, up: -dy > JUMP_UP * Math.abs(dx) }, this.stickJump);

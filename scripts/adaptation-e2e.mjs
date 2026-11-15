@@ -75,9 +75,8 @@ for (const name of engines) {
         if (fixture === 'legacy') {
           assert.equal(await page.evaluate(() => getComputedStyle(document.body).touchAction), 'pan-y');
           await page.locator('#settings').click();
-          await page.locator('[popovertarget="set-roster-menu"]').click();
-          await page.locator('#set-roster-menu [data-value="band"]').click();
-          assert.ok(await page.locator('.band-head').count() > 0, 'fallback menu applies its choice');
+          await page.locator('#set-roster-seg [data-value="band"]').click();
+          assert.ok(await page.locator('.band-head').count() > 0, 'legacy engines apply the segmented roster choice');
           await page.locator('#close-settings').click();
         }
         await page.locator('[data-mode="training"]').tap();

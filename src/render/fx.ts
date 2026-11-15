@@ -7901,12 +7901,13 @@ function drawFloatingText(ctx: CanvasRenderingContext2D, t: FloatingText): void 
   ctx.fillText(t.text, t.x, t.y);
 }
 
-export function drawCombo(ctx: CanvasRenderingContext2D, g: FightGame, baseline = 205): void {
+/** `width`：界面层的宽度（世界单位）。跟随镜头下画面比 960 窄，右侧连击贴的是屏幕右缘，不是场地右缘。 */
+export function drawCombo(ctx: CanvasRenderingContext2D, g: FightGame, baseline = 205, width = 960): void {
   for (const f of g.fighters) {
     if (f.minion || f.echo || f.combo <= 1 || f.comboTime <= 0) continue;
     const left = f.team === 0;
     const slot = g.fighters.filter(m => m.team === f.team).indexOf(f);
-    const x = left ? 42 : 918, y = baseline + slot * 36;
+    const x = left ? 42 : width - 42, y = baseline + slot * 36;
     ctx.textAlign = left ? 'left' : 'right';
     ctx.font = 'italic 45px Impact, sans-serif';
     ctx.fillStyle = SIDE[f.team];
