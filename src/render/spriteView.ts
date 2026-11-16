@@ -2,6 +2,8 @@ import type { FighterView, FrozenPose } from './view.ts';
 import { isInvulnerable, type Fighter } from '../game/fighter.ts';
 import { LITE_SCALE, liteSrc, missingImages, portraitSrc, type ImageCache } from '../assets/loader.ts';
 import { CELL, bodySquash, clipFor, type Clip } from './clips.ts';
+import { PAREO_HAIR_MASKS, wigCell, wigOf } from './pareoWig.ts';
+import { drawPareoSwap } from './pareoFx.ts';
 
 const rimCache = new Map<string, HTMLCanvasElement>();
 const cellCache = new Map<string, HTMLCanvasElement>();
@@ -151,6 +153,28 @@ function drawTint(ctx: CanvasRenderingContext2D, im: HTMLImageElement, sx: numbe
   ctx.drawImage(baked, -Math.round(h / 2), -h, h, h);
 }
 
+/* 换表闪: a character whose special cells are drawn to other proportions than her common ones hides the jump
+   between the two sheets under a quick pop — a stretch about the feet, a white flash of the new cell, then her own
+   look on top (SWAP_LOOKS, local body space: feet at 0, forward +x). One tinted blit and a few stamps, only for the
+   ~0.16 s after a swap. Wall clock: the pop is cosmetic and too short for pauses to matter. */
+type SwapLook = (ctx: CanvasRenderingContext2D, h: number, p: number, toSpecial: boolean) => void;
+const SWAP_LOOKS: Record<string, SwapLook> = { pareo: drawPareoSwap };
+const SWAP_T = .16;
+const swaps = new WeakMap<Fighter, { sheet: string; at: number }>();
+function swapOf(f: Fighter, sheet: string): { p: number; look: SwapLook; toSpecial: boolean } | undefined {
+  const look = SWAP_LOOKS[f.data.id];
+  if (!look || typeof performance === 'undefined') return undefined;
+  const now = performance.now() / 1000;
+  const s = swaps.get(f);
+  if (!s) { swaps.set(f, { sheet, at: -1e9 }); return undefined; }
+  if (s.sheet !== sheet) {
+    if (sheet === 'special' || s.sheet === 'special') s.at = now;
+    s.sheet = sheet;
+  }
+  const p = (now - s.at) / SWAP_T;
+  return p < 1 ? { p: Math.max(0, p), look, toSpecial: sheet === 'special' } : undefined;
+}
+
 /* Looks up the cache every frame so a late-loaded sheet replaces the geometry fallback without rebuilding views. */
 export class SpriteView implements FighterView {
   constructor(
@@ -260,6 +284,14 @@ export class SpriteView implements FighterView {
         ctx.scale(sheetScale, sheetScale);
         ctx.translate(0, -pivot);
       }
+      const swap = pose || tint || boxed ? undefined : swapOf(f, clip.sheet);
+      if (swap) {
+        const pivot = -h * FOOT_MARGIN / CELL;
+        const e = (1 - swap.p) * (1 - swap.p);
+        ctx.translate(0, pivot);
+        ctx.scale(1 - .05 * e, 1 + .07 * e);
+        ctx.translate(0, -pivot);
+      }
       ctx.globalAlpha = alpha;
       if (outline && typeof document !== 'undefined') {
         ctx.imageSmoothingEnabled = true;
@@ -272,7 +304,11 @@ export class SpriteView implements FighterView {
       ctx.imageSmoothingQuality = bakeQuality();
       if (tint) drawTint(ctx, im, cell.sx, cell.sy, cs, h, hs, tint);
       else {
-        const baked = prescaledCell(im, cell.sx, cell.sy, cs, hs);
+        // 百变假发: PAREO's hair in another wig's colours (pareoWig.ts). Frozen ghosts keep the art as drawn.
+        const wig = pose ? undefined : wigOf(f);
+        const mask = wig != null && (clip.sheet === 'common' || clip.sheet === 'special')
+          ? this.images.get(PAREO_HAIR_MASKS[clip.sheet]) : undefined;
+        const baked = (wig != null ? wigCell(im, cell.sx, cell.sy, cs, hs, wig, mask) : undefined) ?? prescaledCell(im, cell.sx, cell.sy, cs, hs);
         ctx.drawImage(baked, ax, -h, h, h);
         // Only over a normal paint: the time-stop veil stamps her with destination-out.
         const boost = ctx.globalCompositeOperation === 'source-over' ? spriteBoost(f) : 0;
@@ -282,6 +318,13 @@ export class SpriteView implements FighterView {
             ctx.globalAlpha = alpha * Math.min(1, k);
             ctx.drawImage(baked, ax, -h, h, h);
           }
+        }
+        if (swap && ctx.globalCompositeOperation === 'source-over') {
+          ctx.globalAlpha = alpha * Math.pow(1 - swap.p, 1.6) * .92;
+          drawTint(ctx, im, cell.sx, cell.sy, cs, h, hs, '#ffffff');
+          ctx.globalAlpha = alpha;
+          swap.look(ctx, h, swap.p, swap.toSpecial);
+          ctx.globalCompositeOperation = 'source-over';
         }
       }
     } finally {

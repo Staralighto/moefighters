@@ -95,7 +95,7 @@ export const cheerThief = new WeakMap<Mod, Fighter>();
 
 export function addMod(f: Fighter, kind: ModKind, time: number, opt: Partial<Mod> & { max?: boolean; thief?: Fighter } = {}): Mod {
   const tag = opt.tag ?? '';
-  let m = f.mods.find(x => x.kind === kind && (x.tag ?? '') === tag);
+  let m = f.mods.find(x => x.kind === kind && (x.tag ?? '') === tag && (opt.from == null || x.from === opt.from));
   if (!m) {
     m = { kind, left: 0 };
     f.mods.push(m);

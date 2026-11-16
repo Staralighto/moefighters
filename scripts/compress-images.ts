@@ -59,8 +59,11 @@ await pool(files, 4, async file => {
     webpBytes += info.size;
     return;
   }
-  const info = await sharp(file).webp(near).toFile(file.slice(0, -4) + '.webp');
+  // Hair masks encode selection weights in RGB; near-lossless colour edits would leak the dye.
+  const mask = rel.endsWith('-hair-mask.png');
+  const info = await sharp(file).webp(mask ? { lossless: true, effort: 6 } : near).toFile(file.slice(0, -4) + '.webp');
   webpBytes += info.size;
+  if (mask) return;
   const meta = await sharp(file).metadata();
   if (rel.includes('/sprites/')) {
     await sharp(file).resize({ width: Math.max(1, Math.round((meta.width ?? 2) / 2)) }).webp({ quality: LITE_Q, effort: 5, alphaQuality: 80 }).toFile(file.slice(0, -4) + '-lite.webp');

@@ -16,7 +16,7 @@ export interface MoveScript {
   /** Clean-hit pose. Return 'still' to pin, true when the pose was applied. dir is the knockback sign. */
   hit?: (g: FightGame, attacker: Fighter, defender: Fighter, source: Attack | { hit: Set<number> }, dir: number) => boolean | 'still';
   /** Resolve the status list at the clean-hit gate. */
-  hitStatus?: (g: FightGame, defender: Fighter, list: StatusApply[]) => StatusApply[];
+  hitStatus?: (g: FightGame, defender: Fighter, list: StatusApply[], attacker?: Fighter) => StatusApply[];
   /** On the cast, before the attack clock starts. */
   cast?: (g: FightGame, f: Fighter) => void;
   /** This hit places the body itself, so the kernel does not add knockback. */
@@ -117,6 +117,8 @@ export interface MoveScript {
   bounce?: boolean;
   /** After integration. Return true to skip landing and touch. */
   after?: (g: FightGame, p: import('./game.ts').Projectile, dt: number) => boolean;
+  /** Graphic when the shot meets the floor (stick / drop). */
+  landFx?: string;
   /** Extra graphic when this shot connects. */
   pulse?: (g: FightGame, p: import('./game.ts').Projectile, target: Fighter) => void;
   /** Rolled once when the shot is born. 0 leaves the art as drawn (幻海). */

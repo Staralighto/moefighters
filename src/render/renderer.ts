@@ -21,12 +21,16 @@ import { TAE_BACK, TAE_SCREEN_BACK } from './taeFx.ts';
 import { SAAYA_BACK, SAAYA_SCREEN_BACK } from './saayaFx.ts';
 import { KANON_BACK, KANON_SCREEN_BACK } from './kanonFx.ts';
 import { ANON_BACK } from './anonFx.ts';
+import { UMIRI_BACK } from './umiriFx.ts';
 import { AKO_BACK, AKO_SCREEN_BACK, AKO_SCREEN_FRONT } from './akoFx.ts';
 import { RINKO_BACK, RINKO_SCREEN_BACK, RINKO_SCREEN_FRONT } from './rinkoFx.ts';
 import { RIMI_BACK } from './rimiFx.ts';
 import { HIMARI_BACK, HIMARI_SCREEN_BACK, HIMARI_SCREEN_FRONT } from './himariFx.ts';
 import { TOMOE_BACK, TOMOE_SCREEN_BACK, TOMOE_SCREEN_FRONT } from './tomoeFx.ts';
+import { HAGUMI_BACK, HAGUMI_SCREEN_BACK } from './hagumiFx.ts';
 import { drawTokoSoloLight, TOKO_BACK } from './tokoFx.ts';
+import { NANAMI_BACK } from './nanamiFx.ts';
+import { PAREO_SCREEN_FRONT } from './pareoFx.ts';
 import { CHISATO_BACK, CHISATO_SCREEN_BACK, CHISATO_SCREEN_FRONT } from './chisatoFx.ts';
 import { MIZUHO_BACK, MIZUHO_SCREEN_BACK } from './mizuhoFx.ts';
 import { BOCCHI_BACK, BOCCHI_SCREEN_BACK, drawBocchiSolo } from './bocchiFx.ts';
@@ -51,10 +55,10 @@ export function portraitBodyScale(padSplit: boolean): number {
 /** Hard 1px rim, yellow for the left team and green for the right. */
 const TEAM_GLOW = SIDE;
 /** Effects painted under every body: 和泉朋花's coffin and her spotlights. */
-const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK, ...MIZUHO_BACK, ...MIKU_BACK, ...SHIZUKU_BACK, ...CHIERI_BACK, ...YOMOGI_BACK, ...MASKING_BACK, ...TAE_BACK, ...SAAYA_BACK, ...HIMARI_BACK, ...TOMOE_BACK, ...TOKO_BACK, ...CHISATO_BACK, ...BOCCHI_BACK, ...LOCK_BACK, ...KANON_BACK, ...AKO_BACK, ...RINKO_BACK, ...RIMI_BACK, ...ANON_BACK]);
+const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK, ...MIZUHO_BACK, ...MIKU_BACK, ...SHIZUKU_BACK, ...CHIERI_BACK, ...YOMOGI_BACK, ...MASKING_BACK, ...TAE_BACK, ...SAAYA_BACK, ...HIMARI_BACK, ...TOMOE_BACK, ...HAGUMI_BACK, ...TOKO_BACK, ...NANAMI_BACK, ...CHISATO_BACK, ...BOCCHI_BACK, ...LOCK_BACK, ...KANON_BACK, ...AKO_BACK, ...RINKO_BACK, ...RIMI_BACK, ...ANON_BACK, ...UMIRI_BACK]);
 /** Screen-space layers that ignore the body zoom: behind every body, and in front of them. */
-const SCREEN_BACK = new Set(['encore-stage', 'family-dim', ...SAKIKO_SCREEN_BACK, ...MIZUHO_SCREEN_BACK, ...MIKU_SCREEN_BACK, ...YOMOGI_SCREEN_BACK, ...MASKING_SCREEN_BACK, ...TAE_SCREEN_BACK, ...SAAYA_SCREEN_BACK, ...HIMARI_SCREEN_BACK, ...TOMOE_SCREEN_BACK, ...CHISATO_SCREEN_BACK, ...BOCCHI_SCREEN_BACK, ...LOCK_SCREEN_BACK, ...KANON_SCREEN_BACK, ...AKO_SCREEN_BACK, ...RINKO_SCREEN_BACK]);
-const SCREEN_FRONT = new Set(['encore-rain', 'encore-crowd', 'encore-call', 'slap-flash', ...CHIERI_SCREEN_FRONT, ...YOMOGI_SCREEN_FRONT, ...HIMARI_SCREEN_FRONT, ...TOMOE_SCREEN_FRONT, ...CHISATO_SCREEN_FRONT, ...AKO_SCREEN_FRONT, ...RINKO_SCREEN_FRONT]);
+const SCREEN_BACK = new Set(['encore-stage', 'family-dim', ...SAKIKO_SCREEN_BACK, ...MIZUHO_SCREEN_BACK, ...MIKU_SCREEN_BACK, ...YOMOGI_SCREEN_BACK, ...MASKING_SCREEN_BACK, ...TAE_SCREEN_BACK, ...SAAYA_SCREEN_BACK, ...HIMARI_SCREEN_BACK, ...TOMOE_SCREEN_BACK, ...HAGUMI_SCREEN_BACK, ...CHISATO_SCREEN_BACK, ...BOCCHI_SCREEN_BACK, ...LOCK_SCREEN_BACK, ...KANON_SCREEN_BACK, ...AKO_SCREEN_BACK, ...RINKO_SCREEN_BACK]);
+const SCREEN_FRONT = new Set(['encore-rain', 'encore-crowd', 'encore-call', 'slap-flash', ...CHIERI_SCREEN_FRONT, ...YOMOGI_SCREEN_FRONT, ...HIMARI_SCREEN_FRONT, ...TOMOE_SCREEN_FRONT, ...CHISATO_SCREEN_FRONT, ...AKO_SCREEN_FRONT, ...RINKO_SCREEN_FRONT, ...PAREO_SCREEN_FRONT, ...PAREO_SCREEN_FRONT]);
 /** 安可是主唱的: the eye line on the 175 px body, measured up from the feet. */
 const ENCORE_EYE_Y = 152;
 

@@ -214,10 +214,10 @@ export interface Skill {
   domain?: DomainSpec;
   /** A debuff laid on the defender by a clean hit (和泉朋花: 飘了 cuts their damage, 主角 raises what
    *  they take). `v` is the multiplier on the defender: .75 deals a quarter less, 1.2 takes a fifth more. `mark`
-   *  picks the status graphic; `text` pops once when the mod is fresh. */
+   *  picks the status graphic; `text` pops once when the mod is fresh. 'look' only carries a mark (报价). */
   curse?: {
-    kind: 'dmgDealt' | 'incoming'; time: number; v: number; mark?: string; text?: string;
-    /** 珍稀动物认证: an 'incoming' curse that only the attacker who laid it collects on. */
+    kind: 'dmgDealt' | 'incoming' | 'look'; time: number; v: number; mark?: string; text?: string;
+    /** Keep the layer's id on the mod (珍稀动物认证 / 报价); incoming damage only counts for that owner. */
     own?: boolean;
     /** 珍稀动物认证: a clean hit while this curse (or its upgrade) is live from the same attacker lays
      *  the upgrade instead — one step only; the upgrade then just refreshes. */

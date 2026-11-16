@@ -18,10 +18,14 @@ import { drawSaayaFx, drawSaayaShot } from './saayaFx.ts';
 import { drawLisaFx, drawLisaShot } from './lisaFx.ts';
 import { drawHimariFx, drawHimariShot } from './himariFx.ts';
 import { drawTomoeFx } from './tomoeFx.ts';
+import { drawHagumiFx, drawHagumiShot } from './hagumiFx.ts';
 import { drawTokoFx, drawTokoShot } from './tokoFx.ts';
+import { drawNanamiFx, drawNanamiShot } from './nanamiFx.ts';
+import { drawPareoFx } from './pareoFx.ts';
 import { drawChisatoFx, drawChisatoShot } from './chisatoFx.ts';
 import { drawKanonFx, drawKanonShot } from './kanonFx.ts';
 import { drawAnonFx, drawAnonShot } from './anonFx.ts';
+import { drawUmiriFx, drawUmiriShot } from './umiriFx.ts';
 import { drawAkoFx, drawAkoShot } from './akoFx.ts';
 import { drawRinkoFx, drawRinkoShot } from './rinkoFx.ts';
 import { drawRimiFx, drawRimiShot } from './rimiFx.ts';
@@ -42,8 +46,6 @@ const HOTARU_PIANO_SRC = '/sprites/hotaru/piano.png';
 const MORTIS_SRC = '/sprites/mutsumi/mortis.png';
 const KIT_SRC = '/sprites/nyamu/kit.png';
 const PIANO_SRC = '/sprites/kanata/piano.png';
-const MILK_SRC = '/sprites/umiri/milk.png';
-const BAG_SRC = '/sprites/umiri/bag.png';
 const GUITAR_SRC = '/sprites/anon/guitar.png';
 /** Headstock on the current guitar sheet. The body is the far end, so the pivot is not the image center. */
 const GUITAR_HEAD_X = 438 / 512;
@@ -1026,8 +1028,13 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
   if (drawHimariFx(ctx, e, liteFx, images)) return;
   // 宇田川巴 too.
   if (drawTomoeFx(ctx, e, liteFx, images)) return;
+  // 北泽育美 too.
+  if (drawHagumiFx(ctx, e, liteFx, images)) return;
   // 桐谷透子 too.
   if (drawTokoFx(ctx, e, liteFx, images)) return;
+  if (drawNanamiFx(ctx, e, liteFx, images)) return;
+  // PAREO too.
+  if (drawPareoFx(ctx, e, liteFx, images)) return;
   // 白鹭千圣 too.
   if (drawChisatoFx(ctx, e, liteFx, images)) return;
   if (e.type.startsWith('mizuho-') && drawMizuhoFx(ctx, e, liteFx, mizuhoArt(images))) return;
@@ -1037,6 +1044,8 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
   if (drawKanonFx(ctx, e, liteFx, images)) return;
   // 千早爱音 too.
   if (drawAnonFx(ctx, e, liteFx)) return;
+  // 八幡海铃 too.
+  if (drawUmiriFx(ctx, e, liteFx, mizuhoArt(images))) return;
   // 宇田川亚子 too.
   if (drawAkoFx(ctx, e, liteFx, images)) return;
   // 白金燐子 too.
@@ -2323,16 +2332,6 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
         ctx.stroke();
       }
       ctx.beginPath(); ctx.ellipse(0, 28, 36 + p * 20, 8, 0, 0, Math.PI * 2); ctx.stroke();
-      break;
-    }
-    case 'ripple': {
-      ctx.translate(e.x, e.y);
-      ctx.globalAlpha *= 1 - p;
-      ctx.lineWidth = 4;
-      ctx.beginPath(); ctx.ellipse(0, 0, (e.radius ?? 300) * p, 16 + p * 10, 0, 0, Math.PI * 2); ctx.stroke();
-      ctx.strokeStyle = '#c45a6a';
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.ellipse(0, 0, (e.radius ?? 300) * p * .72, 10, 0, 0, Math.PI * 2); ctx.stroke();
       break;
     }
     case 'whale-pool': {
@@ -6213,12 +6212,15 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   if (drawLisaShot(ctx, p, liteFx, images)) return;
   if (drawHimariShot(ctx, p, liteFx)) return;
   if (drawTokoShot(ctx, p, liteFx)) return;
+  if (drawNanamiShot(ctx, p, liteFx)) return;
   if (drawChisatoShot(ctx, p, images)) return;
   if (drawKanonShot(ctx, p, liteFx, images)) return;
   if (drawAnonShot(ctx, p, liteFx)) return;
+  if (drawUmiriShot(ctx, p, liteFx, mizuhoArt(images))) return;
   if (drawAkoShot(ctx, p, liteFx, images)) return;
   if (drawRinkoShot(ctx, p, liteFx, images)) return;
   if (drawRimiShot(ctx, p, liteFx, images)) return;
+  if (drawHagumiShot(ctx, p, liteFx, images)) return;
   if (drawBocchiShot(ctx, p, liteFx)) return;
   if (p.fx.startsWith('mizuho-')) {
     const im = p.fx === 'mizuho-shiro' ? images?.get(SHIRO_SRC) : undefined;
@@ -6429,34 +6431,6 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
       ctx.beginPath(); ctx.ellipse(0, 0, w * 1.15, 12, 0, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#ffc24d';
       ctx.beginPath(); ctx.ellipse(0, 0, w * .8, 8, 0, 0, Math.PI * 2); ctx.fill();
-      break;
-    }
-    case 'milk': {
-      if (p.settled) ctx.translate(0, -p.size * .28);
-      if (!prop(ctx, images, MILK_SRC, p.size)) {
-        ctx.fillStyle = '#6b3a22';
-        ctx.fillRect(-p.radius * .7, -p.radius, p.radius * 1.4, p.radius * 1.8);
-        ctx.fillStyle = '#f2efe6';
-        ctx.fillRect(-p.radius * .45, -p.radius * .85, p.radius * .9, p.radius * .35);
-      }
-      break;
-    }
-    case 'bag': {
-      ctx.rotate(p.age * 3 * Math.sign(p.vx || 1));
-      if (!prop(ctx, images, BAG_SRC, p.size)) {
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.moveTo(-p.radius, -p.radius * .2);
-        ctx.lineTo(-p.radius * .7, p.radius);
-        ctx.lineTo(p.radius * .7, p.radius);
-        ctx.lineTo(p.radius, -p.radius * .2);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = '#151222';
-        ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(-p.radius * .25, -p.radius * .55, p.radius * .35, Math.PI, 0); ctx.stroke();
-        ctx.beginPath(); ctx.arc(p.radius * .25, -p.radius * .55, p.radius * .35, Math.PI, 0); ctx.stroke();
-      }
       break;
     }
     case 'meat': {

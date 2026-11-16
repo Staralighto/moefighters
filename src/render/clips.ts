@@ -924,6 +924,28 @@ export const TOMOE_MIKOSHI_TAIL = .45;
 export const TOMOE_HYOTTOKO_SRC = '/sprites/tomoe/hyottoko.png';
 export const TOMOE_MIKOSHI_SRC = '/sprites/tomoe/mikoshi.png';
 
+/* ---- 北泽育美 ---- */
+/** 绕商店街跑十圈: the sprinter's crouch (until Skill.start), the run there and back, done (the tail). */
+export const HAGUMI_LAPS = { set: 0, run: 1, done: 2 } as const;
+export const HAGUMI_LAPS_TAIL = .32;
+/** 挂上米歇尔！: waving 米歇尔 over (until Skill.start), on its back, hopping off, done. */
+export const HAGUMI_RIDE = { call: 0, ride: 1, hop: 2, done: 3 } as const;
+export const HAGUMI_RIDE_TIME = .75;
+export const HAGUMI_HOP = .3;
+export const HAGUMI_RIDE_TAIL = .3;
+/** 可乐饼盛情难却: `drops` hits of the rain, one every `gap` from Skill.start; a `lull`, then the giant one lands
+ *  (it is seen falling for `fall` before). */
+export const HAGUMI_FEAST = { drops: 8, gap: .18, lull: .28, fall: .4 } as const;
+export function feastTimes(s: { start: number }): { rainEnd: number; giant: number } {
+  const rainEnd = s.start + HAGUMI_FEAST.drops * HAGUMI_FEAST.gap;
+  return { rainEnd, giant: rainEnd + HAGUMI_FEAST.lull };
+}
+export const HAGUMI_CROQUETTE_SRC = '/sprites/hagumi/croquette.png';
+/** 米歇尔 is 奥泽美咲's other form: its own common sheet, the walk cells (row 0, columns 1–4). */
+export const HAGUMI_MICHELLE_SRC = '/sprites/misaki/michelle.png';
+export const HAGUMI_MICHELLE_H = 193;
+export const HAGUMI_MICHELLE_LIFT = 5;
+
 /** 这张必火: the lunge, the arm round their shoulders until the flash, the look at the phone. Shared by game/toko.ts and the cell pick. */
 export const TOKO_SELFIE = { lunge: 0, held: 1, done: 2 } as const;
 export const TOKO_SELFIE_LUNGE = .3;
@@ -943,6 +965,69 @@ export const TOKO_SOLO_FINAL = 1.7;
 export const TOKO_SOLO_TURN = 1.95;
 /** The five of Morfonica in line-up order (真白 / 透子 / 七深 / 筑紫 / 瑠唯): the colours the one spotlight splits into. */
 export const TOKO_FIVE = ['#6677CC', '#EE6666', '#EE7744', '#EE7788', '#669988'] as const;
+
+/** 广町七深. 只是普通地路过: crouching into the bush, creeping inside it (the body is hidden), the jump-out.
+ *  Shared by game/nanami.ts and the cell pick. */
+export const NANAMI_BUSH = { creep: 0, pop: 1 } as const;
+/** How long the bush may creep, and how long the jump-out holds after the scare. */
+export const NANAMI_BUSH_CREEP = .7;
+export const NANAMI_BUSH_TAIL = .45;
+export const NANAMI_BUSH_SRC = '/sprites/nanami/bush.png';
+/** 一发命中，很普通吧？: seconds after the cast's active frame that the claw starts down (NANAMI_CLAW_DROP), how long the fall
+ *  takes, how long a catch hangs in the air before the claw lets go. claw.png is two 256 cells: open, closed. */
+export const NANAMI_CLAW = { aim: 0, held: 1, done: 2 } as const;
+export const NANAMI_CLAW_DROP = .2;
+export const NANAMI_CLAW_FALL = .15;
+export const NANAMI_CLAW_HANG = .55;
+export const NANAMI_CLAW_LIFT = 92;
+export const NANAMI_CLAW_SRC = '/sprites/nanami/claw.png';
+/** 不再假装普通: the hairpin off, the canvas up, four strokes along the floor, the butterfly, and when she lowers the brush. */
+export const NANAMI_PAINT_PIN = .05;
+export const NANAMI_PAINT_CANVAS = .3;
+export const NANAMI_PAINT_STROKES = [.75, .98, 1.21, 1.44] as const;
+export const NANAMI_PAINT_FINAL = 1.85;
+export const NANAMI_PAINT_DONE = 2.15;
+/** The four she paints in (真白 / 透子 / 筑紫 / 瑠唯), and her own colour that finishes the picture. */
+export const NANAMI_FOUR = ['#6677CC', '#EE6666', '#EE7788', '#669988'] as const;
+export const NANAMI_COLOR = '#EE7744';
+/** 全是 GOOD: after the super her J / K stop pretending for this long. */
+export const NANAMI_GENIUS_TIME = 8;
+
+/** PAREO（鳰原令王那）. Shared by game/pareo.ts, render/pareoFx.ts, render/pareoWig.ts and the cell pick. */
+export const PAREO_COLOR = '#FF99BB';
+/** 忠犬追击: the run (her own walk cycle, fast), the tackle, the getting-up. */
+export const PAREO_CHASE = { run: 0, tackle: 1, done: 2 } as const;
+export const PAREO_CHASE_RUN = 1;
+export const PAREO_CHASE_TAIL = .45;
+/** 百变假发: the wigs. hair recolours the pink half of her two-tone wig, tip the light-blue half (render/pareoWig.ts).
+ *  0..4 are the five of Pastel*Palettes (彩 / 日菜 / 千圣 / 麻弥 / 伊芙); 5 is 「来不及换」 (日菜蓝 + 白, the day the 冰川
+ *  sisters walked in on her); 6 is her own black hair (灰色重染's grey opening). */
+export const PAREO_WIGS = [
+  { who: '彩', hair: '#FF7FB6', tip: '#B69BE0' },
+  { who: '日菜', hair: '#4FD3EA', tip: '#9A9FE0' },
+  { who: '千圣', hair: '#F2CF55', tip: '#D99B79' },
+  { who: '麻弥', hair: '#86C95F', tip: '#58A89B' },
+  { who: '伊芙', hair: '#C59BF0', tip: '#E6A0C2' },
+  { who: '日菜', hair: '#4FD3EA', tip: '#E5ECF5' },
+  { who: '令王那', hair: '#2B2733', tip: '#62546F' },
+] as const;
+export const PAREO_WIG_FAIL = 5;
+/** The 'look' mod tag that carries the wig index in v. */
+export const PAREO_WIG_TAG = 'pareo-wig';
+export const PAREO_WIG_BLACK = 6;
+export const PAREO_WIG_TIME = 6;
+/** How long the old wig flies off and the new colour lights up after the spin. */
+export const PAREO_WIG_POP = .4;
+/** 献身飞踢: waiting with open arms, the flying kick, the sulk when nobody came. The kick flies this long. */
+export const PAREO_KICK = { wait: 0, kick: 1, sulk: 2 } as const;
+export const PAREO_KICK_AIR = .4;
+/** 灰色重染: the beats of the super. */
+export const PAREO_GRAY = {
+  wave: .15, chu: .45, line: .8, color: 1.15, rush: 1.45, hits: [1.58, 1.76, 1.94, 2.12] as readonly number[], kick: 2.38, bow: 2.78,
+} as const;
+/** CHU² as she stands in her own view (characters.ts height 170, lift 5); her reaching cell and her pointing cell. */
+export const PAREO_CHU_SHEET = '/sprites/chuchu/special.png';
+export const PAREO_CHU_H = 170;
 
 /** 白鹭千圣. 这明明是狗: the doodle hops this many times a second along the floor, this high at the top of a hop. */
 export const CHISATO_HOPS = 2.6;
@@ -1421,6 +1506,59 @@ export function clipFor(f: Fighter): Clip {
       const a = f.attack;
       return at('special', a.index - 2, a.t < TOKO_SOLO_SKY - .2 ? 0 : a.t < TOKO_SOLO_TURN ? 1 : 2);
     }
+    // 只是普通地路过: the crouch; the jump-out (the creep itself is the bush, her body hidden); the scare held after.
+    if (f.attack.skill.fx === 'nanami-bush') {
+      const a = f.attack, mode = a.mode ?? NANAMI_BUSH.creep;
+      return at('special', a.index - 2, mode === NANAMI_BUSH.creep ? 0 : a.t < a.skill.duration - NANAMI_BUSH_TAIL * .5 ? 1 : 2);
+    }
+    // 一发命中，很普通吧？: both hands on the joystick until the claw lands; the little shake through the hang; the V after.
+    if (f.attack.skill.fx === 'nanami-claw') {
+      const a = f.attack, s = a.skill, mode = a.mode ?? NANAMI_CLAW.aim;
+      return at('special', a.index - 2, a.t < s.start ? 0 : mode === NANAMI_CLAW.done ? 2 : 1);
+    }
+    // 我说了什么奇怪的话吗？: eyes closed, the head tilting; the remark; the serene smile after.
+    if (f.attack.skill.fx === 'nanami-weird') {
+      const a = f.attack, s = a.skill;
+      return at('special', a.index - 2, a.t < s.start ? 0 : a.t < s.start + .25 ? 1 : 2);
+    }
+    // 不再假装普通: the hand at the hairpin; the brush through every stroke and the butterfly; the brush lowered.
+    if (f.attack.skill.fx === 'nanami-paint') {
+      const a = f.attack;
+      return at('special', a.index - 2, a.t < NANAMI_PAINT_STROKES[0] - .15 ? 0 : a.t < NANAMI_PAINT_DONE ? 1 : 2);
+    }
+    // 忠犬追击: the crouch; her own run cycle, fast, while she chases; the dive; sitting up happy.
+    if (f.attack.skill.fx === 'pareo-chase') {
+      const a = f.attack, mode = a.mode ?? PAREO_CHASE.run;
+      if (a.t < a.skill.start) return at('special', a.index - 2, 0);
+      if (mode === PAREO_CHASE.run) return loco(RUN_FRAMES[Math.floor(a.t * 15) % 4]);
+      return at('special', a.index - 2, mode === PAREO_CHASE.tackle && a.t < a.skill.duration - PAREO_CHASE_TAIL * .45 ? 1 : 2);
+    }
+    // 百变假发: the spin with a twin tail in hand; ta-da, hands at the new hair; the idol pose.
+    if (f.attack.skill.fx === 'pareo-wig') {
+      const a = f.attack, s = a.skill;
+      return at('special', a.index - 2, a.t < s.start ? 0 : a.t < s.start + PAREO_WIG_POP ? 1 : 2);
+    }
+    // 献身飞踢: arms open; the flying kick; the little bow (or the sulk when nobody came).
+    if (f.attack.skill.fx === 'pareo-kick') {
+      const a = f.attack, mode = a.mode ?? PAREO_KICK.wait;
+      if (mode === PAREO_KICK.kick) return at('special', a.index - 2, a.t < a.tossAt + PAREO_KICK_AIR ? 1 : 2);
+      return at('special', a.index - 2, mode === PAREO_KICK.wait ? 0 : 2);
+    }
+    // 灰色重染: head down in the grey; looking up at the hand held out to her; the rush on her own J / K cells;
+    // O's flying kick; the maid's bow.
+    if (f.attack.skill.fx === 'pareo-gray') {
+      const a = f.attack, t = a.t, G = PAREO_GRAY;
+      if (t < G.line) return at('special', a.index - 2, 0);
+      if (t < G.rush) return at('special', a.index - 2, 1);
+      if (t < G.kick) {
+        let i = 0;
+        while (i < G.hits.length && t >= G.hits[i]) i++;
+        if (i === 0) return loco(RUN_FRAMES[Math.floor(t * 18) % 4]);
+        return at('common', i % 2 ? 3 : 6, 1);
+      }
+      if (t < G.bow) return at('special', 2, 1);
+      return at('special', a.index - 2, 2);
+    }
     // 摇匀一杯摩卡: hands out on the lunge; the grip through the shaking; the brush-off after.
     if (f.attack.skill.fx === 'himari-shake') {
       const a = f.attack, mode = a.mode ?? HIMARI_SHAKE.lunge;
@@ -1452,6 +1590,26 @@ export function clipFor(f: Fighter): Clip {
       return at('special', a.index - 2, a.t < s.start ? 0 : a.t < s.start + .3 ? 1 : 2);
     }
     // 嘿哟！神轿出巡: lifting it; the charge, the rams and the uppercut; the thumbs-up.
+    // 绕商店街跑十圈: the sprinter's crouch; the run (both ways); the hands-on-hips finish.
+    if (f.attack.skill.fx === 'hagumi-laps') {
+      const a = f.attack, mode = a.mode ?? HAGUMI_LAPS.set;
+      return at('special', a.index - 2, mode === HAGUMI_LAPS.set ? 0 : mode === HAGUMI_LAPS.run ? 1 : 2);
+    }
+    // 刚出锅的快速球: the windmill wind-up; the release; the follow-through.
+    if (f.attack.skill.fx === 'hagumi-croquette') {
+      const a = f.attack, s = a.skill;
+      return at('special', a.index - 2, a.t < s.start ? 0 : a.t < s.start + .2 ? 1 : 2);
+    }
+    // 挂上米歇尔！: waving it over; on its back; arms up from the hop on.
+    if (f.attack.skill.fx === 'hagumi-michelle') {
+      const a = f.attack, mode = a.mode ?? HAGUMI_RIDE.call;
+      return at('special', a.index - 2, mode === HAGUMI_RIDE.call ? 0 : mode === HAGUMI_RIDE.ride ? 1 : 2);
+    }
+    // 可乐饼盛情难却: arms up for the call; throwing through the rain and the giant one; the Yeah! after.
+    if (f.attack.skill.fx === 'hagumi-feast') {
+      const a = f.attack, s = a.skill;
+      return at('special', a.index - 2, a.t < s.start ? 0 : a.t < feastTimes(s).giant + .1 ? 1 : 2);
+    }
     if (f.attack.skill.fx === 'tomoe-mikoshi') {
       const a = f.attack, mode = a.mode ?? TOMOE_MIKOSHI.lift;
       return at('special', a.index - 2, mode === TOMOE_MIKOSHI.lift ? 0 : mode === TOMOE_MIKOSHI.done ? 2 : 1);

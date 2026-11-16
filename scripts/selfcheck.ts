@@ -5,6 +5,7 @@ import { dreadMul } from '../src/game/combat.ts';
 import { LOCK_LIVE_END, LOCK_LIVE_BOW, heartTier, YOMOGI_BODY, FILLS, METEOR, BURROW, WARREN, CHISATO_LECTURE_SPAN, lectureSquash, kneadSquash } from '../src/render/clips.ts';
 import { drawHeartBack, drawHeartFront, drawYomogiFx } from '../src/render/yomogiFx.ts';
 import { drawTokoFx, drawTokoSoloLight } from '../src/render/tokoFx.ts';
+import { drawNanamiFx } from '../src/render/nanamiFx.ts';
 import { BUSHIDO_CREEP, BUSHIDO_LUNGE, BUSHIDO_SPAN, VEIL_NORMAL, VEIL_SHOT, clockRings, drumShotTime, escapePulse, hit, holdNoteSpan, outshines, violetHidden, withGuard } from '../src/game/combat.ts';
 import { FLIGHT_HOP, vowBeatTime, VOW_BEATS, PRACTICE_GAP1, PRACTICE_HITS, practiceBeat, practiceGap, practiceRow, practiceStrums, FAMILY_MEMBERS, familyLife, PUFF_STOP, PLAY, PLAY_BYE, PLAY_DRAW, PLAY_FIGURES, PLAY_HOUSE, PLAY_PASS, PLAY_SLASHES, RARE_TIME, EAR, WIDE, WIDE_DROPS, WIDE_POP } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
@@ -28,6 +29,7 @@ import { drawKanonFx, drawKanonShot } from '../src/render/kanonFx.ts';
 import { wanderAt } from '../src/game/kanonPath.ts';
 import { drawAkoFx, drawAkoShot } from '../src/render/akoFx.ts';
 import { drawTomoeFx } from '../src/render/tomoeFx.ts';
+import { drawHagumiFx, drawHagumiShot } from '../src/render/hagumiFx.ts';
 import { AKO_CHANT } from '../src/game/akoPath.ts';
 import { drawRinkoFx, drawRinkoShot } from '../src/render/rinkoFx.ts';
 import { drawRimiFx, drawRimiShot } from '../src/render/rimiFx.ts';
@@ -64,6 +66,8 @@ import { cycleMusicOrder, nextTrack, resolveMusicPrefs, shouldShuffleOnFight, sh
 import { migrateLinearSlider, musicGain, MUSIC_CAP } from '../src/audio/mix.ts';
 import { POOL, aggregatePicks, bestLabel, drawThree, readBest, rollEnemies, stageSetup } from '../src/ui/challenge.ts';
 import { checkSpriteGuard } from './sprite-guard.ts';
+import { PAREO_HAIR_MASKS, recolorWigPixels } from '../src/render/pareoWig.ts';
+import { PAREO_WIGS } from '../src/render/clips.ts';
 import { noteJab } from '../src/game/ai.ts';
 
 /* `npm run check` runs this file through node's type stripping: no bundler, and no @types/node to type
@@ -187,11 +191,11 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const breaksAt: Record<string, number> = {
     nyamu: 4, sakiko: 10, anon: 5, rana: 10, soyo: 3, kokoro: 3, miyako: 5,
-    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5, toko: 4, kanon: 7, ako: 9, rinko: 6, rimi: 5,
+    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5, toko: 4, nanami: 5, kanon: 7, ako: 9, rinko: 6, rimi: 5, hagumi: 6,
   };
   const segments: Record<string, number> = {
     nyamu: 4, sakiko: 16, anon: 6, rana: 22, soyo: 3, kokoro: 3, miyako: 6,
-    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7, toko: 5, kanon: 13, ako: 9, rinko: 7, rimi: 6,
+    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7, toko: 5, nanami: 5, kanon: 13, ako: 9, rinko: 7, rimi: 6, hagumi: 9,
   };
   for (const [id, breakAt] of Object.entries(breaksAt)) {
     const s = ROSTER[at(id)].skills[5];
@@ -1930,21 +1934,26 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const closeHp = c2.hp;
   close.keyDown('KeyU'); run(close, .3);
   assert.ok(c2.hp < closeHp, '报价 hits point-blank');
+  assert.ok(c2.mods.some(m => m.mark === 'umiri-quote' && m.from === c1.id && m.left > 0), 'a clean milk hit quotes its target');
+  assert.ok(close.projectiles.some(p => p.fx === 'milk' && p.settled && Math.abs(p.x - c2.x) < 80), 'a milk hit leaves one pickup near the target');
 
   const mid = newGame(umiri, at('boulder')); const [m1, m2] = mid.fighters; dummy(mid);
   m2.x = m1.x + 220; m2.facing = -1;
   const midHp = m2.hp;
   mid.keyDown('KeyU'); run(mid, 1.2);
-  assert.equal(m2.hp, midHp, '报价 flies over the middle');
+  assert.ok(m2.hp < midHp, '报价 now hits a standing middle-distance target');
   const carton = mid.projectiles.find(p => p.fx === 'milk' && p.settled);
   if (!carton) throw Error('FAIL: 报价 lands as a pickup');
   const before = m1.energy;
   m1.x = carton.x;
   mid.step(STEP);
   assert.ok(m1.energy >= before + 26, 'picking up the milk restores 26 energy');
+  const picked = m1.energy;
+  mid.step(STEP);
+  assert.ok(m1.energy - picked < 1, 'the carton only pays once');
 
   const far = newGame(umiri, at('boulder')); const [f1, f2] = far.fighters; dummy(far);
-  f2.x = f1.x + 480; f2.facing = -1;
+  f2.x = f1.x + 300; f2.facing = -1;
   const farHp = f2.hp;
   far.keyDown('KeyU'); run(far, 1.1);
   assert.ok(f2.hp < farHp, '报价 hits on the way down');
@@ -1954,6 +1963,12 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   bags.keyDown('KeyI');
   run(bags, .8);
   assert.equal(b1.combo, 6, '扫货 connects all six up close');
+  for (const distance of [160, 220, 280]) {
+    const g = newGame(umiri, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 200; p2.x = p1.x + distance; p2.facing = -1;
+    g.keyDown('KeyI'); run(g, 1.2);
+    assert.ok(p1.combo >= 3, `扫货 connects at least half its volley at ${distance}px`);
+  }
   const whiff = newGame(umiri, at('boulder')); const [w1, w2] = whiff.fighters; dummy(whiff);
   w2.x = w1.x - 200;
   whiff.keyDown('KeyI'); run(whiff, 1.6);
@@ -2025,11 +2040,64 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   let slammed = false;
   for (let i = 0; i < Math.round(1.2 / STEP); i++) {
     slam.step(STEP);
-    if (slam.effects.some(e => e.type === 'slam')) slammed = true;
+    if (slam.effects.some(e => e.type === 'umiri-crash')) slammed = true;
   }
   assert.ok(s2.hp < slamHp, '信用 deals damage');
   assert.ok(s2.x < s1.x, '信用 slams the other way');
   assert.ok(slammed, '信用 plays the impact');
+
+  // Quotes refresh per owner; only that owner's successful credit consumes them.
+  const quotedDamage = (mode: 'none' | 'own' | 'other' | 'expired') => {
+    const g = newGame(umiri, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 60; p2.facing = -1;
+    if (mode !== 'none') {
+      hit(g, p1, p2, data.skills[2], { hit: new Set() });
+      const tag = p2.mods.find(m => m.mark === 'umiri-quote')!;
+      if (mode === 'other') tag.from = p1.id + 10;
+      run(g, mode === 'expired' ? 4.2 : 1.4);
+    }
+    p1.x = 300; p2.x = 500; p1.facing = 1; p2.facing = -1;
+    p1.energy = p1.energyMax;
+    const hp = p2.hp;
+    g.keyDown('KeyL'); run(g, 1.2);
+    assert.ok(p2.x < p1.x && p2.hp < hp, 'faster credit reaches a target 200px away');
+    const quote = p2.mods.find(m => m.mark === 'umiri-quote');
+    if (mode === 'own') assert.ok(!quote || quote.left <= 0, 'credit consumes its own quote');
+    if (mode === 'other') assert.ok(quote && quote.left > 0, 'credit leaves another owner\'s quote intact');
+    return hp - p2.hp;
+  };
+  const baseCredit = quotedDamage('none');
+  assert.ok(Math.abs(quotedDamage('own') - baseCredit * 1.2) < .001, 'fulfilment increases credit damage by exactly 20%');
+  assert.equal(quotedDamage('other'), baseCredit, 'other owners cannot collect the bonus');
+  assert.equal(quotedDamage('expired'), baseCredit, 'expired quotes do not strengthen credit');
+
+  const tags = newGame(umiri, at('boulder')); const [t1, t2] = tags.fighters; dummy(tags);
+  const quoteHit = () => hit(tags, t1, t2, data.skills[2], { hit: new Set() });
+  quoteHit(); run(tags, .5); quoteHit();
+  const ownTags = () => t2.mods.filter(m => m.mark === 'umiri-quote' && m.from === t1.id && m.left > 0);
+  assert.equal(ownTags().length, 1, 'repeated quotes never stack');
+  assert.equal(ownTags()[0].left, 4, 'a fresh hit refreshes the quote to four seconds');
+  assert.equal(incomingMul(t2, t1.id), 1, 'quote does not strengthen ordinary damage');
+  addMod(t2, 'look', 4, { tag: 'curse:umiri-quote', mark: 'umiri-quote', from: 99 });
+  assert.equal(t2.mods.filter(m => m.mark === 'umiri-quote' && m.left > 0).length, 2, 'two owners keep separate quotes');
+
+  for (const parry of [false, true]) {
+    const g = newGame(umiri, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p2.x = p1.x + 60; p2.facing = -1; p2.blocking = true;
+    if (parry) p2.parry = .12;
+    hit(g, p1, p2, data.skills[2], { hit: new Set() });
+    assert.ok(!p2.mods.some(m => m.mark === 'umiri-quote'), 'normal and perfect blocks both reject quotes');
+  }
+
+  const replace = newGame(umiri, at('boulder')); const [q1, q2] = replace.fighters; dummy(replace);
+  q1.x = 200; q2.x = 850;
+  replace.keyDown('KeyU'); run(replace, .8); replace.keyUp('KeyU');
+  const oldMilk = replace.projectiles.find(p => p.fx === 'milk');
+  assert.ok(oldMilk?.settled, 'a missed low throw still lands as a pickup');
+  q1.cooldowns[2] = 0;
+  replace.keyDown('KeyU'); run(replace, .2);
+  assert.equal(replace.projectiles.filter(p => p.fx === 'milk').length, 1, 'rethrow keeps only one carton');
+  assert.ok(!replace.projectiles.includes(oldMilk!), 'rethrow replaces the old carton');
 }
 
 // anon: long dash, tap vs held chord, homing, root broken by two hits, spin hits behind without an early launch
@@ -10058,6 +10126,155 @@ for (const order of [[2, 3], [3, 2]]) {
   }
 }
 
+// hagumi: 北泽育美。U sprints to the wall and back, through a body each way (霸体, ground only); I pitches a hot
+// croquette that 烧焦s, and a miss lies on the floor for her to eat (HP + 气); O rides 米歇尔 and runs them over
+// (knocked down, ground only); L rains croquettes on a patch (eight hits) and buries them under a giant one.
+{
+  const hg = at('hagumi');
+  const data = ROSTER[hg];
+  assert.ok(hg === at('kokoro') + 1 && hg === at('kanon') - 1, '北泽育美 sits with HHW, between 心 and 花音');
+  assert.equal(data.trait, 'rush', 'she runs');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/hagumi/croquette.png') && data.view.extras.includes('/sprites/misaki/michelle.png'), 'the croquette and 米歇尔 are preloaded pictures');
+  assert.ok(data.skills[2].superArmor && data.skills[4].superArmor && data.skills[5].superArmor, 'U, O and L wear 霸体');
+  assert.equal(data.skills[5].cost, 180, '可乐饼盛情难却 costs 180');
+  const fresh = (p2x = 520) => {
+    const g = newGame(hg, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  // U: there and back, a hit each way, home again
+  {
+    const { g, p1, p2 } = fresh(520);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    let hits = 0, last = p2.hp;
+    for (let i = 0; i < 300; i++) { g.step(STEP); if (p2.hp < last - .5) hits++; last = p2.hp; }
+    assert.ok(hits >= 2 && hp - p2.hp > 35, 'the run hits on the way out and on the way back: ' + hits + ', ' + (hp - p2.hp).toFixed(1));
+    assert.ok(Math.abs(p1.x - 300) < 90, 'she comes back to where she set off: ' + p1.x.toFixed(0));
+    assert.equal(p1.attack, null, 'the run is over');
+  }
+  {
+    const { g, p1, p2 } = fresh(520);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    for (let i = 0; i < 300; i++) { p2.y = FLOOR - 160; p2.vy = 0; g.step(STEP); }
+    assert.equal(hp, p2.hp, 'a body in the air is not run through');
+  }
+  // I: a hit 烧焦s; a miss lies on the floor and she eats it
+  {
+    const { g, p1, p2 } = fresh(560);
+    g.attack(p1, 3);
+    let burnt = false;
+    for (let i = 0; i < 180; i++) { g.step(STEP); if (hasStatus(p2, 'burn')) burnt = true; }
+    assert.ok(burnt, 'the croquette 烧焦s');
+  }
+  {
+    const { g, p1, p2 } = fresh(120);
+    g.attack(p1, 3);
+    run(g, 1.4);
+    const lying = g.projectiles.find(p => p.fx === 'hagumi-croquette' && p.settled);
+    assert.ok(lying, 'a miss lies on the floor');
+    assert.ok(lying!.x > 700, 'about two thirds of the stage away: ' + lying!.x.toFixed(0));
+    p1.hp = 500;
+    const energy = p1.energy;
+    p1.x = lying!.x;
+    run(g, .1);
+    assert.ok(p1.hp >= 529 && p1.energy >= energy + 9, 'eating it gives HP and 气: ' + p1.hp + ', ' + p1.energy);
+    assert.ok(!g.projectiles.some(p => p.fx === 'hagumi-croquette' && p.life > 0), 'and it is gone');
+    void p2;
+  }
+  // O: 米歇尔 carries her into them, knocked down; she lands again
+  {
+    const { g, p1, p2 } = fresh(560);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    let down = false, high = 0, bear = false;
+    for (let i = 0; i < 300; i++) {
+      g.step(STEP);
+      if (p2.knocked > 0) down = true;
+      high = Math.max(high, FLOOR - p1.y);
+      if (g.effects.some(e => e.type === 'hagumi-michelle')) bear = true;
+    }
+    assert.ok(bear, '米歇尔 shows up');
+    assert.ok(down && hp - p2.hp > 30, 'the charge knocks them down: ' + (hp - p2.hp).toFixed(1));
+    assert.ok(high > 50, 'she rides up on its back: ' + high.toFixed(0));
+    assert.equal(p1.y, FLOOR, 'and hops down to the floor');
+  }
+  // L: eight drops and the giant one; walking out of the patch dodges it
+  {
+    const { g, p1, p2 } = fresh(560);
+    p1.energy = p1.energyMax;
+    const hp = p2.hp;
+    assert.equal(p1.energy, 180, 'the meter caps at 180');
+    assert.equal(g.attack(p1, 5), true, '180 气 casts 可乐饼盛情难却');
+    let down = false, pile = false, hits = 0, last = p2.hp;
+    for (let i = 0; i < 480; i++) {
+      g.step(STEP);
+      if (p2.hp < last - .5) hits++;
+      last = p2.hp;
+      if (p2.knocked > 0) down = true;
+      if (g.effects.some(e => e.type === 'hagumi-pile')) pile = true;
+    }
+    assert.ok(hits >= 9 && down && pile && hp - p2.hp > 150, 'the rain and the giant one land and bury them: ' + hits + ', ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(560);
+    p1.energy = p1.energyMax;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    run(g, .6);
+    for (let i = 0; i < 480; i++) { p2.x = 900; g.step(STEP); }
+    assert.equal(hp, p2.hp, 'out of the patch, nothing lands');
+  }
+  // Every picture draws and restores the canvas, and every effect her moves spawn is one of hers.
+  {
+    let depth = 0;
+    const methods = new Map<string, (...args: unknown[]) => unknown>();
+    const ctx = new Proxy({ globalAlpha: 1 } as Record<string, unknown>, {
+      get(o, key: string) {
+        if (key in o) return o[key];
+        if (!methods.has(key)) methods.set(key, (...args: unknown[]) => {
+          for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value), `Hagumi ${key} stays finite`);
+          if (key === 'save') depth++;
+          if (key === 'restore') depth--;
+          if (key === 'arc') assert.ok(Number(args[2]) >= 0, 'Hagumi arc radius');
+          if (key === 'ellipse') assert.ok(Number(args[2]) >= 0 && Number(args[3]) >= 0, 'Hagumi ellipse radii');
+          if (key === 'createLinearGradient' || key === 'createRadialGradient') return { addColorStop() {} };
+        });
+        return methods.get(key);
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    const seen = new Set<string>();
+    for (const [slot, x] of [[2, 520], [3, 560], [3, 120], [4, 560], [5, 560]] as const) {
+      const { g, p1 } = fresh(x);
+      p1.energy = p1.energyMax;
+      g.attack(p1, slot);
+      for (let i = 0; i < 480; i++) {
+        g.step(STEP);
+        if (i === 200 && slot === 3 && x === 120) { const c = g.projectiles.find(p => p.settled); if (c) p1.x = c.x; }
+        for (const e of g.effects) if (e.type.startsWith('hagumi-') && !e.type.endsWith('@expire')) seen.add(e.type);
+      }
+    }
+    for (const type of ['kick', 'crow', 'speed', 'dust', 'skid', 'bump', 'pitch', 'crumbs', 'plop', 'munch', 'call', 'michelle', 'hop', 'sweat', 'michelle-off', 'shop', 'rain', 'bonk', 'giant', 'thud', 'pile']) {
+      assert.ok(seen.has('hagumi-' + type), 'her moves spawn hagumi-' + type);
+    }
+    for (const lite of [false, true]) for (const dir of [-1, 1]) for (const type of seen) {
+      for (let i = 0; i <= 24; i++) {
+        const e = { type, x: 450, y: FLOOR, color: '#FF9922', max: 1.3, life: 1.3 - i * 1.3 / 24, age: i * .05, radius: 165, dir, n: i % 3, hit: i % 2 === 0, t0: .4 };
+        assert.ok(drawHagumiFx(ctx, e, lite), `Hagumi draws ${type}`);
+        assert.equal(depth, 0, 'Hagumi restores the canvas after ' + type);
+      }
+    }
+    const { g } = fresh(560);
+    for (const settled of [false, true]) for (let i = 0; i <= 12; i++) {
+      const p = { owner: 0, x: 400, y: settled ? FLOOR - 8 : 360, vx: settled ? 0 : 820, vy: 0, life: 4 - i * .33, age: i * .1, skill: ROSTER[hg].skills[3], color: '#ffc75a', radius: 14, size: 44, fx: 'hagumi-croquette', attack: null as never, hit: new Set<number>(), trail: [{ x: 380, y: 360 }, { x: 390, y: 360 }], settled, face: 1 as const };
+      assert.ok(drawHagumiShot(ctx, p, i % 2 === 0), 'Hagumi draws the croquette');
+      assert.equal(depth, 0, 'Hagumi restores the canvas after the croquette');
+    }
+    void g;
+  }
+}
+
 // Stage light must add energy at crossings, and illuminate only the casting fighter's silhouette.
 {
   const modes: string[] = [];
@@ -10219,6 +10436,197 @@ for (const order of [[2, 3], [3, 2]]) {
   assert.ok(plain.down && plain.dmg > 90, 'all five beats land and knock down: ' + plain.dmg.toFixed(1));
   assert.ok(hop.down && hop.dmg < plain.dmg - 15, 'a jump clears waves, not the sky or the five: ' + hop.dmg.toFixed(1) + ' / ' + plain.dmg.toFixed(1));
   assert.ok(held.broke && held.down && held.dmg < plain.dmg, 'a held guard breaks on the last wave and the five land: ' + held.dmg.toFixed(1));
+}
+
+// nanami: 广町七深。U creeps in a bush and jumps out: 定身 in the 'nanami-fright' look, through a guard, ground only; I drops
+// a crane claw on the shadow — whoever is still on it is lifted and dropped (knocked down), walking off dodges; O is a slow
+// string of bubbles — 混乱 in the 'nanami-weird' look, a guard stops it; L is four floor strokes a jump clears and the
+// butterfly that knocks down, on a guard plan that breaks at the fourth stroke; after it, J / K hit harder (全是 GOOD).
+{
+  const ni = at('nanami');
+  const data = ROSTER[ni];
+  assert.ok(ni === at('toko') + 1 && ni === at('tsukushi') - 1, '广町七深 sits with Morfonica, between 透子 and 筑紫');
+  assert.equal(data.trait, 'focus', 'a steady genius');
+  assert.ok(data.genius, 'the official site writes her as a genius');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/nanami/bush.png') && data.view.extras.includes('/sprites/nanami/claw.png'), 'the bush and the claw are preloaded pictures');
+  for (const m of ['nanami-weird', 'nanami-fright', 'nanami-genius']) assert.ok(!!STATUS_MARKS[m], m + ' look is registered');
+  const fresh = (p2x = 520) => {
+    const g = newGame(ni, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  const live = (f: { mods: { kind: string; left: number; mark?: string }[] }, kind: string, mark?: string) =>
+    f.mods.some(m => m.kind === kind && m.left > 0 && (mark == null || m.mark === mark));
+  // U: the bush creeps up and the scare roots them, guard or not; a body in the air is not scared
+  for (const guard of [false, true]) {
+    const { g, p1, p2 } = fresh(470);
+    if (guard) { g.keyDown('ArrowDown'); run(g, .1); }
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    let rooted = false, bush = false, hidden = false;
+    for (let i = 0; i < 220; i++) {
+      g.step(STEP);
+      if (p2.root > 0 && p2.rootMark === 'nanami-fright') rooted = true;
+      if (g.effects.some(e => e.type === 'nanami-bush' && e.life > .3)) bush = true;
+    }
+    void hidden;
+    assert.ok(bush, 'the bush shows up');
+    assert.ok(rooted && hp - p2.hp > 8, 'the jump-out scares them stiff' + (guard ? ' through a guard' : '') + ': ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(470);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    for (let i = 0; i < 220; i++) { p2.y = FLOOR - 150; p2.vy = 0; g.step(STEP); }
+    assert.equal(p2.hp, hp, 'nobody in the air is scared');
+  }
+  // I: the claw lifts and drops; stepping off the shadow dodges it
+  {
+    const { g, p1, p2 } = fresh(640);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    let lift = 0, down = false, claw = false;
+    for (let i = 0; i < 300; i++) {
+      g.step(STEP);
+      lift = Math.max(lift, FLOOR - p2.y);
+      if (p2.knocked > 0) down = true;
+      if (g.effects.some(e => e.type === 'nanami-claw')) claw = true;
+    }
+    assert.ok(claw, 'the claw comes down');
+    assert.ok(lift > 60, 'they are lifted: ' + lift.toFixed(0));
+    assert.ok(down && hp - p2.hp > 25, 'and dropped: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(640);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    run(g, .4);
+    for (let i = 0; i < 260; i++) { p2.x = 860; g.step(STEP); }
+    assert.equal(p2.hp, hp, 'off the shadow, the claw closes on air');
+  }
+  // O: the bubbles 混乱; a guard stops them
+  {
+    const { g, p1, p2 } = fresh(560);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    let muddled = false;
+    for (let i = 0; i < 300; i++) { g.step(STEP); if (live(p2, 'confuse', 'nanami-weird')) muddled = true; }
+    assert.ok(muddled && hp > p2.hp, 'the remark muddles them');
+  }
+  {
+    const { g, p1, p2 } = fresh(560);
+    g.keyDown('ArrowDown'); run(g, .1);
+    g.attack(p1, 4);
+    let longest = 0;
+    for (let i = 0; i < 300; i++) {
+      g.step(STEP);
+      const m = p2.mods.find(x => x.kind === 'confuse' && x.left > 0);
+      if (m) longest = Math.max(longest, m.left);
+    }
+    assert.ok(longest > .5 && longest <= 1.01, 'a guard only halves the remark: ' + longest.toFixed(2));
+  }
+  // 藏不住了: U, I and O each let one layer slip, three at most
+  const tells = (f: { mods: { kind: string; left: number; tag?: string; v?: number }[] }) =>
+    f.mods.find(m => m.kind === 'look' && m.tag === 'nanami-tell' && m.left > 0)?.v ?? 0;
+  {
+    const { g, p1, p2 } = fresh(470);
+    g.attack(p1, 2);
+    for (let i = 0; i < 220; i++) g.step(STEP);
+    assert.equal(tells(p1), 1, 'a scare lets one layer slip');
+    p1.cooldowns.fill(0); p2.x = 640; p2.root = 0;
+    g.attack(p1, 3);
+    for (let i = 0; i < 300; i++) g.step(STEP);
+    assert.equal(tells(p1), 2, 'a catch lets another slip');
+    p1.cooldowns.fill(0); p1.x = 300; p2.x = 560; p2.knocked = 0;
+    run(g, .8);
+    g.attack(p1, 4);
+    for (let i = 0; i < 300; i++) g.step(STEP);
+    assert.equal(tells(p1), 3, 'the remark lets the third slip');
+    for (const m of [1, 2, 3]) assert.ok(!!STATUS_MARKS['nanami-tell' + m], 'nanami-tell' + m + ' look is registered');
+  }
+  // U: the bush eats three pokes — she stays in the move, and on the third jumps out on the spot; out of it, no armour left
+  {
+    const { g, p1, p2 } = fresh(800);
+    g.attack(p1, 2);
+    run(g, .25);
+    const jab = ROSTER[at('boulder')].skills[0];
+    for (let k = 0; k < 3; k++) {
+      assert.ok(!!p1.attack && (p1.attack.mode ?? 0) === 0, 'still creeping before poke ' + (k + 1));
+      p2.x = p1.x + (k < 2 ? 140 : 80);
+      hit(g, p2, p1, jab, { hit: new Set<number>() });
+      run(g, .1);
+    }
+    assert.ok(!!p1.attack && p1.attack.mode === 1, 'the third poke pops the bush instead of cutting the move');
+    assert.equal(p1.attack!.endure, 0, 'out of the bush the armour is gone');
+    let rooted = false;
+    for (let i = 0; i < 60; i++) { g.step(STEP); if (p2.root > 0) rooted = true; }
+    assert.ok(rooted, 'and the one who poked is scared stiff');
+  }
+  // L: armour only until the first stroke; the butterfly scales with the layers spent
+  const ult = (mode: 'stand' | 'jump' | 'block', layers: number) => {
+    const { g, p1, p2 } = fresh();
+    if (mode === 'block') { g.keyDown('ArrowDown'); run(g, .1); }
+    p1.energy = 130;
+    if (layers) p1.mods.push({ kind: 'look', left: 999, tag: 'nanami-tell', v: layers, mark: 'nanami-tell' + layers });
+    const hp = p2.hp;
+    assert.equal(g.attack(p1, 5), true, '130 气 casts 不再假装普通');
+    let down = false, broke = false, endure = 1;
+    for (let i = 0; i < 420; i++) {
+      // Held up through the four strokes (as if jumping over each), still in the air when the butterfly comes.
+      const at = p1.attack?.t ?? 0;
+      if (mode === 'jump' && at > .6 && at < 2) { p2.y = FLOOR - 150; p2.vy = 0; }
+      g.step(STEP);
+      if (p1.attack && p1.attack.t > .8) endure = Math.min(endure, p1.attack.endure);
+      if (p2.knocked > 0) down = true;
+      if (p2.guardBroken > 0) broke = true;
+    }
+    return { g, p1, dmg: hp - p2.hp, down, broke, endure, tell: tells(p1) };
+  };
+  const plain = ult('stand', 0), full = ult('stand', 3);
+  assert.ok(plain.down && plain.dmg > 50 && plain.dmg < 90, 'bare: four strokes and a small butterfly: ' + plain.dmg.toFixed(1));
+  assert.ok(full.down && full.dmg > plain.dmg + 40, 'three layers grow the butterfly: ' + full.dmg.toFixed(1));
+  assert.equal(full.tell, 0, 'the super spends the layers');
+  assert.equal(plain.endure, 0, 'the armour is gone from the first stroke');
+  assert.ok(ult('jump', 0).dmg < 1, 'bare: a jump clears the strokes and the butterfly');
+  assert.ok(ult('jump', 3).dmg > 50, 'full: the butterfly reaches the air');
+  const heldBare = ult('block', 0), heldFull = ult('block', 3);
+  assert.ok(!heldBare.broke && !heldBare.down, 'bare: a held guard takes all of it');
+  assert.ok(heldFull.down, 'full: the butterfly goes through a guard');
+  assert.ok(!plain.p1.mods.some(m => m.kind === 'look' && m.tag === 'nanami-genius' && m.left > 0), 'bare: no 全是 GOOD');
+  assert.ok(full.p1.mods.some(m => m.kind === 'look' && m.tag === 'nanami-genius' && m.left > 0), 'full: she stops pretending after it');
+  // 全是 GOOD: J hits harder while it holds
+  const jab = (genius: boolean) => {
+    const { g, p1, p2 } = fresh(380);
+    if (genius) p1.mods.push({ kind: 'look', left: 8, tag: 'nanami-genius', mark: 'nanami-genius' });
+    const hp = p2.hp;
+    g.attack(p1, 0);
+    run(g, .35);
+    return hp - p2.hp;
+  };
+  const j0 = jab(false), j1 = jab(true);
+  assert.ok(j0 > 0 && j1 > j0 * 1.1, 'a genius J hits harder: ' + j0.toFixed(1) + ' → ' + j1.toFixed(1));
+  // Every picture draws and restores the canvas.
+  {
+    let depth = 0;
+    const ctx = new Proxy({ globalAlpha: 1 } as Record<string, unknown>, {
+      get(o, key: string) {
+        if (key in o) return o[key];
+        if (key === 'save') return () => { depth++; };
+        if (key === 'restore') return () => { depth--; };
+        if (key === 'createLinearGradient' || key === 'createRadialGradient') return () => ({ addColorStop() {} });
+        if (key === 'getTransform') return () => ({});
+        return () => undefined;
+      },
+      set(o, key: string, v) { o[key] = v; return true; },
+    }) as unknown as CanvasRenderingContext2D;
+    const types = ['nanami-jk', 'nanami-bush', 'nanami-leaves', 'nanami-mark', 'nanami-claw', 'nanami-pin', 'nanami-canvas', 'nanami-stroke', 'nanami-butterfly'];
+    for (const type of types) for (const n of [0, 1, 2, 3]) for (const life of [1.9, 1.2, .6, .1]) {
+      assert.ok(drawNanamiFx(ctx, { type, x: 300, y: FLOOR, color: '#EE7744', max: 2, life, dir: 1, n, t0: .45, radius: 174 }), type + ' draws');
+      assert.equal(depth, 0, type + ' restores the canvas');
+    }
+    assert.ok(!drawNanamiFx(ctx, { type: 'nanami-nope', x: 0, y: 0, color: '#fff', max: 1, life: 1 }), 'an unknown key falls through');
+    assert.equal(depth, 0, 'the fall-through restores too');
+  }
 }
 
 // chisato: 白鹭千圣。U draws 珍妮弗, who hops along the floor and bites: 混乱 in the 'chisato-doodle' look, a jump clears
@@ -10518,7 +10926,7 @@ for (const order of [[2, 3], [3, 2]]) {
 {
   const ka = at('kanon');
   const data = ROSTER[ka];
-  assert.ok(ka === at('kokoro') + 1 && ka === at('misaki') - 1, '松原花音 sits with HHW, between 心 and 美咲');
+  assert.ok(ka === at('hagumi') + 1 && ka === at('misaki') - 1, '松原花音 sits with HHW, between 育美 and 美咲');
   assert.equal(data.title, '鼓手 / 迷宫水母', 'title from 迷宫水母');
   assert.equal(data.trait, 'beat', 'the drummer keeps the beat');
   assert.ok(data.view.kind === 'sprite' && data.view.height === 187 && data.view.extras?.includes('/sprites/kanon/jellyfish.png'), 'the jellyfish is her one prop picture');
@@ -11076,6 +11484,119 @@ for (const order of [[2, 3], [3, 2]]) {
       assert.equal(depth, 0, 'Rimi marks restore the canvas');
     }
   }
+}
+
+
+// pareo: PAREO。U chases where the foe is now and dives (knockdown), a jump lets her run under; I puts on a
+// Pastel*Palettes wig (a 'look' tagged pareo-wig with that member's buff; 丸山彩 always gets 彩粉), a hit in the spin
+// leaves 日菜蓝 + 白 with no buff; O takes a melee hit for half, banks twice that as 气 and flying-kicks back (knockdown);
+// L greys the world, the wave holds a floor body, the rush and the kick land; a jump over the wave skips it all.
+{
+  const pi = at('pareo');
+  const data = ROSTER[pi];
+  assert.ok(pi === at('lock') + 1, 'PAREO sits with RAISE A SUILEN, after LOCK');
+  assert.equal(data.trait, 'rush', 'faster than anyone, platform shoes and all');
+  assert.equal(data.skills[5].cost, 150, '灰色重染 costs 150');
+  for (const mask of Object.values(PAREO_HAIR_MASKS)) {
+    assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes(mask), 'PAREO hair masks preload with the fighter');
+  }
+  // The same source colour must dye differently by region, while skin, alpha and outlines stay intact.
+  for (let wig = 0; wig < PAREO_WIGS.length; wig++) {
+    const original = new Uint8ClampedArray([184, 184, 184, 255, 184, 184, 184, 150, 255, 160, 195, 255, 10, 8, 12, 255]);
+    const pixels = original.slice();
+    recolorWigPixels(pixels, new Uint8ClampedArray([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 0, 255, 255, 0, 0, 255]), wig);
+    assert.ok(pixels.slice(0, 3).some((v, c) => v !== pixels[c + 4]), 'each wig maps the two hair regions to distinct colours');
+    assert.deepEqual(pixels.slice(8), original.slice(8), 'unmarked pixels and dark outlines are untouched');
+    assert.equal(pixels[7], 150, 'dye preserves antialiased alpha');
+  }
+  {
+    const pixels = new Uint8ClampedArray([184, 184, 184, 255]);
+    recolorWigPixels(pixels, new Uint8ClampedArray([64, 64, 0, 255]), 5);
+    assert.ok(pixels[0] > 92 && pixels[2] > pixels[0], 'filtered region boundaries blend with the original');
+  }
+  for (const m of ['pareo-wig', 'pareo-wig-fail']) assert.ok(!!STATUS_MARKS[m], m + ' look is registered');
+  const fresh = (p2x = 520, foe = at('boulder')) => {
+    const g = newGame(pi, foe); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  const wig = (f: { mods: { kind: string; left: number; tag?: string; v?: number }[] }) =>
+    f.mods.find(m => m.kind === 'look' && m.tag === 'pareo-wig' && m.left > 0)?.v;
+  // U: the foe walks off after the cast and is still caught; a body held in the air is run under
+  {
+    const { g, p1, p2 } = fresh(560);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    let down = false, ears = 0;
+    for (let i = 0; i < 160; i++) {
+      if (i < 30) p2.x += 2.5;
+      g.step(STEP);
+      if (p2.knocked > 0) down = true;
+      if (g.effects.some(e => e.type === 'pareo-ears' && e.life > .2)) ears++;
+    }
+    assert.ok(ears * STEP > .3, 'the dog ears stay up for the run: ' + (ears * STEP).toFixed(2) + 's');
+    assert.ok(down && hp - p2.hp > 15, 'the chase catches a foe on the move: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(520);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    for (let i = 0; i < 160; i++) { p2.y = FLOOR - 150; p2.vy = 0; g.step(STEP); }
+    assert.equal(p2.hp, hp, 'a jump lets her run under');
+  }
+  // I: a wig with its buff; 丸山彩 across the stage means 彩粉; a hit in the spin leaves the half-done wig
+  {
+    const { g, p1 } = fresh(800, at('aya'));
+    g.attack(p1, 3);
+    run(g, .6);
+    assert.equal(wig(p1), 0, 'for 丸山彩 the wig is 彩粉');
+    assert.ok(p1.mods.some(m => m.kind === 'regen' && m.left > 0), '彩粉 heals');
+  }
+  {
+    const { g, p1, p2 } = fresh(370);
+    g.attack(p1, 3);
+    run(g, .05);
+    p2.facing = -1;
+    g.attack(p2, 0);
+    run(g, .6);
+    assert.equal(wig(p1), 5, 'hit mid-spin: 日菜蓝 + 白');
+    assert.ok(!p1.mods.some(m => m.tag === 'pareo-wig' && m.kind !== 'look' && m.left > 0), 'and no buff');
+  }
+  // O: a melee swing into open arms costs half, pays twice that in 气, and earns the flying kick
+  {
+    const { g, p1, p2 } = fresh(400);
+    p1.energy = 0;
+    g.attack(p1, 4);
+    run(g, .1);
+    const hp1 = p1.hp, hp2 = p2.hp;
+    g.attack(p2, 1);
+    let down = false;
+    for (let i = 0; i < 150; i++) { g.step(STEP); if (p2.knocked > 0) down = true; }
+    const taken = hp1 - p1.hp;
+    assert.ok(taken > 0 && taken < 40, 'she takes half the kick: ' + taken.toFixed(1));
+    assert.ok(p1.energy >= taken * 2 - 1, 'and banks twice that: ' + p1.energy.toFixed(1));
+    assert.ok(down && hp2 > p2.hp, 'then kicks them down');
+  }
+  // L: grey, held, rushed, kicked; a jump over the wave skips the rest
+  const ult = (jump: boolean) => {
+    const { g, p1, p2 } = fresh(520);
+    p1.energy = 150;
+    const hp = p2.hp;
+    assert.equal(g.attack(p1, 5), true, '150 气 casts 灰色重染');
+    let down = false, gray = false, chu = false;
+    for (let i = 0; i < 420; i++) {
+      if (jump && (p1.attack?.t ?? 1) < .5) { p2.y = FLOOR - 150; p2.vy = 0; }
+      g.step(STEP);
+      if (p2.knocked > 0) down = true;
+      if (g.effects.some(e => e.type === 'pareo-gray')) gray = true;
+      if (g.effects.some(e => e.type === 'pareo-chu')) chu = true;
+    }
+    return { dmg: hp - p2.hp, down, gray, chu };
+  };
+  const plain = ult(false), hop = ult(true);
+  assert.ok(plain.gray && plain.chu, 'the world goes grey and CHU² shows up');
+  assert.ok(plain.down && plain.dmg > 90, 'the rush and the kick land: ' + plain.dmg.toFixed(1));
+  assert.ok(hop.dmg < 1, 'over the wave, nothing lands: ' + hop.dmg.toFixed(1));
 }
 
 console.log('selfcheck ok');

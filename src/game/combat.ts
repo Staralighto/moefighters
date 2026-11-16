@@ -16,7 +16,10 @@ import './saaya.ts';
 import './lisa.ts';
 import './himari.ts';
 import './tomoe.ts';
+import './hagumi.ts';
 import './toko.ts';
+import './nanami.ts';
+import './pareo.ts';
 import './chisato.ts';
 import './mizuho.ts';
 import './bocchi.ts';
@@ -26,6 +29,7 @@ import './anon.ts';
 import './ako.ts';
 import './rinko.ts';
 import './rimi.ts';
+import './umiri.ts';
 import { RINKO_TENT } from './rinkoPath.ts';
 import { applyStatus, applyStatusBlocked, extendStatus, isRecruit, statusMask } from './status.ts';
 
@@ -724,7 +728,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       // 异常: data on the skill, the same clean-hit gate as 减速 and 定身. A freeze holds the body
       // still and takes the place of the hit's own pose.
       const status = skill.status;
-      const froze = status?.length && applyStatus(g, attacker, defender, skill, SCRIPTS[skill.fx]?.hitStatus?.(g, defender, status) ?? status);
+      const froze = status?.length && applyStatus(g, attacker, defender, skill, SCRIPTS[skill.fx]?.hitStatus?.(g, defender, status, attacker) ?? status);
       if (froze) {
         defender.stun = hitStun(.25);
         holdStill = true;
@@ -955,17 +959,13 @@ export function applyMelee(g: FightGame, f: Fighter, a: Attack): void {
   }
 }
 
-/* Thrown arcs. vx/vy are the release, then GRAVITY. Numbers picked so 报价
-   clears a standing body in the middle and comes down again before it lands.
+/* Thrown arcs. vx/vy are the release, then GRAVITY. Low arcs keep the milk
+   and the two bag groups within standing-body height at close and middle range.
    ponytail: fixed table, not a physics solver. Retune the pairs if the zones drift. */
-const MILK_ARC = { vx: 560, vy: -640 };
+const MILK_ARC = { vx: 560, vy: -220 };
 const BAG_ARCS = [
-  { vx: 280, vy: -760 },
-  { vx: 420, vy: -680 },
-  { vx: 560, vy: -600 },
-  { vx: 700, vy: -520 },
-  { vx: 360, vy: -820 },
-  { vx: 640, vy: -560 },
+  { vx: 420, vy: -180 },
+  { vx: 560, vy: -220 },
 ];
 
 export function spawnShot(g: FightGame, f: Fighter, a: Attack, offsetY = 0, arc = 0): Projectile {
@@ -1670,6 +1670,8 @@ function landProjectile(g: FightGame, p: Projectile): void {
   }
   if (p.y < FLOOR) return;
   p.y = FLOOR;
+  const landFx = SCRIPTS[p.fx]?.landFx;
+  if (landFx) g.effect(landFx, p.x, FLOOR, p.color, .5);
   if (floor === 'splash') {
     p.life = 0;
     g.effect('burst', p.x, FLOOR - 8, p.color, .3, { radius: 44 });
@@ -2369,6 +2371,8 @@ function step_slam(g: FightGame, f: Fighter, a: Attack, dt: number): void {
       if (Math.abs(o.x - f.x) < s.range && front && Math.abs(o.y - f.y) < 112) {
         a.hold = o.id;
         a.tossAt = a.t + .18;
+        g.effect('umiri-grip', o.x - f.facing * 28, o.y - 90, f.data.color, .55);
+        g.effect('umiri-veil', o.x, o.y - 90, f.data.color, .95);
         o.stun = .6;
         o.vx = 0;
         o.vy = 0;
@@ -2393,8 +2397,14 @@ function step_slam(g: FightGame, f: Fighter, a: Attack, dt: number): void {
       } else {
         o.x = f.x - f.facing * 80;
         o.y = FLOOR;
-        hit(g, f, o, s, a);
-        g.effect('slam', o.x, FLOOR, f.data.color, .45, { radius: 90 });
+        const quote = o.mods.find(m => m.kind === 'look' && m.mark === 'umiri-quote' && m.from === f.id && m.left > 0);
+        const kept = hit(g, f, o, quote ? { ...s, damage: s.damage * 1.2 } : s, a) && !!quote;
+        if (kept && quote) {
+          quote.left = 0;
+          g.text('履约', o.x, o.y - 212, f.data.color, .8, 20);
+        }
+        g.effect('umiri-arc', f.x, FLOOR, f.data.color, .38, { dir: f.facing });
+        g.effect('umiri-crash', o.x, FLOOR, f.data.color, .85, { n: kept ? 1 : 0 });
         a.tossAt = 0;
         a.t = Math.max(a.t, s.duration - .35);
       }
@@ -6467,7 +6477,18 @@ function step_withdrawal(g: FightGame, f: Fighter, a: Attack, dt: number): void 
 SCRIPTS['withdrawal'] = Object.assign(SCRIPTS['withdrawal'] ?? {}, { update: step_withdrawal, noMelee: true, skipCount: true });
 
 
-SCRIPTS['milk'] = Object.assign(SCRIPTS['milk'] ?? {}, { spawn: 'milk' });
+SCRIPTS['milk'] = Object.assign(SCRIPTS['milk'] ?? {}, {
+  spawn: 'milk',
+  pulse(g: FightGame, p: Projectile, target: Fighter) {
+    g.effect('umiri-milk-splash', p.x, p.y, p.color, .55);
+    if (target.blocking) { p.life = 0; return; }
+    p.x = target.x;
+    p.y = FLOOR;
+    p.vx = p.vy = 0;
+    p.settled = true;
+    p.life = 3;
+  },
+});
 SCRIPTS['bag'] = Object.assign(SCRIPTS['bag'] ?? {}, { spawn: 'bag' });
 SCRIPTS['juggle-ball'] = Object.assign(SCRIPTS['juggle-ball'] ?? {}, { spawn: 'juggle', trail: 'speed', bounce: true });
 SCRIPTS['cucumber'] = Object.assign(SCRIPTS['cucumber'] ?? {}, { boomerang: true });
@@ -6484,7 +6505,14 @@ SCRIPTS['star-fall'] = Object.assign(SCRIPTS['star-fall'] ?? {}, { wide: true, a
 SCRIPTS['blackhole'] = Object.assign(SCRIPTS['blackhole'] ?? {}, { spawn: 'well' });
 SCRIPTS['donut'] = Object.assign(SCRIPTS['donut'] ?? {}, { variant: donutVariant });
 SCRIPTS['smile-wave'] = Object.assign(SCRIPTS['smile-wave'] ?? {}, { pulse: pulse_smile_wave });
-SCRIPTS['ripple'] = Object.assign(SCRIPTS['ripple'] ?? {}, { flash(g: FightGame, f: Fighter, a: Attack) { g.effect('ripple', f.x, FLOOR, f.data.color, .45, { radius: a.skill.range }); } });
+// 恐湖: the lake opens at her feet; cold air holds round her legs while the armour lasts; water leaps under each foe thrown.
+SCRIPTS['ripple'] = Object.assign(SCRIPTS['ripple'] ?? {}, {
+  flash(g: FightGame, f: Fighter, a: Attack) {
+    g.effect('umiri-lake', f.x, FLOOR, f.data.color, .75, { radius: a.skill.range });
+    g.effect('umiri-mist', f.x, FLOOR, f.data.color, .5, { follow: f.id });
+    for (const id of a.hit) { const o = g.fighterById(id); if (o) g.effect('umiri-geyser', o.x, FLOOR, f.data.color, .55); }
+  },
+});
 SCRIPTS['huh'] = Object.assign(SCRIPTS['huh'] ?? {}, { flash(g: FightGame, f: Fighter, a: Attack) { g.effect('huh', f.x, FLOOR, f.data.color, .5, { radius: a.skill.range }); } });
 SCRIPTS['tsun'] = Object.assign(SCRIPTS['tsun'] ?? {}, { flash(g: FightGame, f: Fighter, a: Attack) { g.effect('tsun', f.x, FLOOR, f.data.color, .5, { radius: a.skill.range }); } });
 SCRIPTS['howl'] = Object.assign(SCRIPTS['howl'] ?? {}, { flash(g: FightGame, f: Fighter, a: Attack) { g.effect('howl', f.x, f.y - 80, f.data.color, .4, { radius: a.skill.range }); } });
@@ -6658,6 +6686,7 @@ export function stepProjectiles(g: FightGame, dt: number): void {
       gainEnergy(owner, 26);
       p.life = 0;
       g.text('+26', owner.x, owner.y - 170, owner.data.color, .6, 18);
+      g.effect('umiri-sip', owner.x, FLOOR, owner.data.color, .55);
     }
     if (owner && SCRIPTS[p.fx]?.seal) stepSeal(g, p, owner);
     else touchProjectile(g, p);

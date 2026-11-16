@@ -16,9 +16,12 @@ import { drawDoodleDizzy, drawDoodleLand } from './chisatoFx.ts';
 import { applyMaze, applyZap, auraMaze, auraZap } from './kanonFx.ts';
 import { applyHypno, auraHypno } from './akoFx.ts';
 import { applyTomoeHeart, auraTomoeHeart } from './tomoeFx.ts';
+import { applyNanamiFright, applyNanamiWeird, auraNanamiFright, auraNanamiGenius, auraNanamiTell, auraNanamiWeird } from './nanamiFx.ts';
 import { applyRinkoHush, auraRinkoHush } from './rinkoFx.ts';
+import { auraPareoWig, auraPareoWigFail } from './pareoFx.ts';
 import { applyRimiChoco, applyRimiHands, auraRimiChoco, auraRimiHands } from './rimiFx.ts';
 import { applyAnonLight, auraAnonLight, expireAnonLight } from './anonFx.ts';
+import { auraUmiriQuote } from './umiriFx.ts';
 
 /** A status that changes the body itself, painted by the renderer with the view's own outline and tint:
  *  the outline replaces the team rim, each wash is the sprite's silhouette in one colour laid over it, and the
@@ -914,6 +917,8 @@ function applyToast(ctx: CanvasRenderingContext2D, e: Effect, age: number): void
 }
 
 export const STATUS_MARKS: Record<string, MarkDrawer> = {
+  // 八幡海铃: a silver price tag on a red thread over the quoted foe. Drawn in umiriFx.ts.
+  'umiri-quote': { aura: (ctx, f, left, t) => auraUmiriQuote(ctx, f, bodyH(f), left, t) },
   'follow-flag': { aura: auraFollow, apply: applyFollow, expire: expireFollow },
   'recruit-badge': { aura: auraBadge },
   burn: { aura: auraBurn, apply: applyBurn },
@@ -929,6 +934,18 @@ export const STATUS_MARKS: Record<string, MarkDrawer> = {
   'himari-awkward': { aura: auraAwkward, apply: applyAwkward, expire: expireAwkward, body: STONE_BODY },
   'himari-calorie': { aura: auraCalorie, apply: applyCalorie },
   'toko-mud': { aura: auraMud },
+  // 广町七深: talked into a muddle by her remark (混乱), scared stiff out of the bush (定身), and her own paint after the
+  // super (全是 GOOD, a 'look'). Drawn in nanamiFx.ts.
+  'nanami-weird': { aura: (ctx, f, left, t) => auraNanamiWeird(ctx, f, bodyH(f), left, t, isLiteFx()), apply: applyNanamiWeird },
+  'nanami-fright': { aura: (ctx, f, left, t) => auraNanamiFright(ctx, f, bodyH(f), left, t, isLiteFx()), apply: applyNanamiFright },
+  'nanami-genius': { aura: (ctx, f, left, t) => auraNanamiGenius(ctx, f, bodyH(f), left, t, isLiteFx()) },
+  // 藏不住了: the layers she has let slip (1..3); the count rides in the mark name so a guest draws it too.
+  'nanami-tell1': { aura: (ctx, f, _left, t) => auraNanamiTell(ctx, f, bodyH(f), 1, t, isLiteFx()) },
+  'nanami-tell2': { aura: (ctx, f, _left, t) => auraNanamiTell(ctx, f, bodyH(f), 2, t, isLiteFx()) },
+  'nanami-tell3': { aura: (ctx, f, _left, t) => auraNanamiTell(ctx, f, bodyH(f), 3, t, isLiteFx()) },
+  // PAREO: the wig she has on (百变假发, a 'look'), and the half-done one (来不及换). Drawn in pareoFx.ts.
+  'pareo-wig': { aura: (ctx, f, left, t) => auraPareoWig(ctx, f, bodyH(f), left, t, isLiteFx()) },
+  'pareo-wig-fail': { aura: (ctx, f, left, t) => auraPareoWigFail(ctx, f, bodyH(f), left, t) },
   'chisato-doodle': { aura: auraDoodle, apply: applyDoodle },
   sleepy: { aura: auraSleepy, apply: applySleepy, expire: expireSleepy },
   'saaya-toast': { aura: auraToast, apply: applyToast, body: TOAST_BODY },

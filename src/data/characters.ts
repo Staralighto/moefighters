@@ -130,34 +130,38 @@ export const ROSTER: CharacterData[] = [
     bands: ['ave-mujica'],
     ...stats('rush'),
     view: {
-      kind: 'sprite', common: '/sprites/umiri/common.png', special: '/sprites/umiri/special.png', height: 170, lift: 5,
+      kind: 'sprite', common: '/sprites/umiri/common.png', special: '/sprites/umiri/special.png', height: 176, lift: 5,
       extras: ['/sprites/umiri/milk.png', '/sprites/umiri/bag.png'],
     },
+    // 恐湖与银饰：J / K 留下暗银指光与湖蓝靴弧（render/umiriFx.ts）。
+    aura: { swing: 'umiri-swing' },
     skills: [
       skill(0, 'light', '点指'),
-      skill(1, 'heavy', '靴踢'),
+      skill(1, 'heavy', '靴踢', { range: 140 }),
       skill(2, 'projectile', '报价', {
-        damage: 16, speed: 560, size: 36, life: 1.6, start: .12, duration: .45, fx: 'milk',
-        motion: 'fall', floor: 'stick',
-        brief: '抛物线过顶；落地可捡回气', detail: '抛物线，中段从头顶过；落地可捡回气',
+        damage: 24, speed: 560, size: 36, life: 1.6, start: .12, duration: .45, cd: 2.6, fx: 'milk',
+        motion: 'fall', floor: 'stick', contact: 'pass',
+        curse: { kind: 'look', time: 4, v: 1, mark: 'umiri-quote', text: '报价', own: true },
+        brief: '低抛牛奶，打实标记供信用增伤；可捡回气，再投替换',
+        detail: '低抛牛奶，打实后标记 4 秒，自己的信用消耗标记增伤 20%，重复打实刷新；打实或落地留下牛奶 3 秒，可捡回 26 气，再投替换旧牛奶',
       }),
       skill(3, 'projectile', '扫货', {
-        damage: 9, count: 6, interval: .05, size: 40, start: .12, duration: .7, cd: 4.5, life: 1.5, fx: 'bag',
+        damage: 12, count: 6, interval: .09, size: 40, start: .12, duration: .7, cd: 4.5, life: 1.5, fx: 'bag',
         motion: 'fall', floor: 'drop',
         knock: 0, knockOnBlock: true, react: { kind: 'stand', stun: .26 },
-        brief: '抛物线六连发，落地消失；贴脸全中', detail: '抛物线六连发，落地消失；贴脸全中',
+        brief: '近中距离两组低抛六连发，落地消失；贴脸全中', detail: '近中距离两组低抛六连发，每发间隔 0.09 秒，落地消失；贴脸全中',
       }),
       skill(4, 'endure', '恐湖', {
-        damage: 32, range: 300, start: .26, duration: .85, cd: 8, fx: 'ripple', breakout: true,
-        knock: 620, knockOnBlock: true, holdEndure: true, hitbox: 'radial', reach: 'ground', hitAll: true,
+        damage: 40, range: 300, start: .26, duration: .65, cd: 8, fx: 'ripple', breakout: true,
+        knock: 460, knockOnBlock: true, holdEndure: true, hitbox: 'radial', reach: 'ground', hitAll: true,
         react: { kind: 'stand', stun: .35 },
         brief: '霸体震开，强击退；跳起可躲，可解控', detail: '霸体震开，强击退；跳起可躲，可解控',
       }),
       skill(5, 'grab', '信用', {
-        cost: 110, damage: 175, range: 110, start: .16, duration: 1.15, speed: 220, fx: 'slam', hitbox: 'front',
+        cost: 110, damage: 190, range: 110, start: .16, duration: 1.15, speed: 360, fx: 'slam', hitbox: 'front',
         knock: 120, shake: 14, hitstop: .09,
         react: { kind: 'knockdown', vy: 0, knocked: 1, stun: .4, snapFloor: true },
-        brief: '抓住向后摔', detail: '抓住向后摔',
+        brief: '前冲抓住向后摔；消耗自己的报价标记增伤', detail: '前冲抓住向后摔；目标有自己的报价标记时，本次伤害 +20% 并消耗标记',
       }),
     ],
   },
@@ -1139,6 +1143,52 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'hagumi', name: '北泽育美', title: '贝斯 / 可乐饼大王', quote: 'Happy! Lucky! Smile! Yeah!', color: '#FF9922',
+    bands: ['hello-happy'],
+    ...stats('rush'),
+    view: {
+      kind: 'sprite', common: '/sprites/hagumi/common.png', special: '/sprites/hagumi/special.png', height: 181, lift: 5,
+      // 可乐饼是一张独立 PNG；米歇尔借美咲的 michelle.png（走路格）。
+      extras: ['/sprites/hagumi/croquette.png', '/sprites/misaki/michelle.png'],
+    },
+    // 北泽育美（萌娘百科）: HHW 的贝斯手，乐队口号「Happy! Lucky! Smile! Yeah!」的最初提出者；北泽精肉店的女儿（可乐饼很有名，
+    // B 站「可乐饼轰炸」「可乐饼大派送」）、垒球队王牌兼队长 Captain、体力 BUG（绕商店街跑十圈）、总挂在米歇尔身上的三笨蛋之一。
+    // 全部空手；可乐饼一张 PNG，其余由 hagumiFx.ts 绘制（src/game/hagumi.ts）。
+    skills: [
+      skill(0, 'light', '元气满满'),
+      // 空手全垒打 (垒球队王牌): an empty-handed full swing; the common sheet draws the swing instead of the kick.
+      skill(1, 'heavy', '空手全垒打'),
+      // 绕商店街跑十圈 (萌娘百科: 拉着花音绕商店街跑十圈、几乎能追上全速飞行的乌鸦).
+      skill(2, 'dash', '绕商店街跑十圈', {
+        damage: 24, range: 760, speed: 980, start: .18, duration: 2.2, cd: 7.5, knock: 300, fx: 'hagumi-laps', superArmor: true,
+        brief: '冲到版边折返跑回，来回各撞一次；霸体，跳起可躲',
+        detail: '蹲踞起跑后全速冲向版边，至多约四分之三屏，急停折返跑回起点；去程穿过对手把人留在原地，回程再撞一次击退；全程霸体，跳起可躲',
+      }),
+      // 刚出锅的快速球 (垒球的风车投法 + 北泽精肉店的可乐饼).
+      skill(3, 'projectile', '刚出锅的快速球', {
+        damage: 34, speed: 820, size: 44, life: 2, start: .32, duration: .62, cd: 5, knock: 160, fx: 'hagumi-croquette',
+        status: [{ kind: 'burn', time: 3, dmg: 5, tick: .5 }],
+        brief: '投出热可乐饼烧焦对手，落地吃掉回血回气；可格挡',
+        detail: '风车投法投出热可乐饼，飞行中缓缓下坠；命中烧焦 3 秒，每 0.5 秒 5 伤害；没打中则落地保温 4 秒，走过去吃掉回复 30 生命和 10 气，再投替换；可格挡，可被弹幕击落',
+      }),
+      // 挂上米歇尔！ (萌娘百科: 非常喜欢米歇尔并且时常挂在米歇尔身上; 「奥泽小姐你辛苦了」).
+      skill(4, 'dash', '挂上米歇尔！', {
+        damage: 48, range: 420, start: .3, duration: 1.65, cd: 9, knock: 300, fx: 'hagumi-michelle', superArmor: true,
+        react: { kind: 'knockdown', vy: -280, knocked: .7 },
+        brief: '米歇尔跑来，跳上背一起冲撞击倒；霸体，跳起可躲',
+        detail: '招手 0.3 秒后米歇尔从身后跑来，跳上它的背一起前冲约 0.75 秒，撞上地面对手击倒；全程霸体，跳起可躲',
+      }),
+      // 可乐饼盛情难却 (B 站「面对可乐饼轰炸而感到盛情难却的丰川祥子」「育美又搞可乐饼大派送了」).
+      skill(5, 'projectile', '可乐饼盛情难却', {
+        cost: 180, damage: 14, range: 760, start: .5, duration: 2.8, knock: 0, gain: 2, fx: 'hagumi-feast', superArmor: true, noSparks: true,
+        guardPlan: [6, 10, 16, 22, 26, 30],
+        finale: { damage: 80, knock: 220, react: { kind: 'knockdown', vy: -220, knocked: 1 } },
+        brief: '可乐饼雨连砸八段再巨型击倒；霸体，离开落区可躲',
+        detail: '北泽精肉店的遮阳棚落下，前方对手所在处下起可乐饼雨，无人则落在前方约三分之一屏；八段命中把落区里的对手留住，空中也会被砸；最后巨型可乐饼砸下击倒并把人埋住；可格挡，第 6 段破防；全程霸体，离开落区可躲',
+      }),
+    ],
+  },
+  {
     id: 'kanon', name: '松原花音', title: '鼓手 / 迷宫水母', quote: '呼诶诶……这、这里是哪里？', color: '#44DDFF',
     bands: ['hello-happy'],
     ...stats('beat'),
@@ -1788,6 +1838,52 @@ export const ROSTER: CharacterData[] = [
     skills: LOCK_SKILLS,
   },
   {
+    id: 'pareo', name: 'PAREO', title: '键盘 / 忠犬', quote: '要踢的话，就请踢PAREO吧！', color: '#FF99BB',
+    bands: ['raise-a-suilen'],
+    ...stats('rush'),
+    view: {
+      kind: 'sprite', common: '/sprites/pareo/common.png', special: '/sprites/pareo/special.png', height: 173, lift: 5, specialScale: 1.1,
+      // 灰色重染 draws CHU² from her own special sheet.
+      extras: ['/sprites/chuchu/special.png', '/sprites/pareo/common-hair-mask.png', '/sprites/pareo/special-hair-mask.png'],
+    },
+    // 鳰原令王那（萌娘百科）: RAS 的键盘手，初三（非法御姐），CHU² 的忠犬（忠犬PARE公），穿厚底鞋还比谁都跑得快。
+    // 发色跟着 Pastel*Palettes 换——其实是 CHU² 给的假发；原本是戴眼镜的黑发优等生，被 CHU² 从「灰色」里找到。
+    // 全部空手（不拿键盘）；发色由代码换色（render/pareoWig.ts），其余由代码画（pareoFx.ts）。
+    skills: [
+      // 欢迎光临 / 厚底重踏: the maid's palm push (いらっしゃいませ) and a stamp of the platform shoes.
+      skill(0, 'light', '欢迎光临', { fx: 'pareo-jk' }),
+      skill(1, 'heavy', '厚底重踏', { fx: 'pareo-jk' }),
+      // 忠犬追击 (pareo.ts, 忠犬PARE公 + S3 追六花): she chases wherever the foe is now.
+      skill(2, 'dash', '忠犬追击', {
+        damage: 22, range: 70, speed: 330, start: .18, duration: 1.7, cd: 8, fx: 'pareo-chase', knock: 240,
+        react: { kind: 'knockdown', vy: -180, knocked: .7 },
+        brief: '追着对手跑再扑倒；走开甩不掉，跳起可躲',
+        detail: '竖起狗耳追着对手当前位置跑最多 1 秒，贴近地面上的对手就扑上去：22 伤害并击倒；跳起可让她从脚下冲过去，途中挨打会被打断；对 LOCK 跑得更快',
+      }),
+      // 百变假发 (pareo.ts, 发色跟着 PasPale 换，其实是假发；S3E6 冰川姐妹来访来不及换): a wig and that member's buff.
+      skill(3, 'light', '百变假发', {
+        damage: 0, range: 0, start: .35, duration: .8, cd: 12, fx: 'pareo-wig', knock: 0, react: { kind: 'none' },
+        brief: '随机换假发获得增益；转身挨打则失败',
+        detail: '原地转身换假发，随机变成一位 Pastel*Palettes 成员的发色，6 秒：彩粉每秒回 6 血 / 日菜蓝移速 +25% / 千圣黄受伤 -25% / 麻弥绿 U、O 冷却加快 70% / 伊芙紫伤害 +20%；对上彩、日菜、千圣、伊芙时必出对方的颜色；转身 0.35 秒内被打中只换成日菜蓝 + 白，没有增益',
+      }),
+      // 献身飞踢 (pareo.ts, S2E12「要踢就踢PAREO吧！」+ Reo 在 live 上的飞踢): take the hit gladly, kick back.
+      skill(4, 'endure', '献身飞踢', {
+        damage: 0, range: 120, start: .9, duration: 1.3, cd: 10, fx: 'pareo-kick', knock: 0,
+        finale: { damage: 24, knock: 380, react: { kind: 'knockdown', vy: -260, knocked: .8 } },
+        brief: '张开双手挨打转气，再回一记飞踢；飞弹照打',
+        detail: '张开双手 0.9 秒；期间被近身攻击打中只受一半伤害，并把这一半的 2 倍转成自己的气，随后飞踢 24 伤害并击倒，不能格挡；飞弹照常命中；没人来踢会失落地收势',
+      }),
+      // 灰色重染 (pareo.ts, 被 CHU² 从灰色世界里找到的「名为PAREO的我」): grey, CHU²'s hand, the colour back, the rush.
+      skill(5, 'endure', '灰色重染', {
+        cost: 150, damage: 18, range: 520, start: .15, duration: 3.2, knock: 0, react: { kind: 'stand', stun: .35 }, fx: 'pareo-gray',
+        holdEndure: true,
+        finale: { damage: 62, knock: 520, react: { kind: 'knockdown', vy: -320, knocked: 1 } },
+        brief: '灰色音波定身，再追身连打击倒；跳起可躲',
+        detail: '霸体；世界褪成灰色，向前一道音波（不能格挡，跳起可躲）定住地面上的对手；CHU² 的剪影伸手，色彩涌回，追身四连打各 18 伤害，最后飞踢 62 伤害并击倒；音波没定住人则后续落空',
+      }),
+    ],
+  },
+  {
     id: 'mashiro', name: '仓田真白', title: '主唱 / 幻视', quote: '如果平凡的我也能找到属于我的“特别”就好了', color: '#6677CC',
     bands: ['morfonica'],
     ...stats('focus'),
@@ -1873,6 +1969,60 @@ export const ROSTER: CharacterData[] = [
         finale: { damage: 60, knock: 420, react: { kind: 'knockdown', vy: -300, knocked: .9 } },
         brief: '天降光柱接贴地光浪，五色光击倒；光浪可跳',
         detail: '霸体，一道光柱从天而降 20 伤害，三道贴地光浪各 20 伤害，跳起可躲；最后五色光 60 伤害并击倒',
+      }),
+    ],
+  },
+  {
+    id: 'nanami', name: '广町七深', title: '贝斯 / 普通人', quote: '普通和理所当然，到底是什么呢？', color: '#EE7744',
+    bands: ['morfonica'],
+    ...stats('focus'),
+    passive: ['远距专注 · 藏不住了', '飞行道具速度提高 15%；U / I / O 每命中一次叠 1 层（至多 3 层），必杀消耗全部层数强化彩蝶；满层放完必杀后 8 秒内 J / K 伤害提高 15%'],
+    // bang-dream.com writes her as a genius (天才), so 汐见萤's 天才♡ counts her.
+    genius: true,
+    view: {
+      kind: 'sprite', common: '/sprites/nanami/common.png', special: '/sprites/nanami/special.png', height: 179, lift: 5,
+      // 只是普通地路过's bush and 一发命中's crane claw (two cells: open, closed) are their own pictures.
+      extras: ['/sprites/nanami/bush.png', '/sprites/nanami/claw.png'],
+    },
+    // 广町七深（萌娘百科）: Morfonica 的贝斯，父亲雕刻家、母亲画家；成绩年级第一、艺术受期待，小时候因才能被疏远，
+    // 上高中后装成普通人。刘海的猫发夹（猫かぶり＝藏起本性装老实）；别号「我说了什么奇怪的话吗？」。
+    // 全部空手（L 的大画笔画进精灵）；草丛、娃娃机爪是独立 PNG，其余由代码画（nanamiFx.ts）。
+    skills: [
+      // 普普通通 / 这很普通吧 (game/nanami.ts 全是 GOOD): plain on purpose; after the super they splash paint and hit harder.
+      skill(0, 'light', '普普通通', { fx: 'nanami-jk' }),
+      skill(1, 'heavy', '这很普通吧', { fx: 'nanami-jk' }),
+      // 只是普通地路过 (nanami.ts, 1 章 4 话躲草丛偷看 + 赏樱时躲树荫吓到巴): the bush creeps, she jumps out.
+      skill(2, 'dash', '只是普通地路过', {
+        damage: 34, range: 92, speed: 230, start: .2, duration: 1.35, cd: 8, fx: 'nanami-bush', knock: 0, holdEndure: true,
+        noBlock: true, root: .8, react: { kind: 'stand', stun: .3 },
+        brief: '草丛潜行跳出吓人定身；草丛挡三下，不可挡可跳',
+        detail: '蹲进草丛向前挪动最多 0.7 秒，贴近对手或到时跳出吓人：34 伤害并定身 0.8 秒，不能格挡，只吓得到地面上的对手；草丛里挨打不中断，最多挡三下，第三下时当场跳出吓人，跳出后不再有霸体；命中叠 1 层藏不住了',
+      }),
+      // 一发命中，很普通吧？ (nanami.ts, 三星卡「世を忍ぶ」第一次去游戏厅抓娃娃一发命中): the claw from the top of the screen.
+      skill(3, 'grab', '一发命中，很普通吧？', {
+        damage: 55, range: 872, start: .15, duration: 1.4, cd: 7, fx: 'nanami-claw', knock: 160, noSparks: true,
+        react: { kind: 'knockdown', vy: -160, knocked: .75 },
+        brief: '天降娃娃机爪夹起摔下；影子出现后走开可躲',
+        detail: '锁定身前全场最近的对手，脚下出现影子，0.35 秒后娃娃机爪落下：抓到则提到半空再松开，55 伤害并击倒；不吃格挡，影子出现后走开即可躲开；抓空时爪子空升，有硬直；命中叠 1 层藏不住了',
+      }),
+      // 我说了什么奇怪的话吗？ (nanami.ts, 萌娘百科别号 + 官方表情「七深-安详」): eyes closed, head tilted, slow pink bubbles.
+      skill(4, 'projectile', '我说了什么奇怪的话吗？', {
+        damage: 24, speed: 340, size: 66, life: 1.5, start: .38, duration: .8, cd: 6, knock: 30, fx: 'nanami-weird',
+        status: [{ kind: 'confuse', time: 2, mark: 'nanami-weird', onBlock: .5 }],
+        brief: '慢速怪话泡泡混乱；被挡也混乱减半，可跳',
+        detail: '闭眼歪头后吐出一串慢悠悠的粉色泡泡，命中 24 伤害并混乱 2 秒，期间左右方向颠倒；被格挡时仍混乱 1 秒，跳起可躲；命中叠 1 层藏不住了',
+      }),
+      // 不再假装普通 (nanami.ts, 猫かぶり + 真画被透子印上 T 恤后解开心结): the hairpin off, four colours, her own, a butterfly.
+      skill(5, 'endure', '不再假装普通', {
+        // 藏不住了 (nanami.ts): the butterfly is finale.damage + 25 per layer spent; at 3 layers it reaches 520, goes
+        // through a guard and over a jump, and leaves 全是 GOOD. Below that it keeps the stroke range and WING_SOFT_GUARD.
+        // The last plan entry is that full butterfly's chip, unused while it is unblockable.
+        cost: 130, damage: 14, range: 360, start: .7, duration: 2.5, knock: 20, gain: 2, fx: 'nanami-paint', holdEndure: true,
+        guardPlan: [8, 12, 18, 22, 66],
+        react: { kind: 'stand', stun: .35 },
+        finale: { damage: 30, knock: 420, react: { kind: 'knockdown', vy: -300, knocked: .9 } },
+        brief: '笔触可跳，彩蝶击倒；满层彩蝶全屏不可挡',
+        detail: '摘发夹到第一笔前霸体，之后挨打会中断；四道贴地颜料笔触各 14 伤害，跳起可躲；最后彩蝶击倒，30 伤害且每层藏不住了 +25；不满 3 层时彩蝶可挡可跳，满 3 层时彩蝶打全屏、不可格挡、跳起也躲不开，放完后 8 秒内 J / K 伤害 +15%',
       }),
     ],
   },
