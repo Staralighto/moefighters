@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build && node --experimental-strip-types scripts/compress-images.ts",
+    "build": "tsc --noEmit && vite build && node --experimental-strip-types scripts/compress-images.ts && node --experimental-strip-types scripts/asset-manifest.ts",
     "preview": "vite preview",
     "check": "node --experimental-strip-types scripts/selfcheck.ts",
     "check:adaptation": "node scripts/adaptation-e2e.mjs",

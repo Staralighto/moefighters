@@ -608,6 +608,17 @@
   </div>
 </dialog>
 
+<dialog id="res-dialog" class="res-dialog" aria-labelledby="res-heading">
+  <div class="dialog-head"><h2 id="res-heading">预载全部资源</h2><button id="close-res" type="button" aria-label="关闭">×</button></div>
+  <div class="res-head">
+    <small id="set-res-sum"></small>
+    <span class="res-bar" id="set-res-bar" aria-hidden="true"><i></i></span>
+  </div>
+  <ul class="res-list" id="set-res-list"></ul>
+  <div class="set-actions res-actions">
+    <button type="button" id="set-res-go" class="set-primary">开始预载</button>
+  </div>
+</dialog>
 <dialog id="save-dialog" aria-labelledby="save-heading">
   <div class="dialog-head"><h2 id="save-heading">导入存档</h2><button id="close-save" type="button" aria-label="关闭">×</button></div>
   <div id="save-body" class="save-body"></div>
@@ -659,6 +670,15 @@
       <div class="set-actions">
         <button type="button" id="set-save-import">导入存档</button>
         <button type="button" id="set-save-export" class="set-primary">导出存档</button>
+      </div>
+      <h3 class="setting-title">资源</h3>
+      <div class="set-card">
+        <button type="button" class="setting-row res-entry" id="set-res-open" aria-haspopup="dialog">
+          <b>预载全部资源</b>
+          <span class="res-entry-state" id="set-res-state"></span>
+          <svg class="res-entry-go" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-caret-right"/></svg>
+          <i class="res-entry-bar" aria-hidden="true"></i>
+        </button>
       </div>
     </section>
     <section class="set-pane" role="tabpanel" id="set-pane-controls" aria-labelledby="set-tab-controls" data-tab="controls">

@@ -3,7 +3,7 @@
 BGM m4a is re-encoded to 64 kbps AAC only as a zip entry. public/ and dist/ are left alone.
 Run from the repo root: python -P scripts/pack-toy.py
 """
-import os, re, subprocess, tempfile, zipfile
+import json, os, re, subprocess, tempfile, zipfile
 
 root, cap = "dist", 50 * 1024 * 1024
 out = os.path.join("\u7d20\u6750", "moefighters-toy.zip")
@@ -42,11 +42,14 @@ def main():
             raise SystemExit("missing " + needle)
     n = dropped = 0
     bgm_from = bgm_to = 0
+    bgm_sizes = {}
     with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as z:
         for dp, _dirs, fns in os.walk(root):
             for f in fns:
                 p = os.path.join(dp, f)
                 rel = os.path.relpath(p, root).replace("\\", "/")
+                if rel == "asset-manifest.json":
+                    continue
                 if f.endswith(".png") and rel.startswith(("sprites/", "stages/", "avatars/")) and os.path.exists(p[:-4] + ".webp"):
                     dropped += 1
                     continue
@@ -59,11 +62,19 @@ def main():
                         z.write(tmp, rel)
                         bgm_from += os.path.getsize(p)
                         bgm_to += os.path.getsize(tmp)
+                        bgm_sizes[rel] = os.path.getsize(tmp)
                     finally:
                         os.remove(tmp)
                 else:
                     z.write(p, rel)
                 n += 1
+        # 设置 → 资源 lists sizes from this file: the re-encoded bgm is what Toy actually serves.
+        mp = os.path.join(root, "asset-manifest.json")
+        if os.path.exists(mp):
+            manifest = json.load(open(mp, encoding="utf-8"))
+            manifest["files"] = [[f, bgm_sizes.get(f, s)] for f, s in manifest["files"]]
+            z.writestr("asset-manifest.json", json.dumps(manifest, separators=(",", ":")))
+            n += 1
         names = set(z.namelist())
     if "index.html" not in names or any(name.startswith(("/", "dist/")) for name in names):
         raise SystemExit("zip layout")

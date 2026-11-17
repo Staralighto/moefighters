@@ -2,12 +2,13 @@
    playFinale：在任意 canvas 上循环播放某位角色的终幕（与战斗里同一个 drawFinale，喂一个只带时间的假对局）。
    每轮播完停一小会儿再从头；定格帧和切走后露出来的都是舞台图。商店的展台和仓库的详情弹窗都用它。 */
 
-import { loadInto, staticUrl, type ImageCache } from '../assets/loader.ts';
+import { loadInto, type ImageCache } from '../assets/loader.ts';
+import { chunk } from '../assets/chunk.ts';
 import { PUBLIC_ROSTER } from '../data/characters.ts';
 import type { CharacterData } from '../data/types.ts';
 import { FINALE_TIME, finaleCues, type FightGame, type SfxKind } from '../game/game.ts';
 import { ITEM_BY_ID } from '../shop/catalog.ts';
-import { stageArtUrl } from './framePreview.ts';
+import { paintStageArt, stageArtUrl } from './framePreview.ts';
 import type { CardState } from './merch.ts';
 import { renderSide, type SideRun } from './detailSide.ts';
 
@@ -41,7 +42,7 @@ export function playFinale(canvas: HTMLCanvasElement, box: HTMLElement, char: Ch
   preload();
   const art = stageArtUrl();
   const srcs = [spec.art, ...(spec.props ?? []), art].filter((s): s is string => !!s);
-  void Promise.all([import('../render/finale.ts'), ...srcs.map(s => loadInto(images, s))]).then(([m]) => {
+  void Promise.all([chunk(() => import('../render/finale.ts')), ...srcs.map(s => loadInto(images, s))]).then(([m]) => {
     if (!live) return;
     m.prewarmFinale(spec);
     box.classList.remove('loading');
@@ -89,7 +90,7 @@ export function openFinalePreview(id: string, state: () => CardState, run: SideR
   if (!char) return;
   const dlg = $('finale-dialog') as HTMLDialogElement;
   const box = $('fn-stage');
-  box.style.setProperty('--fv-art', `url("${staticUrl(stageArtUrl())}")`);
+  paintStageArt(box);
   const ult = char.skills.find(s => s.key === 'L')?.name ?? '';
   renderSide($('fn-side'), {
     id, kicker: 'FINALE', nameId: 'fn-name', state, run, dialog: dlg,

@@ -26,6 +26,15 @@ export function imageSources(src: string, prod = import.meta.env.PROD, webpOk = 
  *  (Safari < 14) shows these previews empty; route through assignFirst / applyImageUrl if that ever matters. */
 export const staticUrl = (src: string): string => assetUrl(imageSources(src, !!import.meta.env?.PROD)[0]);
 
+/** `url("…")` for a CSS custom property. A relative url() inside a custom property resolves where var() is used —
+ *  the built stylesheet under assets/ — not the page. Absolute against the document so frames/ and stages/ hit. */
+export const cssUrl = (src: string): string => {
+  const u = src.startsWith('/') ? staticUrl(src) : src;
+  let abs = u;
+  try { abs = new URL(u, document.baseURI).href; } catch { /* keep u */ }
+  return `url("${abs.replace(/["\\]/g, '\\$&')}")`;
+};
+
 /** Both dev (Vite crop) and production (built WebP) only need the 256px idle cell.
  *  common.png crops to idle.png. Any other standing sheet (michelle.png) crops to <name>-idle.png.
  *  special.png stays itself: it has no standing cell the roster should ask for. */
@@ -89,6 +98,107 @@ export function slowLink(prod = import.meta.env.PROD): boolean {
   return /2g|3g/.test(net?.effectiveType ?? '');
 }
 
+/* ---- 统一下载闸 ----
+   图片（和后台预取的音频）都从这里排队，不让各条路径各开各的连接一起抢带宽、在同一帧里一起解码。
+   名额占到解码结束（fetchImage 在 decode 之后才 resolve），所以并发数也是同时解码的上限。
+     0 挡着画面：开打预载、首屏舞台和站位立绘。最多 6 条，不受下面的总量限制。
+     1 眼前要看：当前页面的图。和 0 级合计不超过 base（快网 3，慢网 2）。
+     2 后台预取：对战中换高清、终幕图、下一首 BGM、音乐库时长。同时只跑 1 条，
+       有 0 级在等或在跑、或有人 holdIdle 时一律不开。
+     3 批量预载：设置里「预载全部资源」。比 2 级还低：前面任何一级有人在等就不开，同时最多 2 条。
+   同一 key 再被要求时只提升优先级，不会再下一次。 */
+export type NetPri = 0 | 1 | 2 | 3;
+interface NetJob { key: string; pri: NetPri; seq: number; start: () => void }
+const netWait: NetJob[] = [];
+const netRun = new Set<NetJob>();
+let netSeq = 0;
+/** A slot held this long is given back to the queue; the request itself keeps going. */
+const NET_STALL_MS = 12_000;
+let idleHolds = 0;
+let bulkHolds = 0;
+let slowAt = -Infinity;
+let slowNow = false;
+
+function netBase(): number {
+  const now = typeof performance !== 'undefined' ? performance.now() : 0;
+  if (now - slowAt > 5000) { slowAt = now; slowNow = slowLink(); }
+  return slowNow ? 2 : 3;
+}
+
+function netCanStart(pri: NetPri): boolean {
+  let zero = 0, idle = 0, bulk = 0;
+  for (const j of netRun) { if (j.pri === 0) zero++; else if (j.pri === 2) idle++; else if (j.pri === 3) bulk++; }
+  if (pri === 0) return zero < 6;
+  if (netRun.size >= netBase()) return false;
+  if (pri === 1) return true;
+  if (idleHolds > 0 || zero > 0 || netWait.some(j => j.pri === 0)) return false;
+  if (pri === 2) return idle < 1;
+  return bulk < 2 && bulkHolds === 0 && !netWait.some(j => j.pri < 3);
+}
+
+function netPump(): void {
+  netWait.sort((a, b) => a.pri - b.pri || a.seq - b.seq);
+  for (let i = 0; i < netWait.length;) {
+    const job = netWait[i];
+    if (netCanStart(job.pri)) { netWait.splice(i, 1); job.start(); }
+    else i++;
+  }
+}
+
+/** Run `run` when the gate gives it a slot. */
+export function netTask<T>(key: string, pri: NetPri, run: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const job: NetJob = {
+      key, pri, seq: netSeq++,
+      start: () => {
+        netRun.add(job);
+        // 一条卡死的连接（无响应、不报错）不能永久占着名额：超时后让出位置，请求本身继续。
+        const free = () => { clearTimeout(timer); if (netRun.delete(job)) netPump(); };
+        // 批量预载（3 级）不让：它只会挡住别的批量文件，让了反而会越开越多条。
+        const timer = job.pri < 3 ? setTimeout(free, NET_STALL_MS) : undefined;
+        let p: Promise<T>;
+        try { p = run(); } catch (e) { p = Promise.reject(e); }
+        void p.then(resolve, reject).finally(free);
+      },
+    };
+    netWait.push(job);
+    netPump();
+  });
+}
+
+/** A waiting job asked for again at a higher priority moves up. A running one only re-counts. */
+export function bumpNet(key: string, pri: NetPri): void {
+  let moved = false;
+  for (const j of netWait) if (j.key === key && pri < j.pri) { j.pri = pri; moved = true; }
+  for (const j of netRun) if (j.key === key && pri < j.pri) j.pri = pri;
+  if (moved) netPump();
+}
+
+/** Hold back priority-3 work (the settings bulk preload) — for the whole time a fight is on screen:
+ *  tens of MB in the background would push up an online match's round-trip time. */
+export function holdBulk(): () => void {
+  bulkHolds++;
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    bulkHolds--;
+    netPump();
+  };
+}
+
+/** Hold back priority-2 work (fight preload in progress). Call the returned function to let it go. */
+export function holdIdle(): () => void {
+  idleHolds++;
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    idleHolds--;
+    netPump();
+  };
+}
+
 function fetchImage(src: string): Promise<HTMLImageElement> {
   const once = (): Promise<HTMLImageElement> => new Promise((resolve, reject) => {
     const im = new Image();
@@ -126,10 +236,11 @@ async function fetchFirst(src: string): Promise<HTMLImageElement> {
   throw err instanceof Error ? err : Error('图片加载失败：' + src);
 }
 
-export function loadImage(src: string): Promise<HTMLImageElement> {
+export function loadImage(src: string, pri: NetPri = 1): Promise<HTMLImageElement> {
   let pending = loaded.get(src);
-  if (!pending) {
-    pending = fetchFirst(src).catch(err => {
+  if (pending) bumpNet(src, pri);
+  else {
+    pending = netTask(src, pri, () => fetchFirst(src)).catch(err => {
       loaded.delete(src);
       throw err;
     });
@@ -161,8 +272,8 @@ export function assignFirst(img: HTMLImageElement, srcs: readonly string[]): voi
 }
 
 /** CSS has no error event. The url is applied only after loadImage picked WebP or PNG, so the sheet is not fetched twice. */
-export function applyImageUrl(src: string, apply: (url: string) => void): void {
-  void loadImage(src).then(im => apply(im.src)).catch(() => {});
+export function applyImageUrl(src: string, apply: (url: string) => void, pri: NetPri = 1): void {
+  void loadImage(src, pri).then(im => apply(im.src)).catch(() => {});
 }
 
 /** Every image a match needs: sprite views plus the stage backdrop. */
@@ -207,18 +318,19 @@ export const missingImages = new Set<string>();
 
 const inflight = new Map<string, Promise<boolean>>();
 
-/** True while a portrait or sheet is still on the wire. Music lookahead waits for this. */
+/** True while anything is on the wire or waiting at the gate. Music lookahead waits for this. */
 export function imagesBusy(): boolean {
-  return inflight.size > 0;
+  return inflight.size > 0 || [...netRun, ...netWait].some(j => j.pri < 3);
 }
 
 /** One request per src, shared by the select queue and the fight preload. */
-export function loadInto(cache: ImageCache, src: string): Promise<boolean> {
+export function loadInto(cache: ImageCache, src: string, pri: NetPri = 1): Promise<boolean> {
   if (cache.has(src)) return Promise.resolve(true);
   if (missingImages.has(src)) return Promise.resolve(false);
   let pending = inflight.get(src);
-  if (!pending) {
-    pending = loadImage(src).then(im => {
+  if (pending) bumpNet(src, pri);
+  else {
+    pending = loadImage(src, pri).then(im => {
       cache.set(src, im);
       return true;
     }).catch(() => {
@@ -230,9 +342,37 @@ export function loadInto(cache: ImageCache, src: string): Promise<boolean> {
   return pending;
 }
 
+/**
+ * 解码后的整张动作图常驻内存：2048×768 一张就是 6MB，全角色加起来约 700MB。
+ * 无尽闯关一关换一批对手，不清理的话手机会被系统杀掉页面。每次开打后调用：
+ * 本场要用的移到最新，其余从最旧的开始丢，直到解码字节数回到 budget 以内。
+ * 小于 1MB 的图（256px 站位裁图、舞台缩略图、道具小图）不丢：便宜，而且选人队列会把它们记成已完成，不会再排。
+ * 丢掉的同时从 loadImage 的去重表里删除，Image 对象才能被回收；以后再要会重新走（HTTP 缓存里通常还在）。
+ */
+export function trimImages(cache: ImageCache, keep: ReadonlySet<string>, budget: number): number {
+  const size = (im: HTMLImageElement) => (im.naturalWidth * im.naturalHeight * 4) || 0;
+  for (const s of keep) {
+    const im = cache.get(s);
+    if (im) { cache.delete(s); cache.set(s, im); }
+  }
+  let bytes = 0;
+  for (const im of cache.values()) bytes += size(im);
+  let freed = 0;
+  for (const [s, im] of cache) {
+    if (bytes <= budget) break;
+    const b = size(im);
+    if (keep.has(s) || b < 1 << 20) continue;
+    cache.delete(s);
+    loaded.delete(s);
+    bytes -= b;
+    freed += b;
+  }
+  return freed;
+}
+
 /** Loads independently so one missing file does not wipe the rest of the cache. */
-export async function preload(cache: ImageCache, srcs: string[]): Promise<string[]> {
-  const results = await Promise.all(srcs.map(async s => (await loadInto(cache, s)) ? null : s));
+export async function preload(cache: ImageCache, srcs: string[], pri: NetPri = 0): Promise<string[]> {
+  const results = await Promise.all(srcs.map(async s => (await loadInto(cache, s, pri)) ? null : s));
   return results.filter((s): s is string => s !== null);
 }
 
@@ -265,13 +405,15 @@ export interface ImageQueue {
   pause(): void;
   /** Resume dispatching. */
   resume(): void;
+  /** Forget failures (network came back): anything not in the cache may be queued and loaded again. */
+  retry(): void;
 }
 
 /**
  * ponytail: two downloads at a time so a phone does not decode every sheet in one frame.
  * A desktop with memory to spare can raise the limit; the pin order stays the same.
  */
-export function imageQueue(cache: ImageCache, limit: number, load: (src: string) => Promise<boolean> = s => loadInto(cache, s)): ImageQueue {
+export function imageQueue(cache: ImageCache, limit: number, load: (src: string, pri: NetPri) => Promise<boolean> = (s, p) => loadInto(cache, s, p)): ImageQueue {
   const pins: string[] = [];
   const front: string[] = [];
   const back: string[] = [];
@@ -296,7 +438,7 @@ export function imageQueue(cache: ImageCache, limit: number, load: (src: string)
       if (cache.has(src) || missingImages.has(src)) { settled.add(src); continue; }
       active++;
       flying.add(src);
-      void load(src).finally(() => {
+      void load(src, pins.includes(src) ? 0 : 1).finally(() => {
         flying.delete(src);
         settled.add(src);
         active--;
@@ -334,6 +476,10 @@ export function imageQueue(cache: ImageCache, limit: number, load: (src: string)
       pump();
     },
     pause() { paused = true; },
+    retry() {
+      for (const src of [...settled]) if (!cache.has(src)) settled.delete(src);
+      soon(pins);
+    },
     resume() {
       paused = false;
       pump();

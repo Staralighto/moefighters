@@ -1,7 +1,7 @@
 /* 物品的名字和预览，商店、仓库、领奖演出共用。
    头像框是代码画的：主色粗边 + 两个切角 + 一枚小星；框里放一位角色的头像（按物品 id 固定挑一位）。 */
 
-import { staticUrl } from '../assets/loader.ts';
+import { cssUrl, staticUrl } from '../assets/loader.ts';
 import { PUBLIC_ROSTER } from '../data/characters.ts';
 import { ITEM_BY_ID, KINDS, itemsOf } from '../shop/catalog.ts';
 import { ALBUMS } from '../tasks/defs.ts';
@@ -49,7 +49,7 @@ export function frameHTML(id: string, faces?: [string, string], pair = false): s
   const key = id.split(':')[1] ?? '';
   const [a, b] = faces ?? previewFaces(id);
   const unit = (who: string, side: 'a' | 'b') => `<span class="fp-unit fp-${side}"><i class="fp-back"></i>${avatar(who)}<i class="fp-corners"></i></span>`;
-  return `<span class="fp" data-base="${item?.base ? 'true' : 'false'}" data-frame="${esc(key)}" style="--fr:${esc(item?.color ?? '#E9C46A')};--frimg:url('${esc(staticUrl(`/frames/${key}.svg`))}')">${unit(a, 'a')}${pair ? unit(b === a ? pickFace(id + '#3') : b, 'b') : ''}</span>`;
+  return `<span class="fp" data-base="${item?.base ? 'true' : 'false'}" data-frame="${esc(key)}" style="--fr:${esc(item?.color ?? '#E9C46A')};--frimg:${esc(cssUrl(`/frames/${key}.svg`))}">${unit(a, 'a')}${pair ? unit(b === a ? pickFace(id + '#3') : b, 'b') : ''}</span>`;
 }
 
 /** 主页样式预览：缩小的首页一角——色块大圆、斜条、开打按钮、编号徽章。 */

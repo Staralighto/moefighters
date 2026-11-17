@@ -9,6 +9,7 @@
 
 import { cycleMusicOrder, musicEnabled, musicIndex, musicLevel, musicLoading, musicOrder, musicPlaying, musicPosition, musicTracks, musicVolume, onMusicChange, playTrack, pokeMusic, seekMusic, setMusicEnabled, setMusicOrder, setMusicVolume, stepMusic, type MusicOrder } from '../audio/bgm.ts';
 import { coverHTML, coverLook } from './cover.ts';
+import { assetUrl, netTask } from '../assets/loader.ts';
 import { registerHubPage } from './hub.ts';
 
 const ORDER_NAMES: Record<MusicOrder, string> = { seq: '列表循环', shuffle: '随机播放', one: '单曲循环' };
@@ -35,12 +36,15 @@ function probeDurations(onOne: () => void): void {
     while (i < list.length && durations.has(i)) i++;
     if (i >= list.length) return;
     const k = i++;
-    const a = new Audio();
-    a.preload = 'metadata';
-    const done = () => { a.onloadedmetadata = a.onerror = null; a.removeAttribute('src'); a.load(); next(); };
-    a.onloadedmetadata = () => { if (Number.isFinite(a.duration)) { durations.set(k, a.duration); onOne(); } done(); };
-    a.onerror = done;
-    a.src = list[k].src;
+    // 后台车道：只读文件头，但仍排在图片后面，不和眼前的图抢。地址必须过 assetUrl（Toy 的相对 base）。
+    void netTask(`meta:${list[k].src}`, 2, () => new Promise<void>(settle => {
+      const a = new Audio();
+      a.preload = 'metadata';
+      const done = () => { a.onloadedmetadata = a.onerror = null; a.removeAttribute('src'); a.load(); settle(); };
+      a.onloadedmetadata = () => { if (Number.isFinite(a.duration)) { durations.set(k, a.duration); onOne(); } done(); };
+      a.onerror = done;
+      a.src = assetUrl(list[k].src);
+    })).then(next);
   };
   next();
 }

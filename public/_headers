@@ -22,6 +22,18 @@
 /icons/*
   Cache-Control: public, max-age=86400, stale-while-revalidate=604800
 
+/avatars/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/frames/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/albums/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/finale/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
 /fonts/*
   Cache-Control: public, max-age=2592000
 

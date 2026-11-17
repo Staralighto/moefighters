@@ -6,7 +6,7 @@ import { PUBLIC_ROSTER } from '../data/characters.ts';
 import { STAGES } from '../data/stages.ts';
 import { ITEM_BY_ID } from '../shop/catalog.ts';
 import { ALBUMS } from '../tasks/defs.ts';
-import { staticUrl } from '../assets/loader.ts';
+import { applyImageUrl, cssUrl, loadImage } from '../assets/loader.ts';
 import { frameArt } from '../shop/state.ts';
 import { avatarImg, frameShelfSrcs } from './items.ts';
 import type { CardState } from './merch.ts';
@@ -57,27 +57,21 @@ export function sizeHudScene(scene: HTMLElement): void {
 
 export function stageArtUrl(): string { return (STAGES.find(s => s.id === 'ring') ?? STAGES[0])?.image ?? ''; }
 
-/* 头像框第一次点开要同时解码一张约 1MB 的舞台图和多张框图。解码发生在绘制那一帧就会卡住，
-   第二次命中缓存就没了。这里提前解好，并留着 Image，解码结果才不会被收掉。
-   ponytail: 只保证这些 URL 的 <img> 解码缓存还在；CSS background 若另起一次解码，把舞台改成直接挂这张 Image。 */
-const decoded = new Map<string, Promise<void>>();
-const keep: HTMLImageElement[] = [];
+/* 头像框详情/商店展台：框图 SVG 很小，先解好再画，避免第一帧同步解码。
+   舞台图约 1MB，不挡画面：先露底色，下好后再挂上（applyImageUrl 给的是已加载的绝对地址，CSS 直接命中缓存）。
+   全部走 loader 的下载闸，和选人页、对战共用一套优先级与缓存。 */
 function decodeUrl(src: string): Promise<void> {
-  if (!src) return Promise.resolve();
-  let pending = decoded.get(src);
-  if (!pending) {
-    const img = new Image();
-    keep.push(img);
-    img.src = staticUrl(src);
-    pending = Promise.resolve(img.decode?.()).then(() => {}, () => {});
-    decoded.set(src, pending);
-  }
-  return pending;
+  return src ? loadImage(src, 1).then(() => {}, () => {}) : Promise.resolve();
 }
 let warming: Promise<void> | null = null;
 export function warmFrameArt(): Promise<void> {
-  warming ??= Promise.all([stageArtUrl(), ...frameShelfSrcs()].map(decodeUrl)).then(() => {});
+  warming ??= Promise.all(frameShelfSrcs().map(decodeUrl)).then(() => {});
   return warming;
+}
+/** 把舞台图挂到 el 的 --fv-art 上：下好才挂，挂上的是绝对地址。 */
+export function paintStageArt(el: HTMLElement): void {
+  const src = stageArtUrl();
+  if (src) applyImageUrl(src, url => el.style.setProperty('--fv-art', cssUrl(url)));
 }
 
 function paintScene(id: string): void { paintHudScene($('fv-scene'), id, faces); }
@@ -105,7 +99,7 @@ export function openFramePreview(id: string, state: () => CardState, run: SideRu
     if (tick !== openTick) return;
     const dlg = $('frame-dialog') as HTMLDialogElement;
     const scene = $('fv-scene');
-    scene.style.setProperty('--fv-art', `url("${staticUrl(stageArtUrl())}")`);
+    paintStageArt(scene);
     faces = mine;
     paintScene(id);
     renderSide($('fv-side'), {
@@ -124,7 +118,5 @@ export function openFramePreview(id: string, state: () => CardState, run: SideRu
 export function bindFramePreview(): void {
   const dlg = $('frame-dialog') as HTMLDialogElement;
   dlg.querySelector<HTMLButtonElement>('.fv-close')!.onclick = () => dlg.close();
-  const start = () => void warmFrameArt();
-  if ('requestIdleCallback' in window) requestIdleCallback(start, { timeout: 1200 });
-  else setTimeout(start, 300);
+  // 不在进首页时预热：那会和选人页的 imageQueue 抢带宽。商店打开 / 详情打开时各自 await warmFrameArt()。
 }

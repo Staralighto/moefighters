@@ -16,7 +16,7 @@ import { openHub, registerHubPage } from './hub.ts';
 import { itemName, itemPreviewHTML, themeHTML, ticketHTML } from './items.ts';
 import { setLockerTab } from './lockerPage.ts';
 import { SHARD } from './merch.ts';
-import { paintHudScene, sizeHudScene, stageArtUrl, warmFrameArt } from './framePreview.ts';
+import { paintHudScene, paintStageArt, sizeHudScene, warmFrameArt } from './framePreview.ts';
 import { charOfFinale, openFinalePreview, playFinale, type FinalePlayer } from './finalePreview.ts';
 import { openFramePreview } from './framePreview.ts';
 import { openItemPreview } from './itemPreview.ts';
@@ -213,7 +213,7 @@ function paintSpot(animateIn: boolean): void {
   show.innerHTML = viewHTML(it);
   info.innerHTML = infoHTML(it);
   const scene = show.querySelector<HTMLElement>('.ss-scene');
-  if (scene) scene.style.setProperty('--fv-art', `url("${staticUrl(stageArtUrl())}")`);
+  if (scene) paintStageArt(scene);
   if (it.kind === 'frame' && scene) { paintHudScene(scene, it.id); sizeHudScene(scene); }
   if (it.kind === 'finale' && scene) {
     const char = charOfFinale(it.id);
@@ -356,7 +356,7 @@ export function bindShopPage(open: (d: HTMLDialogElement) => void): void {
     title: '商店', en: 'MERCH STAND', mount,
     enter: () => {
       const tick = ++enterTick;
-      /* 舞台图和框图先解码完再画。已经解过的话这是个微任务，赶在下一帧绘制之前。 */
+      /* 框图先解码完再画（几个小 SVG）；舞台大图不挡货架，到了再挂。 */
       void warmFrameArt().then(() => {
         if (tick !== enterTick || !root) return;
         spot = todays();

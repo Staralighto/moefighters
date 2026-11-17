@@ -2890,3 +2890,24 @@ html.hub-covered .page-deco * { animation-play-state: paused; }
 
 /* ==== 头像框美术：每款一张 SVG（public/frames/<id>.svg，画布 112×136，头像正好盖在 (8,8)–(104,104)），
    像默认票根一样夹在头像身后、往下探出一截。--frimg 由 JS 写（HUD：shop/state.ts applyHudFrame；预览：ui/items.ts）。 ==== */
+
+/* ==== 设置 → 资源：设置里只是一行入口，明细在二级弹窗 #res-dialog ==== */
+.res-entry { position: relative; width: 100%; margin: 0; border: 0; border-radius: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+#settings-dialog .setting-row.res-entry { grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 10px; }
+.res-entry-state { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.res-entry-go { width: 14px; height: 14px; flex: none; color: var(--muted); }
+.res-entry-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 2px; background: var(--primary); transform-origin: left; transform: scaleX(var(--p, 0)); transition: transform .3s ease; }
+.res-entry:hover .res-entry-go { color: var(--text); }
+.res-dialog { width: min(520px, calc(100% - 2rem)); }
+.res-head { display: grid; gap: 8px; margin-top: 4px; }
+.res-head small { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.res-bar { height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.res-bar i { display: block; height: 100%; width: 100%; border-radius: inherit; background: var(--primary); transform-origin: left; transform: scaleX(var(--p, 0)); transition: transform .3s ease; }
+.res-list { list-style: none; margin: 14px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(12em, 1fr)); gap: 4px 18px; max-height: min(52vh, 420px); overflow: auto; }
+.res-list:empty { display: none; }
+.res-list li { position: relative; display: flex; align-items: baseline; gap: 6px; padding: 7px 0 9px; font-size: 13px; }
+.res-list li::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 2px; background: linear-gradient(90deg, var(--primary) calc(var(--p, 0) * 100%), var(--line) 0); }
+.res-list b { font-weight: 700; }
+.res-list span { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.res-list em { font-style: normal; color: var(--primary-ink); font-size: 12px; }
+.res-actions { grid-template-columns: minmax(0, 1fr); margin-top: 16px; }

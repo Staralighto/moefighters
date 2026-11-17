@@ -6,7 +6,7 @@ import { KeyboardInput, TouchInput } from './game/input.ts';
 import type { Renderer } from './render/renderer.ts';
 import { isLiteFx, setLiteFx, shouldGoLite } from './render/fxQuality.ts';
 import { createViews } from './render/view.ts';
-import { assetsFor, easeLoad, imageQueue, liteFight, loadInto, loadKujiFont, missingImages, portraitSrc, preload, slowLink, stageThumbSrc, supportsWebp, type ImageCache } from './assets/loader.ts';
+import { assetsFor, cssUrl, easeLoad, holdBulk, holdIdle, imageQueue, trimImages, liteFight, loadInto, loadKujiFont, missingImages, portraitSrc, preload, slowLink, stageThumbSrc, supportsWebp, type ImageCache } from './assets/loader.ts';
 import { Sfx } from './audio/sfx.ts';
 import { cycleMusicOrder, onMusicChange, fightShuffle, musicEnabled, musicOrder, musicTitle, musicVolume, nudgeMusic, pokeMusic, setFightShuffle, setMusicEnabled, setMusicHeld, setMusicOrder, setMusicSuspended, setMusicVolume, shuffleFightTrack, stepMusic } from './audio/bgm.ts';
 import { matchName, parseRosterThumb, SelectScreen, type MatchSetup } from './ui/select.ts';
@@ -36,6 +36,8 @@ import { LocalPad } from './net/localPad.ts';
 import './save/sections.ts';
 import { afterMatch } from './tasks/hook.ts';
 import { bindSaveUi } from './ui/saveUi.ts';
+import { bindResources } from './ui/resources.ts';
+import { chunk } from './assets/chunk.ts';
 import { bindHub, closeHub } from './ui/hub.ts';
 import { bindMusicPage } from './ui/musicPage.ts';
 import { bindTasksPage } from './ui/tasksPage.ts';
@@ -87,6 +89,8 @@ if (import.meta.env.DEV) {
 performance.setResourceTimingBufferSize?.(1000);
 const previewViews = createViews(PLAYABLE, images);
 const queue = imageQueue(images, 2);
+// 网络恢复：断网期间失败的图全部作废重来（否则这一整次访问都只剩色块人形）。
+window.addEventListener('online', () => { missingImages.clear(); queue.retry(); });
 let followCast = false;
 let webpOk = false;
 void supportsWebp().then(ok => { webpOk = ok; });
@@ -251,7 +255,7 @@ bindOnline(() => select.onlinePick(), (role, hostChar, guestChar, stageId, link,
   // The backdrop is the large file. Keep it off the two-wide portrait queue so the second
   // standing picture is not stuck behind it.
   queue.pin(idles);
-  if (stageSrc) void loadInto(images, stageSrc);
+  if (stageSrc) void loadInto(images, stageSrc, 0);
   // Roster crops (or avatars) load on scroll. Full sheets wait until a fight starts.
   followCast = true;
   select.watchRoster();
@@ -298,6 +302,7 @@ function leaveBattleFullscreen(): void {
   else if (doc.webkitFullscreenElement) doc.webkitExitFullscreen?.();
 }
 
+let releaseBulk: (() => void) | null = null;
 async function startGame(setup: MatchSetup): Promise<void> {
   closeHub(true);
   sfx.unlock();
@@ -319,30 +324,49 @@ async function startGame(setup: MatchSetup): Promise<void> {
   $('start').setAttribute('disabled', '');
   // The fight's own sheets take the link; the background roster queue waits so the
   // "开打" wait is not competing with 2-at-a-time prefetch for the same bandwidth.
+  // 选人队列一直停到回选人页（restBack）：对战里看不见名单，不该再和对战换图抢链路。
   queue.pause();
+  // 设置里的「预载全部资源」整场对战都停着，回选人页（restBack）再继续。
+  releaseBulk ??= holdBulk();
+  const releaseIdle = holdIdle();
+  // 开打是玩家主动的一次请求：之前失败过的图（断网、切网）这次重新下，不沿用整局会话的「缺图」结论。
+  for (const s of need) missingImages.delete(s);
   let missing: string[];
   let render: typeof import('./render/renderer.ts');
   try {
     // Online starts the instant it is ready: the cut only covers the load, it never holds a live match.
     [missing, render] = await Promise.all([
-      preload(images, need), import('./render/renderer.ts'), loadKujiFont(), setup.online ? Promise.resolve() : versusHeld(),
+      preload(images, need), chunk(() => import('./render/renderer.ts')), loadKujiFont(), setup.online ? Promise.resolve() : versusHeld(),
       // 终幕 textures bake here, behind the versus screen, not in the middle of a fight.
       setup.characters.some(c => c.finale)
-        ? import('./render/finale.ts').then(m => { for (const c of setup.characters) if (c.finale) m.prewarmFinale(c.finale); })
+        ? chunk(() => import('./render/finale.ts')).then(m => { for (const c of setup.characters) if (c.finale) m.prewarmFinale(c.finale); })
         : Promise.resolve(),
     ]);
   } catch (err) {
+    queue.resume();
+    releaseBulk?.();
+    releaseBulk = null;
     hideVersus();
     throw err;
   } finally {
-    queue.resume();
+    releaseIdle();
     $('start').removeAttribute('disabled');
   }
-  // Lite form sheets first (an ultimate can come early), then the full set replaces the soft one.
-  if (lite) queue.soon([...lite.rest, ...srcs]);
+  {
+    const finaleSrcs = setup.characters.flatMap(c => [c.finale?.art, ...(c.finale?.props ?? [])]).filter((s): s is string => !!s);
+    const keep = new Set([...srcs, ...need, ...(lite?.rest ?? []), ...finaleSrcs, ...(select.stage.image ? [select.stage.image] : [])]);
+    // 手机给 160MB 解码预算（约两三场 1V1 的量），桌面 384MB。
+    trimImages(images, keep, (document.body.classList.contains('touch') ? 160 : 384) << 20);
+  }
+  // Lite form sheets first (an ultimate can come early), then the full set replaces the soft one —
+  // one at a time in the background lane, so a live fight never decodes two sheets in the same moment.
+  if (lite) {
+    for (const s of lite.rest) void loadInto(images, s, 1);
+    for (const s of srcs) void loadInto(images, s, 2);
+  }
   if (missing.length) console.warn('缺图，已回退色块人形：' + missing.join(', '));
   // 终幕 illustrations load behind the fight: a picture not in yet just means that kill skips the cut-in art.
-  for (const c of setup.characters) for (const src of [c.finale?.art, ...(c.finale?.props ?? [])]) if (src) void loadInto(images, src);
+  for (const c of setup.characters) for (const src of [c.finale?.art, ...(c.finale?.props ?? [])]) if (src) void loadInto(images, src, 2);
   if (setup.characters.some(c => c.finale)) sfx.preloadFinale();
   lastSetup = setup;
 
@@ -472,7 +496,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
   renderer = new render.Renderer($('game') as HTMLCanvasElement, previewViews, setup.stage, images);
   // 跟随镜头拉远时，画布外面垫的是同一张场景图（CSS 背景），不是黑边。
   const art = setup.stage.image ? images.get(setup.stage.image)?.src || setup.stage.image : '';
-  if (art) $('arena').style.setProperty('--stage-art', `url("${art}")`);
+  if (art) $('arena').style.setProperty('--stage-art', cssUrl(art));
   else $('arena').style.removeProperty('--stage-art');
   lastNow = gapSum = gapCount = 0;
   raf = requestAnimationFrame(frame);
@@ -667,6 +691,9 @@ function restBack(): void {
   challenge = null;
   $('battle').hidden = true;
   $('selection').hidden = false;
+  queue.resume();
+  releaseBulk?.();
+  releaseBulk = null;
   selectRaf = requestAnimationFrame(selectLoop);
   document.body.classList.remove('in-battle', 'turned', 'end-up');
   select.paintSeals();
@@ -1249,6 +1276,7 @@ document.addEventListener('keydown', e => { if (!e.repeat) game?.finalePress(); 
 
 /* ---- 后台：存档、碎片、四个页面 ---- */
 bindSaveUi(openDialog);
+bindResources(openDialog);
 bindHub();
 bindMusicPage();
 setRewardOpener(openDialog);

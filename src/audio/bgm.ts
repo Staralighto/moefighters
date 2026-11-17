@@ -10,7 +10,7 @@
    开着的音乐会自己响；不允许就保持开关为开，选人页先不出声，开打的点击再接上。静默
    试播只用同一个 AudioContext：手势里 resume 它，不再关掉后另建一个，避免和音效抢
    第二次创建并把这一页的音乐标死。 */
-import { assetUrl, imagesBusy, slowLink } from '../assets/loader.ts';
+import { assetUrl, imagesBusy, netTask, slowLink } from '../assets/loader.ts';
 import { migrateLinearSlider, musicGain } from './mix.ts';
 
 /* from：音乐库里曲名下面那行小字，没有就不显示。只写有出处记录的（见 public/bgm/CREDITS.txt）。 */
@@ -315,8 +315,8 @@ function tryWarm(): void {
   const ctrl = new AbortController();
   warmAbort = ctrl;
   const gen = loadGen;
-  fetch(assetUrl(TRACKS[next].src), { priority: 'low', signal: ctrl.signal })
-    .then(r => { if (!r.ok) throw new Error('bgm warm ' + r.status); return r.arrayBuffer(); })
+  netTask(`bgm:${TRACKS[next].src}`, 2, () => fetch(assetUrl(TRACKS[next].src), { priority: 'low', signal: ctrl.signal } as RequestInit)
+    .then(r => { if (!r.ok) throw new Error('bgm warm ' + r.status); return r.arrayBuffer(); }))
     .then(bytes => {
       if (gen !== loadGen || ctrl.signal.aborted) return;
       warmBytes = { index: next, buf: bytes };

@@ -1,6 +1,6 @@
 /* 商店与仓库的业务：买、装备、当前生效的款式，以及它们落到界面上的地方（主页配色、战斗头像框）。 */
 
-import { staticUrl } from '../assets/loader.ts';
+import { cssUrl } from '../assets/loader.ts';
 import { STAGES } from '../data/stages.ts';
 import type { StageData } from '../data/types.ts';
 import { equip, equipped, grant, hasFlag, onInventory, owns, setFlag } from '../save/inventory.ts';
@@ -10,7 +10,7 @@ import { SKINS } from '../theme/skins.ts';
 import { ITEM_BY_ID, itemsOf, slotOf, type ItemDef, type Kind } from './catalog.ts';
 
 /** 头像框美术图（public/frames/<id>.svg）。 */
-export const frameArt = (key: string) => `url("${staticUrl(`/frames/${key}.svg`)}")`;
+export const frameArt = (key: string) => cssUrl(`/frames/${key}.svg`);
 
 export const has = (id: string) => !!ITEM_BY_ID.get(id)?.base || owns(id);
 

@@ -2660,6 +2660,16 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(assetUrl('/sprites/aya/common.png', './'), './sprites/aya/common.png', 'a relative base keeps sheets inside the toy directory');
   assert.equal(assetUrl('/bgm/garupa-pico-instrumental.m4a', '/'), '/bgm/garupa-pico-instrumental.m4a', 'the dev server still requests from the site root');
   assert.ok(readFileSync('src/assets/loader.ts', 'utf8').includes('once().catch(() => once())'), 'a dropped image is requested once more before the block figure');
+  {
+    // A relative url() inside a CSS custom property resolves against the built stylesheet (assets/), not the page.
+    const files = process.getBuiltinModule('fs').readdirSync('src', { recursive: true }).map(f => 'src/' + f.replace(/\\/g, '/')).filter(f => f.endsWith('.ts'));
+    for (const f of files) {
+      const t = readFileSync(f, 'utf8');
+      assert.ok(!/setProperty\(\s*'--[\w-]+'\s*,\s*`url\(/.test(t) && !/--[\w-]+:\s*url\(/.test(t), f + ': a custom-property url() goes through cssUrl (absolute), never a relative path');
+    }
+    assert.ok(readFileSync('src/ui/musicPage.ts', 'utf8').includes('a.src = assetUrl('), 'the music page probes durations under the Toy base');
+    assert.ok(!readFileSync('src/ui/framePreview.ts', 'utf8').includes('requestIdleCallback'), 'frame art is not prefetched on the home screen');
+  }
   const headers = readFileSync('public/_headers', 'utf8');
   const rules: [string, string][] = [];
   let cachePath = '';
@@ -2816,7 +2826,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const onlinePane = dialogHtml.match(/<section class="set-pane"[^>]*id="set-pane-online"[\s\S]*?<\/section>/)?.[0] ?? '';
     assert.equal(text(onlinePane), '联机代号 修改代号', 'online codename setting row has control name and button only');
     const visible = text(dialogHtml.replace(onlinePane, ''));
-    assert.equal(visible, '设置 × 通用 操控 训练场 音频 联机 外观 主题 名册 名册显示 直接排开 按乐队分组 名册卡面 全身 头像 印章色条 显示隐藏角色 存档 导入存档 导出存档 键位方案 基础 进阶 空白处手势 自定义布局 恢复默认 编辑布局 技能 无技能冷却 无限大招 木桩 一直格挡 连段后回满血 音量 音乐 音效 播放 开打换曲 ? 只在随机播放时生效，其他时候不能改。', 'settings dialog keeps control names and option names, plus the fight-shuffle tip (the online pane exempted)');
+    assert.equal(visible, '设置 × 通用 操控 训练场 音频 联机 外观 主题 名册 名册显示 直接排开 按乐队分组 名册卡面 全身 头像 印章色条 显示隐藏角色 存档 导入存档 导出存档 资源 预载全部资源 键位方案 基础 进阶 空白处手势 自定义布局 恢复默认 编辑布局 技能 无技能冷却 无限大招 木桩 一直格挡 连段后回满血 音量 音乐 音效 播放 开打换曲 ? 只在随机播放时生效，其他时候不能改。', 'settings dialog keeps control names and option names, plus the fight-shuffle tip (the online pane exempted)');
     // 二值项是开关，两三个选项是分段按钮，页签切页：设置弹窗里不再有下拉。
     assert.ok(!dialogHtml.includes('pick-btn') && (dialogHtml.match(/role="switch"/g) ?? []).length === 10, 'settings on/off rows are switches, not dropdowns');
     assert.ok(['暗色', '亮色', '跟随系统'].every(n => dialogHtml.includes(`aria-label="${n}"`)), 'theme icons keep their names for screen readers');
