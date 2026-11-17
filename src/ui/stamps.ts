@@ -76,7 +76,7 @@ export function recordMatchClear(g: FightGame, report: MatchReport): boolean {
   return first;
 }
 
-function rankBetter(a: string, b: string | undefined): boolean {
+export function rankBetter(a: string, b: string | undefined): boolean {
   const order = 'SABC';
   return !b || order.indexOf(a) >= 0 && order.indexOf(a) < order.indexOf(b);
 }

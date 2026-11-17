@@ -2,7 +2,7 @@ import { applyImageUrl, assignFirst, loadImage, stageThumbSrc } from '../assets/
 import { stampOf } from './stamps.ts';
 import type { CharacterData, StageData } from '../data/types.ts';
 import { BAND_BY_ID, groupOf, type BandId } from '../data/bands.ts';
-import { STAGES } from '../data/stages.ts';
+import { stagePool } from '../shop/state.ts';
 import type { ChallengeMods, Mode } from '../game/game.ts';
 import type { FighterView } from '../render/view.ts';
 import { previewFighter, type Fighter } from '../game/fighter.ts';
@@ -226,12 +226,14 @@ export class SelectScreen {
 
   /** The stage the picker points at; 'random' previews the first one, like the reference's backdrop. */
   get stage(): StageData {
-    return STAGES.find(s => s.id === this.stageId) ?? STAGES[0];
+    const pool = stagePool();
+    return pool.find(s => s.id === this.stageId) ?? pool[0];
   }
 
   /** The stage a match actually fights on: a pointed-at stage plays itself, 'random' rolls fresh. */
   resolveStage(): StageData {
-    return this.stageId === 'random' ? STAGES[Math.floor(Math.random() * STAGES.length)] : this.stage;
+    const pool = stagePool();
+    return this.stageId === 'random' ? pool[Math.floor(Math.random() * pool.length)] : this.stage;
   }
 
   /** The character this player takes online, and the stage a host would use. */
@@ -242,7 +244,7 @@ export class SelectScreen {
   mount(): void {
     this.renderRoster();
     $('stage-grid').innerHTML = '<button type="button" class="stage-card stage-random" data-stage="random" aria-pressed="false"><span class="stage-random-art" aria-hidden="true">?</span><b>随机场景</b></button>'
-      + STAGES.map(s => `<button type="button" class="stage-card" data-stage="${s.id}" aria-pressed="false">${s.image ? `<img data-src="${s.image}" alt="${s.name}场景预览">` : ''}<b>${s.name}</b></button>`).join('');
+      + stagePool().map(s => `<button type="button" class="stage-card" data-stage="${s.id}" aria-pressed="false">${s.image ? `<img data-src="${s.image}" alt="${s.name}场景预览">` : ''}<b>${s.name}</b></button>`).join('');
     this.watchStageCards();
     $('stage-grid').querySelectorAll<HTMLButtonElement>('button').forEach(b => b.onclick = () => {
       if (this.netLocked || document.body.classList.contains('net-ready-phase')) { this.onPick('deny'); this.nope(b); return; }
@@ -725,7 +727,7 @@ export class SelectScreen {
       : [...saved.who];
     this.side = Number.isInteger(saved.side) && saved.side >= 0 && saved.side < need ? saved.side : 0;
     if (this.mode === 'challenge') this.side = 0;
-    if (saved.stageId === 'random' || STAGES.some(s => s.id === saved.stageId)) this.stageId = saved.stageId!;
+    if (saved.stageId === 'random' || stagePool().some(s => s.id === saved.stageId)) this.stageId = saved.stageId!;
   }
 
   private save(): void {

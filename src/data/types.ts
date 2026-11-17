@@ -487,6 +487,8 @@ export interface GaugeSpec {
 export interface StageData {
   id: string;
   name: string;
+  /** 商店里卖的新舞台：物品 id（stage:xxx）。有值时没买就不出现在选人页。 */
+  item?: string;
   sky: string;
   ground: string;
   accent: string;

@@ -8,7 +8,7 @@ import { isLiteFx, setLiteFx, shouldGoLite } from './render/fxQuality.ts';
 import { createViews } from './render/view.ts';
 import { assetsFor, easeLoad, imageQueue, liteFight, loadInto, loadKujiFont, missingImages, portraitSrc, preload, slowLink, stageThumbSrc, supportsWebp, type ImageCache } from './assets/loader.ts';
 import { Sfx } from './audio/sfx.ts';
-import { cycleMusicOrder, fightShuffle, musicEnabled, musicOrder, musicTitle, musicVolume, nudgeMusic, pokeMusic, setFightShuffle, setMusicEnabled, setMusicHeld, setMusicOrder, setMusicSuspended, setMusicVolume, shuffleFightTrack, stepMusic } from './audio/bgm.ts';
+import { cycleMusicOrder, onMusicChange, fightShuffle, musicEnabled, musicOrder, musicTitle, musicVolume, nudgeMusic, pokeMusic, setFightShuffle, setMusicEnabled, setMusicHeld, setMusicOrder, setMusicSuspended, setMusicVolume, shuffleFightTrack, stepMusic } from './audio/bgm.ts';
 import { matchName, parseRosterThumb, SelectScreen, type MatchSetup } from './ui/select.ts';
 import { bestLabel, challengeName, deckLabel, foeCount, hideBuffPicker, readBest, readRun, rollEnemies, showBuffPicker, stageSetup, writeBest, writeRun, type ChallengeKind, type ChallengeRun } from './ui/challenge.ts';
 import { cycleSkillTier, hideEnd, setBattleGuide, setRoundLabel, showBanner, showEnd, updateHUD } from './ui/hud.ts';
@@ -33,6 +33,19 @@ import { beginNet, endNet, keepLink, netAfter, netAudio, netBefore, netEpoch, ne
 import { paintConnection } from './ui/netConnection.ts';
 import type { Link } from './net/rtc.ts';
 import { LocalPad } from './net/localPad.ts';
+import './save/sections.ts';
+import { afterMatch } from './tasks/hook.ts';
+import { bindSaveUi } from './ui/saveUi.ts';
+import { bindHub, closeHub } from './ui/hub.ts';
+import { bindMusicPage } from './ui/musicPage.ts';
+import { bindTasksPage } from './ui/tasksPage.ts';
+import { applyHudFrame, bindLooks, finaleOwned } from './shop/state.ts';
+import { setRewardOpener } from './ui/reward.ts';
+import { bindShopPage } from './ui/shopPage.ts';
+import { bindLockerPage } from './ui/lockerPage.ts';
+import { bindFramePreview, setFramePreviewOpener } from './ui/framePreview.ts';
+import { bindFinalePreview, setFinalePreviewHooks } from './ui/finalePreview.ts';
+import { bindItemPreview, setItemPreviewOpener } from './ui/itemPreview.ts';
 import { Rng } from './net/lock.ts';
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
@@ -257,7 +270,7 @@ if (saved) {
 
 let selectRaf = 0;
 function selectLoop(now: number): void {
-  if (!$('selection').hidden) {
+  if (!$('selection').hidden && !document.documentElement.classList.contains('hub-covered')) {
     tickBoot(now);
     setMusicHeld(!bootDone);
     select.animate(now);
@@ -286,6 +299,7 @@ function leaveBattleFullscreen(): void {
 }
 
 async function startGame(setup: MatchSetup): Promise<void> {
+  closeHub(true);
   sfx.unlock();
   /* pointerdown 上的开始/重开把这次手势让给了全屏，音乐改在这条仍处于点击里的路径接上。 */
   shuffleFightTrack();
@@ -379,6 +393,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
     random: lockRng?.next,
     audio: lockSound ?? (setup.online ? netAudio(sfx) : sfx),
     netRole: setup.lock ? 'lock' : setup.online,
+    finaleOk: setup.online || setup.lock ? undefined : finaleOwned,
     onHUD: updateHUD,
     onBanner: showBanner,
     onEnd: (title, stats) => {
@@ -388,9 +403,11 @@ async function startGame(setup: MatchSetup): Promise<void> {
         const me = setup.online === 'host' ? 0 : 1;
         const f = game.fighters[me];
         noteEnd();
+        const mine = buildReport(game, me, true);
+        afterMatch(game, mine, { online: true });
         showEnd(game.winnerTeam === me ? '你赢了' : '你输了',
           f ? `${game.wins[me]} : ${game.wins[1 - me]} · ${f.data.name} 最高 ${game.maxCombo[me]} 连击 · ${game.totalHits[f.id]} 次命中` : stats,
-          buildReport(game, me, true));
+          mine);
         return;
       }
       // Mirror matches share a name: say who won from this seat. The guest reads its own line.
@@ -400,7 +417,9 @@ async function startGame(setup: MatchSetup): Promise<void> {
       const end: NetEnd = { title, stats, win: g.winnerTeam, guestStats, guestReport: buildReport(g, 1, true) };
       g.netEnd = end;
       noteEnd();
-      showEnd(g.winnerTeam === 0 ? '你赢了' : g.winnerTeam === 1 ? '你输了' : title, stats, buildReport(g, 0, true));
+      const hostReport = buildReport(g, 0, true);
+      afterMatch(g, hostReport, { online: true });
+      showEnd(g.winnerTeam === 0 ? '你赢了' : g.winnerTeam === 1 ? '你输了' : title, stats, hostReport);
     },
     onPause: paused => {
       setIconBtn($('pause'), paused ? '继续 ESC' : '暂停 ESC');
@@ -418,7 +437,12 @@ async function startGame(setup: MatchSetup): Promise<void> {
     beginNet(setup.online, wire, {
       hud: updateHUD,
       banner: showBanner,
-      end: (title, stats, report) => { showEnd(title, stats, report); if (title === '对手已离开' || title === '连接已断开') $('rematch').hidden = true; },
+      end: (title, stats, report) => {
+        const left = title === '对手已离开' || title === '连接已断开';
+        if (game && report && !left) afterMatch(game, report, { online: true });
+        showEnd(title, stats, report);
+        if (left) $('rematch').hidden = true;
+      },
       quality: status => paintConnection('battle-connection', status),
       again: (state, seed) => {
         if (state === 'go') { rematchOnline(seed); return; }
@@ -442,6 +466,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
     } : undefined);
   }
   localPad = setup.lock && game ? new LocalPad(game) : null;
+  applyHudFrame();
   hostTicker(setup.online === 'host' || !!setup.lock);
   // previewViews covers the whole roster: a 诗超绊 bandmate borrows their sheets mid-match.
   renderer = new render.Renderer($('game') as HTMLCanvasElement, previewViews, setup.stage, images);
@@ -490,6 +515,7 @@ function onFightEnd(title: string, stats: string): void {
   if (!game || game.mode !== 'challenge' || !challenge) {
     const report = game ? buildReport(game, humanTeam(game)) : null;
     const first = game && report ? recordMatchClear(game, report) : false;
+    if (game) afterMatch(game, report);
     $('end-book').hidden = !first;
     showEnd(title, stats, report);
     return;
@@ -505,6 +531,7 @@ function onFightEnd(title: string, stats: string): void {
       writeBest(kind, stage);
       challenge.newBest = true;
     }
+    afterMatch(game, buildReport(game, 0), { stage });
     showEnd('第 ' + stage + ' 关 完成', record, { ...buildReport(game, 0), tour: { stage, best: readBest(kind), newBest: !!challenge.newBest && readBest(kind) === stage } });
     setIconBtn($('rematch'), '下一关 ▶');
     setIconBtn($('reselect'), '返回休息');
@@ -515,6 +542,7 @@ function onFightEnd(title: string, stats: string): void {
     challenge.armed = false;
     writeRun(kind, challenge);
   } else {
+    afterMatch(game, buildReport(game, 0), { stage });
     showEnd('挑战结束', (challenge.newBest ? '新纪录！' : '') + `止步第 ${stage} 关 · 历史最高 ${bestLabel(readBest(kind))} 关`,
       { ...buildReport(game, 0), tour: { stage, best: readBest(kind), newBest: false } });
     setIconBtn($('rematch'), '再来一次 ↻');
@@ -1218,3 +1246,25 @@ document.addEventListener('keydown', e => { if (!e.repeat) { sfx.unlock(); nudge
 document.addEventListener('pointerdown', () => game?.finalePress(), { capture: true });
 document.addEventListener('keydown', e => { if (!e.repeat) game?.finalePress(); }, { capture: true });
 // 选区、放大镜、双击缩放由 body.touch 的 CSS 关掉。这里再 preventDefault 会把正在进行的点击作废。
+
+/* ---- 后台：存档、碎片、四个页面 ---- */
+bindSaveUi(openDialog);
+bindHub();
+bindMusicPage();
+setRewardOpener(openDialog);
+bindTasksPage(openDialog);
+setFramePreviewOpener(openDialog);
+bindFramePreview();
+setFinalePreviewHooks(openDialog, k => { sfx.unlock(); sfx.play(k); }, () => sfx.preloadFinale());
+bindFinalePreview();
+setItemPreviewOpener(openDialog);
+bindItemPreview();
+bindShopPage(openDialog);
+bindLockerPage(openStamps);
+bindLooks();
+/* 音乐库、自然播完换曲都会走这里：顶栏曲名、音量条、开打换曲开关跟着更新。 */
+onMusicChange(() => {
+  ($('music-volume') as HTMLInputElement).value = String(Math.round(musicVolume() * 100));
+  syncMusicUi();
+  syncFightShuffleLock();
+});

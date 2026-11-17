@@ -3,13 +3,13 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 
-/** Near-lossless WebP quality. Sprite sheets stay here: a smeared cell reads as a wrong pose. */
+/** Near-lossless WebP quality. Avatars, icons, and the 256px idle crop stay here. */
 const NEAR = 22;
-/** Stage backdrops are illustrations. Lossy q80 is several times smaller than near-lossless. */
+/** Stages, finales, and sprite sheets. Lossy q80 is several times smaller than near-lossless. */
 const STAGE_Q = 80;
 /** clips.ts CELL. The select screen only paints this top-left cell. */
 const IDLE = 256;
-/** Slow-link stand-in: half size, lossy. Soft, but a fight can start on it; the near-lossless sheet replaces it. */
+/** Slow-link stand-in: half size, lossy. Soft, but a fight can start on it; the q80 sheet replaces it. */
 const LITE_Q = 70;
 const DIRS = ['sprites', 'stages', 'icons', 'avatars', 'finale'];
 
@@ -59,9 +59,10 @@ await pool(files, 4, async file => {
     webpBytes += info.size;
     return;
   }
-  // Hair masks encode selection weights in RGB; near-lossless colour edits would leak the dye.
+  // Hair masks encode selection weights in RGB; a lossy colour edit would leak the dye.
   const mask = rel.endsWith('-hair-mask.png');
-  const info = await sharp(file).webp(mask ? { lossless: true, effort: 6 } : near).toFile(file.slice(0, -4) + '.webp');
+  const sheet = rel.includes('/sprites/') && !mask;
+  const info = await sharp(file).webp(mask ? { lossless: true, effort: 6 } : sheet ? { quality: STAGE_Q, effort: 5, alphaQuality: 90 } : near).toFile(file.slice(0, -4) + '.webp');
   webpBytes += info.size;
   if (mask) return;
   const meta = await sharp(file).metadata();
@@ -77,4 +78,4 @@ await pool(files, 4, async file => {
 });
 
 const mb = (n: number) => (n / 1024 / 1024).toFixed(1) + 'MB';
-console.log(`webp: ${files.length} pngs, ${mb(pngBytes)} -> ${mb(webpBytes)} (sheets near-lossless ${NEAR}, stages q${STAGE_Q})`);
+console.log(`webp: ${files.length} pngs, ${mb(pngBytes)} -> ${mb(webpBytes)} (sheets q${STAGE_Q}, idle near-lossless ${NEAR}, stages q${STAGE_Q})`);

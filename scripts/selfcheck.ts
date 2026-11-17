@@ -53,6 +53,13 @@ import { clampStick, visibleBox } from '../src/ui/stageFit.ts';
 import { onMediaChange } from '../src/ui/media.ts';
 import { buildReport, humanTeam, rankOf, sanitizeReport } from '../src/game/report.ts';
 import { miniSeal, readStamps, recordClear, recordMatchClear, renderStampBook, stampOf } from '../src/ui/stamps.ts';
+import '../src/save/sections.ts';
+import '../src/save/inventory.ts';
+import '../src/tasks/progress.ts';
+import { equip, equipped } from '../src/save/inventory.ts';
+import { giftOptions } from '../src/shop/state.ts';
+import { exportSave, planImport, SAVE_GAME } from '../src/save/registry.ts';
+import { onOtherTab } from '../src/save/storage.ts';
 import { checkDevice } from './device-selfcheck.ts';
 import { checkSelect } from './select-selfcheck.ts';
 import { TOUCH_LAYOUT } from '../src/ui/touchLayout.data.ts';
@@ -2683,7 +2690,8 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(portraitSrc('/sprites/misaki/michelle-special.png'), '/sprites/misaki/michelle-special.png', 'a second special sheet is not an idle crop');
   assert.equal(stageThumbSrc('/stages/ring.png', true), '/stages/ring-thumb.png', 'stage cards ask for the small preview');
   assert.equal(stageThumbSrc('/stages/ring.png', false), '/stages/ring.png', 'dev stage cards use the full backdrop');
-  assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes('const NEAR = 22'), 'webp stays at the near-lossless 22 baseline');
+  assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes('const NEAR = 22'), 'avatars, icons, and idle crops stay near-lossless');
+  assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes('sheet ? { quality: STAGE_Q, effort: 5, alphaQuality: 90 }'), 'sprite sheets use lossy webp at the stage quality');
   assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes('const STAGE_Q = 80'), 'stage backdrops stay lossy webp at quality 80');
   assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes('idle.webp'), 'the build writes the 256px idle crop');
   assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes("'-lite.webp'"), 'the build writes the half-size lite sheet');
@@ -2808,7 +2816,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const onlinePane = dialogHtml.match(/<section class="set-pane"[^>]*id="set-pane-online"[\s\S]*?<\/section>/)?.[0] ?? '';
     assert.equal(text(onlinePane), '联机代号 修改代号', 'online codename setting row has control name and button only');
     const visible = text(dialogHtml.replace(onlinePane, ''));
-    assert.equal(visible, '设置 × 通用 操控 训练场 音频 联机 外观 主题 名册 名册显示 直接排开 按乐队分组 名册卡面 全身 头像 印章色条 显示隐藏角色 键位方案 基础 进阶 空白处手势 自定义布局 恢复默认 编辑布局 技能 无技能冷却 无限大招 木桩 一直格挡 连段后回满血 音量 音乐 音效 播放 开打换曲 ? 只在随机播放时生效，其他时候不能改。', 'settings dialog keeps control names and option names, plus the fight-shuffle tip (the online pane exempted)');
+    assert.equal(visible, '设置 × 通用 操控 训练场 音频 联机 外观 主题 名册 名册显示 直接排开 按乐队分组 名册卡面 全身 头像 印章色条 显示隐藏角色 存档 导入存档 导出存档 键位方案 基础 进阶 空白处手势 自定义布局 恢复默认 编辑布局 技能 无技能冷却 无限大招 木桩 一直格挡 连段后回满血 音量 音乐 音效 播放 开打换曲 ? 只在随机播放时生效，其他时候不能改。', 'settings dialog keeps control names and option names, plus the fight-shuffle tip (the online pane exempted)');
     // 二值项是开关，两三个选项是分段按钮，页签切页：设置弹窗里不再有下拉。
     assert.ok(!dialogHtml.includes('pick-btn') && (dialogHtml.match(/role="switch"/g) ?? []).length === 10, 'settings on/off rows are switches, not dropdowns');
     assert.ok(['暗色', '亮色', '跟随系统'].every(n => dialogHtml.includes(`aria-label="${n}"`)), 'theme icons keep their names for screen readers');
@@ -2846,6 +2854,8 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
       }
       const gen = themeCss(css);
       assert.ok(gen.includes(':root[data-theme="light"] {') && gen.includes(`:root[data-theme="light"] ${DARK_ISLAND} {`), 'generated CSS has the light block and the dark art-island block');
+      const winterLight = gen.split(':root[data-theme="light"][data-skin="winter"] {')[1]?.split('}')[0] ?? '';
+      assert.ok(winterLight.includes('color-scheme: dark') && winterLight.includes(`--bg: ${dark['--bg']};`) && winterLight.includes(`--panel: ${dark['--panel']};`), 'a darkOnly skin puts every dark token back under the light theme');
       for (const id of ['select-stage', 'arena', 'buff-picker']) {
         assert.ok(new RegExp(`id="${id}"[^>]*data-scheme="dark"`).test(html), `#${id} draws over game art, so it stays dark in the light theme`);
       }
@@ -9204,6 +9214,58 @@ for (const order of [[2, 3], [3, 2]]) {
   assert.equal(stampOf('viola'), 2, 'blocked storage still keeps the stamp for this session');
   g.localStorage = saved;
   assert.ok(miniSeal(2).split('★').length - 1 === 3, 'a 大师 stamp carries three stars');
+}
+
+// First-shop gift stays Sakiko and Anon. Adding another finale to the catalog must not widen this list.
+{
+  assert.deepEqual(giftOptions().map(i => i.id), ['finale:sakiko', 'finale:anon'], 'the first gift only offers Sakiko and Anon');
+}
+
+// Save file: a corrupt section is skipped alone, unknown future sections ride along, merging never loses progress.
+{
+  const store = new Map<string, string>();
+  const g = globalThis as unknown as { localStorage?: unknown };
+  const prev = g.localStorage;
+  g.localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v); } };
+  assert.equal(planImport('{oops'), 'not-json');
+  assert.equal(planImport(JSON.stringify({ game: 'other', sections: {} })), 'not-save');
+  store.set('mf.stamps.v2', JSON.stringify({ tomori: { d: 2, rank: 'S' } }));
+  const file = JSON.stringify({ game: SAVE_GAME, format: 1, sections: {
+    stamps: { v: 1, data: { tomori: { d: 0, rank: 'C' }, viola: { d: 1, rank: 'A' }, 'bad id!': { d: 2 } } },
+    wallet: { v: 1, data: 'junk' },
+    future: { v: 3, data: { keep: true } },
+  } });
+  const plan = planImport('\uFEFF' + file);
+  if (typeof plan !== 'object') throw Error('a valid save file must plan an import, got ' + plan);
+  assert.equal(plan.fresh, false, 'a device with stamps is not fresh');
+  assert.equal(plan.broken, 1, 'the junk wallet section is counted as broken');
+  assert.equal(plan.used, 2, 'stamps and the unknown section are still imported');
+  plan.apply();
+  const book = JSON.parse(store.get('mf.stamps.v2')!);
+  assert.deepEqual(book, { tomori: { d: 2, rank: 'S' }, viola: { d: 1, rank: 'A' } }, 'import keeps the higher local stamp, adds new ones, drops bad ids');
+  const out = JSON.parse(exportSave());
+  assert.deepEqual(out.sections.future, { v: 3, data: { keep: true } }, 'a section from a newer version survives the next export');
+  assert.deepEqual(out.sections.stamps.data, book);
+  const back = planImport(JSON.stringify(out));
+  assert.ok(typeof back === 'object' && back.broken === 0 && back.used >= 2, 'an exported save imports back cleanly');
+  equip('frame', 'frame:gold');
+  const gear = planImport(JSON.stringify({ game: SAVE_GAME, format: 1, sections: {
+    inventory: { v: 1, data: { owned: ['frame:neon'], equipped: { theme: 'theme:winter' }, flags: [] } },
+  } }));
+  if (typeof gear !== 'object') throw Error('inventory save must plan');
+  gear.apply();
+  assert.equal(equipped('frame'), undefined, 'imported equipment replaces the local loadout, including slots the file left empty');
+  assert.equal(equipped('theme'), 'theme:winter');
+  equip('theme', undefined);
+  g.localStorage = prev;
+  const w = globalThis as unknown as { addEventListener?: unknown };
+  const handlers: ((e: { key: string | null }) => void)[] = [];
+  w.addEventListener = (_: string, fn: (e: { key: string | null }) => void) => { handlers.push(fn); };
+  let reread = 0;
+  onOtherTab('mf.wallet', () => reread++);
+  for (const key of ['mf.wallet', 'mf.other', null]) handlers.forEach(h => h({ key }));
+  assert.equal(reread, 2, 'another tab writing this key (or clearing storage) makes the cached save reread; other keys do not');
+  delete w.addEventListener;
 }
 
 // lock: RAS 的 LOCK（朝日六花）。U takes the glasses off into the costume (the king sheet + frenzy.skills): in it U puts

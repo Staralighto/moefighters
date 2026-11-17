@@ -13,14 +13,15 @@
 import { assetUrl, imagesBusy, slowLink } from '../assets/loader.ts';
 import { migrateLinearSlider, musicGain } from './mix.ts';
 
-const TRACKS = [
-  { src: '/bgm/garupa-pico-instrumental.m4a', title: '少女乐团PICO' },
+/* from：音乐库里曲名下面那行小字，没有就不显示。只写有出处记录的（见 public/bgm/CREDITS.txt）。 */
+const TRACKS: readonly { src: string; title: string; from?: string }[] = [
+  { src: '/bgm/garupa-pico-instrumental.m4a', title: '少女乐团PICO', from: 'BanG Dream! 少女乐团派对！☆PICO' },
   { src: '/bgm/全速前进！.m4a', title: '全速前进！' },
   { src: '/bgm/胜利的冲动.m4a', title: '胜利的冲动' },
   { src: '/bgm/燃烧的冲动.m4a', title: '燃烧的冲动' },
   { src: '/bgm/钢铁之诗.m4a', title: '钢铁之诗' },
   { src: '/bgm/黑色剧场序曲.m4a', title: '黑色剧场序曲' },
-] as const;
+];
 const ORDERS = ['seq', 'shuffle', 'one'] as const;
 export type MusicOrder = (typeof ORDERS)[number];
 const STORE_KEY = 'moefighters.bgm';
@@ -182,6 +183,9 @@ let planned: number | null = null;
    还没有手势时把 context 建出来。音乐关着的访客一个字节都不下载。 */
 let ctx: AudioContext | null = null;
 let gain: GainNode | null = null;
+/* 音乐库的律动用。只在音乐库打开后才建，串在 gain 和输出之间。 */
+let analyser: AnalyserNode | null = null;
+let levelBins: Uint8Array<ArrayBuffer> | null = null;
 let buffer: AudioBuffer | null = null;
 let decoding = false;
 let bufferBroken = false;
@@ -198,7 +202,21 @@ let waitForFight = enabled;
    ponytail: 只试一次，不排队重试。升级路径是开打时的 pokeMusic，或用户自己点开关。 */
 let pending: AudioContext | null = null;
 
+/* 音乐库和顶栏的曲名都订阅这里：换曲、开停、开始出声都会通知。 */
+const listeners = new Set<() => void>();
+let notifyQueued = false;
+function notify(): void {
+  if (notifyQueued) return;
+  notifyQueued = true;
+  queueMicrotask(() => { notifyQueued = false; for (const fn of listeners) fn(); });
+}
+export function onMusicChange(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
 function save(): void {
+  notify();
   try { openStorage('localStorage')?.setItem(STORE_KEY, prefsJson(enabled, volume, { order, index, fight: fightShuffleOn })); }
   catch { /* 隐私模式等存不进：这一页的内存状态照旧 */ }
 }
@@ -329,6 +347,7 @@ function ensureBuffer(): void {
       if (gen !== loadGen) return;
       decoding = false;
       bufferBroken = true;
+      notify();
     });
 }
 
@@ -359,6 +378,7 @@ function startSrc(): void {
   s.start(0, offset % buffer.duration);
   startedAt = ctx.currentTime;
   src = s;
+  notify();
   scheduleWarm();
 }
 
@@ -370,6 +390,7 @@ function stopSrc(): void {
   playing.onended = null;
   playing.stop();
   playing.disconnect();
+  notify();
 }
 
 /* 换曲：不把上一首的进度写进 offset。先摘掉 onended，stop 才不会被当成播完。 */
@@ -539,3 +560,61 @@ function scheduleSilent(): void {
 }
 rollShuffleStart();
 scheduleSilent();
+
+/* ---- 音乐库 ---- */
+
+export interface MusicTrack { title: string; from?: string; src: string }
+export function musicTracks(): readonly MusicTrack[] { return TRACKS; }
+export function musicIndex(): number { return index; }
+/** 已经在出声（不是还在下载解码）。 */
+export function musicPlaying(): boolean { return !!src; }
+/** 开着但还没出声：在下载或解码。下载失败时为 false。 */
+export function musicLoading(): boolean { return enabled && !src && !bufferBroken && !pageSuspended; }
+
+/** 点列表里的某一首：换过去并保证音乐是开的。点正在放的那首不打断。 */
+export function playTrack(i: number): void {
+  if (!Number.isInteger(i) || i < 0 || i >= TRACKS.length) return;
+  if (i !== index) { index = i; cutTrack(); }
+  if (!enabled) setMusicEnabled(true);
+  else pokeMusic();
+}
+
+/** 当前播放进度（秒）和总长；还没解码完返回 null。 */
+export function musicPosition(): { t: number; d: number } | null {
+  if (!buffer) return null;
+  const d = buffer.duration;
+  const t = src && ctx ? (ctx.currentTime - startedAt + offset) % d : offset % d;
+  return { t: Math.max(0, t), d };
+}
+
+/** 低频能量 0..1，给音乐库封面做很轻的律动。没在放返回 0。 */
+export function musicLevel(): number {
+  if (!src || !ctx || !gain) return 0;
+  if (!analyser) {
+    try {
+      analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = .8;
+      gain.disconnect();
+      gain.connect(analyser);
+      analyser.connect(ctx.destination);
+      levelBins = new Uint8Array(analyser.frequencyBinCount);
+    } catch { analyser = null; return 0; }
+  }
+  analyser.getByteFrequencyData(levelBins!);
+  /* 前 6 个 bin 约 0–1 kHz 以下（44.1k / 256），取均值。 */
+  let sum = 0;
+  for (let i = 1; i < 7; i++) sum += levelBins![i];
+  return Math.min(1, sum / 6 / 255);
+}
+
+/** 跳到第 t 秒。还没解码完就忽略。 */
+export function seekMusic(t: number): void {
+  if (!buffer || !Number.isFinite(t)) return;
+  const d = buffer.duration;
+  const was = !!src;
+  dropSrc();
+  offset = Math.max(0, Math.min(d - 0.05, t));
+  if (was) sync();
+  notify();
+}

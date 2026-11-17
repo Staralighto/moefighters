@@ -1,3 +1,4 @@
+import { ticketStyle } from '../shop/state.ts';
 import type { CharacterData } from '../data/types.ts';
 import type { FightGame } from '../game/game.ts';
 import { skillsOf, type Fighter } from '../game/fighter.ts';
@@ -241,7 +242,7 @@ export function showEnd(title: string, stats: string, report?: MatchReport | nul
   end.hidden = false;
   // 结算海报清屏：触屏按键、HUD 一并收起，海报上不叠任何战斗控件。
   document.body.classList.toggle('end-up', !!report);
-  if (report) showReport($('end-report'), report);
+  if (report) { $('end-report').dataset.ticket = ticketStyle(); showReport($('end-report'), report); }
   else hideReport($('end-report'));
   showBanner('');
 }

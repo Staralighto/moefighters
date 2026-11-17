@@ -25,9 +25,17 @@ def main():
     if re.findall(r"""(?:href|src)=["']/(?!/)""", html) or "./assets/" not in html:
         raise SystemExit("dist/index.html still has site-root urls")
     js = [n for n in os.listdir(os.path.join(root, "assets")) if n.endswith(".js")]
-    bundle = open(os.path.join(root, "assets", js[0]), encoding="utf-8").read()
-    i = bundle.find("slice(1)")
-    if i < 0 or "`./`" not in bundle[max(0, i - 220):i + 40]:
+    bundle = "\n".join(open(os.path.join(root, "assets", n), encoding="utf-8").read() for n in js)
+    # Code-split builds put assetUrl in one chunk and other slice(1) calls in another.
+    start, ok = 0, False
+    while True:
+        i = bundle.find("slice(1)", start)
+        if i < 0: break
+        if "`./`" in bundle[max(0, i - 220):i + 40]:
+            ok = True
+            break
+        start = i + 8
+    if not ok:
         raise SystemExit("assetUrl default base is not ./")
     for needle in ("/fonts/ma-shan-zheng-kuji.woff2", "/bgm/garupa-pico-instrumental.m4a", "/sfx/ship-horn.mp3"):
         if needle not in bundle:

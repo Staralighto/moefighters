@@ -203,6 +203,8 @@ export interface GameOptions {
   training?: { noCd: boolean; infiniteUlt: boolean; dummyGuard?: boolean; quickHeal?: boolean };
   /** Online role. Guest games are painted from snapshots and do not step. */
   netRole?: 'host' | 'guest' | 'lock';
+  /** 终幕门槛：返回 false 的角色用 L 终结时不播终幕。缺省全部放行（联机两端必须一致，联机不传）。 */
+  finaleOk?(charId: string): boolean;
   onHUD?(g: FightGame): void;
   onBanner?(title: string, sub: string): void;
   onEnd?(title: string, stats: string): void;
@@ -876,7 +878,7 @@ export class FightGame {
   private finaleFinisher(winner: number): Fighter | undefined {
     const fin = this.roundFin[1 - winner];
     if (!fin) return undefined;
-    return this.fighters.find(f => f.team === winner && !f.minion && !f.echo && f.data.finale && skillsOf(f)[5]?.name === fin);
+    return this.fighters.find(f => f.team === winner && !f.minion && !f.echo && f.data.finale && skillsOf(f)[5]?.name === fin && (this.options.finaleOk?.(f.data.id) ?? true));
   }
 
   /** 终幕 over (played out or skipped): back on the arena, the losers are thrown, then the normal K.O. */

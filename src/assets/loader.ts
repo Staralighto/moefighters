@@ -21,6 +21,11 @@ export function imageSources(src: string, prod = import.meta.env.PROD, webpOk = 
   return [src];
 }
 
+/** An image written straight into HTML or CSS, not loaded through loadImage: the Toy base prefix, and the built WebP in
+ *  production (the Toy pack drops PNGs that have one). ponytail: no PNG fallback, so a browser without WebP
+ *  (Safari < 14) shows these previews empty; route through assignFirst / applyImageUrl if that ever matters. */
+export const staticUrl = (src: string): string => assetUrl(imageSources(src, !!import.meta.env?.PROD)[0]);
+
 /** Both dev (Vite crop) and production (built WebP) only need the 256px idle cell.
  *  common.png crops to idle.png. Any other standing sheet (michelle.png) crops to <name>-idle.png.
  *  special.png stays itself: it has no standing cell the roster should ask for. */
