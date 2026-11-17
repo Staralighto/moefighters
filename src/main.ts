@@ -312,6 +312,10 @@ async function startGame(setup: MatchSetup): Promise<void> {
     // Online starts the instant it is ready: the cut only covers the load, it never holds a live match.
     [missing, render] = await Promise.all([
       preload(images, need), import('./render/renderer.ts'), loadKujiFont(), setup.online ? Promise.resolve() : versusHeld(),
+      // 终幕 textures bake here, behind the versus screen, not in the middle of a fight.
+      setup.characters.some(c => c.finale)
+        ? import('./render/finale.ts').then(m => { for (const c of setup.characters) if (c.finale) m.prewarmFinale(c.finale); })
+        : Promise.resolve(),
     ]);
   } catch (err) {
     hideVersus();
@@ -324,7 +328,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
   if (lite) queue.soon([...lite.rest, ...srcs]);
   if (missing.length) console.warn('缺图，已回退色块人形：' + missing.join(', '));
   // 终幕 illustrations load behind the fight: a picture not in yet just means that kill skips the cut-in art.
-  for (const c of setup.characters) if (c.finale?.art) void loadInto(images, c.finale.art);
+  for (const c of setup.characters) for (const src of [c.finale?.art, ...(c.finale?.props ?? [])]) if (src) void loadInto(images, src);
   if (setup.characters.some(c => c.finale)) sfx.preloadFinale();
   lastSetup = setup;
 

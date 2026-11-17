@@ -308,6 +308,13 @@ export const ROSTER: CharacterData[] = [
     },
     // 闪光灯与自拍滤镜：J / K 留下粉色月牙与闪粉（render/anonFx.ts）。
     aura: { swing: 'anon-swing' },
+    // 终幕 · 不会再逃避了 (docs/finale-anon.md): a pink light crackling with lightning flies in, spirals round
+    // her face, gathers into one point there and opens into light that lights the picture (render/finaleAnon.ts).
+    finale: {
+      fx: 'pink-meteor', art: '/finale/anon.png',
+      anchor: { x: .688, y: .266, r: .2 }, focus: { x: .688, y: .266 }, text: 'right',
+      sfx: { rise: null, shatter: 'finale-shimmer', shatterAt: 2.75, extra: [[.9, 'finale-whoosh']] },
+    },
     skills: [
       skill(0, 'light', '轻点'),
       skill(1, 'heavy', '横踢'),

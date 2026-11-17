@@ -1,6 +1,7 @@
 /* Pure data shapes. Nothing here knows about pixels or the DOM. */
 
 import type { BandId, IpId } from './bands.ts';
+import type { SfxKind } from '../game/game.ts';
 
 export type SkillType =
   | 'light' | 'heavy' | 'dash' | 'projectile' | 'grab'
@@ -342,6 +343,14 @@ export interface FinaleSpec {
   anchor?: { x: number; y: number; r: number };
   /** Her face in the art (fractions of width / height): the spotlight closes on it. */
   focus?: { x: number; y: number };
+  /** Extra pictures her lead-in draws (FinaleFrame.props, same order), loaded with the art. */
+  props?: string[];
+  /** Which bottom corner the move's name goes in (default left): the art's busy side decides. */
+  text?: 'left' | 'right';
+  /** Her own cues in place of the shared ones: `rise` the opening organ chord (0.3 s), `shatter` the break
+   *  (2.35 s, or `shatterAt` when her lead-in reveals later). null silences that cue. `extra` adds her own
+   *  cues at their times (s from the cut-in's start). */
+  sfx?: { rise?: SfxKind | null; shatter?: SfxKind | null; shatterAt?: number; extra?: readonly (readonly [number, SfxKind])[] };
 }
 
 export interface CharacterData {

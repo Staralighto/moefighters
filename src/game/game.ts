@@ -1,4 +1,4 @@
-import type { CharacterData, Skill, StageData } from '../data/types.ts';
+import type { CharacterData, FinaleSpec, Skill, StageData } from '../data/types.ts';
 import type { Attack, Fighter } from './fighter.ts';
 import { DECAY_TIMERS, dropForm, formTune, gainEnergy, makeFighter, meterCap, skillsOf } from './fighter.ts';
 import { AIR_SKILLS } from '../data/skills.ts';
@@ -32,6 +32,16 @@ export const FINALE_CUES: readonly (readonly [number, SfxKind])[] = [
   [0.3, 'finale-rise'],
   [2.35, 'finale-shatter'],
 ];
+/** The cut-in's cues for this character: she may replace or silence a shared cue, and move the break's
+ *  cue to her own reveal time (FinaleSpec.sfx). Sorted by time; a null kind plays nothing. */
+export function finaleCues(spec?: FinaleSpec): [number, SfxKind | null][] {
+  const own = spec?.sfx;
+  return FINALE_CUES.map(([at, kind]): [number, SfxKind | null] => {
+    if (own && kind === 'finale-rise' && 'rise' in own) return [at, own.rise ?? null];
+    if (own && kind === 'finale-shatter') return [own.shatterAt ?? at, 'shatter' in own ? own.shatter ?? null : kind];
+    return [at, kind];
+  }).concat((own?.extra ?? []).map(([at, kind]): [number, SfxKind | null] => [at, kind])).sort((a, b) => a[0] - b[0]);
+}
 export const FINALE_DEAF = .8;
 export const FINALE_HINT = 2;
 
@@ -91,7 +101,7 @@ export type SfxKind = 'light' | 'heavy' | 'hit' | 'block' | 'parry' | 'super' | 
   /** MASKING's bike: a short kick start and pull-away (死亡银河号), and two revs before the charge (银河流星踢). */
   | 'engine' | 'engine-rev'
   /** 终幕: the cut-in's own cues (sfx.ts finale()). */
-  | 'finale-freeze' | 'finale-rise' | 'finale-beat' | 'finale-crack' | 'finale-shatter' | 'finale-bloom' | 'finale-stamp' | 'finale-slash'
+  | 'finale-freeze' | 'finale-rise' | 'finale-shimmer' | 'finale-whoosh' | 'finale-beat' | 'finale-crack' | 'finale-shatter' | 'finale-bloom' | 'finale-stamp' | 'finale-slash'
   /** 血月的奏鸣: the organ pedal under the performance, the i-th note of the phrase, and the closing chord.
    *  The index rides in the name, so the online echo and its dedup see each note as its own sound. */
   | 'blood-intro' | `blood-${number}` | 'blood-end';
@@ -769,7 +779,11 @@ export class FightGame {
       this.phaseTime -= dt;
       this.finaleHint = Math.max(0, this.finaleHint - dt);
       const s = this.age - this.finaleAt;
-      while (FINALE_SOUND && this.finaleCue < FINALE_CUES.length && FINALE_CUES[this.finaleCue][0] <= s) this.audio.play(FINALE_CUES[this.finaleCue++][1]);
+      const cues = finaleCues(this.finaleBy === null ? undefined : this.fighterById(this.finaleBy)?.data.finale);
+      while (FINALE_SOUND && this.finaleCue < cues.length && cues[this.finaleCue][0] <= s) {
+        const cue = cues[this.finaleCue++][1];
+        if (cue) this.audio.play(cue);
+      }
       if (this.phaseTime <= 0) this.endFinale();
       return;
     }

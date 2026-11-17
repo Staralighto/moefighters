@@ -1,6 +1,7 @@
 import { H, W } from '../game/constants.ts';
 import { noteGlyph } from './fx.ts';
 import type { FinaleFrame, FinaleLead } from './finale.ts';
+import { PINK_METEOR } from './finaleAnon.ts';
 
 /* 终幕 lead-ins, one per character, keyed by data.finale.fx. Each owns everything before her
    illustration and must land on the illustration's anchor (FinaleFrame.anchor) so the hand-off reads as
@@ -484,4 +485,5 @@ function bloodPetals(f: FinaleFrame): void {
 
 export const FINALE_LEADS: Record<string, FinaleLead> = {
   'blood-eye': { lead: BREAK + .35, reveal: .35, tail: 1.4, accent: '#a3142c', drawLead: bloodEye, drawOver: bloodOver },
+  'pink-meteor': PINK_METEOR,
 };

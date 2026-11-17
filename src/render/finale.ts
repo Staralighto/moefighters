@@ -42,6 +42,8 @@ export interface FinaleFrame {
   anchor: { x: number; y: number; r: number };
   /** Where the illustration is drawn at time t (cover fit, pushed in). */
   artRect: (t: number) => { x: number; y: number; w: number; h: number };
+  /** FinaleSpec.props, loaded or null, same order. */
+  props: (HTMLImageElement | null)[];
   /** Paint `draw` once per play into an offscreen copy of the 960×540 frame and reuse it. */
   bake: (name: string, draw: (c: CanvasRenderingContext2D) => void) => HTMLCanvasElement;
 }
@@ -58,12 +60,28 @@ export interface FinaleLead {
   tail?: number;
   /** Her touch over the held picture, under the shared spotlight and type. */
   drawOver?(f: FinaleFrame): void;
+  /** The freeze's colour wash (multiply) and the light front's glow, as r,g,b; default blood red. */
+  tint?: readonly [number, number, number];
+  glow?: readonly [number, number, number];
+  /** The exit: the shared diagonal slash, an arc cut along a swing, or a simple quick fade (爱音). */
+  exit?: 'slash' | 'arc' | 'fade';
+  /** The lead-in lights the picture itself (爱音's light wave): skip the shared moonlight front and flare. */
+  selfLit?: boolean;
+  /** Bake anything heavy ahead of time (textures, sprites). Called behind the versus screen; must be cached
+   *  so calling it again is free. */
+  prewarm?(lite: boolean): void;
 }
 
 export interface FinaleSnapshot { img: CanvasImageSource; x: number; y: number; w: number; h: number }
 
 const ease = (x: number): number => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
 const clamp01 = (x: number): number => Math.min(1, Math.max(0, x));
+
+/** Bake a character's cut-in ahead of time (main.ts, behind the versus screen), so the cut-in itself
+ *  never pays for its textures. */
+export function prewarmFinale(spec: FinaleSpec): void {
+  try { FINALE_LEADS[spec.fx]?.prewarm?.(isLiteFx()); } catch { /* the lead-in bakes again on its own */ }
+}
 
 /** The 16:9 frame inside a cw×ch box (device pixels): contain fit, centred. */
 export function finaleFrame(cw: number, ch: number): { x: number; y: number; k: number } {
@@ -147,7 +165,7 @@ export function drawFinale(c: CanvasRenderingContext2D, cw: number, ch: number, 
     c.drawImage(snap.img, snap.x, snap.y, snap.w, snap.h);
     c.filter = 'none';
     c.globalCompositeOperation = 'multiply';
-    c.fillStyle = `rgba(150,20,40,${(.55 * k).toFixed(3)})`;
+    c.fillStyle = `rgba(${(lead.tint ?? [150, 20, 40]).join(',')},${(.55 * k).toFixed(3)})`;
     c.fillRect(0, 0, cw, ch);
     c.restore();
   }
@@ -158,8 +176,11 @@ export function drawFinale(c: CanvasRenderingContext2D, cw: number, ch: number, 
     c.fillRect(0, 0, cw, ch);
   }
 
-  const loaded = spec.art ? images.get(spec.art) : undefined;
-  const art = loaded && loaded.complete && loaded.naturalWidth ? loaded : null;
+  const ready = (src?: string): HTMLImageElement | null => {
+    const im = src ? images.get(src) : undefined;
+    return im && im.complete && im.naturalWidth ? im : null;
+  };
+  const art = ready(spec.art);
   const show = lead.lead - lead.reveal;
   // The picture itself never moves: the camera breath is applied around her face in drawFrame, so the
   // lead-in's hand-off point stays exactly on the picture's own moon.
@@ -167,7 +188,7 @@ export function drawFinale(c: CanvasRenderingContext2D, cw: number, ch: number, 
   const r0 = artRect(lead.lead);
   const a = spec.anchor ?? { x: .5, y: .4, r: .15 };
   const frame: FinaleFrame = {
-    c, t, lite, data: by.data, art, artRect,
+    c, t, lite, data: by.data, art, artRect, props: (spec.props ?? []).map(ready),
     anchor: { x: r0.x + a.x * r0.w, y: r0.y + a.y * r0.h, r: a.r * r0.h },
     bake: (name, draw) => bakeFor(play, name, draw),
   };
@@ -179,7 +200,7 @@ export function drawFinale(c: CanvasRenderingContext2D, cw: number, ch: number, 
   } else {
     // The held frame, baked once, is cut along a diagonal and the halves slide apart.
     const held = bakeFor(play, 'held', h => drawFrame({ ...frame, c: h, t: holdEnd - .001 }, spec, lead, art, show, 0));
-    slashExit(c, held, (t - holdEnd) / EXIT, lead.accent ?? by.data.color);
+    (lead.exit === 'fade' ? fadeExit : lead.exit === 'arc' ? arcExit : slashExit)(c, held, (t - holdEnd) / EXIT, lead.accent ?? by.data.color);
   }
   c.restore();
 }
@@ -201,13 +222,13 @@ function drawFrame(f: FinaleFrame, spec: FinaleSpec, lead: FinaleLead, art: HTML
     if (!lite && blur > .3 && canFilter(c)) c.filter = `blur(${blur.toFixed(1)}px)`;
     c.drawImage(pic, r.x, r.y, r.w, r.h);
     c.filter = 'none';
-    moonlight(f, spec, s);
+    if (!lead.selfLit) moonlight(f, spec, s, (lead.glow ?? [255, 80, 90]).join(','));
     spotlight(f, spec, s);
     lead.drawOver?.(f);
-    flare(f, s);
+    if (!lead.selfLit) flare(f, s, (lead.glow ?? [255, 90, 110]).join(','));
     c.restore();
     lightSweep(c, s - 1.9);
-    drawName(c, data, s - 1.2, lead.accent ?? data.color);
+    drawName(c, data, s - 1.2, lead.accent ?? data.color, spec.text ?? 'left');
   }
   if (t < lead.lead + (lead.tail ?? .35)) lead.drawLead(f);
   if (hint > 0) skipHint(c, Math.min(1, hint * 4));
@@ -215,7 +236,7 @@ function drawFrame(f: FinaleFrame, spec: FinaleSpec, lead: FinaleLead, art: HTML
 
 /** The picture starts unlit; light travels out of the hand-off point (her moon) across the frame,
  *  past her, and the dark lifts behind its front. */
-function moonlight(f: FinaleFrame, spec: FinaleSpec, s: number): void {
+function moonlight(f: FinaleFrame, spec: FinaleSpec, s: number, glow: string): void {
   const p = s / LIGHT_IN;
   if (p >= 1.3) return;
   const { c, anchor } = f;
@@ -238,9 +259,9 @@ function moonlight(f: FinaleFrame, spec: FinaleSpec, s: number): void {
   // The front itself glows faintly red as it passes.
   if (p > 0 && p < 1.1) {
     const gl = c.createLinearGradient(anchor.x, anchor.y, ex, ey);
-    gl.addColorStop(clamp01(front - .06), 'rgba(255,80,90,0)');
-    gl.addColorStop(Math.max(clamp01(front - .06), clamp01(front + .05)), `rgba(255,80,90,${(.16 * (1 - Math.min(1, p))).toFixed(3)})`);
-    gl.addColorStop(Math.max(clamp01(front + .05), clamp01(front + .16)), 'rgba(255,80,90,0)');
+    gl.addColorStop(clamp01(front - .06), `rgba(${glow},0)`);
+    gl.addColorStop(Math.max(clamp01(front - .06), clamp01(front + .05)), `rgba(${glow},${(.16 * (1 - Math.min(1, p))).toFixed(3)})`);
+    gl.addColorStop(Math.max(clamp01(front + .05), clamp01(front + .16)), `rgba(${glow},0)`);
     c.save();
     c.globalCompositeOperation = 'lighter';
     c.fillStyle = gl;
@@ -293,7 +314,7 @@ function lightSweep(c: CanvasRenderingContext2D, s: number): void {
 }
 
 /** An anamorphic streak through the hand-off point when the picture lands, then a faint lingering line. */
-function flare(f: FinaleFrame, s: number): void {
+function flare(f: FinaleFrame, s: number, glow: string): void {
   const { c, anchor } = f;
   const k = s < .12 ? s / .12 : 1 - (s - .12) / 1;
   if (k <= 0) return;
@@ -303,35 +324,54 @@ function flare(f: FinaleFrame, s: number): void {
   c.scale(1, .016);
   const g = c.createRadialGradient(0, 0, 0, 0, 0, W * .75);
   g.addColorStop(0, `rgba(255,235,230,${(.45 * k).toFixed(3)})`);
-  g.addColorStop(.25, `rgba(255,90,110,${(.2 * k).toFixed(3)})`);
-  g.addColorStop(1, 'rgba(255,90,110,0)');
+  g.addColorStop(.25, `rgba(${glow},${(.2 * k).toFixed(3)})`);
+  g.addColorStop(1, `rgba(${glow},0)`);
   c.fillStyle = g;
   c.fillRect(-W, -W * .75, W * 2, W * 1.5);
   c.restore();
 }
 
 /** The move's name writes itself in: a hairline in her colour draws out, the characters arrive from
- *  wide tracking and soft focus and close up into the word, her name follows, smaller and spaced. */
-function drawName(c: CanvasRenderingContext2D, data: CharacterData, s: number, accent: string): void {
+ *  wide tracking and soft focus and close up into the word, her name follows, smaller and spaced.
+ *  `side` puts the block in the bottom-left or bottom-right corner; on the right a soft shade sits
+ *  under it, since a picture's right side is usually her (busy) rather than open dark. */
+function drawName(c: CanvasRenderingContext2D, data: CharacterData, s: number, accent: string, side: 'left' | 'right'): void {
   if (s < 0) return;
   const move = data.skills[5]?.name ?? '';
   const chars = [...move];
-  const x = 56, y = H * .8;
+  const right = side === 'right';
+  const y = H * .8;
   c.save();
   c.font = `700 42px ${TYPE}`;
   c.textBaseline = 'alphabetic';
   const widths = chars.map(ch => c.measureText(ch).width);
   const span = widths.reduce((a, b) => a + b, 0) + 6 * (chars.length - 1);
-  // The hairline.
+  const x = right ? W - 56 - span : 56;
+  if (right) {
+    const sh = ease(s / .6);
+    c.save();
+    c.translate(W - 56 - span / 2, y + 6);
+    c.scale(span * .9 + 120, 90);
+    const g = c.createRadialGradient(0, 0, 0, 0, 0, 1);
+    g.addColorStop(0, `rgba(22,4,18,${(.55 * sh).toFixed(3)})`);
+    g.addColorStop(1, 'rgba(22,4,18,0)');
+    c.fillStyle = g;
+    c.fillRect(-1, -1, 2, 2);
+    c.restore();
+  }
+  // The hairline, drawing out toward the open side.
   const l = ease(s / .9);
-  const lg = c.createLinearGradient(x - 20, 0, x + span + 60, 0);
+  const len = (span + 80) * l;
+  const lg = right ? c.createLinearGradient(x + span + 20, 0, x - 60, 0) : c.createLinearGradient(x - 20, 0, x + span + 60, 0);
   lg.addColorStop(0, accent); lg.addColorStop(.7, accent); lg.addColorStop(1, 'rgba(0,0,0,0)');
   c.fillStyle = lg;
   c.globalAlpha = .9;
-  c.fillRect(x - 20, y + 12, (span + 80) * l, 2);
+  if (right) c.fillRect(x + span + 20 - len, y + 12, len, 2);
+  else c.fillRect(x - 20, y + 12, len, 2);
   // The characters.
   c.shadowColor = accent;
   c.shadowBlur = 14;
+  const dir = right ? -1 : 1;
   let cx = x;
   chars.forEach((ch, i) => {
     const p = clamp01((s - .1 - i * .09) / .7);
@@ -339,7 +379,7 @@ function drawName(c: CanvasRenderingContext2D, data: CharacterData, s: number, a
       const e = ease(p);
       c.globalAlpha = e;
       c.fillStyle = '#fff';
-      c.fillText(ch, cx + (1 - e) * (18 + i * 10), y - (1 - e) * 4);
+      c.fillText(ch, cx + dir * (1 - e) * (18 + (right ? chars.length - 1 - i : i) * 10), y - (1 - e) * 4);
     }
     cx += widths[i] + 6;
   });
@@ -350,10 +390,69 @@ function drawName(c: CanvasRenderingContext2D, data: CharacterData, s: number, a
     c.globalAlpha = ease(n) * .9;
     c.font = `500 15px ${TYPE}`;
     c.fillStyle = '#efe6f0';
-    let nx = x;
+    const nameW = [...data.name].reduce((a, ch) => a + c.measureText(ch).width + 7, -7);
+    let nx = right ? x + span - nameW : x;
     for (const ch of data.name) { c.fillText(ch, nx, y + 38); nx += c.measureText(ch).width + 7; }
   }
   c.restore();
+}
+
+/** The quick fade exit: the held frame simply fades out over the first part of the exit. */
+function fadeExit(c: CanvasRenderingContext2D, held: HTMLCanvasElement, e: number, _accent: string): void {
+  const a = 1 - clamp01(e / .6);
+  if (a <= 0) return;
+  c.save();
+  c.globalAlpha = a * a;
+  c.drawImage(held, 0, 0, W, H);
+  c.restore();
+}
+
+/** The arc exit: the held frame is cut along a curve over her, the way her guitar swings; the inner
+ *  piece turns on with the swing and the outer one opens outward, both thinning away. */
+function arcExit(c: CanvasRenderingContext2D, held: HTMLCanvasElement, e: number, accent: string): void {
+  const cx = W * .64, cy = H * .6, R = H * .7;
+  const a0 = 150 * Math.PI / 180, a1 = 345 * Math.PI / 180;
+  const cut = ease(e / .22);
+  const part = ease((e - .2) / .8);
+  if (part <= 0) c.drawImage(held, 0, 0, W, H);
+  else {
+    // Outside the circle: opens outward.
+    c.save();
+    c.beginPath(); c.rect(0, 0, W, H); c.clip();
+    c.globalAlpha = 1 - part;
+    c.translate(cx, cy); c.scale(1 + .22 * part, 1 + .22 * part); c.translate(-cx, -cy);
+    c.beginPath(); c.rect(-W, -H, W * 3, H * 3); c.arc(cx, cy, R, 0, Math.PI * 2);
+    c.clip('evenodd');
+    c.drawImage(held, 0, 0, W, H);
+    c.restore();
+    // Inside: carried on round with the swing, shrinking a little.
+    c.save();
+    c.beginPath(); c.rect(0, 0, W, H); c.clip();
+    c.globalAlpha = 1 - part;
+    c.translate(cx, cy); c.rotate(.2 * part); c.scale(1 - .08 * part, 1 - .08 * part); c.translate(-cx, -cy);
+    c.beginPath(); c.arc(cx, cy, R, 0, Math.PI * 2); c.clip();
+    c.drawImage(held, 0, 0, W, H);
+    c.restore();
+  }
+  // The cutting arc: grows along the swing, then flares and thins away.
+  const fade = 1 - clamp01((e - .25) / .45);
+  const end = a0 + (a1 - a0) * cut;
+  c.save();
+  c.beginPath(); c.rect(0, 0, W, H); c.clip();
+  c.globalCompositeOperation = 'lighter';
+  c.lineCap = 'round';
+  c.globalAlpha = fade;
+  c.strokeStyle = accent;
+  c.lineWidth = 16 * (1 - part * .8);
+  c.beginPath(); c.arc(cx, cy, R, a0, end); c.stroke();
+  c.strokeStyle = '#fff';
+  c.lineWidth = 4;
+  c.beginPath(); c.arc(cx, cy, R, a0, end); c.stroke();
+  c.restore();
+  if (e > .18 && e < .5) {
+    c.fillStyle = `rgba(255,240,246,${(.5 * (1 - (e - .18) / .32)).toFixed(3)})`;
+    c.fillRect(-W, -H, W * 3, H * 3);
+  }
 }
 
 /** The exit: a white line cuts the held frame on a diagonal, the halves slide apart and fade, the arena shows. */

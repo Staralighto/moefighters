@@ -407,6 +407,74 @@ export class Sfx {
       n.stop(t + at + dur + .02);
     };
     switch (kind) {
+      case 'finale-whoosh': {
+        // 爱音's meteor: a rush of air that comes in close and bright from the left, sweeps across and
+        // drops away as the light recedes to the right, then swirls faster and fainter as it spirals
+        // round her face and dies into the gathering (~1.6 s). Noise through a moving band, panned with it.
+        const hall = this.hall();
+        const pan = ctx.createStereoPanner();
+        pan.pan.setValueAtTime(-.85, t);
+        pan.pan.linearRampToValueAtTime(.35, t + .7);
+        pan.connect(out);
+        pan.connect(hall);
+        const air = (type: BiquadFilterType, q: number, f: (p: AudioParam) => void, g: (p: AudioParam) => void): void => {
+          const n = ctx.createBufferSource(), fl = ctx.createBiquadFilter(), gn = ctx.createGain();
+          n.buffer = this.noiseBuffer();
+          n.loop = true;
+          fl.type = type;
+          fl.Q.value = q;
+          f(fl.frequency);
+          gn.gain.setValueAtTime(.0001, t);
+          g(gn.gain);
+          n.connect(fl).connect(gn).connect(pan);
+          n.start(t);
+          n.stop(t + 1.75);
+        };
+        // The body: bright and loud as it passes close, lower and softer as it goes deep.
+        air('bandpass', 1.1, p => {
+          p.setValueAtTime(3400, t);
+          p.exponentialRampToValueAtTime(1100, t + .7);
+          p.exponentialRampToValueAtTime(1500, t + 1.6);
+        }, p => {
+          p.exponentialRampToValueAtTime(.12, t + .06);
+          p.exponentialRampToValueAtTime(.045, t + .7);
+          p.setValueAtTime(.045, t + 1.1);
+          p.exponentialRampToValueAtTime(.0001, t + 1.65);
+        });
+        // The edge: thin high air that makes it read as fast.
+        air('highpass', .7, p => {
+          p.setValueAtTime(7000, t);
+          p.exponentialRampToValueAtTime(4500, t + .7);
+        }, p => {
+          p.exponentialRampToValueAtTime(.035, t + .04);
+          p.exponentialRampToValueAtTime(.006, t + .6);
+          p.exponentialRampToValueAtTime(.0001, t + 1.2);
+        });
+        // The spiral: the sound wobbles side to side, faster as the turns tighten.
+        const lfo = ctx.createOscillator(), depth = ctx.createGain();
+        lfo.frequency.setValueAtTime(3, t + .7);
+        lfo.frequency.exponentialRampToValueAtTime(11, t + 1.6);
+        depth.gain.setValueAtTime(0, t);
+        depth.gain.setValueAtTime(0, t + .7);
+        depth.gain.linearRampToValueAtTime(.35, t + .9);
+        lfo.connect(depth).connect(pan.pan);
+        lfo.start(t);
+        lfo.stop(t + 1.75);
+        break;
+      }
+      case 'finale-shimmer': {
+        // 爱音's light wave: a quick rising run of soft bells over an airy swell, landing on a high,
+        // ringing pair. Bright but quiet; the room carries the tail.
+        const hall = this.hall();
+        noise(0, .5, .04, 'highpass', 1800, 9000, true);
+        [523.25, 659.25, 783.99, 1046.5, 1318.51, 1567.98, 2093].forEach((hz, i) => {
+          tone('sine', hz, hz, .045 * i, 1.1, .03, hall);
+          tone('triangle', hz * 2, hz * 2, .045 * i + .005, .5, .008, hall);
+        });
+        tone('sine', 2093, 2093, .34, 1.8, .028, hall);
+        tone('sine', 2637.02, 2637.02, .38, 1.6, .02, hall);
+        break;
+      }
       case 'finale-freeze':
         tone('sine', 90, 28, 0, .7, .35);
         noise(0, .4, .09, 'bandpass', 300, 3200, true);
