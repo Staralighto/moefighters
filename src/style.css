@@ -50,6 +50,9 @@
 @font-face { font-family: "MF Num"; src: url("/fonts/geist-mono-regular.woff") format("woff"); font-weight: 100 500; font-display: swap; }
 @font-face { font-family: "MF Hand"; src: url("/fonts/nothing-you-could-do.woff2") format("woff2"); font-display: swap; }
 * { box-sizing: border-box; }
+/* 触屏靠手指滑，不画滚动条（滑动照常）。仍挂在全局 * 上，不给面板另做皮肤。键鼠访问保持下面的样式。 */
+body.touch * { scrollbar-width: none; }
+body.touch *::-webkit-scrollbar { width: 0; height: 0; }
 /* 全站默认滚动条：走深色面板与描边 token，所有滚动容器（页面、弹窗、下拉菜单）自动继承，各面板不自制皮肤。 */
 *::-webkit-scrollbar { width: 6px; height: 6px; }
 *::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background: transparent; }
@@ -76,9 +79,11 @@ body.touch {
 html:has(body.touch) { touch-action: pan-y; overscroll-behavior: none; }
 body.touch img { -webkit-user-drag: none; }
 button { font: inherit; color: inherit; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: .45em .9em; cursor: pointer; transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .26s cubic-bezier(.34, 1.7, .5, 1), box-shadow .15s ease, filter .15s ease; }
-button:hover { border-color: var(--muted); }
+/* 悬停描边只给有悬停的指针：触屏点过以后它会粘在按钮上。:where 不加权重，组件里的悬停规则照旧盖得住它。 */
+:where(body:not(.touch)) button:hover { border-color: var(--muted); }
 /* 按下即顿：50ms 内压到底并提亮，松手由上面的弹簧曲线回弹过冲。 */
-button:active:not(.touchpad button) { transform: scale(0.95); filter: brightness(1.18); transition-duration: .15s, .15s, .15s, .05s, .15s, .05s; }
+/* 大厅后台入口只用亮度反馈；按下时缩小命中框会让边缘的鼠标松手落到按钮外。 */
+button:active:not(.touchpad button, .lb-tile, .sf-item) { transform: scale(0.95); filter: brightness(1.18); transition-duration: .15s, .15s, .15s, .05s, .15s, .05s; }
 button.active { background: var(--primary); color: var(--on-primary); border-color: var(--primary); font-weight: 700; }
 .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 .btn-icon { display: none; width: 22px; height: 22px; }
@@ -394,6 +399,12 @@ nav { display: flex; gap: 8px; align-items: center; }
 /* 印章册：方形头像墙，右上角盖最高难度的章。 */
 #stamp-dialog { position: relative; width: min(880px, calc(100% - 2rem)); max-width: min(880px, calc(100% - 2rem)); max-height: calc(100% - 2rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); padding: 22px 28px 28px; overflow: auto; overscroll-behavior: contain; }
 #stamp-dialog .dialog-head h2 { display: grid; gap: 2px; }
+/* 结构上规则说明排在头像墙后面（横屏当脚注），工具栏包在 .sb-top 里（横屏吸顶）；其余版式用 order 排回「标题 → 说明 → 工具 → 统计 → 墙」。 */
+#stamp-dialog[open] { display: flex; flex-direction: column; }
+.sb-top { display: contents; }
+#stamp-dialog .dialog-head { order: -2; }
+.sb-rule { order: -1; }
+.sb-count .mini-seal { display: none; }
 .sb-en { font: 800 11px var(--font-display); letter-spacing: .24em; color: var(--brand-ink); }
 .sb-rule { margin: 8px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.6; }
 .sb-total { display: flex; flex-wrap: wrap; gap: 8px 26px; align-items: baseline; margin-top: 14px; padding: 12px 0 14px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
@@ -551,7 +562,7 @@ nav { display: flex; gap: 8px; align-items: center; }
 .pick-menu button[aria-selected="true"] { background: var(--line); border-color: transparent; color: var(--text-strong); }
 .pick-menu:popover-open, .tip-pop:popover-open { animation: menu-slide-down .16s cubic-bezier(0.16, 1, 0.3, 1); }
 details[open] .music-pop { animation: menu-slide-down .16s cubic-bezier(0.16, 1, 0.3, 1); }
-@keyframes menu-slide-down { from { opacity: 0; transform: translateY(-6px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes menu-slide-down { from { opacity: 0; } to { opacity: 1; } }
 /* 模态打开时收走页面滚动条，用等宽留白补上，页面内容不横跳。
    弹窗在顶层，按视口居中，吃不到 body 的留白；滚动条一消失视口变宽，中线往右偏半个滚动条。
    往回平移同样的量。做法同 react-remove-scroll 给脱离文档流的层补 gap。 */
@@ -1167,13 +1178,14 @@ body.pause-peek-on .touchpad { visibility: hidden; }
 #skill-tier { font-size: 13px; padding: .3em .7em; }
 
 dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 14px; max-width: 560px; padding: 18px 22px; }
-dialog[open] { animation: dialog-appear .18s cubic-bezier(0.16, 1, 0.3, 1); }
+dialog[open] { animation: dialog-appear .14s cubic-bezier(.2, .8, .2, 1); }
 dialog::backdrop { background: var(--shade-scrim); }
 .dialog-fallback { display: none; position: fixed; top: 50%; left: 50%; right: auto; bottom: auto; margin: 0; transform: translate(-50%, -50%); max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); overflow-y: auto; }
 .dialog-fallback[open] { display: block; animation: none; }
 .dialog-backdrop { position: fixed; top: 0; right: 0; bottom: 0; left: 0; background: var(--shade-scrim); }
-dialog[open]::backdrop { animation: backdrop-fade .18s ease-out; }
-@keyframes dialog-appear { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+dialog[open]::backdrop { animation: backdrop-fade .14s ease-out; }
+/* 弹窗只渐现，不放大（motion.ts）。 */
+@keyframes dialog-appear { from { opacity: 0; } to { opacity: 1; } }
 @keyframes backdrop-fade { from { opacity: 0; } to { opacity: 1; } }
 .dialog-head { display: flex; justify-content: space-between; align-items: center; }
 .dialog-head h2 { margin: 0; }
@@ -1358,7 +1370,7 @@ body.pad-split .tp-actions .s2 { --px: 68.4; --y: 15.6%; }
 body.pad-split .tp-actions .s3 { --px: 84.9; --y: 15.6%; }
 body.pad-split .tp-actions .ult { --px: 51.9; --y: 84.4%; }
 body.pad-split .tp-actions .sk::before { content: ''; position: absolute; inset: -3px; border-radius: 50%; }
-/* Toy 的手机容器不转系统方向。body.turned 把战斗转 90°，尺寸对调后就和真横屏同一套键位。
+/* 部分机型（含部分 Toy 宿主）横不了屏：竖屏选人，开打后 body.turned 把战斗转 90°，尺寸对调后就和真横屏同一套键位。
    玩家把手机横过来看。真横屏时这个类会被拿掉，避免转两次。
    横过来之后手指往右滑是容器的返回，同样不把这次滑动交出去。 */
 html:has(body.touch.turned.in-battle) { overscroll-behavior: none; }
@@ -1622,6 +1634,8 @@ header nav .icon-btn, header nav summary { border-radius: 999px; }
 #skills .skill b { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; font: 900 15px/1.35 var(--font-head); letter-spacing: .03em; }
 #skills .skill b small.ult-tag { display: inline-block; flex: none; white-space: nowrap; padding: 2px 8px; border-radius: 999px; background: var(--brand); color: var(--on-brand); font: 900 11px/1.3 var(--font-head); letter-spacing: .1em; }
 #skills .skill .nums { flex: 1 0 100%; margin: 3px 0 0; height: auto; font: 500 12px/1.4 var(--font); font-variant-numeric: tabular-nums; color: var(--muted); opacity: .85; }
+/* 数值行按段折：「16 × 28 基础伤害」「150 气」各自不拆开，窄了整段换到下一行。 */
+.skill .nums > span { white-space: nowrap; }
 #skills .skill .detail { flex: 1 0 100%; margin: 6px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--text); opacity: .78; }
 #skills .skill.super { box-shadow: inset 0 0 0 1.5px var(--brand-ink); }
 @supports (color: color-mix(in srgb, white, black)) {
@@ -2139,15 +2153,6 @@ html.hub-open, html.hub-open body { overflow: hidden; }
 .hub-scroll { flex: 1; overflow: auto; overscroll-behavior: contain; }
 .hub-page { max-width: var(--hub-w); margin: 0 auto; padding: 6px max(22px, env(safe-area-inset-right, 0px)) max(32px, env(safe-area-inset-bottom, 0px)) max(22px, env(safe-area-inset-left, 0px)); }
 /* 顶栏的编号徽章每次进页转一下落位。 */
-@media (prefers-reduced-motion: no-preference) {
-  .hub.entering .hub-title i { animation: hub-badge .5s cubic-bezier(.34, 1.6, .5, 1) both; }
-  .hub.entering .hub-title span, .hub.entering .hub-title small { animation: hub-rise .32s cubic-bezier(.2, .8, .2, 1) both; }
-  .hub.entering .hub-title small { animation-delay: .06s; }
-  .hub.entering.first .hub-title i { animation-duration: .8s; animation-delay: .2s; }
-  .hub.entering.first .hub-title span { animation-delay: .28s; animation-duration: .5s; }
-  .hub.entering.first .hub-title small { animation-delay: .38s; animation-duration: .5s; }
-}
-@keyframes hub-badge { from { rotate: -200deg; scale: .2; } to { rotate: -8deg; scale: 1; } }
 @keyframes hub-rise { from { opacity: 0; translate: 0 8px; } }
 .hub-soon { display: grid; place-items: center; gap: 6px; min-height: 50vh; color: var(--muted); text-align: center; }
 .hub-soon b { font: 900 28px/1.2 var(--font-head); color: var(--text); }
@@ -2243,7 +2248,8 @@ html.hub-open, html.hub-open body { overflow: hidden; }
 .mp-n, .mp-eq { grid-column: 1; grid-row: 1; }
 .mp-n { font: 500 13px/1 var(--font-num); color: var(--muted); }
 .mp-t { display: grid; min-width: 0; }
-.mp-t b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.mp-t b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; line-height: 1.25; font-weight: 700; }
+/* 歌名、专辑名不截成「少女乐团PI…」：最多折两行（竖屏手机本来就是这样），副标题这种长文本才省略。 */
 .mp-t small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted); }
 .mp-row[aria-current="true"] .mp-t b { color: var(--brand-ink); }
 .mp-d { font: 500 12px/1 var(--font-num); font-variant-numeric: tabular-nums; color: var(--muted); }
@@ -2256,14 +2262,8 @@ html.hub-open, html.hub-open body { overflow: hidden; }
   .mp-row.playing .mp-eq i:nth-child(2) { animation-duration: .6s; animation-delay: -.3s; }
   .mp-row.playing .mp-eq i:nth-child(3) { animation-duration: .75s; animation-delay: -.5s; }
   /* 进页：曲目表逐行落下。第一次更慢。 */
-  .hub.entering .mp-list li { animation: hub-rise .34s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--n, 0) * 30ms + 80ms); }
-  .hub.entering.first .mp-list li { animation-duration: .5s; animation-delay: calc(var(--n, 0) * 55ms + 520ms); }
-  .hub.entering .mp-info { animation: hub-rise .36s cubic-bezier(.2, .8, .2, 1) .12s both; }
-  .hub.entering.first .mp-info { animation-duration: .5s; animation-delay: .9s; }
-  .hub.entering.first .mp-glow { animation: mp-glow 1s cubic-bezier(.2, .8, .2, 1) both; }
 }
 @keyframes mp-eq { from { scale: 1 .3; } to { scale: 1 1; } }
-@keyframes mp-glow { from { scale: .3; opacity: 0; } }
 @media (max-width: 860px) { .mp-deck { --S: min(300px, 52vw); } }
 @media (max-width: 520px) { .mp-deck { --S: min(240px, 58vw); padding: 24px 16px 18px; } }
 /* 手机横屏：唱机和曲目表仍然左右摆，封面按屏高封顶，播放键留在首屏。 */
@@ -2313,14 +2313,9 @@ html.hub-open, html.hub-open body { overflow: hidden; }
 .al-tile:focus-visible .al-art { outline: 2px solid var(--brand-ink); outline-offset: 4px; }
 .al-art { position: relative; display: block; aspect-ratio: 1; border-radius: 6px; overflow: hidden; box-shadow: 0 14px 28px var(--shade); }
 .al-meta { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; min-width: 0; }
-.al-meta b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 900 15px/1.2 var(--font-head); letter-spacing: .03em; }
+.al-meta b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; font: 900 15px/1.2 var(--font-head); letter-spacing: .03em; }
 .al-meta small { flex: none; font: 500 12px/1 var(--font-num); color: var(--muted); font-variant-numeric: tabular-nums; }
 .al-bar > i { background: var(--al, var(--brand)); }
-@media (prefers-reduced-motion: no-preference) {
-  .hub.entering .tk-wall > li { animation: hub-rise .4s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--n, 0) * 35ms + 60ms); }
-  .hub.entering.first .tk-wall > li { animation: al-drop .6s cubic-bezier(.2, .9, .3, 1.15) both; animation-delay: calc(var(--n, 0) * 70ms + 420ms); }
-}
-@keyframes al-drop { from { opacity: 0; translate: 0 -28px; rotate: -4deg; } }
 
 /* 方形封面铺满容器，塑封膜与进度贴纸继续叠在美术上。 */
 .al-cover { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
@@ -2353,7 +2348,13 @@ html.hub-open, html.hub-open body { overflow: hidden; }
 /* 弹窗定高：曲目表一屏约 6 条，其余往下滚，不为了一次塞下而缩字。 */
 .album-dialog { width: min(1060px, calc(100% - 2rem)); max-width: none; height: min(88vh, 780px); max-height: none; padding: 0; overflow: hidden; }
 .album-dialog::before { content: ""; position: absolute; left: 0; top: 0; right: 0; height: 6px; background: repeating-linear-gradient(90deg, var(--al, var(--brand)) 0 28px, transparent 28px 40px); }
-.ab-close { position: absolute; right: 14px; top: 14px; z-index: 2; width: 36px; height: 36px; padding: 0; border-radius: 50%; }
+.ab-close { position: absolute; right: 10px; top: 10px; z-index: 2; }
+/* 全站弹窗的关闭键：无底无边的悬浮叉，两道粗线自己画（不靠字体里的 ×）。点击区仍是 44 见方，只是看不见框。
+   按钮里的「×」文字（字号 0）仍是一个网格项，会自己占一行把叉挤偏，所以行高钉成整格。 */
+:is(.dialog-head > button[aria-label="关闭"], .ab-close) { display: grid; grid-template-rows: 100%; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 12px; background: none; box-shadow: none; color: var(--muted); font-size: 0; }
+:is(.dialog-head > button[aria-label="关闭"], .ab-close)::before, :is(.dialog-head > button[aria-label="关闭"], .ab-close)::after { content: ""; grid-area: 1 / 1; width: 24px; height: 3px; border-radius: 2px; background: currentColor; rotate: 45deg; }
+:is(.dialog-head > button[aria-label="关闭"], .ab-close)::after { rotate: -45deg; }
+:is(.dialog-head > button[aria-label="关闭"], .ab-close):hover { color: var(--text); background: none; }
 .ab-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); height: 100%; }
 @media (max-width: 760px) { .album-dialog { height: auto; max-height: 90vh; overflow: auto; } .ab-grid { grid-template-columns: minmax(0, 1fr); height: auto; } .album-dialog .ab-tracks { overflow: visible; } .album-dialog .ab-list { overflow: visible; } }
 .ab-side-col { display: grid; align-content: start; gap: 10px; padding: 28px 24px; background: var(--panel-2); }
@@ -2402,11 +2403,6 @@ html.hub-open, html.hub-open body { overflow: hidden; }
 .tk-row.swept .tk-claim, .ab-bonus.swept .tk-claim { animation: tk-pop .35s cubic-bezier(.3, 1.6, .5, 1) both; }
 @keyframes tk-sweep { from { opacity: 1; translate: -100% 0; } to { opacity: 1; translate: 100% 0; } }
 @keyframes tk-pop { 40% { scale: 1.2; } 100% { scale: 0; opacity: 0; } }
-@media (prefers-reduced-motion: no-preference) {
-  .album-dialog.ab-in .tk-row { animation: hub-rise .32s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--n, 0) * 28ms + 80ms); }
-  .album-dialog.ab-in .ab-cover { animation: ab-cover .5s cubic-bezier(.2, .9, .3, 1.1) both; }
-}
-@keyframes ab-cover { from { opacity: 0; translate: -18px 0; rotate: -5deg; } }
 
 /* ==== 头像框预览：逐项照抄战斗 HUD（.hud-avatar 与它身后的 ::before / ::after），只把 px 换成 --u = 头像边长 ÷ 96。
    一对头像：1P 在左、在前，2P 在右、叠在后面；各自的倾角、票根偏移和 HUD 里一模一样（tilt -1 / +1）。 ==== */
@@ -2535,7 +2531,6 @@ html.hub-open, html.hub-open body { overflow: hidden; }
 .mc-tag .tk-shard { width: 13px; height: 13px; color: currentColor; }
 @media (prefers-reduced-motion: no-preference) {
   .mc:hover .mc-tag { animation: tag-swing .7s ease-in-out; }
-  .mc-grid.mc-in > li { animation: hub-rise .36s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--n, 0) * 32ms); }
 }
 @keyframes tag-swing { 30% { rotate: -4deg; } 60% { rotate: 9deg; } }
 /* 已拥有：斜盖一枚橡皮章。刚买下时从大到小砸下来。 */
@@ -2604,7 +2599,6 @@ html.hub-open, html.hub-open body { overflow: hidden; }
 .gf-name b { font: 900 17px/1.2 var(--font-head); }
 .gf-name small { font: 600 10px/1 var(--font-display); letter-spacing: .14em; color: var(--muted); }
 .gift-dialog .quit-actions { justify-content: center; margin-top: 20px; }
-@media (prefers-reduced-motion: no-preference) { .gift-dialog[open] .gf-card { animation: hub-rise .45s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--n, 0) * 80ms + 120ms); } }
 .rw-face .art-mini, .rw-face .theme-mini, .rw-face .ticket-mini { width: 100%; height: 100%; }
 
 /* ==== 战斗 HUD 头像框：双方同一款，.hud 上挂 data-frame 与 --fr。描边换成框色，票根换成这款自己的「东西」。 ==== */
@@ -2726,11 +2720,6 @@ html.hub-covered[data-skin="winter"] .stage-frame::before, html.hub-covered[data
 .fv-actions .fv-act:disabled { opacity: .55; cursor: default; }
 .fv-actions .set-primary .tk-shard { color: currentColor; }
 .fv-side.fv-done .fv-act, .fv-side.fv-done .fv-worn { animation: mc-stamp .35s cubic-bezier(.3, 1.6, .5, 1) both; }
-@media (prefers-reduced-motion: no-preference) {
-  .frame-dialog.fv-in .fv-scene .hud-avatar { animation: fv-face .5s cubic-bezier(.3, 1.5, .5, 1) both; }
-  .frame-dialog.fv-in .fv-scene .hud-player.second .hud-avatar { animation-delay: .08s; }
-}
-@keyframes fv-face { from { scale: .6; opacity: 0; } }
 
 /* ==== 终幕详情：16:9 画面循环播放 ==== */
 .fn-stage { position: relative; aspect-ratio: 16 / 9; overflow: hidden; background: linear-gradient(rgb(16 16 27 / 25%), rgb(16 16 27 / 45%)), var(--fv-art, none) center bottom / cover no-repeat, var(--bg); }
@@ -2753,11 +2742,8 @@ html.hub-covered[data-skin="winter"] .stage-frame::before, html.hub-covered[data
 @media (max-width: 860px) and (max-aspect-ratio: 4 / 3) { .ss { grid-template-columns: minmax(0, 1fr); padding: 18px; gap: 18px; } }
 @media (max-width: 860px) and (min-aspect-ratio: 4 / 3) { .ss { grid-template-columns: minmax(0, 1fr) minmax(260px, 1fr); padding: 18px; gap: 18px; } }
 .ss-beam { position: absolute; left: 4%; top: -12%; z-index: -1; width: 58%; height: 124%; background: radial-gradient(ellipse 50% 100% at 50% 0%, rgb(255 214 150 / 22%), transparent 70%); clip-path: polygon(38% 0, 62% 0, 100% 100%, 0 100%); pointer-events: none; }
-@media (prefers-reduced-motion: no-preference) { .ss-beam { animation: ss-beam 6s ease-in-out infinite alternate; } }
-@keyframes ss-beam { to { opacity: .75; translate: 1.5% 0; } }
 .ss-show { position: relative; display: grid; aspect-ratio: 16 / 9; border-radius: 16px; overflow: hidden; background: var(--well); box-shadow: 0 0 0 1px var(--line), 0 18px 36px var(--shade); }
 .ss-show > * { grid-area: 1 / 1; }
-.ss-show .ss-scene { width: 100%; height: 100%; aspect-ratio: auto; }
 .ss-theme, .ss-ticket, .ss-art { display: grid; place-items: center; width: 100%; height: 100%; background: radial-gradient(circle at 50% 40%, rgb(255 214 150 / 10%), transparent 60%), radial-gradient(circle, var(--wash) 1px, transparent 1.4px) 0 0 / 16px 16px; }
 .ss-theme .theme-mini { width: 74%; border-radius: 16px; }
 .ss-ticket .ticket-mini { width: 22%; scale: 1.6; }
@@ -2775,9 +2761,6 @@ html.hub-covered[data-skin="winter"] .stage-frame::before, html.hub-covered[data
 .ss-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: .85em 1.2em; border-radius: 999px; font-size: 16px; font-weight: 900; }
 .ss-btn:disabled { opacity: .55; cursor: default; }
 .ss-btn.set-primary .tk-shard { color: currentColor; width: 18px; height: 18px; }
-.ss-extra { display: flex; gap: 10px; }
-.ss-extra .ss-x { flex: 1; padding: .6em .9em; border-radius: 999px; font-weight: 800; }
-.ss-x[aria-pressed="false"] { color: var(--muted); }
 /* 小票打印机：展台右下的一道出纸口，纸从这里往下吐。 */
 .ss-printer { position: relative; min-height: 0; margin-top: 6px; }
 .ss-printer.on { min-height: 270px; }
@@ -2805,8 +2788,8 @@ html.hub-covered[data-skin="winter"] .stage-frame::before, html.hub-covered[data
 .sf-row::before { left: -4px; } .sf-row::after { right: -4px; }
 .sf-row-empty { display: flex; gap: 22px; }
 /* 第三行是「已拥有」印章的位：没买的卡也留着，货架之间卡片一样高。 */
-.sf-item { cursor: zoom-in; position: relative; display: grid; grid-template-rows: auto auto 24px; gap: 10px; width: 100%; height: 100%; padding: 16px 14px 16px; border: 0; border-radius: 16px; background: var(--panel); text-align: left; transform-origin: 50% -14px; box-shadow: 0 12px 22px var(--shade); transition: rotate .5s cubic-bezier(.3, 1.5, .5, 1), box-shadow .2s ease, transform .26s cubic-bezier(.34, 1.7, .5, 1); }
-.sf-item:hover { rotate: -2.5deg; }
+.sf-item { cursor: zoom-in; position: relative; display: grid; grid-template-rows: auto auto 24px; gap: 10px; width: 100%; height: 100%; padding: 16px 14px 16px; border: 0; border-radius: 16px; background: var(--panel); text-align: left; box-shadow: 0 12px 22px var(--shade); transition: filter .15s ease; }
+.sf-item:active { filter: brightness(1.18); }
 .sf-item[aria-current="true"] { box-shadow: 0 0 0 3px var(--p1-ink), 0 14px 28px var(--shade); }
 .sf-hook { position: absolute; left: 50%; top: -18px; width: 16px; height: 22px; translate: -50% 0; border: 3px solid var(--muted); border-bottom: 0; border-radius: 999px 999px 0 0; }
 .sf-art { display: grid; place-items: center; aspect-ratio: 4 / 3; border-radius: 10px; background: radial-gradient(circle, var(--wash) 1px, transparent 1.4px) 0 0 / 12px 12px, var(--panel-2); overflow: hidden; }
@@ -2822,11 +2805,6 @@ html.hub-covered[data-skin="winter"] .stage-frame::before, html.hub-covered[data
 .sf-ghost { position: fixed; left: 0; top: 0; z-index: 90; display: grid; place-items: center; overflow: hidden; border-radius: 10px; background: var(--panel-2); pointer-events: none; }
 .sf-ghost .fp { --fs: 70px; }
 .sf-ghost .theme-mini { width: 80%; }
-@media (prefers-reduced-motion: no-preference) {
-  .hub.entering .sf-row > li { animation: sf-hang .55s cubic-bezier(.3, 1.4, .5, 1) both; animation-delay: calc(var(--n, 0) * 45ms + 160ms); }
-  .hub.entering .ss { animation: hub-rise .4s cubic-bezier(.2, .8, .2, 1) both; }
-}
-@keyframes sf-hang { from { opacity: 0; translate: 0 -24px; rotate: -6deg; } 60% { rotate: 2deg; } }
 /* 空货架：一块「即将上架」挂牌 + 几只空衣架。 */
 .sf-empty, .sf-empty-hanger { display: grid; place-items: center; }
 .sf-sign { display: grid; justify-items: center; gap: 4px; padding: 16px 26px; border-radius: 12px; background: var(--panel); border: 2px dashed var(--line); rotate: -2deg; }
@@ -2835,7 +2813,6 @@ html.hub-covered[data-skin="winter"] .stage-frame::before, html.hub-covered[data
 .sf-empty-hanger { width: 120px; }
 .sf-empty-hanger .hanger { width: 100%; opacity: .5; }
 .sf-empty-hanger:nth-child(odd) .hanger { rotate: 4deg; }
-.shelves.quiet .sf-row > li { animation: none !important; }
 /* 其他物品的详情：大预览。 */
 .iv-show { display: grid; place-items: center; aspect-ratio: 16 / 9; background: radial-gradient(circle at 50% 40%, rgb(255 214 150 / 10%), transparent 60%), radial-gradient(circle, var(--wash) 1px, transparent 1.4px) 0 0 / 16px 16px, var(--well); overflow: hidden; }
 .iv-show .theme-mini { width: 72%; border-radius: 16px; }
@@ -2870,14 +2847,8 @@ html.hub-covered[data-skin="winter"] .stage-frame::before, html.hub-covered[data
 .sg[aria-selected="true"] .sg-board { background: var(--panel-2); color: var(--text); }
 .sg[aria-selected="true"] .sg-board b { color: var(--text-strong); }
 .sg[aria-selected="true"] .sg-board::before { border-color: var(--brand); background: var(--brand); scale: 1.25; }
-.sg.swing { animation: sg-swing .9s cubic-bezier(.3, 1.2, .5, 1); }
-@keyframes sg-swing { 0% { rotate: 9deg; } 30% { rotate: -6deg; } 55% { rotate: 3deg; } 78% { rotate: -1deg; } 100% { rotate: 0deg; } }
 .sg:focus-visible { outline: none; }
 .sg:focus-visible .sg-board { outline: 2px solid var(--brand-ink); outline-offset: 3px; }
-@media (prefers-reduced-motion: no-preference) {
-  .hub.entering .sg { animation: sg-drop .6s cubic-bezier(.3, 1.4, .5, 1) both; animation-delay: calc(var(--n, 0) * 50ms + 120ms); }
-}
-@keyframes sg-drop { from { opacity: 0; translate: 0 -30px; } 60% { rotate: 4deg; } }
 .shelves { margin-top: 18px; }
 /* 空格子：只占位，整格不可见。 */
 .sf-slot { visibility: hidden; pointer-events: none; }
@@ -2911,3 +2882,799 @@ html.hub-covered .page-deco * { animation-play-state: paused; }
 .res-list span { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .res-list em { font-style: normal; color: var(--primary-ink); font-size: 12px; }
 .res-actions { grid-template-columns: minmax(0, 1fr); margin-top: 16px; }
+
+/* ==== 手机后台页（商店 / 仓库 / 任务 / 音乐库与它们的弹窗）。判定与触感在 ui/mobile.ts。 ====
+   竖屏手机：宽 ≤ 760 且不是横屏手机 —— 分类等分不滑、文字不截断、弹窗贴底。
+   横屏手机：高 ≤ 540 且宽高比 ≥ 4:3 —— 一屏摆完，分类在左侧竖轨，列表横滑，阅读型列表（曲目、任务）在自己的格子里竖滑。
+   桌面常规尺寸两条都不命中；下面不在这两条查询里的规则只认 body.touch，或只是把位置换成变量（结果不变）。 */
+.kind-ico, .kind-short, .kind-n, .mc-peek, .lk-book-ico, .hub-count, .lk-tiles, .lk-detail, .dlg-pager { display: none; }
+/* 详情弹窗头部：桌面上这层不存在（display: contents），关闭键照旧绝对定位；手机上装翻页 ‹ n/m › 和关闭键。 */
+.dlg-head { display: contents; }
+/* 全清奖励的头像框是个按钮（点开看效果），不画按钮的底和边。 */
+.ab-frame { position: relative; display: block; padding: 0; border: 0; background: none; }
+/* 仓库小方格（手机上件数多的分类，lockerPage 给 .lk 挂 data-dense）：格子只有预览和状态标记，不放字。 */
+.lk[data-dense] .mc-grid { display: none; }
+.lk[data-dense] .lk-tiles { display: grid; list-style: none; margin: 0; padding: 2px; gap: 8px; }
+.lk-tile { position: relative; isolation: isolate; display: grid; place-items: center; width: 100%; aspect-ratio: 1; padding: 0; border: 0; border-radius: 14px; background: radial-gradient(circle, var(--wash) 1px, transparent 1.4px) 0 0 / 10px 10px, var(--panel); overflow: hidden; transition: box-shadow .2s ease, scale .26s cubic-bezier(.34, 1.7, .5, 1); }
+.lk-tile-art { display: grid; place-items: center; width: 100%; height: 100%; }
+.lk-tile .fp { --fs: 42px; }
+.lk-tile .art-mini { width: 100%; height: 100%; }
+.lk-tile[data-owned="false"] .lk-tile-art { filter: saturate(.3) brightness(.6); }
+.lk-tile[aria-pressed="true"] { box-shadow: inset 0 0 0 2.5px var(--brand-ink); }
+.lk-tile-lock, .lk-tile-worn { position: absolute; z-index: 3; width: 16px; height: 16px; }
+.lk-tile-lock { right: 6px; bottom: 6px; color: var(--muted); }
+.lk-tile-worn { left: 7px; top: 7px; width: 18px; height: 18px; padding: 3px; border-radius: 50%; background: var(--brand); color: var(--on-brand); }
+.mt-ink { translate: var(--ix, 0) 0; width: var(--iw, 0); }
+.ss-btn[aria-disabled="true"], .fv-act[aria-disabled="true"] { opacity: .55; cursor: default; }
+/* 详情栏与展台的一组按钮：同一家族的圆角方形，一律同高、不折行，并排时上下边对齐。纯圆只留给漂浮的关闭键。
+   支持 corner-shape 的内核用超椭圆的连续曲率圆角，其余退回普通圆角。 */
+.fv-actions button, .ss-btn { min-height: 46px; border-radius: 14px; white-space: nowrap; }
+@supports (corner-shape: squircle) { .fv-actions button, .ss-btn { border-radius: 22px; corner-shape: squircle; } }
+/* 仓库卡片、任务的领取键用同一家族的圆角方形（不再是胶囊）。 */
+.mc-btn, .tk-claim, .tk-claim-all, .ab-claim-all { border-radius: 14px; white-space: nowrap; }
+.mc-btn { min-height: 40px; }
+.tk-claim { min-height: 40px; }
+.tk-claim-all, .ab-claim-all { min-height: 46px; justify-content: center; }
+@supports (corner-shape: squircle) { .mc-btn, .tk-claim, .tk-claim-all, .ab-claim-all { border-radius: 20px; corner-shape: squircle; } }
+/* 碎片不够：价格变红，按钮只写「购买」，不替玩家算还差多少。 */
+.fv-price.short, .ss-price.short { color: var(--danger-ink); }
+.fv-tool[aria-pressed="false"] { color: var(--muted); }
+
+/* 触屏没有悬停：粘住的悬停态（抬起、歪斜）去掉，悬停才出现的「点击查看」换成角上常驻的小图标；按下有压缩。 */
+.touch .mc:hover { translate: none; }
+.touch .al-tile:hover { rotate: none; translate: none; }
+.touch .mc[data-id] .mc-art::before, .touch .sf-item::after { content: none; }
+.touch .sf-art { position: relative; }
+.touch .mc-peek { position: absolute; right: 8px; bottom: 8px; z-index: 2; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--shade-scrim); color: var(--text-strong); pointer-events: none; }
+.touch .mc-peek svg { width: 15px; height: 15px; fill: currentColor; }
+.touch .mc[data-owned="true"] .mc-peek, .touch .sf-item[data-owned="true"] .mc-peek { opacity: .8; }
+.touch .mc[data-id] .mc-art { transition: scale .26s cubic-bezier(.34, 1.7, .5, 1); }
+.touch .mc[data-id] .mc-art:active { scale: .97; transition-duration: .05s; }
+.touch .sg:active .sg-board, .touch .al-tile:active .al-art { scale: .96; }
+.touch .sg-board, .touch .al-art { transition: scale .26s cubic-bezier(.34, 1.7, .5, 1), background-color .25s ease, color .25s ease; }
+
+/* ---- 竖屏手机 ---- */
+@media (max-width: 760px) and (min-height: 541px), (max-width: 760px) and (max-aspect-ratio: 1332 / 1000) {
+  .hub-bar { gap: 10px; padding-top: max(8px, env(safe-area-inset-top, 0px)); padding-bottom: 8px; }
+  .hub-title { gap: 10px; font-size: 19px; }
+  .hub-title i { width: 32px; height: 32px; font-size: 14px; }
+  .hub-page { padding-left: max(14px, env(safe-area-inset-left, 0px)); padding-right: max(14px, env(safe-area-inset-right, 0px)); }
+
+  /* 分类：六格等分，图标在上、短名在下，一眼看全，不横滑。 */
+  .mt-bar { margin: 4px 0 14px; }
+  .mt-tabs { flex: 1; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0; padding: 4px; border-radius: 18px; overflow: visible; }
+  .mt-tabs button { display: grid; justify-items: center; gap: 3px; min-width: 0; padding: 8px 0 6px; border-radius: 14px; }
+  .mt-tabs button b, .mt-tabs button small { display: none; }
+  .mt-tabs .kind-ico, .sg .kind-ico { display: block; width: 22px; height: 22px; }
+  .mt-tabs .kind-short { display: block; font: 700 11.5px/1.1 var(--font); font-style: normal; white-space: nowrap; }
+  .mt-ink { top: 4px; bottom: 4px; border-radius: 14px; }
+  .sg-bar { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; margin: 20px 0 4px; padding: 0 0 12px; overflow: visible; }
+  .sg { min-width: 0; }
+  .sg-board { min-width: 0; gap: 3px; padding: 15px 2px 8px; border-radius: 10px; }
+  .sg-board b, .sg-board small, .sg-board em:not(.kind-short) { display: none; }
+  .sg-board em.kind-short { display: block; margin: 0; font: 800 11.5px/1.1 var(--font-head); font-style: normal; opacity: 1; white-space: nowrap; }
+  .sg[aria-selected="true"] .kind-ico { color: var(--brand-ink); }
+
+  /* 印章册收成一条入口（印章图标 + 名字 + 枚数 + 箭头），不再占首屏四分之一。价签和说明行重复，仓库里去掉。 */
+  .lk-book { display: flex; align-items: center; gap: 10px; margin: 4px 0 14px; padding: 12px 16px; border-radius: 16px; }
+  .lk-book::before, .lk-book-seals, .lk-book-t small, .lk-book-t em, .lk-book-gold { display: none; }
+  .lk-book-ico { order: -1; display: block; flex: none; width: 22px; height: 22px; color: var(--gold-ink); }
+  .lk-book-t b { font-size: 16px; }
+  .lk-book-stat { margin-left: auto; }
+  .lk-book-n { font-size: 16px; }
+  .lk-book-n small { font-size: 12px; }
+  .lk-book-go { display: block; font-size: 18px; }
+  .lk .mc-tag { display: none; }
+  .lk[data-dense] .lk-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  /* 竖屏点格子直接弹抽屉，没有「选中」可言。 */
+  .lk-tile[aria-pressed="true"] { box-shadow: none; }
+  /* 竖屏顶栏放不下页名旁的英文小胶囊（会和碎片挤在一起），只留中文页名；横屏保留。 */
+  .hub-title small { display: none; }
+  /* 任务页竖屏的进度和「全部领取」还在墙顶上，顶栏那一格只给横屏。 */
+  .hub[data-page="tasks"] .hub-count { display: none; }
+  /* 名字放两行，不再一行省略。 */
+  .mc-body b, .sf-name, .al-meta b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; line-height: 1.3; }
+  .sf-name { font-size: 15px; }
+  .sf-row { gap: 12px; }
+  .sf-item { gap: 8px; padding: 12px 10px; }
+  .mc-grid { gap: 12px; }
+  .mc-body { padding: 10px 12px 12px; }
+
+  /* 手机不摆今日推荐展台（shopPage 也不再往里放东西），进商店直接是分类和货架。
+     货架标题（和选中的分类重复）、拥有数（卡上有「已拥有」章）、去仓库入口也收掉：干净的浏览界面。 */
+  .sh > .ss, .sh > .sh-top, .sh .sf-head { display: none; }
+  .sg-bar { margin-top: 8px; }
+  /* 展台：预览下面一行名字和价格，再一行购买 + 图标工具。说明句让位。 */
+  .ss { gap: 12px; padding: 12px; border-radius: 22px; }
+  .ss-info { gap: 6px; }
+  .ss-info-body { grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 4px 12px; }
+  .ss-kicker, .ss-kind, .ss-actions { grid-column: 1 / -1; }
+  .ss-name { grid-column: 1; font-size: 22px; }
+  .ss-price { grid-column: 2; grid-row: 2; margin: 0; font-size: 24px; }
+  .ss-note { display: none; }
+  .ss-actions { grid-template-columns: minmax(0, 1fr) auto; align-items: center; margin-top: 4px; }
+
+  /* 任务：说明折行；专辑墙卡距收紧。 */
+  .tk-top { gap: 10px 14px; margin-bottom: 16px; padding: 14px 16px; }
+  /* 封面贴纸已经写着 n / m，名字后面不再重复，名字放得下。 */
+  .al-meta small { display: none; }
+  .tk-hint { font-size: 12.5px; }
+  .tk-wall { gap: 20px 14px; }
+
+  /* 详情弹窗 / 专辑背面：贴底抽屉，从下面滑上来；内容区自己滚，主按钮留在拇指够得到的地方。 */
+  /* 底边按真实可见高度定位（--app-h，见 ui/appHeight.ts），不靠固定定位的参照框：沉浸模式里它可能停在旧高度。 */
+  .album-dialog, .frame-dialog { inset: auto 0 auto 0; top: calc(var(--app-top, 0px) + var(--app-h, 100vh)); translate: 0 -100%; width: 100%; max-width: none; height: auto; margin: 0; padding-bottom: env(safe-area-inset-bottom, 0px); border-bottom: 0; border-radius: 22px 22px 0 0; max-height: calc(var(--app-h, 100vh) * .94); overflow: hidden; }
+  .album-dialog.dialog-fallback, .frame-dialog.dialog-fallback { left: 0; transform: none; }
+  html.modal-open .album-dialog, html.modal-open .frame-dialog { translate: calc(var(--scrollbar-gap, 0px) / -2) -100%; }
+  .album-dialog[open], .frame-dialog[open] { display: flex; flex-direction: column; animation: sheet-up .16s cubic-bezier(.2, .8, .2, 1); }
+  .album-dialog .ab-grid { flex: 1; min-height: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); height: auto; }
+  .ab-side-col { grid-template-columns: 88px minmax(0, 1fr); align-content: start; gap: 4px 14px; padding: 22px 16px 12px; }
+  .ab-cover { --cw: 88px; grid-row: 1 / span 3; width: 88px; }
+  .ab-side, .ab-name, .ab-progress { grid-column: 2; }
+  .ab-side { margin: 0; }
+  .ab-name { padding-right: 50px; font-size: 20px; }
+  .ab-bonus { grid-column: 1 / -1; grid-template-columns: auto minmax(0, 1fr) auto; margin-top: 8px; padding: 10px 12px; }
+  .ab-bonus > :last-child:not(.ab-bonus-t) { grid-column: auto; justify-self: end; }
+  .ab-bonus-t b { white-space: normal; }
+  .album-dialog .ab-tracks { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; padding: 12px 12px 12px; overflow: hidden; }
+  .album-dialog .ab-list { overflow: auto; overscroll-behavior: contain; }
+  .ab-claim-all { margin-top: 10px; padding: .85em 1em; }
+  .tk-row { grid-template-columns: 2em minmax(0, 1fr) auto; gap: 10px; height: auto; min-height: 68px; padding: 12px 6px; }
+  .tk-main b { font-size: 15.5px; }
+  .tk-main small { white-space: normal; font-size: 13px; line-height: 1.4; }
+  .tk-prog { grid-template-columns: minmax(0, 1fr) auto; }
+  .frame-dialog .fv-grid { flex: 1; min-height: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  /* 抽屉头：中间一根把手，右边 44 的关闭键。关闭键不再浮在预览画面上挡住 HUD。 */
+  .frame-dialog::before { content: ""; position: absolute; left: 50%; top: 10px; width: 40px; height: 5px; translate: -50% 0; border-radius: 3px; background: var(--line); }
+  .frame-dialog .dlg-head { order: -1; display: flex; flex: none; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; }
+  .frame-dialog .fv-close { position: static; flex: none; margin-left: auto; }
+  /* 专辑背面也有一根把手（顶部那条彩色虚线下面）。 */
+  .album-dialog .ab-grid::before { content: ""; position: absolute; left: 50%; top: 12px; z-index: 3; width: 40px; height: 5px; translate: -50% 0; border-radius: 3px; background: var(--line); }
+  .frame-dialog .fv-tag { display: none; }
+  .frame-dialog .fv-side { gap: 8px; padding: 18px 18px 16px; overflow: auto; overscroll-behavior: contain; }
+  .fv-name { font-size: 22px; }
+
+  /* 音乐库：唱机钉在上面，曲目表在下面自己滚（音乐 App 的做法）。音量交给手机音量键。 */
+  .hub[data-page="music"] .hub-scroll { display: flex; flex-direction: column; overflow: hidden; }
+  .hub-page[data-page="music"] { display: flex; flex-direction: column; flex: 1; width: 100%; min-height: 0; }
+  .hub-page[data-page="music"] > .mp { flex: 1; min-height: 0; grid-template-rows: auto minmax(0, 1fr); gap: 12px; }
+  .mp-deck { --S: min(200px, 50vw, 26vh); gap: 12px; padding: 18px 16px 14px; }
+  .mp-side { min-height: 0; overflow: auto; overscroll-behavior: contain; }
+  .mp-vol { display: none; }
+}
+
+/* ---- 横屏手机 ---- */
+/* 横屏版式（原 @media LANDSCAPE_PHONE）：跟 mobile.ts 挂的 html.ph-land 走，前缀用 :where() 不加优先级，层叠顺序和原来一样。 */
+  :where(html.ph-land) .hub-bar { gap: 12px; padding-top: max(4px, env(safe-area-inset-top, 0px)); padding-bottom: 4px; }
+  :where(html.ph-land) .hub-title { gap: 10px; font-size: 17px; }
+  :where(html.ph-land) .hub-title i { width: 28px; height: 28px; font-size: 13px; }
+  /* 一屏：页面不竖滚，每页按剩下的高度摆满。 */
+  :where(html.ph-land) .hub-scroll { display: flex; flex-direction: column; overscroll-behavior: contain; }
+  :where(html.ph-land) .hub-page { flex: 1; width: 100%; min-height: 0; padding-top: 4px; padding-bottom: max(10px, env(safe-area-inset-bottom, 0px)); }
+  :where(html.ph-land) .hub-page > .sh, :where(html.ph-land) .hub-page > .lk, :where(html.ph-land) .hub-page > .tk, :where(html.ph-land) .hub-page > .mp { height: 100%; min-height: 0; }
+
+  /* 分类竖轨：贴左一列，图标 + 短名，六个一屏放下。 */
+  :where(html.ph-land) .mt-tabs { display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: 1fr; gap: 2px; padding: 4px; border-radius: 18px; overflow: visible; }
+  :where(html.ph-land) .mt-tabs button { display: grid; justify-items: center; gap: 2px; min-width: 0; padding: 6px 0 5px; border-radius: 14px; }
+  :where(html.ph-land) .mt-tabs button b, :where(html.ph-land) .mt-tabs button small { display: none; }
+  :where(html.ph-land) .mt-tabs .kind-ico, :where(html.ph-land) .sg .kind-ico { display: block; width: 22px; height: 22px; }
+  :where(html.ph-land) .mt-tabs .kind-short { display: block; font: 700 11px/1.1 var(--font); font-style: normal; white-space: nowrap; }
+  :where(html.ph-land) .mt-ink { top: 0; right: 4px; bottom: auto; left: 4px; width: auto; height: var(--ih, 0); translate: 0 var(--iy, 0); border-radius: 14px; transition: translate .42s cubic-bezier(.3, 1.3, .5, 1), height .42s cubic-bezier(.3, 1.3, .5, 1); }
+
+  /* 仓库：竖轨 | 印章册竖卡 | 物品一排横滑。 */
+  /* 仓库：左栏一列悬浮文字（选中是实心粉色胶囊，和商店的吊牌区分），底部一条印章册入口；右边物品横滑占满。
+     标题行收掉，各分类的收集进度写在分类条右端。 */
+  :where(html.ph-land) .lk { display: grid; grid-template-columns: 132px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; gap: 8px 14px; }
+  /* 外层沿用桌面的 align-items: center 时，分类栏比格子高就会上下各溢出一半，第一项被顶出顶部。改成顶齐、限高，多出来的在栏内滚。 */
+  :where(html.ph-land) .lk > .mt-bar { grid-column: 1; grid-row: 1; align-self: stretch; align-items: stretch; display: flex; min-height: 0; margin: 0; }
+  :where(html.ph-land) .lk .mt-tabs { min-height: 0; max-height: 100%; }
+  :where(html.ph-land) .lk .mt-tabs { background: none; padding: 6px 0 10px; }
+  :where(html.ph-land) .lk .mt-ink { left: 0; right: 0; }
+  :where(html.ph-land) .lk > .mt-head { display: none; }
+  /* 分类横条：左小图标、右全名，每条固定 40 高；矮到放不下六条时这一列自己竖滚，不再把格子挤扁。 */
+  :where(html.ph-land) .lk .mt-tabs { flex: 1; grid-template-rows: none; grid-auto-rows: 42px; align-content: start; gap: 2px; padding: 6px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
+  :where(html.ph-land) .lk .mt-tabs button { display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 0 10px; }
+  :where(html.ph-land) .lk .mt-tabs button b { display: block; font-size: 13.5px; white-space: nowrap; }
+  :where(html.ph-land) .lk .mt-tabs .kind-ico { flex: none; width: 19px; height: 19px; }
+  :where(html.ph-land) .lk .mt-tabs .kind-short { display: none; }
+  /* 滑块与面板同心：内圆角 = 面板圆角 18 − 内边距 6。 */
+  :where(html.ph-land) .lk .mt-ink { left: 6px; right: 6px; border-radius: 12px; }
+  :where(html.ph-land) .lk .mt-tabs button { border-radius: 12px; }
+  :where(html.ph-land) .lk-book { grid-column: 1; grid-row: 2; display: flex; align-items: center; gap: 8px; height: 44px; margin: 0; padding: 0 10px; border-radius: 14px; background: var(--panel); }
+  :where(html.ph-land) .lk-book::before, :where(html.ph-land) .lk-book-seals, :where(html.ph-land) .lk-book-t small, :where(html.ph-land) .lk-book-t em, :where(html.ph-land) .lk-book-gold, :where(html.ph-land) .lk-book-go { display: none; }
+  :where(html.ph-land) .lk-book-ico { order: -1; display: block; flex: none; width: 19px; height: 19px; color: var(--gold-ink); }
+  :where(html.ph-land) .lk-book-t b { font-size: 13.5px; white-space: nowrap; }
+  :where(html.ph-land) .lk-book-stat { margin-left: auto; }
+  :where(html.ph-land) .lk-book-n { font: 500 11px/1 var(--font-num); opacity: .7; }
+  :where(html.ph-land) .lk-book-n small { font-size: 11px; }
+  :where(html.ph-land) .lk .mc-grid { grid-column: 2; grid-row: 1 / 3; min-height: 0; grid-template-columns: none; grid-template-rows: minmax(0, 1fr); grid-auto-flow: column; grid-auto-columns: 164px; grid-auto-rows: auto; gap: 12px; padding: 0 2px 4px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scroll-snap-type: x proximity; }
+  :where(html.ph-land) .lk .mc-grid > li { scroll-snap-align: start; }
+  /* 小方格：三行往右流、左右滑；右边一栏是选中那件的详情（点格子只换这里，不弹窗）。 */
+  :where(html.ph-land) .lk[data-dense] { position: relative; grid-template-columns: 132px minmax(0, 1fr); }
+  :where(html.ph-land) .lk[data-dense] .lk-tiles { grid-column: 2; grid-row: 1 / 3; min-height: 0; grid-template-rows: repeat(auto-fill, 74px); grid-auto-flow: column; grid-auto-columns: 74px; align-content: center; overflow-x: auto; overflow-y: hidden; overscroll-behavior: contain; touch-action: pan-x; scroll-snap-type: x proximity; }
+  :where(html.ph-land) .lk[data-dense] .lk-tiles > li { scroll-snap-align: start; }
+  /* 小卡片（照明日方舟的物品卡）：一角从被点的格子中心长出来，格子浮在卡片角上；内容让出格子半个身位。
+     分层：反色名称块 / 一句作用 / 「获得方式」小标题 + 分割线 / 来源 · 状态 · 按钮。位置由 lockerPage 的 placePop 写。 */
+  :where(html.ph-land) .lk[data-dense] .lk-detail[data-open] { position: absolute; z-index: 6; display: grid; gap: 8px; width: 264px; padding: 14px 14px 12px calc(var(--tw, 74px) / 2 + 12px); border-radius: 16px; background: var(--panel-2); box-shadow: 0 16px 34px var(--shade), inset 0 0 0 1px var(--line); }
+  :where(html.ph-land) .lk[data-dense] .lk-detail[data-side="left"] { padding: 14px calc(var(--tw, 74px) / 2 + 12px) 12px 14px; }
+  :where(html.ph-land) .lk-pop-tile { position: absolute; z-index: 1; display: grid; place-items: center; border-radius: 14px; background: radial-gradient(circle, var(--wash) 1px, transparent 1.4px) 0 0 / 10px 10px, var(--panel); box-shadow: 0 0 0 2.5px var(--brand-ink), 0 8px 18px var(--shade); scale: 1.06; pointer-events: none; }
+  :where(html.ph-land) .lk-pop-tile .fp { --fs: 42px; }
+  :where(html.ph-land) .lk-pop-tile .art-mini { width: 100%; height: 100%; border-radius: 14px; }
+  :where(html.ph-land) .lk-pop-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  /* 名称：反色实心块（参考图的黑底白字）。 */
+  :where(html.ph-land) .lk-pop-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 10px; border-radius: 8px; background: var(--text); color: var(--bg); font: 900 15px/1.3 var(--font-head); letter-spacing: .03em; }
+  :where(html.ph-land) .lk-pop-peek { display: grid; flex: none; place-items: center; width: 32px; height: 32px; margin-left: auto; padding: 0; border-radius: 10px; }
+  :where(html.ph-land) .lk-pop-peek .btn-icon { display: block; width: 18px; height: 18px; }
+  :where(html.ph-land) .lk-pop-desc { margin: 0; font-size: 13px; line-height: 1.45; }
+  :where(html.ph-land) .lk-pop-sec { display: flex; align-items: center; gap: 8px; margin: 2px 0 0; color: var(--muted); font-size: 11.5px; font-weight: 700; letter-spacing: .06em; }
+  :where(html.ph-land) .lk-pop-sec::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  :where(html.ph-land) .lk-pop-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  /* 来源可能很长（任务 · 某乐队全清奖励）：最多折两行，不截成省略号。 */
+  :where(html.ph-land) .lk-pop-from { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; min-width: 0; overflow: hidden; font-size: 12.5px; font-weight: 700; line-height: 1.35; }
+  :where(html.ph-land) .lk-pop-chip { display: inline-flex; flex: none; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 6px; background: var(--well); color: var(--muted); font: 700 11.5px/1.4 var(--font-num); font-style: normal; }
+  :where(html.ph-land) .lk-pop-chip .tk-shard { width: 11px; height: 11px; }
+  :where(html.ph-land) .lk-pop-chip[data-state="worn"] { background: var(--brand); color: var(--on-brand); }
+  :where(html.ph-land) .lk-pop-go { display: inline-flex; flex: none; align-items: center; gap: 2px; height: 34px; margin-left: auto; padding: 0 8px 0 12px; border-radius: 10px; font-weight: 800; white-space: nowrap; }
+  :where(html.ph-land) .lk-pop-go.set-primary { padding-right: 12px; }
+  :where(html.ph-land) .lk-pop-go .btn-icon { display: block; width: 14px; height: 14px; }
+  @supports (corner-shape: squircle) { :where(html.ph-land) .lk-pop-go, :where(html.ph-land) .lk-pop-peek { border-radius: 16px; corner-shape: squircle; } }
+  /* 卡片按行高伸缩：预览吃掉名字、说明、按钮之外的高度，矮屏也不压字。价签和底下的「商店 · N 星之碎片」重复，横屏去掉。 */
+  /* 卡身定高：正在使用的卡没有按钮，预览也和别的卡一样大。 */
+  :where(html.ph-land) .lk .mc { grid-template-rows: minmax(0, 1fr) 106px; }
+  :where(html.ph-land) .lk .mc-art { aspect-ratio: auto; min-height: 0; }
+  :where(html.ph-land) .lk .mc-tag { display: none; }
+  :where(html.ph-land) .lk .mc-body { gap: 2px; padding: 8px 12px 10px; }
+  :where(html.ph-land) .lk .mc-btn { margin-top: 6px; }
+  :where(html.ph-land) .mc-body { padding: 10px 12px 12px; }
+  :where(html.ph-land) .mc-art .fp { --fs: 64px; }
+
+  /* 商店：竖轨 | 展台一列 | 一根横杆的货架横滑。「去仓库」挂在货架标题行右端。 */
+  :where(html.ph-land) .sh { display: grid; grid-template-columns: 116px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 8px 14px; }
+  :where(html.ph-land) .sh > .ss, :where(html.ph-land) .sh > .sh-top, :where(html.ph-land) .sh .sf-head { display: none; }
+  /* 竖轨按页高等分六格，矮屏（Safari 带工具栏）里每格一起变矮，不会有一格被裁到屏外。 */
+  /* 没有外框：一列悬浮的文字，只有选中的那行浮出一枚吊牌（不用面板，就没有内外圆角对不齐的问题）。
+     左边留 6px 给骑在吊牌边上的半颗粉点，右边留出吊牌放大的余量。 */
+  :where(html.ph-land) .sh > .sg-bar { grid-column: 1; grid-row: 1 / 3; align-self: stretch; display: grid; grid-auto-rows: 40px; align-content: start; gap: 4px; min-height: 0; margin: 0; padding: 6px 8px 10px 6px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; background: none; }
+  :where(html.ph-land) .sh .sg, :where(html.ph-land) .sh .sg:nth-child(odd), :where(html.ph-land) .sh .sg:nth-child(even) { display: grid; min-width: 0; min-height: 0; padding: 0; rotate: 0deg; }
+  :where(html.ph-land) .sh .sg-str { display: none; }
+  /* 商店的分类横条是一枚吊牌：左端打一个绳孔（和货架挂钩、价签同一套语言），绳孔右边小图标 + 全名。 */
+  :where(html.ph-land) .sh .sg-board { display: flex; align-items: center; justify-content: flex-start; gap: 7px; min-width: 0; min-height: 0; padding: 0 8px 0 12px; border-radius: 6px 12px 12px 6px; overflow: visible; }
+  /* 未选中不画绳孔；选中时一颗粉点骑在吊牌左边缘正中，一半露在板外。 */
+  :where(html.ph-land) .sh .sg-board::before { top: 50%; left: 0; width: 10px; height: 10px; border: 0; background: var(--brand); translate: -50% -50%; scale: 0; transition: scale .3s cubic-bezier(.34, 1.7, .5, 1); }
+  :where(html.ph-land) .sh .sg[aria-selected="true"] .sg-board::before { background: var(--brand); scale: 1; }
+  :where(html.ph-land) .sh .sg-board b { display: block; font-size: 13.5px; white-space: nowrap; }
+  :where(html.ph-land) .sh .sg-board small, :where(html.ph-land) .sh .sg-board em { display: none; }
+  :where(html.ph-land) .sh .sg .kind-ico { flex: none; width: 19px; height: 19px; }
+  :where(html.ph-land) .sh .sg { height: 40px; transform-origin: 0 50%; }
+  :where(html.ph-land) .sh .sg-board { box-sizing: border-box; height: 100%; background: transparent; box-shadow: none; transform-origin: 0 50%; transition: scale .3s cubic-bezier(.34, 1.6, .5, 1), background-color .25s ease, color .25s ease, box-shadow .25s ease; }
+  /* 只有选中的那行「挂出」一枚吊牌：有底板、有影子、略放大。 */
+  :where(html.ph-land) .sh .sg[aria-selected="true"] .sg-board { background: var(--panel-2); box-shadow: 0 6px 14px var(--shade); scale: 1.05; }
+  :where(html.ph-land) .sh .sg[aria-selected="true"] .kind-ico { color: var(--brand-ink); }
+  :where(html.ph-land) .sh-top { z-index: 1; grid-column: 2; grid-row: 1; align-self: start; justify-self: end; margin: 0; }
+  :where(html.ph-land) .sh-sign { display: none; }
+  :where(html.ph-land) .sh-locker { padding: .45em .95em; }
+  :where(html.ph-land) .ss { z-index: 1; grid-column: 2; grid-row: 1 / 3; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); align-content: start; gap: 10px; min-height: 0; padding: 10px; border-radius: 20px; }
+  :where(html.ph-land) .ss-show { border-radius: 12px; }
+  :where(html.ph-land) .ss-info { position: static; gap: 6px; min-height: 0; overflow: hidden; }
+  :where(html.ph-land) .ss-info-body { grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 4px 10px; }
+  :where(html.ph-land) .ss-kicker, :where(html.ph-land) .ss-actions { grid-column: 1 / -1; }
+  :where(html.ph-land) .ss-kicker { font-size: 10px; }
+  :where(html.ph-land) .ss-name { grid-column: 1; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 19px; }
+  :where(html.ph-land) .ss-price { grid-column: 2; grid-row: 2; margin: 0; font-size: 20px; }
+  :where(html.ph-land) .ss-price .tk-shard { width: 17px; height: 17px; }
+  :where(html.ph-land) .ss-kind, :where(html.ph-land) .ss-note { display: none; }
+  :where(html.ph-land) .ss-actions { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; margin-top: 2px; }
+  :where(html.ph-land) .ss-btn { padding: .7em 1em; font-size: 15px; }
+  :where(html.ph-land) .shelves { grid-column: 2; grid-row: 1 / 3; min-height: 0; margin: 0; }
+  :where(html.ph-land) .sf-land { display: grid; grid-template-rows: minmax(0, 1fr); height: 100%; }
+  :where(html.ph-land) .sf-land .sf-head { min-height: 36px; margin: 0 4px; padding-right: 104px; }
+  :where(html.ph-land) .sf-land .sf-rail { display: flex; gap: 14px; margin: 0; padding: 26px 8px 8px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scroll-snap-type: x proximity; background: linear-gradient(var(--muted), var(--line)) 0 16px / 100% 6px no-repeat local; }
+  :where(html.ph-land) .sf-land .sf-rail::before, :where(html.ph-land) .sf-land .sf-rail::after { content: none; }
+  :where(html.ph-land) .sf-land .sf-rail > li { flex: none; width: 150px; scroll-snap-align: start; }
+  /* 卡里不留空：预览吃掉名字和价签之外的全部高度；价签落到底行（和「已拥有」同一个位），不再压在头像框上。 */
+  :where(html.ph-land) .sf-land .sf-item { grid-template-rows: minmax(0, 1fr) auto 24px; gap: 8px; padding: 12px 10px; }
+  :where(html.ph-land) .sf-land .sf-art { aspect-ratio: auto; min-height: 0; }
+  :where(html.ph-land) .sf-land .sf-item .mc-tag { z-index: 1; top: auto; right: auto; bottom: 12px; left: 10px; rotate: -3deg; }
+  :where(html.ph-land) .sf-land .sf-art .fp { --fs: min(84px, 26vh); }
+  :where(html.ph-land) .sf-land .sf-empty { display: grid; place-items: center; }
+  :where(html.ph-land) .sf-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; font-size: 14px; line-height: 1.3; }
+
+  /* 任务：整屏只有专辑墙，两行横滑，封面边长由墙高定（tasksPage 写 --tile）。
+     总进度和「全部领取」挂到顶栏碎片左边（tasksPage 写 #hub-count）；封面下的进度条和贴纸重复，收掉。 */
+  :where(html.ph-land) .tk { display: grid; grid-template-rows: minmax(0, 1fr); }
+  :where(html.ph-land) .tk-top, :where(html.ph-land) .al-bar { display: none; }
+  :where(html.ph-land) .hub-bar .hub-count:has(button) { padding: 0; background: none; }
+  :where(html.ph-land) .hub-count button { height: 32px; padding: 0 14px; border-radius: 999px; font: 800 13px/1 var(--font-num); white-space: nowrap; }
+  :where(html.ph-land) .tk-wall { height: 100%; min-height: 0; grid-template-columns: none; grid-template-rows: repeat(2, auto); grid-auto-flow: column; grid-auto-columns: var(--tile, 120px); align-content: space-between; gap: 14px 16px; padding: 2px 4px 4px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scroll-snap-type: x proximity; }
+  :where(html.ph-land) .tk-wall > li { scroll-snap-align: start; }
+  :where(html.ph-land) .al-tile { gap: 5px; }
+  :where(html.ph-land) .al-meta b { font-size: 13px; }
+  :where(html.ph-land) .al-meta small { display: none; }
+
+  /* 印章册：首屏给头像墙。标题、三项统计（章 + 数字）、排列、保存、关闭并成一条吸顶工具栏，规则说明落到墙底当脚注。 */
+  :where(html.ph-land) #stamp-dialog { width: calc(100% - 24px); max-width: none; max-height: calc(var(--app-h, 100vh) - 16px); padding: 0 16px 14px; }
+  :where(html.ph-land) .sb-top { position: sticky; top: 0; z-index: 2; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; align-items: center; gap: 10px; margin: 0 -16px; padding: 6px 6px 6px 16px; background: var(--panel); }
+  :where(html.ph-land) .sb-top .dialog-head, :where(html.ph-land) .sb-top .sb-tools { display: contents; }
+  :where(html.ph-land) .sb-top h2 { grid-area: 1 / 1; display: block; font-size: 18px; white-space: nowrap; }
+  :where(html.ph-land) .sb-top .sb-en { display: none; }
+  :where(html.ph-land) .sb-top .sb-total { grid-area: 1 / 2; flex-wrap: nowrap; gap: 6px; min-width: 0; margin: 0; padding: 0; border: 0; overflow: hidden; }
+  :where(html.ph-land) .sb-top #stamp-layout { grid-area: 1 / 3; }
+  :where(html.ph-land) .sb-top #stamp-layout button { padding: .35em .8em; font-size: 13px; }
+  :where(html.ph-land) .sb-top #stamp-save { grid-area: 1 / 4; }
+  :where(html.ph-land) .sb-top .dialog-head > button { grid-area: 1 / 5; }
+  :where(html.ph-land) .sb-count { position: relative; display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px 3px 4px; border-radius: 999px; background: var(--well); font-size: 12px; white-space: nowrap; }
+  :where(html.ph-land) .sb-count b { font-size: 15px; }
+  :where(html.ph-land) .sb-count em { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  :where(html.ph-land) .sb-count .mini-seal { display: block; position: static; width: 20px; transform: none; }
+  :where(html.ph-land) .sb-grid, :where(html.ph-land) .sb-grid.is-flat { grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); gap: 10px 8px; }
+  :where(html.ph-land) .sb-grid.is-flat { margin-top: 6px; }
+  :where(html.ph-land) .sb-band { margin: 12px 0 8px; }
+  :where(html.ph-land) .sb-cell { gap: 4px; }
+  :where(html.ph-land) .sb-cell figcaption, :where(html.ph-land) .sb-grid.is-flat figcaption { font-size: 12px; }
+  :where(html.ph-land) .sb-cell figcaption small { font-size: 10.5px; }
+  :where(html.ph-land) .sb-rule { order: 0; margin: 16px 0 0; font-size: 12px; }
+
+  /* 专辑背面：近全屏，左封面列，右曲目表自己滚，「全部领取」贴底。 */
+  :where(html.ph-land) .album-dialog { inset: auto 0; top: calc(var(--app-top, 0px) + 8px); width: calc(100% - 24px); max-width: none; height: calc(var(--app-h, 100vh) - 16px); max-height: none; margin: 0 auto; overflow: hidden; }
+  :where(html.ph-land) .album-dialog .ab-grid { grid-template-columns: 220px minmax(0, 1fr); grid-template-rows: none; height: 100%; }
+  :where(html.ph-land) .ab-side-col { gap: 6px; padding: 18px 16px; overflow: auto; }
+  /* 封面按屏高缩放；全清奖励压成一行（框图 + 名字 + 领取），左列不用滚。 */
+  :where(html.ph-land) .ab-cover { --cw: min(120px, calc(var(--app-h, 100vh) * .3)); width: var(--cw); }
+  :where(html.ph-land) .ab-name { font-size: 19px; }
+  :where(html.ph-land) .ab-side-col { align-content: start; gap: 5px; }
+  :where(html.ph-land) .ab-bonus { grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; margin-top: 4px; padding: 8px 10px; }
+  :where(html.ph-land) .ab-bonus > :last-child:not(.ab-bonus-t) { grid-column: auto; justify-self: end; }
+  :where(html.ph-land) .ab-bonus-t b { white-space: nowrap; }
+  :where(html.ph-land) .ab-frame .fp { --fs: 34px; }
+  :where(html.ph-land) .ab-bonus > .ab-lock:last-child { grid-column: 1 / -1; justify-self: start; font-size: 11px; }
+  :where(html.ph-land) .ab-bonus-t small { white-space: nowrap; }
+  :where(html.ph-land) .album-dialog .ab-tracks { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; padding: 16px 16px 12px; overflow: hidden; }
+  :where(html.ph-land) .album-dialog .ab-list { overflow: auto; overscroll-behavior: contain; }
+  :where(html.ph-land) .tk-row { gap: 12px; height: auto; min-height: 60px; padding: 10px 8px; }
+  :where(html.ph-land) .tk-main small { white-space: normal; line-height: 1.4; }
+
+  /* 详情弹窗：近全屏，左边预览（宽度按屏高封顶成 16:9），右边说明栏自己滚。 */
+  /* 竖直居中按真实可见高度（--app-h），不靠参照框的 margin: auto。 */
+  :where(html.ph-land) .frame-dialog, :where(html.ph-land) .gift-dialog { inset: auto 0; top: calc(var(--app-top, 0px) + var(--app-h, 100vh) / 2); translate: 0 -50%; margin: 0 auto; }
+  /* 开弹窗时全站会给 dialog 写一条横向的滚动条补偿位移（html.modal-open dialog），这里把竖直居中并进去，不被它盖掉。 */
+  html.modal-open:where(.ph-land) .frame-dialog, html.modal-open:where(.ph-land) .gift-dialog { translate: calc(var(--scrollbar-gap, 0px) / -2) -50%; }
+  :where(html.ph-land) .frame-dialog { width: calc(100% - 24px); max-width: none; max-height: calc(var(--app-h, 100vh) - 16px); }
+  /* 横屏寸土寸金：不挂翻页条，只靠左右滑翻页，零视觉负担。 */
+  :where(html.ph-land) .frame-dialog .dlg-pager:not([hidden]) { display: none; }
+  :where(html.ph-land) .frame-dialog .fv-grid { grid-template-columns: minmax(0, calc((var(--app-h, 100vh) - 24px) * 16 / 9)) minmax(240px, 1fr); align-items: center; }
+  :where(html.ph-land) .frame-dialog .fv-side { align-self: stretch; gap: 6px; max-height: calc(var(--app-h, 100vh) - 16px); padding: 18px 16px 14px; overflow: auto; overscroll-behavior: contain; }
+  :where(html.ph-land) .fv-name { font-size: 21px; }
+  /* 首场赠礼一屏装下，不滚：标题压一行，两张图的高度跟着屏高走（其余部分约 196px）。 */
+  :where(html.ph-land) .gift-dialog { max-height: calc(var(--app-h, 100vh) - 12px); padding: 12px 18px; overflow: hidden; }
+  :where(html.ph-land) .gf-kicker { display: none; }
+  :where(html.ph-land) .gift-dialog h2 { margin: 0 0 2px; font-size: 21px; }
+  :where(html.ph-land) .gf-sub { margin: 0 0 10px; font-size: 12.5px; }
+  :where(html.ph-land) .gf-grid { gap: 12px; }
+  :where(html.ph-land) .gf-art { aspect-ratio: auto; height: clamp(64px, calc(var(--app-h, 100vh) - 196px), 220px); }
+  :where(html.ph-land) .gf-name { padding: 8px 12px; }
+  :where(html.ph-land) .gift-dialog .quit-actions { margin-top: 10px; }
+
+  /* 钉住地址栏：横屏里上下拖一下，只要这一下传到了整页，Chrome / Safari 就会收放地址栏，视口高度跟着变，整屏元素一起跳。
+     后台页和它的弹窗里只有真正竖滚的区域接上下拖，其余只接左右滑；所有滚动区滚到头也不把拖动传给整页。 */
+  html.hub-open:where(.ph-land), html.hub-open:where(.ph-land) body { overscroll-behavior: none; }
+  :where(html.ph-land) .hub, :where(html.ph-land) .hub-scroll, :where(html.ph-land) .gift-dialog, :where(html.ph-land) .frame-dialog, :where(html.ph-land) .album-dialog { touch-action: pan-x; overscroll-behavior: contain; }
+  :where(html.ph-land) .sf-rail, :where(html.ph-land) .lk .mc-grid, :where(html.ph-land) .tk-wall { touch-action: pan-x; overscroll-behavior: contain; }
+  :where(html.ph-land) .mp-side, :where(html.ph-land) .frame-dialog .fv-side, :where(html.ph-land) .ab-side-col, :where(html.ph-land) .album-dialog .ab-list { touch-action: pan-y; overscroll-behavior: contain; }
+
+  /* 音乐库：唱机（唱片按屏高缩放，信息在右）| 曲目表自己竖滑。 */
+  :where(html.ph-land) .mp { grid-template-columns: auto minmax(220px, 1fr); grid-template-rows: minmax(0, 1fr); align-items: stretch; gap: 12px; }
+  /* 唱片区宽 ≈ 1.62 × S + 254（边距、间距、200 的控制栏），右边曲目栏至少 220、页边约 44：
+     S 再按可用宽度封顶，4:3（720 宽）也不把控制栏挤出框。852 宽的手机上这一项不起作用。 */
+  :where(html.ph-land) .mp-deck { --S: min(210px, 50vh, 24vw, max(96px, calc((50vw - 265px) / .81))); grid-template-columns: auto minmax(200px, 1fr); align-items: center; gap: 18px; padding: 16px 18px; }
+  :where(html.ph-land) .mp-table { margin: 0; }
+  :where(html.ph-land) .mp-controls { gap: 8px; }
+  :where(html.ph-land) .mp-step { width: 38px; height: 38px; }
+  :where(html.ph-land) .mp-play { width: 50px; height: 50px; }
+  :where(html.ph-land) .mp-order { margin-left: 0; }
+  :where(html.ph-land) .mp-vol { display: none; }
+  :where(html.ph-land) .mp-side { min-height: 0; padding: 12px 6px 6px; overflow: auto; overscroll-behavior: contain; }
+
+
+/* ---- 两种手机版式共用：图标工具钮、详情栏按钮并排、出纸小票改成盖在最上面的浮层。 ---- */
+/* 两种手机版式共用（原 @media PORTRAIT_PHONE, LANDSCAPE_PHONE）：跟 html.ph-land / html.ph-port 走。 */
+  :where(html.ph-land, html.ph-port) .fv-tool .btn-icon { display: block; width: 20px; height: 20px; }
+  :where(html.ph-land, html.ph-port) .fv-tool .tl { display: none; }
+  :where(html.ph-land, html.ph-port) .fv-tool { display: grid; flex: none; place-items: center; width: 46px; height: 46px; padding: 0; }
+  :where(html.ph-land, html.ph-port) .fv-actions .fv-act { height: 46px; padding: 0 1.1em; }
+  :where(html.ph-land, html.ph-port) .fv-tool[aria-pressed="true"] { color: var(--brand-ink); }
+  :where(html.ph-land, html.ph-port) .fn-row { display: flex; gap: 8px; }
+  :where(html.ph-land, html.ph-port) .fv-actions { grid-template-columns: auto minmax(0, 1fr); align-items: center; }
+  :where(html.ph-land, html.ph-port) .fv-actions > .fn-row { grid-column: 1; }
+  :where(html.ph-land, html.ph-port) .fv-actions > .fv-act { grid-column: 2; }
+  /* 展台叠在后面的货架、招牌之上，里面的小票浮层才盖得住它们。 */
+  :where(html.ph-land, html.ph-port) .ss { z-index: 1; }
+  :where(html.ph-land, html.ph-port) .ss-printer.on, :where(html.ph-land, html.ph-port) .fv-side .ss-printer.on { position: fixed; inset: 0; z-index: 85; display: grid; place-items: center; min-height: 0; margin: 0; background: var(--shade-scrim); }
+  :where(html.ph-land, html.ph-port) .ss-printer.on::before { display: none; }
+  :where(html.ph-land, html.ph-port) .ss-printer .rc-paper { width: min(300px, 78vw); margin: 0; }
+  /* 竖向分类栏下面还有东西时，底边渐隐一截作提示（ui/mobile.ts fadeMore 挂 data-more）。 */
+  :where(html.ph-land, html.ph-port) [data-more] { -webkit-mask-image: linear-gradient(#000 calc(100% - 30px), transparent); mask-image: linear-gradient(#000 calc(100% - 30px), transparent); }
+
+  /* 翻页：‹ 当前 / 总数 ›，只在竖屏抽屉头左侧出现（横屏见上，只靠左右滑）。 */
+  /* 竖屏：箭头和计数直接浮在抽屉背景上，不画底色和边框。 */
+  :where(html.ph-land, html.ph-port) .dlg-pager:not([hidden]) { display: inline-flex; align-items: center; gap: 0; }
+  :where(html.ph-land, html.ph-port) .dlg-pager button { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 14px; background: transparent; }
+  :where(html.ph-land, html.ph-port) .dlg-pager .btn-icon { display: block; width: 18px; height: 18px; color: var(--muted); }
+  :where(html.ph-land, html.ph-port) .dlg-pager button:active .btn-icon { color: var(--text); }
+  :where(html.ph-land, html.ph-port) .dlg-n { min-width: 4.2em; text-align: center; font: 700 13px/1 var(--font-num); font-variant-numeric: tabular-nums; color: var(--muted); }
+  /* 返回键先保证好点：40 高的圆角长条带字，和其他工具钮同一家族。关闭键是全站统一的悬浮叉（见 .ab-close）。 */
+  :where(html.ph-land, html.ph-port) .hub-bar #hub-back { display: inline-flex; align-items: center; gap: 4px; height: 40px; padding: 0 14px 0 10px; border-radius: 14px; line-height: 1; }
+  :where(html.ph-land, html.ph-port) .hub-bar #hub-back .btn-icon { display: block; width: 20px; height: 20px; }
+  :where(html.ph-land, html.ph-port) .hub-bar #hub-back .btn-label { display: none; }
+  :where(html.ph-land, html.ph-port) .hub-bar #hub-back::after { content: "返回"; font-weight: 800; font-size: 14px; }
+  /* 窄屏放不下「返回」两个字 + 页名 + 两枚胶囊（碎片四位数时）：≤ 380 返回只留箭头成 40 见方，≤ 340 再收掉页名前的字母徽章。 */
+  @media (max-width: 380px) { :where(html.ph-land, html.ph-port) .hub-bar #hub-back { justify-content: center; width: 40px; padding: 0; } :where(html.ph-land, html.ph-port) .hub-bar #hub-back::after{ content: none; } }
+  @media (max-width: 340px) { :where(html.ph-land, html.ph-port) .hub-title i { display: none; } }
+  @supports (corner-shape: squircle) { :where(html.ph-land, html.ph-port) .hub-bar #hub-back { border-radius: 20px; corner-shape: squircle; } }
+  /* 默认跟随动态视口。只有视觉视口确实更矮时才用 appHeight.ts 给出的高度。 */
+  :where(html.ph-land, html.ph-port) .hub { top: var(--app-top, 0px); }
+  :where(html.ph-land, html.ph-port) .hub, :where(html.lobby-mode) .lobby { height: var(--app-pin-h, var(--app-shell-h, auto)); }
+  @supports (height: 1dvh) {
+    :root { --app-shell-h: 100vh; --app-shell-h: 100dvh; }
+  }
+  /* 仓库的收集进度（任务横屏的完成进度）挂在顶栏星之碎片左边，和碎片计数同一枚胶囊的样子：页面图标 + 数字。标题行收掉。 */
+  :where(html.ph-land, html.ph-port) .hub-bar { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+  :where(html.ph-land, html.ph-port) .hub-count:not([hidden]) { display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px 4px 8px; border-radius: 999px; background: var(--well); color: var(--muted); font: 700 13px/1.2 var(--font-num); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  :where(html.ph-land, html.ph-port) .hub-count > svg { flex: none; width: 15px; height: 15px; }
+  :where(html.ph-land, html.ph-port) .lk > .mt-head { display: none; }
+
+@keyframes sheet-up { from { opacity: .6; transform: translateY(24px); } }
+
+/* ==== 后台页的弹出式导航（ui/hub.ts）：点顶栏标题，降下一条「巡演路线」，站点依次亮起。 ==== */
+/* 标题本身就是开关：按钮去掉底和边，排版和原来的标题一模一样。 */
+.hub-nav-btn { display: flex; align-items: center; gap: inherit; min-width: 0; max-width: 100%; padding: 4px 6px 4px 0; border: 0; border-radius: 14px; background: none; font: inherit; color: inherit; letter-spacing: inherit; }
+.hub-bar { position: relative; z-index: 7; }
+.hub-nav { position: absolute; inset: 0; z-index: 6; }
+.hn-scrim { position: absolute; inset: 0; background: var(--shade-scrim); opacity: 0; transition: opacity .2s ease; }
+.hub-nav.on .hn-scrim { opacity: 1; }
+.hn-panel { position: absolute; display: block; left: 0; right: 0; top: var(--bar-h, 56px); padding: 18px max(16px, env(safe-area-inset-right, 0px)) 16px max(16px, env(safe-area-inset-left, 0px)); border-radius: 0 0 24px 24px; background: var(--panel); box-shadow: 0 18px 36px var(--shade); translate: 0 -14px; opacity: 0; transition: translate .26s cubic-bezier(.2, .9, .3, 1.1), opacity .2s ease; }
+.hub-nav.on .hn-panel { translate: 0 0; opacity: 1; }
+.hn-stops { position: relative; display: grid; grid-template-columns: repeat(var(--stops, 6), minmax(0, 1fr)); max-width: 760px; margin: 0 auto; padding: 0; list-style: none; }
+/* 路线：一根线穿过所有站点的圆心，导航降下时从左往右画出来。 */
+.hn-stops::before { content: ""; position: absolute; left: calc(100% / var(--stops, 6) / 2); right: calc(100% / var(--stops, 6) / 2); top: 23px; height: 2px; border-radius: 1px; background: repeating-linear-gradient(90deg, var(--line) 0 10px, transparent 10px 16px); transform-origin: 0 50%; scale: 0 1; transition: scale .45s cubic-bezier(.2, .8, .2, 1) .05s; }
+.hub-nav.on .hn-stops::before { scale: 1 1; }
+.hn-stop { display: grid; justify-items: center; gap: 4px; width: 100%; padding: 0 2px; border: 0; background: none; text-align: center; }
+.hn-dot { position: relative; display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--panel-2); box-shadow: inset 0 0 0 1.5px var(--line); color: var(--muted); scale: .4; opacity: 0; transition: scale .34s cubic-bezier(.34, 1.7, .5, 1), opacity .2s ease, background-color .2s ease, color .2s ease; transition-delay: calc(var(--n, 0) * 40ms + 80ms); }
+.hub-nav.on .hn-dot { scale: 1; opacity: 1; }
+.hn-dot svg { width: 22px; height: 22px; fill: currentColor; }
+.hn-stop b { font: 800 13px/1.2 var(--font-head); letter-spacing: .04em; white-space: nowrap; }
+.hn-stop small { min-height: 1.3em; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font: 600 11px/1.3 var(--font-num); }
+.hn-stop small.hot { color: var(--brand-ink); }
+/* 当前所在：实心粉点 + 一圈光环；站名转粉。 */
+.hn-stop[aria-current="page"] .hn-dot { background: var(--brand); color: var(--on-brand); box-shadow: 0 0 0 4px var(--panel), 0 0 0 6px var(--brand-ink); }
+.hn-stop[aria-current="page"] b { color: var(--brand-ink); }
+.hn-stop:active .hn-dot { scale: .9; transition-delay: 0s; }
+@media (prefers-reduced-motion: reduce) { .hn-panel, .hn-dot, .hn-stops::before, .hn-scrim { transition: none; } }
+/* 窄竖屏：圆点小一号，六站仍一行。 */
+@media (max-width: 420px) { .hn-dot { width: 42px; height: 42px; } .hn-stops::before { top: 20px; } .hn-stop b { font-size: 12px; } .hn-stop small { font-size: 10px; } }
+
+/* ==== 按钮状态：只表达真实发生的事。 ====
+   焦点环只给键盘导航（:focus-visible），用品牌色；点过、程序聚焦（弹窗打开时浏览器会把焦点放到关闭键上）都不画，
+   不再冒出浏览器默认的蓝框。触屏上一律不画焦点环。 */
+:focus:not(:focus-visible) { outline: none; }
+:where(button, summary, a, [role="button"]):focus-visible { outline: 2px solid var(--brand-ink); outline-offset: 2px; }
+body.touch :focus, body.touch :focus-visible { outline: none; }
+/* 触屏没有悬停：手指离开后「悬停」会粘在最后点的那个元素上（变色、上浮、描边），看起来像被选中。这些都还原。 */
+body.touch .mt-tabs button:hover:not([aria-selected="true"]) { color: var(--muted); }
+body.touch .mp-row:hover:not([aria-current="true"]) { background: transparent; }
+body.touch .sg:not([aria-selected="true"]):hover .sg-board b { color: var(--muted); }
+body.touch .bs-tile:hover { translate: none; background: var(--panel); }
+body.touch .bs-tile:hover .bs-glyph i { translate: none; rotate: none; }
+body.touch [data-hub="music"]:hover .bs-glyph i:nth-child(2) { rotate: 22deg; }
+body.touch .lk-book:hover .lk-book-go, body.touch .lk-book:hover .lk-book-seals i { translate: none; }
+body.touch .lk-book:hover .lk-book-seals i:nth-child(2) { rotate: 8deg; }
+body.touch .gf-card:hover { translate: none; }
+body.touch .gf-card:not([aria-pressed="true"]):hover .gf-art img { scale: 1; }
+body.touch .al-tile[data-state="clear"]:hover .al-art::after { translate: -120% 0; }
+
+/* ==== 横屏手机的大厅（ui/lobby.ts）+ 备战三页 ====
+   大厅只在 LANDSCAPE_PHONE 出现：选人页上面盖一层，顶栏借站点 header 浮在美术上。
+   入口块是平行四边形（块面画在 ::before 上斜切，内容和出框图形不被裁）；备战三页是后台页同一个壳，统一圆角。 */
+.lobby, .lb-shards { display: none; }
+/* 大厅模式（原 @media LANDSCAPE_PHONE）：跟 mobile.ts 挂的 html.lobby-mode 走（自动 = 横屏小屏手机；设置里可手动开 / 关）。 */
+  :where(html.lobby-mode) .lobby:not([hidden]) { display: block; }
+  html.lobby-on:where(.lobby-mode), html.lobby-on:where(.lobby-mode) body { overflow: hidden; }
+  html.lobby-on:where(.lobby-mode) #selection, html.lobby-on:where(.lobby-mode) .page-deco, html.lobby-on:where(.lobby-mode) .site-foot { visibility: hidden; }
+  html.hub-covered:where(.lobby-mode) .lobby { visibility: hidden; }
+  html.hub-covered:where(.lobby-mode) .lobby * { animation-play-state: paused; }
+
+  /* 尺寸规则：入口群是设计稿里 400×311 的盒子（852×393 减去顶栏 52、底边 30，宽 47%），盒子里一律按设计稿写 px，
+     整体 scale(--lu)（lobby.ts 按 min(宽 ÷ 852, 高 ÷ 393) 写）。顶栏、底角也乘同一个 --lu。
+     盒子外不许出现跟视口走的尺寸（vw / % 宽 / clamp 视口），否则宽高一变比例就和设计稿分家。
+     更宽：多出来的给美术；更方：入口群在顶栏和底边之间上下居中。 */
+  :where(html.lobby-mode) .lobby { --dk-top: max(calc(52px * var(--lu, 1) + (100% - 393px * var(--lu, 1)) / 2), calc(env(safe-area-inset-top, 0px) + 44px * var(--lu, 1)));
+    --cut: 11px; position: fixed; inset: 0; top: var(--app-top, 0px); z-index: 40; overflow: hidden; background: var(--bg); color: var(--text); }
+  :where(html.lobby-mode) .lobby[data-side="left"] { --scrim-dir: 90deg; --dir: -1; --tilt: 5deg; }
+  :where(html.lobby-mode) .lobby[data-side="right"] { --scrim-dir: 270deg; --dir: 1; --tilt: -5deg; }
+
+  /* 背景：终幕图以脸为中心放大，慢漂移；界面一侧压暗幕和淡点阵。 */
+  :where(html.lobby-mode) .lb-art { position: absolute; inset: 0; background: var(--bg) center / cover no-repeat; transform-origin: var(--fx, 50%) var(--fy, 30%); scale: 1.18; animation: lb-drift 24s ease-in-out infinite alternate; }
+  @keyframes lb-drift { to { scale: 1.24; translate: calc(var(--dir) * -1.5%) -1%; } }
+  :where(html.lobby-mode) .lb-scrim { position: absolute; inset: 0; background:
+    linear-gradient(var(--scrim-dir), rgb(11 14 26 / 95%) 0%, rgb(11 14 26 / 84%) 36%, rgb(11 14 26 / 30%) 58%, transparent 72%),
+    linear-gradient(0deg, rgb(11 14 26 / 78%), transparent 24%),
+    linear-gradient(180deg, rgb(11 14 26 / 72%), transparent 20%); }
+  :where(html.lobby-mode) .lb-scrim::after { content: ""; position: absolute; top: 0; bottom: 0; width: 56%; background: radial-gradient(circle, var(--wash) 1px, transparent 1.4px) 0 0 / 14px 14px;
+    -webkit-mask-image: linear-gradient(var(--scrim-dir), #000 30%, transparent); mask-image: linear-gradient(var(--scrim-dir), #000 30%, transparent); }
+  :where(html.lobby-mode) .lobby[data-side="left"] .lb-scrim::after { left: 0; }
+  :where(html.lobby-mode) .lobby[data-side="right"] .lb-scrim::after { right: 0; }
+  @media (prefers-reduced-motion: reduce) { :where(html.lobby-mode) .lb-art { animation: none; } }
+
+  /* 顶栏：站点 header 浮在大厅上。只留字标、碎片、印章册 / 设置 / 音乐 / 说明四个圆钮。 */
+  html.lobby-on:where(.lobby-mode) body > header { position: fixed; top: var(--app-top, 0px); left: 0; right: auto; width: calc(100% / var(--lu, 1)); transform: scale(var(--lu, 1)); transform-origin: 0 0; z-index: 45; padding: max(8px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 6px max(16px, env(safe-area-inset-left, 0px)); border-bottom: 0; background: none; }
+  html.lobby-on:where(.lobby-mode) header .brand-icon { width: 28px; height: 28px; border-radius: 8px; }
+  html.lobby-on:where(.lobby-mode) header .brand-lock { display: block; }
+  html.lobby-on:where(.lobby-mode) header .brand-cn { font: 900 16px/1 var(--font-head); letter-spacing: .08em; }
+  html.lobby-on:where(.lobby-mode) header :is(.brand-en, .brand-lock small, .brand-kicker), html.lobby-on:where(.lobby-mode) header #sound { display: none; }
+  /* 音效开关和竖屏一样收进音乐弹层。 */
+  html.lobby-on:where(.lobby-mode) .music-pop .sound-inpop { display: block; }
+  html.lobby-on:where(.lobby-mode) header nav { gap: 8px; }
+  html.lobby-on:where(.lobby-mode) header :is(.icon-btn, .music-wrap summary) { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; background: rgb(18 23 41 / 60%); box-shadow: inset 0 0 0 1px var(--wash); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+  html.lobby-on:where(.lobby-mode) header :is(.icon-btn, .music-wrap summary) .btn-label { display: none; }
+  html.lobby-on:where(.lobby-mode) header :is(.icon-btn, .music-wrap summary) .btn-icon { display: block; width: 18px; height: 18px; }
+  html.lobby-on:where(.lobby-mode) .lb-shards { display: inline-flex; margin-right: 4px; background: rgb(18 23 41 / 72%); box-shadow: inset 0 0 0 1px var(--wash); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+
+  /* 入口群：整体朝美术侧微微转过去，外缘一根带刻度的索引轨。 */
+  :where(html.lobby-mode) .lb-deck { position: absolute; top: var(--dk-top); width: 400px; height: 311px; display: grid; grid-template-rows: 1.3fr .9fr 1fr; align-items: stretch; gap: 9px; perspective: 900px; transform: scale(var(--lu, 1)); }
+  /* 入口群是 <nav>：站点 header 的 nav 规则会把 align-items 设成 center，行就缩成内容高、四格只剩一半。这里钉回 stretch。 */
+  :where(html.lobby-mode) .lobby[data-side="left"] .lb-deck { left: max(calc(22px * var(--lu, 1)), env(safe-area-inset-left, 0px)); transform-origin: 0 0; }
+  :where(html.lobby-mode) .lobby[data-side="right"] .lb-deck { right: max(calc(22px * var(--lu, 1)), env(safe-area-inset-right, 0px)); transform-origin: 100% 0; }
+  /* 清晰缩放：支持 zoom 的内核（Chromium、Safari、Firefox 126+）用 zoom，浏览器按真实分辨率重新排版、重画，
+     字和图形不糊；transform 只是把画好的图拉大（2K 屏上明显发虚）。zoom 会连元素自身的 top / left 一起放大，
+     所以 zoom 挂在入口群的三行上，盒子本身按 --lu 算真实尺寸；顶栏、底角的定位量先除以 --lu。 */
+  @supports (zoom: 2) {
+    :where(html.lobby-mode) .lb-deck { width: calc(400px * var(--lu, 1)); height: calc(311px * var(--lu, 1)); gap: calc(9px * var(--lu, 1)); perspective: calc(900px * var(--lu, 1)); transform: none; }
+    :where(html.lobby-mode) .lb-deck > * { zoom: var(--lu, 1); }
+    html.lobby-on:where(.lobby-mode) body > header { top: calc(var(--app-top, 0px) / var(--lu, 1)); right: 0; width: auto; transform: none; zoom: var(--lu, 1); }
+    :where(html.lobby-mode) .lb-cap { bottom: max(10px, calc(env(safe-area-inset-bottom, 0px) / var(--lu, 1))); transform: none; zoom: var(--lu, 1); }
+    :where(html.lobby-mode) .lobby[data-side="left"] .lb-cap { right: max(18px, calc(env(safe-area-inset-right, 0px) / var(--lu, 1))); }
+    :where(html.lobby-mode) .lobby[data-side="right"] .lb-cap { left: max(18px, calc(env(safe-area-inset-left, 0px) / var(--lu, 1))); }
+  }
+  :where(html.lobby-mode) .lb-deck > * { transform: rotateY(var(--tilt)); transform-style: preserve-3d; }
+  :where(html.lobby-mode) .lb-rail { position: absolute; top: calc(var(--dk-top) + 4px * var(--lu, 1)); height: calc(303px * var(--lu, 1)); width: 1px; background: linear-gradient(transparent, var(--line) 12%, var(--line) 88%, transparent); }
+  :where(html.lobby-mode) .lobby[data-side="left"] .lb-rail { left: max(calc(11px * var(--lu, 1)), calc(env(safe-area-inset-left, 0px) - 11px * var(--lu, 1))); }
+  :where(html.lobby-mode) .lobby[data-side="right"] .lb-rail { right: max(calc(11px * var(--lu, 1)), calc(env(safe-area-inset-right, 0px) - 11px * var(--lu, 1))); }
+  :where(html.lobby-mode) .lb-rail i { position: absolute; left: -3px; width: 7px; height: 1px; background: var(--muted); }
+  :where(html.lobby-mode) .lb-rail i:nth-child(1) { top: 14%; } :where(html.lobby-mode) .lb-rail i:nth-child(2){ top: 46%; } :where(html.lobby-mode) .lb-rail i:nth-child(3){ top: 78%; }
+  :where(html.lobby-mode) .lb-rail i.on { left: -4px; width: 9px; height: 3px; border-radius: 2px; background: var(--brand); box-shadow: 0 0 8px var(--brand); }
+
+  :where(html.lobby-mode) .lb-row { display: grid; gap: 9px; min-height: 0; }
+  :where(html.lobby-mode) .lb-two { grid-template-columns: 1.2fr 1fr; }
+  :where(html.lobby-mode) .lb-four { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 6px; }
+  :where(html.lobby-mode) .lb-slab { position: relative; isolation: isolate; min-width: 0; min-height: 0; padding: 10px 14px; border: 0; border-radius: 0; background: none; color: var(--text); text-align: left; cursor: pointer; }
+  :where(html.lobby-mode) .lb-slab::before { content: ""; position: absolute; inset: 0; z-index: -1; clip-path: polygon(var(--cut) 0, 100% 0, calc(100% - var(--cut)) 100%, 0 100%);
+    background: linear-gradient(180deg, var(--wash), transparent 40%), rgb(18 23 41 / 80%); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+  :where(html.lobby-mode) .lb-slab:not(.lb-battle)::after { content: ""; position: absolute; left: 6%; right: 6%; bottom: -7px; height: 14px; z-index: -2; border-radius: 50%; background: radial-gradient(closest-side, rgb(0 0 0 / 60%), transparent); }
+  :where(html.lobby-mode) .lb-slab:active { filter: brightness(1.15); }
+  :where(html.lobby-mode) .lb-slab:focus-visible, :where(html.lobby-mode) .lb-hit:focus-visible { outline: 2px solid var(--brand-ink); outline-offset: 3px; }
+  :where(html.lobby-mode) .lb-en { display: block; font: 700 8.5px/1 var(--font-num); letter-spacing: .24em; color: var(--muted); }
+  :where(html.lobby-mode) .lb-slab b { display: block; margin-top: 4px; font: 900 18px/1.1 var(--font-head); letter-spacing: .08em; }
+  :where(html.lobby-mode) .lb-slab small { display: block; margin-top: 4px; color: var(--muted); font: 500 10.5px/1.2 var(--font-num); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  :where(html.lobby-mode) .lb-no { position: absolute; right: 18px; top: 8px; font: 700 20px/1 var(--font-num); color: transparent; -webkit-text-stroke: 1px rgb(255 255 255 / 12%); letter-spacing: -.04em; }
+
+  /* 作战：实心粉块 + 下方一层压深的「厚度」。BATTLE 超大淡字垫在后面，顶端被块的上沿截掉一截。 */
+  :where(html.lobby-mode) .lb-battle { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 26px 12px; }
+  :where(html.lobby-mode) .lb-battle::before { background: linear-gradient(105deg, var(--brand) 0%, var(--brand) 40%, var(--primary) 100%); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  :where(html.lobby-mode) .lb-battle::after { content: ""; position: absolute; inset: 0; z-index: -2; translate: 0 5px; clip-path: polygon(var(--cut) 0, 100% 0, calc(100% - var(--cut)) 100%, 0 100%);
+    background: #7d1239; filter: drop-shadow(0 10px 14px rgb(0 0 0 / 45%)); }
+  /* 粉块的亮端和厚度跟着主页样式（data-skin 换品牌色）走；不支持 color-mix 的内核用上面的固定色。 */
+  @supports (color: color-mix(in srgb, white, black)) {
+    :where(html.lobby-mode) .lb-battle::before { background: linear-gradient(105deg, color-mix(in srgb, var(--brand) 82%, #fff) 0%, var(--brand) 40%, var(--primary) 100%); }
+    :where(html.lobby-mode) .lb-battle::after { background: color-mix(in srgb, var(--primary) 55%, #000); }
+  }
+  :where(html.lobby-mode) .lb-hit { position: absolute; inset: 0; z-index: 0; padding: 0; border: 0; border-radius: 0; background: none; clip-path: polygon(var(--cut) 0, 100% 0, calc(100% - var(--cut)) 100%, 0 100%); }
+  :where(html.lobby-mode) .lb-sheen { position: absolute; right: 0; top: 0; bottom: 0; width: 46%; z-index: -1; pointer-events: none; clip-path: polygon(30% 0, 100% 0, calc(100% - var(--cut)) 100%, 0 100%);
+    background: repeating-linear-gradient(135deg, rgb(255 255 255 / 11%) 0 2px, transparent 2px 9px); }
+  :where(html.lobby-mode) .lb-main, :where(html.lobby-mode) .lb-side { position: relative; z-index: 1; pointer-events: none; }
+  :where(html.lobby-mode) .lb-battle .lb-en { position: absolute; left: -10px; top: -36px; z-index: -1; pointer-events: none; font: 700 84px/1 var(--font-num); letter-spacing: -.04em; color: rgb(255 255 255 / 13%); clip-path: inset(26px 0 0 0); white-space: nowrap; }
+  :where(html.lobby-mode) .lb-battle b { margin-top: 2px; font-size: 46px; line-height: 1; letter-spacing: .12em; color: var(--on-brand); text-shadow: 0 2px 0 rgb(0 0 0 / 22%); }
+  :where(html.lobby-mode) .lb-battle small { margin-top: 6px; color: rgb(255 255 255 / 88%); font: 900 11.5px/1.2 var(--font-head); letter-spacing: .1em; }
+  :where(html.lobby-mode) .lb-side { display: grid; justify-items: center; gap: 8px; }
+  :where(html.lobby-mode) .lb-lineup { display: flex; align-items: center; gap: 4px; perspective: 300px; color: var(--on-brand); }
+  :where(html.lobby-mode) .lb-lineup img { width: 40px; height: 40px; border-radius: 10px; object-fit: cover; background: var(--panel-2); box-shadow: 0 0 0 2px #fff, 0 6px 10px rgb(0 0 0 / 35%); }
+  :where(html.lobby-mode) .lb-lineup img:first-child { transform: rotateY(18deg); }
+  :where(html.lobby-mode) .lb-lineup img:last-child { transform: rotateY(-18deg); }
+  :where(html.lobby-mode) .lb-lineup span { font: 900 11px/1 var(--font-num); letter-spacing: .1em; opacity: .9; }
+  :where(html.lobby-mode) .lb-quick { pointer-events: auto; display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 14px; border: 0; border-radius: 999px; background: #fff; color: var(--on-accent); font: 900 13px/1 var(--font-head); letter-spacing: .1em; box-shadow: 0 3px 0 rgb(0 0 0 / 18%), 0 8px 16px rgb(0 0 0 / 30%); }
+  :where(html.lobby-mode) .lb-quick i { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--brand); color: var(--on-brand); }
+  :where(html.lobby-mode) .lb-quick svg { width: 9px; height: 9px; }
+  :where(html.lobby-mode) .lb-quick[aria-disabled="true"] { opacity: .5; }
+
+  /* 场景 / 招式：左斜边一条发光色条，背后一个比块还高、被下沿裁掉一截的淡灰图标。 */
+  :where(html.lobby-mode) .lb-two .lb-slab { --acc: var(--cyan); display: grid; align-content: center; padding: 10px 14px 10px 24px; }
+  :where(html.lobby-mode) .lb-two .lb-moves { --acc: var(--brand); }
+  :where(html.lobby-mode) .lb-two .lb-slab b { margin-top: 0; font-size: 20px; }
+  :where(html.lobby-mode) .lb-two .lb-slab small { position: relative; margin-top: 5px; font: 900 11px/1.2 var(--font-head); letter-spacing: .06em; }
+  :where(html.lobby-mode) .lb-bgw { position: absolute; inset: 0; z-index: -1; pointer-events: none; clip-path: polygon(var(--cut) 0, 100% 0, calc(100% - var(--cut)) 100%, 0 100%); }
+  :where(html.lobby-mode) .lb-bgi { position: absolute; right: 6%; bottom: -34%; height: 130%; aspect-ratio: 1; fill: rgb(255 255 255 / 4%); }
+  :where(html.lobby-mode) .lb-stage .lb-bgi { right: 47%; }
+  :where(html.lobby-mode) .lb-edge { position: absolute; inset: 0; pointer-events: none; clip-path: polygon(var(--cut) 0, calc(var(--cut) + 3px) 0, 3px 100%, 0 100%); background: var(--acc); box-shadow: 0 0 12px var(--acc); }
+  :where(html.lobby-mode) .lb-two .lb-stage { padding-right: 50%; }
+  :where(html.lobby-mode) .lb-thumb { position: absolute; right: var(--cut); top: 0; bottom: 0; width: 50%; z-index: -1; background: var(--panel-2) center / cover no-repeat; image-rendering: pixelated; clip-path: polygon(14% 0, 100% 0, calc(100% - var(--cut)) 100%, 0 100%); opacity: .9; }
+  :where(html.lobby-mode) .lb-thumb::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, rgb(18 23 41 / 85%), transparent 55%); }
+  :where(html.lobby-mode) .lb-thumb.rand { background: repeating-linear-gradient(135deg, var(--wash) 0 6px, transparent 6px 12px), var(--panel-2); }
+  :where(html.lobby-mode) .lb-moves .lb-no { top: auto; bottom: 8px; }
+  :where(html.lobby-mode) .lb-stage .lb-no { display: none; }
+
+  /* 后台四格：竖屏入口卡的同一组图形，缩到 .58 从块的右上角出一点框，朝左下角的字渐隐。
+     图形约 70×60（设计 px），块约 92×80：图形只占右上角，块面和字始终露出。 */
+  :where(html.lobby-mode) .lb-tile { display: grid; align-content: end; padding: 8px 10px 9px 16px; }
+  :where(html.lobby-mode) .lb-tile b { margin-top: 2px; font-size: 15px; white-space: nowrap; }
+  :where(html.lobby-mode) .lb-tile > :is(.lb-en, b) { position: relative; }
+  :where(html.lobby-mode) .lb-tile .lb-en { font-size: 7.5px; letter-spacing: .2em; color: rgb(255 255 255 / 72%); text-shadow: 0 0 2px rgb(0 0 0 / 90%), 0 0 4px rgb(0 0 0 / 70%); }
+  :where(html.lobby-mode) .lb-tile .bs-glyph { right: -8px; top: -14px; scale: .58; transform-origin: 100% 0; pointer-events: auto; filter: drop-shadow(0 6px 6px rgb(0 0 0 / 45%));
+    -webkit-mask-image: linear-gradient(to bottom left, #000 60%, transparent 84%); mask-image: linear-gradient(to bottom left, #000 60%, transparent 84%); }
+  :where(html.lobby-mode) .lb-dot:not([hidden]) { position: absolute; left: 12px; top: -6px; z-index: 2; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--brand); color: var(--on-brand); font: 700 10.5px/18px var(--font-num); text-align: center; box-shadow: 0 0 0 2px var(--bg), 0 0 10px var(--brand); }
+
+  /* 美术侧底角：正在放的歌 + 这张终幕。 */
+  :where(html.lobby-mode) .lb-cap { position: absolute; bottom: max(calc(10px * var(--lu, 1)), env(safe-area-inset-bottom, 0px)); z-index: 2; transform: scale(var(--lu, 1)); display: flex; gap: 12px; align-items: center; font: 500 10px/1 var(--font-num); letter-spacing: .12em; color: rgb(238 240 250 / 72%); }
+  :where(html.lobby-mode) .lobby[data-side="left"] .lb-cap { right: max(calc(18px * var(--lu, 1)), env(safe-area-inset-right, 0px)); transform-origin: 100% 100%; }
+  :where(html.lobby-mode) .lobby[data-side="right"] .lb-cap { left: max(calc(18px * var(--lu, 1)), env(safe-area-inset-left, 0px)); transform-origin: 0 100%; }
+  :where(html.lobby-mode) .lb-cap em { font-style: normal; font-weight: 700; color: var(--brand-ink); }
+  :where(html.lobby-mode) .lb-eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 10px; }
+  :where(html.lobby-mode) .lb-eq i { width: 2px; height: 100%; background: var(--brand); animation: lb-eq 1s ease-in-out infinite alternate; }
+  :where(html.lobby-mode) .lb-eq i:nth-child(1) { height: 40%; } :where(html.lobby-mode) .lb-eq i:nth-child(2){ animation-delay: -.3s; } :where(html.lobby-mode) .lb-eq i:nth-child(3){ height: 65%; animation-delay: -.6s; }
+  @keyframes lb-eq { to { height: 20%; } }
+  @media (prefers-reduced-motion: reduce) { :where(html.lobby-mode) .lb-eq i { animation: none; } }
+
+  /* ---- 备战三页：后台页同一个壳。返回回到大厅；导航九站分「备战」「后台」两组。 ---- */
+  :where(html.lobby-mode) .hub-bar #hub-back::after { content: "大厅"; }
+  :where(html.lobby-mode) .hn-stops.grouped { grid-template-rows: auto auto; row-gap: 6px; max-width: 900px; }
+  :where(html.lobby-mode) .hn-grp { grid-row: 1; margin: 0 10px; padding-top: 2px; border-top: 1.5px solid var(--line); border-radius: 6px 6px 0 0; text-align: center; list-style: none; }
+  :where(html.lobby-mode) .hn-grp b { position: relative; top: -8px; padding: 0 6px; background: var(--panel); font: 900 10px/1 var(--font-head); letter-spacing: .12em; color: var(--muted); }
+  :where(html.lobby-mode) .hn-stops.grouped > li:not(.hn-grp) { grid-row: 2; }
+  :where(html.lobby-mode) .hn-stops.grouped .hn-dot { width: 40px; height: 40px; }
+  :where(html.lobby-mode) .hn-stops.grouped .hn-dot svg { width: 18px; height: 18px; }
+  :where(html.lobby-mode) .hn-stops.grouped::before { top: calc(20px + 22px); }
+  :where(html.lobby-mode) .hn-stops.grouped .hn-stop b { font-size: 12px; }
+
+  :where(html.lobby-mode) .hub-page.prep { display: grid; grid-template-columns: 44% minmax(0, 1fr); gap: 12px; }
+  :where(html.lobby-mode) .hub-page.prep > * { min-width: 0; min-height: 0; }
+  /* 作战：左边是选人页的舞台（立绘照常动），右边模式 / 名册 / 强度和开打。 */
+  :where(html.lobby-mode) .prep[data-page="battle"] .pb-stage { display: flex; }
+  :where(html.lobby-mode) .prep .stage-frame { flex: 1; display: flex; min-height: 0; }
+  :where(html.lobby-mode) .prep .select-stage { flex: 1; height: 100%; align-items: center; border-radius: 16px; }
+  :where(html.lobby-mode) .prep .select-stage .fighter-preview canvas { height: clamp(96px, calc(var(--app-h, 100vh) - 190px), 240px); }
+  /* 2V2 / 激战排成两行（@container stage）：每行按剩下的高度对半。 */
+  :where(html.lobby-mode) .prep .select-stage:is(.team, .challenge:not(.solo)) .fighter-preview canvas { height: clamp(52px, calc((var(--app-h, 100vh) - 210px) / 2), 130px); }
+  :where(html.lobby-mode) .prep .pb-pick { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+  :where(html.lobby-mode) .prep .pb-pick :is(.lobby-actions, .action-bar) { display: contents; }
+  :where(html.lobby-mode) .prep .pb-pick .action-mode { order: 1; align-self: flex-start; }
+  :where(html.lobby-mode) .prep .pb-pick #roster { order: 2; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; align-content: start; grid-template-columns: repeat(auto-fill, minmax(50px, 1fr)); gap: 6px; padding: 4px; margin: 0;
+    -webkit-mask-image: linear-gradient(#000 calc(100% - 16px), transparent); mask-image: linear-gradient(#000 calc(100% - 16px), transparent); }
+  :where(html.lobby-mode) .prep .pb-pick .roster-foot { order: 3; display: none; }
+  :where(html.lobby-mode) .prep .pb-pick :is(.action-foot, .net-actions-foot, #toy-net-note) { order: 4; }
+  :where(html.lobby-mode) .prep .pb-pick .action-foot { display: flex; align-items: center; gap: 10px; }
+  :where(html.lobby-mode) .prep .pb-pick .action-options { flex: 1; min-width: 0; }
+  /* 「人机强度」「挑战类型」的引子字在子视图里省掉：按钮本身就说明了，窄屏把宽度留给按钮。 */
+  :where(html.lobby-mode) .prep .pb-pick .action-options .seg > span { display: none; }
+  :where(html.lobby-mode) .prep .pb-pick .action-start { flex: none; width: auto; padding-inline: 20px; }
+
+  /* 场景：左边当前场景的大预览，右边场景卡（选人页的 .stage-card，图高随视口高，三行正好填满）。 */
+  :where(html.lobby-mode) .pv-big { position: relative; overflow: hidden; display: grid; align-content: end; padding: 12px 16px; border-radius: 16px; box-shadow: inset 0 0 0 1px var(--line);
+    background: var(--panel-2) center / cover no-repeat; image-rendering: pixelated; }
+  :where(html.lobby-mode) .pv-big::before { content: ""; position: absolute; inset: 0; background: linear-gradient(0deg, rgb(11 14 26 / 92%), transparent 55%); }
+  :where(html.lobby-mode) .pv-big.rand { background: repeating-linear-gradient(135deg, var(--wash) 0 8px, transparent 8px 16px), var(--panel-2); }
+  :where(html.lobby-mode) .pv-big > * { position: relative; }
+  :where(html.lobby-mode) .pv-big b { font: 900 30px/1.05 var(--font-head); letter-spacing: .08em; color: var(--text-strong); text-shadow: 0 2px 10px rgb(0 0 0 / 60%); }
+  :where(html.lobby-mode) .pv-big small { margin-top: 6px; font: 900 11px/1.2 var(--font-head); letter-spacing: .1em; color: rgb(238 240 250 / 72%); }
+  :where(html.lobby-mode) .prep .stage-select > .sectionline { display: none; }
+  :where(html.lobby-mode) .prep .stage-select { margin: 0; padding: 0; border-radius: 0; background: none; }
+  :where(html.lobby-mode) .prep .stage-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px 8px; padding-top: 3px; }
+  /* 三行卡正好填满右栏：顶栏约 48 + 页边 14 + 行距 18 + 三条名字栏各约 30。 */
+  :where(html.lobby-mode) .prep .stage-card img, :where(html.lobby-mode) .prep .stage-random-art { height: clamp(44px, calc((var(--app-h, 100vh) - 172px) / 3), 120px); }
+  :where(html.lobby-mode) .prep .stage-card b { padding: 5px clamp(5px, 1vw, 8px) 6px; font-size: clamp(10px, 1.3vw, 11px); letter-spacing: 0; word-spacing: -.2em; }
+  @media (max-width: 700px) { :where(html.lobby-mode) .hub-page.prep[data-page="stage"] { grid-template-columns: 38% minmax(0, 1fr); } }
+
+  /* 招式：左边角色卡（头像随视口高变大），右边选人页的招式表，两列可滚动、说明完整显示。 */
+  :where(html.lobby-mode) .hub-page.prep[data-page="moves"] { grid-template-columns: 34% minmax(0, 1fr); }
+  :where(html.lobby-mode) .pv-who { container: who / inline-size; display: flex; flex-direction: column; gap: 8px; overflow: hidden; padding: 12px 16px; border-radius: 16px; background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); }
+  :where(html.lobby-mode) .pv-who .seg { align-self: stretch; }
+  :where(html.lobby-mode) .pv-who .seg[hidden] { display: none; }
+  :where(html.lobby-mode) .pw-face { display: flex; align-items: flex-end; gap: 12px; margin-top: 2px; }
+  :where(html.lobby-mode) .pw-face img { flex: none; width: clamp(104px, calc(var(--app-h, 100vh) / 2 - 66px), 150px); aspect-ratio: 1; border-radius: 18px; object-fit: cover; background: var(--panel-2); box-shadow: 0 0 0 3px var(--p1-ink), 0 10px 18px var(--shade); }
+  :where(html.lobby-mode) .pv-who.right .pw-face img { box-shadow: 0 0 0 3px var(--p2-ink), 0 10px 18px var(--shade); }
+  :where(html.lobby-mode) .pw-face > span { padding-bottom: 4px; }
+  :where(html.lobby-mode) .pw-face b { display: block; margin-bottom: 4px; font: 900 22px/1.1 var(--font-head); letter-spacing: .06em; white-space: nowrap; }
+  :where(html.lobby-mode) .pw-title { font: 900 10.5px/1.2 var(--font-head); letter-spacing: .08em; color: var(--muted); white-space: nowrap; }
+  :where(html.lobby-mode) .pv-who q { font: 900 12px/1.4 var(--font-head); color: var(--text); opacity: .82; quotes: "「" "」"; }
+  :where(html.lobby-mode) .pw-pas { margin-top: auto; padding: 8px 10px; border-radius: 10px; background: var(--well); font: 600 10.5px/1.45 var(--font-num); color: var(--muted); }
+  :where(html.lobby-mode) .pw-pas em { display: block; margin-bottom: 2px; font: 900 11px/1.2 var(--font-head); font-style: normal; color: var(--text); letter-spacing: .06em; }
+  @container who (max-width: 230px) {
+    :where(html.lobby-mode) .pw-face { flex-direction: column; align-items: flex-start; gap: 8px; }
+    :where(html.lobby-mode) .pw-face > span { display: flex; align-items: baseline; gap: 8px; padding: 0; }
+    :where(html.lobby-mode) .pw-face b { margin: 0; font-size: 20px; }
+    :where(html.lobby-mode) .pw-face img { width: min(100px, calc(var(--app-h, 100vh) / 2 - 88px)); }
+    :where(html.lobby-mode) .pv-who .seg { align-self: stretch; }
+    :where(html.lobby-mode) .pv-who .seg button { flex: 1; padding: 0 6px; font-size: 11px; white-space: nowrap; }
+  }
+  :where(html.lobby-mode) .prep .pm-list { display: flex; min-height: 0; }
+  :where(html.lobby-mode) .prep .bottom-grid { display: flex; flex: 1; min-height: 0; margin: 0; }
+  :where(html.lobby-mode) .prep .movelist { display: flex; flex-direction: column; flex: 1; min-height: 0; margin: 0; padding: 0; border: 0; background: none; }
+  :where(html.lobby-mode) .prep .movelist > :is(.sectionline, #flavor, #passive), :where(html.lobby-mode) .prep #round-rules { display: none; }
+  :where(html.lobby-mode) .prep #skills { display: grid; grid-template-columns: 1fr 1fr; align-content: start; gap: 7px; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-bottom: 14px;
+    -webkit-mask-image: linear-gradient(#000 calc(100% - 18px), transparent); mask-image: linear-gradient(#000 calc(100% - 18px), transparent); }
+  :where(html.lobby-mode) .prep #skills .skill { margin: 0; }
+  /* 子视图能滚动，说明不截断（选人页矮屏那条三行截断只管整页滚动的版式）。 */
+  :where(html.lobby-mode) .prep #skills .skill p:not(.brief) { display: block; height: auto; overflow: visible; -webkit-line-clamp: unset; }
+
+
+/* ==== 名册名字：全名 / 短称（data/shortNames.ts）。默认全名；格子窄到放不下全名的地方换短称，不用省略号截。 ==== */
+.cn-short { display: none; }
+:where(html.lobby-mode) .prep #roster .char-name { overflow: visible; text-overflow: clip; white-space: nowrap; }
+:where(html.ph-land) .prep #roster .cn-full { display: none; }
+:where(html.ph-land) .prep #roster .cn-short { display: inline; }
+
+/* ==== 视图 / 选项切换：无边框 + 底线（竖屏选人页的模式切换原本就是这套）。药丸占地方、看久了累。
+   用在：作战的模式、人机强度、挑战类型，印章册的排列，招式页的 1P / 2P。设置弹窗的选项和播放方式图标组仍是药丸（表单控件 / 图标按钮组）。
+   有滑块（mountSegThumbs）时滑块变成底下一截短粗线；后挂的分段（招式页 1P / 2P）没有滑块，当前项自己画。
+   标签不截断：三四个字的选项本来就放得下，挤的时候收内边距。前缀用 :where()，和 .seg 基础规则同优先级、靠后者赢。 ==== */
+:where(.action-mode, #difficulty-row, #challenge-kind-row, #stamp-layout, .pv-who .seg).seg {
+  gap: 0; padding: 0 2px; background: transparent; border: 0; border-radius: 0; box-shadow: inset 0 -1px 0 var(--line); }
+:where(.action-mode, #difficulty-row, #challenge-kind-row, #stamp-layout, .pv-who .seg).seg button {
+  flex: 1 1 auto; min-width: max-content; overflow: visible; text-overflow: clip; padding: .55em .5em .65em; border: 0; border-radius: 0; background: transparent; color: var(--muted); }
+:where(.action-mode, #difficulty-row, #challenge-kind-row, #stamp-layout, .pv-who .seg).seg button:hover:not(.active) { background: transparent; color: var(--text); }
+:where(.action-mode, #difficulty-row, #challenge-kind-row, #stamp-layout, .pv-who .seg).seg button.active { background: transparent; color: var(--text-strong); }
+:where(.action-mode, #difficulty-row, #challenge-kind-row, #stamp-layout, .pv-who .seg).seg .seg-thumb {
+  top: auto; bottom: 0; height: 3px; border-radius: 3px 3px 0 0; background: var(--brand); width: calc(var(--w, 0px) * .36); transform: translateX(calc(var(--x, 0px) + var(--w, 0px) * .32)); }
+:where(.action-mode, #difficulty-row, #challenge-kind-row, #stamp-layout, .pv-who .seg).seg:not(.thumbed) button.active::after { content: ""; position: absolute; left: 32%; right: 32%; bottom: 0; height: 3px; border-radius: 3px 3px 0 0; background: var(--brand); }
+.pv-who.right .seg:not(.thumbed) button.active::after { background: var(--p2); }
+
+/* ==== 备战三页 · 桌面（大厅模式开着的 PC / iPad，没有 ph-land）：
+   页面按桌面后台页的宽度（--hub-w）排，不再整体放大。每块都有上限，超过就钉住居中：
+   - 作战：舞台最宽 520、最高 640，竖直居中——立绘是像素画，舞台越大越糊；名册格子 ≥ 88，全名一行放下。
+   - 场景：大预览固定 16:10、最宽 560；场景卡按宽度自动排列，图 16:9。
+   - 招式：角色卡最宽 360；招式表按宽度排两到三列。 ==== */
+:where(html.lobby-mode:not(.ph-land)) .hub-page.prep { gap: 28px; padding-top: 12px; padding-bottom: 24px; }
+:where(html.lobby-mode:not(.ph-land)) .hub-page.prep[data-page="battle"] { grid-template-columns: minmax(300px, 520px) minmax(0, 1fr); }
+:where(html.lobby-mode:not(.ph-land)) .prep[data-page="battle"] .pb-stage { align-items: center; }
+:where(html.lobby-mode:not(.ph-land)) .prep .stage-frame { flex: 1 1 auto; width: 100%; height: min(100%, 640px); }
+:where(html.lobby-mode:not(.ph-land)) .prep .select-stage .fighter-preview canvas { height: clamp(140px, calc(min(100vh, 640px) * .34), 220px); }
+:where(html.lobby-mode:not(.ph-land)) .prep .select-stage:is(.team, .challenge:not(.solo)) .fighter-preview canvas { height: clamp(80px, calc(min(100vh, 640px) * .17), 120px); }
+:where(html.lobby-mode:not(.ph-land)) .prep .pb-pick { gap: 12px; }
+:where(html.lobby-mode:not(.ph-land)) .prep .pb-pick #roster { grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 10px; padding: 6px 4px; }
+:where(html.lobby-mode:not(.ph-land)) .prep #roster .char-name { font-size: 13px; }
+:where(html.lobby-mode:not(.ph-land)) .prep .pb-pick .action-start { min-height: 48px; padding-inline: 28px; }
+
+:where(html.lobby-mode:not(.ph-land)) .hub-page.prep[data-page="stage"] { grid-template-columns: minmax(320px, 560px) minmax(0, 1fr); }
+:where(html.lobby-mode:not(.ph-land)) .prep .ps-cards { display: flex; flex-direction: column; min-height: 0; }
+:where(html.lobby-mode:not(.ph-land)) .prep .ps-cards > .stage-select { flex: 1; }
+:where(html.lobby-mode:not(.ph-land)) .pv-big { aspect-ratio: 16 / 10; align-self: start; }
+:where(html.lobby-mode:not(.ph-land)) .prep .stage-select { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+:where(html.lobby-mode:not(.ph-land)) .prep .stage-grid { grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 14px 12px; }
+:where(html.lobby-mode:not(.ph-land)) .prep .stage-card img, :where(html.lobby-mode:not(.ph-land)) .prep .stage-random-art { height: auto; aspect-ratio: 16 / 9; }
+:where(html.lobby-mode:not(.ph-land)) .prep .stage-card b { padding: 7px 10px 8px; font-size: 13px; letter-spacing: .02em; word-spacing: normal; }
+
+:where(html.lobby-mode:not(.ph-land)) .hub-page.prep[data-page="moves"] { grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); }
+:where(html.lobby-mode:not(.ph-land)) .pv-who { align-self: start; gap: 12px; padding: 16px 18px; }
+:where(html.lobby-mode:not(.ph-land)) .pw-face img { width: 132px; }
+:where(html.lobby-mode:not(.ph-land)) .prep #skills { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+/* 桌面后台页本来整页滚动；备战页要铺满一屏、名册 / 场景卡 / 招式表各自滚（同横屏版式的 .hub-scroll 做法）。 */
+:where(html.lobby-mode:not(.ph-land)) .hub-scroll:has(> .hub-page.prep) { display: flex; flex-direction: column; overscroll-behavior: contain; }
+:where(html.lobby-mode:not(.ph-land)) .hub-page.prep { flex: 1; width: 100%; min-height: 0; }
+:where(html.lobby-mode:not(.ph-land)) .hub-page.prep > * { min-height: 0; }
+
+/* ==== 后台页加载条（ui/loadGate.ts）：准备超过短暂延迟才出现。页面内容先藏（visibility，图照常加载、版式不变），
+   顶栏留着能随时返回。屏幕下方一条半透明黑条：旋转的点 + 这一页自己的说法（「调音中」）+ 进度。 ==== */
+.hub.preparing .hub-scroll { visibility: hidden; }
+.hub-load { position: absolute; left: 0; right: 0; bottom: 0; z-index: 8; display: flex; align-items: center; gap: 14px; min-height: 56px;
+  padding: 12px max(22px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(22px, env(safe-area-inset-left, 0px));
+  background: linear-gradient(90deg, rgb(0 0 0 / 72%), rgb(0 0 0 / 56%)); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%); color: rgb(255 255 255 / 92%); pointer-events: none; }
+.hub-load[hidden] { display: none; }
+.hl-dots { position: relative; flex: none; width: 22px; height: 22px; animation: hl-spin .9s steps(8) infinite; }
+.hl-dots i { position: absolute; left: 9px; top: 0; width: 4px; height: 4px; border-radius: 50%; background: currentColor; transform-origin: 2px 11px;
+  rotate: calc(var(--i) * 45deg); opacity: calc(.18 + var(--i) * .11); }
+.hl-dots i:last-child { background: var(--brand); opacity: 1; }
+@keyframes hl-spin { to { rotate: 360deg; } }
+.hl-line { display: grid; gap: 4px; min-width: 0; }
+.hl-line b { font: 900 14px/1.2 var(--font-head); letter-spacing: .14em; white-space: nowrap; }
+.hl-line b::after { content: "……"; display: inline-block; overflow: hidden; vertical-align: bottom; width: 0; animation: hl-ellipsis 1.4s steps(3, jump-none) infinite; }
+@keyframes hl-ellipsis { to { width: 2em; } }
+.hl-line small { font: 700 9px/1 var(--font-num); letter-spacing: .28em; opacity: .55; white-space: nowrap; }
+.hl-n { margin-left: auto; font: 700 12px/1 var(--font-num); font-variant-numeric: tabular-nums; letter-spacing: .06em; opacity: .7; }
+@media (prefers-reduced-motion: reduce) { .hl-dots { animation-duration: 2.4s; } .hl-line b::after { animation: none; width: 2em; } }

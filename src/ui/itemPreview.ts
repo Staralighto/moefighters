@@ -28,7 +28,6 @@ export function openItemPreview(id: string, state: () => CardState, run: SideRun
     id, kicker: (KINDS.find(k => k.kind === item.kind)?.en ?? 'ITEM').replace(/S$/, ''), nameId: 'iv-name',
     hint: HINTS[item.kind] ?? '', state, run, dialog: dlg,
   });
-  dlg.classList.remove('fv-in'); void dlg.offsetWidth; dlg.classList.add('fv-in');
   openDialog(dlg);
 }
 

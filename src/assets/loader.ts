@@ -108,7 +108,7 @@ export function slowLink(prod = import.meta.env.PROD): boolean {
      3 批量预载：设置里「预载全部资源」。比 2 级还低：前面任何一级有人在等就不开，同时最多 2 条。
    同一 key 再被要求时只提升优先级，不会再下一次。 */
 export type NetPri = 0 | 1 | 2 | 3;
-interface NetJob { key: string; pri: NetPri; seq: number; start: () => void }
+interface NetJob { key: string; pri: NetPri; seq: number; start: () => void; done?: Promise<void> }
 const netWait: NetJob[] = [];
 const netRun = new Set<NetJob>();
 let netSeq = 0;
@@ -147,8 +147,9 @@ function netPump(): void {
 
 /** Run `run` when the gate gives it a slot. */
 export function netTask<T>(key: string, pri: NetPri, run: () => Promise<T>): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const job: NetJob = {
+  let made: NetJob | undefined;
+  const out = new Promise<T>((resolve, reject) => {
+    const job: NetJob = made = {
       key, pri, seq: netSeq++,
       start: () => {
         netRun.add(job);
@@ -164,6 +165,18 @@ export function netTask<T>(key: string, pri: NetPri, run: () => Promise<T>): Pro
     netWait.push(job);
     netPump();
   });
+  if (made) made.done = out.then(() => {}, () => {});
+  return out;
+}
+
+/** 当前的请求编号。之后发出的请求编号都更大：loadGate 用它只数「这一页自己要的」，不把别处排着的（选人页名册等）算进来。 */
+export function netMark(): number { return netSeq; }
+
+/** 还在排队或在下载、优先级不低于 maxPri、编号 ≥ since 的请求（loadGate 用它判断「眼前要看的图还有几张没到」）。 */
+export function pendingNet(maxPri: NetPri = 1, since = 0): Promise<void>[] {
+  const out: Promise<void>[] = [];
+  for (const j of [...netRun, ...netWait]) if (j.pri <= maxPri && j.seq >= since && j.done) out.push(j.done);
+  return out;
 }
 
 /** A waiting job asked for again at a higher priority moves up. A running one only re-counts. */

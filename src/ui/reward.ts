@@ -4,10 +4,12 @@
    3. 有物品时，卡背朝上落下、翻面露出头像框，扫一道光；
    4. 「收下」出现。动画途中点任意处直接跳到最终画面。 */
 
+import { reducedMotion } from './motion.ts';
 import { itemKind, itemName, itemPreviewHTML } from './items.ts';
+import { buzz, cue } from './mobile.ts';
 
 const $ = (id: string) => document.getElementById(id)!;
-const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reduced = reducedMotion;
 const SHARD = '<svg viewBox="0 0 256 256" aria-hidden="true"><use href="#i-shard"/></svg>';
 
 export interface RewardShow { shards: number; items: string[]; sources: DOMRect[]; color?: string; title?: string }
@@ -44,6 +46,8 @@ export function showReward(r: RewardShow): Promise<void> {
     if (done) return;
     done = true;
     paint(r.shards);
+    cue('chime');
+    buzz(r.items.length ? [20, 60, 30] : 24);
     dialog.classList.add('rw-landed');
     ok.hidden = false;
     ok.focus({ preventScroll: true });
@@ -83,6 +87,7 @@ export function showReward(r: RewardShow): Promise<void> {
       a.onfinish = () => {
         el.remove();
         landed++;
+        cue('coin', landed - 1);
         paint(Math.min(r.shards, shown + share));
         bump();
         if (landed === drops.length) land();

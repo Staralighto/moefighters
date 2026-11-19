@@ -7,8 +7,9 @@ import { STAGES } from '../data/stages.ts';
 import { ITEM_BY_ID } from '../shop/catalog.ts';
 import { ALBUMS } from '../tasks/defs.ts';
 import { applyImageUrl, cssUrl, loadImage } from '../assets/loader.ts';
+import { hubSignal } from './hub.ts';
 import { frameArt } from '../shop/state.ts';
-import { avatarImg, frameShelfSrcs } from './items.ts';
+import { avatarImg } from './items.ts';
 import type { CardState } from './merch.ts';
 import { renderSide, type SideRun } from './detailSide.ts';
 
@@ -30,7 +31,7 @@ function player(n: 1 | 2, who: string, hp: number, mp: number): string {
   return `<div class="hud-player${n === 2 ? ' second' : ''}">${head}`
     + `<div class="health" style="--guard:${n === 1 ? .8 : .45}"><span style="width:${hp}%"></span></div><small></small>`
     + `<div class="energy${mp >= 100 ? ' full' : ''}"><span style="width:${mp}%"></span></div>`
-    + `${avatarImg(who, 'class="hud-avatar" width="96" height="96"')}</div>`;
+    + `${avatarImg(who, 'class="hud-avatar" width="96" height="96" decoding="async"')}</div>`;
 }
 
 /** 往一块画面里画 HUD 并套上头像框。scene 里要有一个 .hud.faces；尺寸由调用方用 sizeHudScene 跟着。 */
@@ -46,27 +47,32 @@ export function paintHudScene(scene: HTMLElement, id: string, who: [string, stri
 }
 
 const sized = new WeakSet<HTMLElement>();
+let sceneSizer: ResizeObserver | null = null;
+function setHudWidth(scene: HTMLElement, width: number): void {
+  const hud = String(Math.min(1, width / 1000));
+  if (scene.style.getPropertyValue('--hud') !== hud) scene.style.setProperty('--hud', hud);
+}
+
 /** 画面里的 HUD 按画面宽度 ÷ 1000 缩放（战斗里桌面画面约 1000 宽时 --hud = 1）。 */
 export function sizeHudScene(scene: HTMLElement): void {
-  const set = () => scene.style.setProperty('--hud', String(Math.min(1, (scene.clientWidth || 700) / 1000)));
-  set();
+  setHudWidth(scene, scene.clientWidth || 700);
   if (sized.has(scene) || typeof ResizeObserver === 'undefined') return;
   sized.add(scene);
-  new ResizeObserver(set).observe(scene);
+  sceneSizer ??= new ResizeObserver((entries, observer) => {
+    for (const { target, contentRect } of entries) {
+      const el = target as HTMLElement;
+      if (!el.isConnected) { observer.unobserve(el); sized.delete(el); }
+      else if (contentRect.width) setHudWidth(el, contentRect.width);
+    }
+  });
+  sceneSizer.observe(scene);
 }
 
 export function stageArtUrl(): string { return (STAGES.find(s => s.id === 'ring') ?? STAGES[0])?.image ?? ''; }
 
-/* 头像框详情/商店展台：框图 SVG 很小，先解好再画，避免第一帧同步解码。
-   舞台图约 1MB，不挡画面：先露底色，下好后再挂上（applyImageUrl 给的是已加载的绝对地址，CSS 直接命中缓存）。
-   全部走 loader 的下载闸，和选人页、对战共用一套优先级与缓存。 */
+/* 只预解码详情实际展示的框和头像。 */
 function decodeUrl(src: string): Promise<void> {
   return src ? loadImage(src, 1).then(() => {}, () => {}) : Promise.resolve();
-}
-let warming: Promise<void> | null = null;
-export function warmFrameArt(): Promise<void> {
-  warming ??= Promise.all(frameShelfSrcs().map(decodeUrl)).then(() => {});
-  return warming;
 }
 /** 把舞台图挂到 el 的 --fv-art 上：下好才挂，挂上的是绝对地址。 */
 export function paintStageArt(el: HTMLElement): void {
@@ -88,15 +94,15 @@ export function defaultFaces(id: string): [string, string] {
 /** 打开详情。state() 每次取最新状态，run 执行与卡片按钮相同的动作（买下时返回 'bought'）。 */
 export function openFramePreview(id: string, state: () => CardState, run: SideRun): void {
   const tick = ++openTick;
+  const signal = hubSignal();
   const mine = defaultFaces(id);
   const key = id.split(':')[1] ?? '';
   void Promise.all([
-    warmFrameArt(),
     decodeUrl(`/avatars/${mine[0]}.png`),
     decodeUrl(`/avatars/${mine[1]}.png`),
     key && key !== 'base' ? decodeUrl(`/frames/${key}.svg`) : Promise.resolve(),
   ]).then(() => {
-    if (tick !== openTick) return;
+    if (tick !== openTick || signal?.aborted) return;
     const dlg = $('frame-dialog') as HTMLDialogElement;
     const scene = $('fv-scene');
     paintStageArt(scene);
@@ -104,13 +110,12 @@ export function openFramePreview(id: string, state: () => CardState, run: SideRu
     paintScene(id);
     renderSide($('fv-side'), {
       id, kicker: 'FRAME', nameId: 'fv-name', hint: '战斗中双方头像都会换成这款。', state, run, dialog: dlg,
-      tools: [{ label: '换一组角色', onClick: () => {
+      tools: [{ label: '换一组角色', icon: 'i-shuffle', onClick: () => {
         const next = defaultFaces('frame:_');
         void Promise.all(next.map(who => decodeUrl(`/avatars/${who}.png`))).then(() => { faces = next; paintScene(id); });
       } }],
     });
     sizeHudScene(scene);
-    dlg.classList.remove('fv-in'); void dlg.offsetWidth; dlg.classList.add('fv-in');
     openDialog(dlg);
   });
 }
@@ -118,5 +123,4 @@ export function openFramePreview(id: string, state: () => CardState, run: SideRu
 export function bindFramePreview(): void {
   const dlg = $('frame-dialog') as HTMLDialogElement;
   dlg.querySelector<HTMLButtonElement>('.fv-close')!.onclick = () => dlg.close();
-  // 不在进首页时预热：那会和选人页的 imageQueue 抢带宽。商店打开 / 详情打开时各自 await warmFrameArt()。
 }

@@ -1,3 +1,4 @@
+import { reducedMotion } from './motion.ts';
 import { ticketStyle } from '../shop/state.ts';
 import type { CharacterData } from '../data/types.ts';
 import type { FightGame } from '../game/game.ts';
@@ -23,8 +24,7 @@ function setText(el: HTMLElement, text: string): void {
   if (el.textContent !== text) el.textContent = text;
 }
 
-const motionQuery = typeof matchMedia === 'undefined' ? null : matchMedia('(prefers-reduced-motion: reduce)');
-const reduceMotion = (): boolean => !!motionQuery?.matches;
+const reduceMotion = reducedMotion;
 /** One flinch per avatar. A new hit restarts it; blood ticking every HUD frame must not stack filters. */
 const hitAnims = new WeakMap<HTMLElement, Animation>();
 /** Avatar flinch on any HP drop. Uses `translate` so the CSS tilt (`rotate`) stays put. */

@@ -133,7 +133,7 @@ function counts(book: Book): [number, number, number] {
 }
 
 /** 印章册页面内容：总进度 + 方形头像墙，右上角盖最高难度的章；没拿到的头像压暗，不画空位。 */
-export function renderStampBook(host: HTMLElement, layout: StampLayout = stampLayout()): void {
+export function renderStampBook(host: HTMLElement, layout: StampLayout = stampLayout(), totalHost?: HTMLElement): void {
   const book = readStamps();
   const [gold, pink, any] = counts(book);
   const cell = (c: CharacterData) => {
@@ -144,11 +144,12 @@ export function renderStampBook(host: HTMLElement, layout: StampLayout = stampLa
         <figcaption>${esc(c.name)}${s ? `<small>${STAMP_NAMES[s.d]}${s.rank ? ' · ' + esc(s.rank) : ''}</small>` : ''}</figcaption>
       </figure>`;
   };
-  let html = `<div class="sb-total">
-      <span class="sb-count" data-d="2"><b>${gold}</b> / ${PUBLIC_ROSTER.length}<em>金章</em></span>
-      <span class="sb-count" data-d="1"><b>${pink}</b><em>粉章及以上</em></span>
-      <span class="sb-count" data-d="0"><b>${any}</b><em>已盖章</em></span>
-    </div>`;
+  /* 每项前一枚同色小章：横屏工具栏里只留章 + 数字，文字收成读屏用。 */
+  const total = `<span class="sb-count" data-d="2">${miniSeal(2)}<b>${gold}</b> / ${PUBLIC_ROSTER.length}<em>金章</em></span>
+      <span class="sb-count" data-d="1">${miniSeal(1)}<b>${pink}</b><em>粉章及以上</em></span>
+      <span class="sb-count" data-d="0">${miniSeal(0)}<b>${any}</b><em>已盖章</em></span>`;
+  let html = totalHost ? '' : `<div class="sb-total">${total}</div>`;
+  if (totalHost) totalHost.innerHTML = total;
   const all = groups();
   if (layout === 'flat') {
     html += `<div class="sb-grid is-flat">${all.flatMap(g => g.members).map(cell).join('')}</div>`;

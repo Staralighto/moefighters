@@ -2,6 +2,7 @@
    性能：头像和海报字在开局时就预载、解码（preloadReport），结算时只拼一次 innerHTML，
    动效全部是 transform / opacity，数字滚动只跑半秒 rAF。 */
 
+import { reducedMotion } from './motion.ts';
 import { ROSTER_BY_ID } from '../data/characters.ts';
 import type { CharacterData } from '../data/types.ts';
 import type { MatchReport, ReportFighter } from '../game/report.ts';
@@ -176,7 +177,7 @@ export function showReport(host: HTMLElement, r: MatchReport): void {
     fitObs.observe(host);
   }
 
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduce = reducedMotion();
   const nums = [...card.querySelectorAll<HTMLElement>('[data-n]')];
   const fmt = (v: number) => v.toLocaleString('en-US');
   cancelAnimationFrame(countRaf);

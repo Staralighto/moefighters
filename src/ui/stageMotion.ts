@@ -6,6 +6,7 @@
  *  Cost control: the values are written only when they move by a visible step (STEP), so the idle
  *  drift restyles the stage a few times a second rather than every frame, and the stage rect is
  *  measured once per hover and again only after a scroll or resize, never per pointer event. */
+import { reducedMotion } from './motion.ts';
 
 const EASE = 6;
 const IDLE = .22;
@@ -21,7 +22,7 @@ export class StageMotion {
   private wx = NaN;
   private wy = NaN;
   private rect: DOMRect | null = null;
-  private readonly still = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  private readonly still = reducedMotion();
 
   private readonly stage: HTMLElement;
 

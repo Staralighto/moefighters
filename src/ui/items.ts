@@ -3,7 +3,7 @@
 
 import { cssUrl, staticUrl } from '../assets/loader.ts';
 import { PUBLIC_ROSTER } from '../data/characters.ts';
-import { ITEM_BY_ID, KINDS, itemsOf } from '../shop/catalog.ts';
+import { ITEM_BY_ID, KINDS } from '../shop/catalog.ts';
 import { ALBUMS } from '../tasks/defs.ts';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
@@ -16,16 +16,7 @@ function previewFaces(id: string): [string, string] {
   const band = ALBUMS.find(a => a.id === (id.split(':')[1] ?? ''));
   return band && band.members.length >= 2 ? [band.members[0], band.members[1]] : [pickFace(id), pickFace(id + '#2')];
 }
-/** 货架上每个在售头像框会用到的图。详情弹窗在打开前把同一批 URL 解码掉，避免第一次点开时同步解码卡住。 */
-export function frameShelfSrcs(): string[] {
-  const srcs: string[] = [];
-  for (const it of itemsOf('frame')) {
-    if (it.price == null) continue;
-    srcs.push(`/frames/${it.id.split(':')[1]}.svg`, `/avatars/${previewFaces(it.id)[0]}.png`);
-  }
-  return srcs;
-}
-export const avatarImg = (who: string, attrs = 'loading="lazy"') => `<img src="${esc(staticUrl(`/avatars/${who}.png`))}" alt="" ${attrs} onerror="this.onerror=null;this.src='${esc(staticUrl('/avatars/placeholder.png'))}'">`;
+export const avatarImg = (who: string, attrs = 'loading="lazy" decoding="async"') => `<img src="${esc(staticUrl(`/avatars/${who}.png`))}" alt="" ${attrs} onerror="this.onerror=null;this.src='${esc(staticUrl('/avatars/placeholder.png'))}'">`;
 const avatar = (who: string) => avatarImg(who);
 
 export function itemName(id: string): string {
@@ -62,15 +53,20 @@ export function ticketHTML(style: string): string {
   return `<span class="ticket-mini" data-ticket="${esc(style)}"><b>LIVE</b><i></i><small>ADMIT ONE</small></span>`;
 }
 
-export function itemPreviewHTML(id: string): string {
+export function itemPreviewHTML(id: string, artOverride?: string): string {
   const item = ITEM_BY_ID.get(id);
   if (!item) return '';
+  const art = artOverride ?? item.art;
   switch (item.kind) {
     case 'frame': return frameHTML(id);
     case 'theme': return themeHTML(item.color ?? '#ff3b7f', id);
     case 'ticket': return ticketHTML(id.split(':')[1]);
     case 'finale':
-    case 'stage': return item.art ? `<img class="art-mini" src="${esc(staticUrl(item.art))}" alt="" loading="lazy">` : '<span class="art-mini"></span>';
+    case 'stage':
+      /* 终幕脸居中：data-fx / data-fy 交给 ui/artFocus.ts 按实际尺寸算 object-position。 */
+      if (!art) return '<span class="art-mini"></span>';
+      const focus = item.focus ? ` data-fx="${item.focus.x}" data-fy="${item.focus.y}"` : '';
+      return `<img class="art-mini" src="${esc(staticUrl(art))}" alt="" loading="lazy" decoding="async"${focus}>`;
     case 'skin': return item.char ? `<span class="fp" data-base="true"><span class="fp-unit fp-a"><i class="fp-back"></i>${avatar(item.char)}</span></span>` : '';
   }
 }

@@ -6,9 +6,12 @@ import { itemPreviewHTML } from './items.ts';
 const esc = (s: string) => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
 export const SHARD = '<svg class="tk-shard" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-shard"/></svg>';
 
+/** 分类图标：只在手机版式显示（桌面仍是文字标签）。 */
+export const kindIcon = (id: string) => `<svg class="kind-ico" viewBox="0 0 256 256" aria-hidden="true"><use href="#${id}"/></svg>`;
+
 export function tabsHTML(label: string): string {
   return `<div class="mt-tabs" role="tablist" aria-label="${esc(label)}"><i class="mt-ink" aria-hidden="true"></i>`
-    + KINDS.map(k => `<button type="button" role="tab" data-kind="${k.kind}" aria-selected="false"><b>${k.name}</b><small>${k.en}</small></button>`).join('')
+    + KINDS.map(k => `<button type="button" role="tab" data-kind="${k.kind}" data-cue="tab" aria-selected="false" aria-label="${k.name}">${kindIcon(k.icon)}<b>${k.name}</b><small>${k.en}</small><em class="kind-short" aria-hidden="true">${k.short}</em><i class="kind-n" aria-hidden="true"></i></button>`).join('')
     + '</div>';
 }
 
@@ -19,22 +22,37 @@ export function selectTab(host: HTMLElement, kind: Kind, instant = false): void 
   let on: HTMLElement | null = null;
   for (const b of bar.querySelectorAll<HTMLButtonElement>('[role="tab"]')) {
     const sel = b.dataset.kind === kind;
-    b.setAttribute('aria-selected', String(sel));
-    b.tabIndex = sel ? 0 : -1;
+    if (b.getAttribute('aria-selected') !== String(sel)) b.setAttribute('aria-selected', String(sel));
+    const tabIndex = sel ? 0 : -1;
+    if (b.tabIndex !== tabIndex) b.tabIndex = tabIndex;
     if (sel) on = b;
   }
   const ink = bar.querySelector<HTMLElement>('.mt-ink')!;
   if (!on) return;
-  ink.style.transition = instant ? 'none' : '';
-  ink.style.translate = `${on.offsetLeft}px 0`;
-  ink.style.width = `${on.offsetWidth}px`;
-  if (instant) { void ink.offsetWidth; ink.style.transition = ''; }
-  const r = on.offsetLeft - bar.scrollLeft;
-  if (r < 0 || r + on.offsetWidth > bar.clientWidth) on.scrollIntoView({ block: 'nearest', inline: 'center', behavior: instant ? 'auto' : 'smooth' });
+  const left = on.offsetLeft, top = on.offsetTop, width = on.offsetWidth, height = on.offsetHeight;
+  const barWidth = bar.clientWidth, scroll = bar.scrollLeft, overflow = bar.scrollWidth > barWidth + 1;
+  /* 位置写成变量，横排 / 竖轨（横屏手机）由 CSS 各取所需。 */
+  const geometry = { '--ix': `${left}px`, '--iy': `${top}px`, '--iw': `${width}px`, '--ih': `${height}px` };
+  const changed = Object.entries(geometry).filter(([key, value]) => ink.style.getPropertyValue(key) !== value);
+  if (changed.length) {
+    if (instant) ink.style.transition = 'none';
+    for (const [key, value] of changed) ink.style.setProperty(key, value);
+    if (instant) { void ink.offsetWidth; ink.style.transition = ''; }
+  }
+  /* 只有标签条真的横向溢出时才把选中项滚进来。竖排的分类栏（横屏手机）带上滚动条后可用宽度变窄，
+     这里会误判「出界」，scrollIntoView 顺手把整列竖着滚走，第一项的头就被截掉。 */
+  const r = left - scroll;
+  if (overflow && (r < 0 || r + width > barWidth)) bar.scrollTo({ left: left - (barWidth - width) / 2, behavior: instant ? 'auto' : 'smooth' });
 }
 
 export function bindTabs(host: HTMLElement, onPick: (k: Kind) => void): void {
   const bar = host.querySelector<HTMLElement>('.mt-tabs')!;
+  /* 转屏时标签条在横排和竖轨之间切换，滑块按新位置重量一次。 */
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(([entry]) => {
+    if (!entry.contentRect.width) return;
+    const on = bar.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (on) selectTab(host, on.dataset.kind as Kind, true);
+  }).observe(bar);
   const tabs = [...bar.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
   for (const b of tabs) b.onclick = () => onPick(b.dataset.kind as Kind);
   bar.onkeydown = e => {
@@ -56,14 +74,17 @@ export interface CardState {
   note?: string;
 }
 
+/** 触屏上没有悬停：卡片角上常驻一枚「可以点开看」的小图标（桌面隐藏，仍是悬停字）。 */
+export const peekHTML = (kind: Kind) => `<span class="mc-peek" aria-hidden="true"><svg viewBox="0 0 256 256"><use href="#${kind === 'finale' ? 'i-play' : 'i-eye'}"/></svg></span>`;
+
 export function cardHTML(item: ItemDef, s: CardState, i: number): string {
   const tag = item.price != null && !s.owned
     ? `<span class="mc-tag">${SHARD}<b>${item.price}</b></span>` : '';
   const stamp = s.owned && item.price != null && s.worn === undefined ? '<span class="mc-stamp" aria-hidden="true">已拥有</span>' : '';
   const worn = s.worn ? '<span class="mc-worn">使用中</span>' : '';
-  const btn = s.action ? `<button type="button" class="mc-btn${s.action.act === 'buy' || s.action.act === 'wear' ? ' set-primary' : ''}" data-act="${s.action.act}" data-id="${esc(item.id)}"${s.action.disabled ? ' disabled' : ''}>${s.action.act === 'buy' ? SHARD : ''}${esc(s.action.label)}</button>` : '';
+  const btn = s.action ? `<button type="button" class="mc-btn${s.action.act === 'buy' || s.action.act === 'wear' ? ' set-primary' : ''}"${s.action.act === 'wear' ? ' data-cue="confirm"' : ''} data-act="${s.action.act}" data-id="${esc(item.id)}"${s.action.disabled ? ' disabled' : ''}>${s.action.act === 'buy' ? SHARD : ''}${esc(s.action.label)}</button>` : '';
   return `<li class="mc" data-id="${esc(item.id)}" data-kind="${item.kind}" data-owned="${s.owned}"${s.worn ? ' data-worn="true"' : ''} style="--n:${i}">`
-    + `<div class="mc-art">${itemPreviewHTML(item.id)}${tag}${stamp}${worn}</div>`
+    + `<div class="mc-art">${itemPreviewHTML(item.id)}${tag}${stamp}${worn}${peekHTML(item.kind)}</div>`
     + `<div class="mc-body"><b>${esc(item.name)}</b>${s.note ? `<small>${esc(s.note)}</small>` : ''}${btn}</div></li>`;
 }
 

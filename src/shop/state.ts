@@ -64,10 +64,13 @@ export function skipGiftForNow(): void { /* 不记：下次进商店还会问。
 /* ---- 生效到界面 ---- */
 
 /** 主页样式：<html data-skin>。index.html 头部的内联脚本在首帧前做同一件事。 */
+let appliedTheme: string | null = null;
 export function applyTheme(): void {
-  const key = current('theme')?.id.split(':')[1];
+  const key = current('theme')?.id.split(':')[1] ?? 'base';
+  if (appliedTheme === key) return;
+  appliedTheme = key;
   const root = document.documentElement;
-  if (!key || key === 'base') delete root.dataset.skin;
+  if (key === 'base') delete root.dataset.skin;
   else root.dataset.skin = key;
   // 只有暗色美术的款：设置里的主题开关失效，置灰；换回别的款时恢复原选择（偏好本身没动）。
   document.getElementById('set-theme-seg')?.toggleAttribute('inert', !!SKINS.find(s => s.id === key)?.darkOnly);

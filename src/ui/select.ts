@@ -1,4 +1,6 @@
+import { reducedMotion } from './motion.ts';
 import { applyImageUrl, assignFirst, loadImage, stageThumbSrc } from '../assets/loader.ts';
+import { shortName } from '../data/shortNames.ts';
 import { stampOf } from './stamps.ts';
 import type { CharacterData, StageData } from '../data/types.ts';
 import { BAND_BY_ID, groupOf, type BandId } from '../data/bands.ts';
@@ -22,6 +24,17 @@ export const parseRosterThumb = (v: unknown): RosterThumb => v === 'face' ? 'fac
 
 /** What a select-screen change should sound like. Unset is the plain blip. */
 export type PickCue = 'pick' | 'mode' | 'deny';
+
+export interface LobbyInfo {
+  cast: CharacterData[];
+  rules: string;
+  stage: StageData | null;
+  owner: CharacterData;
+  moves: number;
+  side: number;
+  /** 招式页「看谁的招式」切换：name 是短称（灯、爱音……），这个切换很窄，全名会撑出卡片。 */
+  sides: { slot: number; mark: string; name: string }[];
+}
 
 export interface MatchSetup {
   characters: CharacterData[];
@@ -117,7 +130,7 @@ const DESCEND = 22;
 const SOLE = -9;
 /** The backdrop layer overhangs the panel by this much on every side, so the parallax never shows its edge. */
 const BG_BLEED = 14;
-const reduceMotion = (): boolean => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reduceMotion = reducedMotion;
 
 /** Apply a slot-control click. A lone chip (`mateHidden`) flips, and on a full roster it takes the player seat from someone else. `null` means leave it. */
 export function assignSlotWho(who: readonly ('player' | 'cpu')[], lead: number, clicked: 'player' | 'cpu', mateHidden: boolean, maxPlayers: number): ('player' | 'cpu')[] | null {
@@ -162,7 +175,7 @@ export function skillHTML(c: CharacterData, pad = 0, touch = isTouch(), form = '
     // The ultimate's 必杀 tag rides in <small>, which the battle table already hides.
     // 一人二役: on the select screen each card also names its form, in the same chip.
     const tag = (form ? `<small class="ult-tag">${form}</small>` : '') + (s.super ? '<small class="ult-tag">必杀</small>' : '');
-    return `<div class="skill ${s.super ? 'super' : ''}"><kbd>${keys[i]}</kbd><div><b>${s.name}${tag}</b><p class="brief">${swap(s.brief)}</p><p class="nums">${dmg}${cost}</p><p class="detail">${swap(s.detail)}</p></div>${s.super ? '<span class="charge" aria-hidden="true"><i></i></span>' : ''}</div>`;
+    return `<div class="skill ${s.super ? 'super' : ''}"><kbd>${keys[i]}</kbd><div><b>${s.name}${tag}</b><p class="brief">${swap(s.brief)}</p><p class="nums"><span>${dmg}</span>${cost ? ` · <span>${cost.slice(3)}</span>` : ''}</p><p class="detail">${swap(s.detail)}</p></div>${s.super ? '<span class="charge" aria-hidden="true"><i></i></span>' : ''}</div>`;
   }).join('');
 }
 
@@ -203,6 +216,8 @@ export class SelectScreen {
   /** One idle stand-in per portrait canvas, rebuilt only when the slot switches character. */
   /** `drawn` is the signature of the settled picture already on the canvas ('' = needs a paint). */
   private readonly previewCache = new WeakMap<HTMLCanvasElement, { id: string; facing: number; f: Fighter; enter: number; landed: boolean; drawn: string }>();
+  /** 每次 refresh 末尾调用；横屏大厅跟着更新摘要。 */
+  onRefresh: () => void = () => {};
   /** Fired when a big portrait lands from its drop; main.ts plays the thud. */
   onLand: () => void = () => {};
   private lastLand = 0;
@@ -590,7 +605,7 @@ export class SelectScreen {
         }
       }
       const seal = stampOf(c.id);
-      html += `<button class="character" style="--c:${c.color}" data-index="${i}"${seal >= 0 ? ` data-seal="${seal}"` : ''} title="${c.name} · ${c.title}" aria-label="选择${c.name}"><canvas width="96" height="96" aria-hidden="true"></canvas><span class="face" aria-hidden="true"><i class="face-cut"><img alt="" decoding="async" draggable="false"></i></span><span class="slot-tag" hidden></span><span class="char-name">${c.name}</span><span class="pick-sheen" aria-hidden="true"></span><span class="seal-strip" aria-hidden="true"></span></button>`;
+      html += `<button class="character" style="--c:${c.color}" data-index="${i}"${seal >= 0 ? ` data-seal="${seal}"` : ''} title="${c.name} · ${c.title}" aria-label="选择${c.name}"><canvas width="96" height="96" aria-hidden="true"></canvas><span class="face" aria-hidden="true"><i class="face-cut"><img alt="" decoding="async" draggable="false"></i></span><span class="slot-tag" hidden></span><span class="char-name"><span class="cn-full">${c.name}</span><span class="cn-short" aria-hidden="true">${shortName(c)}</span></span><span class="pick-sheen" aria-hidden="true"></span><span class="seal-strip" aria-hidden="true"></span></button>`;
     });
     return html;
   }
@@ -1080,7 +1095,30 @@ export class SelectScreen {
         ? skillHTML(c, scheme, touch, c.forms.base.name) + skillHTML({ ...c, skills: c.forms.alt.skills }, scheme, touch, c.forms.alt.name)
         : skillHTML(c, scheme, touch);
     }
+    this.onRefresh();
   }
+
+  /** 横屏大厅（ui/lobby.ts）读的摘要：上场的人、规则一句、指着的场景（随机为 null）、招式表的主人和可切换的槽位。 */
+  lobbyInfo(): LobbyInfo {
+    const net = this.place === 'net';
+    const owner = this.roster[this.selected[net ? 0 : this.side]];
+    const sides = net || this.mode === 'challenge' ? [] : this.shown().map(v => ({ slot: v.slot, mark: this.slotMark(v.slot), name: shortName(this.slotChar(v)) }));
+    return {
+      cast: this.cast(),
+      rules: net ? '联机 · 1V1 对战' : this.summary(),
+      stage: this.stageId === 'random' ? null : this.stage,
+      owner,
+      moves: owner.skills.length + (owner.forms?.alt.skills.length ?? 0),
+      side: net ? 0 : this.side,
+      sides,
+    };
+  }
+
+  /** 舞台换了容器（横屏子视图把它搬进页面壳）之后重新铺背景：尺寸变了，但不一定有 resize。 */
+  relayout(): void { this.placeStage(); }
+
+  /** 招式表换成某个槽位的人，和点舞台上那个立绘一样。 */
+  pickSide(side: number): void { this.focus(side); }
 
   /** A slot's colour, title and typed quote. Animations restart only when the character changes. */
   private dress(v: SlotView, c: CharacterData | null): void {

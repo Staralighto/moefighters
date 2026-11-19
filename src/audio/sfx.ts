@@ -49,7 +49,9 @@ const FINALE_SAMPLES: Partial<Record<SfxKind, { src: string; at: number; dur: nu
 };
 
 /** Select-screen cues. Not SfxKind: the match never plays these. */
-export type UiSound = 'hover' | 'swish' | 'confirm' | 'deny' | 'land' | 'whoosh' | 'vs';
+export type UiSound = 'hover' | 'swish' | 'confirm' | 'deny' | 'land' | 'whoosh' | 'vs'
+  /* 手机后台页（ui/mobile.ts，只在触屏发声）：都很轻、很短，是装饰不是主角。 */
+  | 'tap' | 'tab' | 'tick' | 'open' | 'back' | 'buy' | 'coin' | 'chime';
 
 const VOLUME_KEY = 'mf-sfx-volume';
 function readVolume(): number {
@@ -169,7 +171,7 @@ export class Sfx {
 
   /** Select-screen sounds. Kept apart from SfxKind: the fight, the net relay and the lockstep
    *  replay never see these, so nothing on the wire changes. */
-  ui(kind: UiSound): void {
+  ui(kind: UiSound, step = 0): void {
     if (this.muted || !this.ctx) return;
     const ctx = this.ctx, t = ctx.currentTime;
     const tone = (type: OscillatorType, f0: number, f1: number, at: number, dur: number, gain: number, lowpass = 0) => {
@@ -212,6 +214,26 @@ export class Sfx {
       case 'deny': tone('square', 150, 95, 0, .09, .06, 700); tone('square', 130, 80, .1, .11, .06, 700); break;
       case 'land': tone('sine', 130, 42, 0, .17, .13); noise(0, .1, .05, 900, 300, .6); break;
       case 'whoosh': noise(0, .38, .09, 400, 2600, .6); break;
+      /* 轻点：一粒很短的木质高音。 */
+      case 'tap': tone('sine', 1250, 900, 0, .035, .028); break;
+      /* 切分类：上行两音，比 tap 亮一点。 */
+      case 'tab': tone('triangle', 880, 870, 0, .045, .032); tone('triangle', 1320, 1310, .04, .07, .028); break;
+      /* 横滑经过一格：几乎听不见的一下拨片。 */
+      case 'tick': tone('sine', 2200, 1700, 0, .016, .01); break;
+      /* 进页 / 返回：一口气息 + 一个往上 / 往下的音。 */
+      case 'open': noise(0, .24, .04, 500, 2400, .7); tone('sine', 520, 820, .02, .16, .026); break;
+      case 'back': noise(0, .2, .035, 2200, 600, .7); tone('sine', 720, 460, 0, .12, .024); break;
+      /* 买下：收银台的两声「叮」。 */
+      case 'buy': tone('triangle', 1046, 1040, 0, .07, .045); tone('triangle', 1568, 1560, .07, .2, .04); noise(0, .05, .02, 4200, 3000, 1.5); break;
+      /* 碎片落下：每颗高一个音（step 0..），到一个八度封顶后循环。 */
+      case 'coin': {
+        const f = 1175 * 2 ** ((step % 12) / 12);
+        tone('sine', f, f * .99, 0, .07, .022);
+        tone('triangle', f * 2, f * 1.98, 0, .04, .008);
+        break;
+      }
+      /* 演出落定：三音和弦慢慢散开。 */
+      case 'chime': tone('sine', 784, 782, 0, .55, .035); tone('sine', 1175, 1172, .06, .6, .03); tone('sine', 1568, 1565, .12, .7, .024); break;
       case 'vs':
         tone('sine', 96, 30, 0, .6, .2);
         tone('square', 240, 70, 0, .14, .05, 1200);

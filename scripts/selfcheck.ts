@@ -10,6 +10,8 @@ import { BUSHIDO_CREEP, BUSHIDO_LUNGE, BUSHIDO_SPAN, VEIL_NORMAL, VEIL_SHOT, clo
 import { FLIGHT_HOP, vowBeatTime, VOW_BEATS, PRACTICE_GAP1, PRACTICE_HITS, practiceBeat, practiceGap, practiceRow, practiceStrums, FAMILY_MEMBERS, familyLife, PUFF_STOP, PLAY, PLAY_BYE, PLAY_DRAW, PLAY_FIGURES, PLAY_HOUSE, PLAY_PASS, PLAY_SLASHES, RARE_TIME, EAR, WIDE, WIDE_DROPS, WIDE_POP } from '../src/render/clips.ts';
 import { SHEET_SCALE } from '../src/render/proportions.ts';
 import { PLAYABLE, PUBLIC_ROSTER, ROSTER, bandMembers, guestsFor } from '../src/data/characters.ts';
+import { SHORT_NAMES } from '../src/data/shortNames.ts';
+import { checkHub } from './hub-selfcheck.ts';
 import { BANDS, BAND_BY_ID, IPS, groupOf, groupOrder, ipOf } from '../src/data/bands.ts';
 import { AIR_SKILLS, skill } from '../src/data/skills.ts';
 import { STAGES } from '../src/data/stages.ts';
@@ -2826,7 +2828,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const onlinePane = dialogHtml.match(/<section class="set-pane"[^>]*id="set-pane-online"[\s\S]*?<\/section>/)?.[0] ?? '';
     assert.equal(text(onlinePane), '联机代号 修改代号', 'online codename setting row has control name and button only');
     const visible = text(dialogHtml.replace(onlinePane, ''));
-    assert.equal(visible, '设置 × 通用 操控 训练场 音频 联机 外观 主题 名册 名册显示 直接排开 按乐队分组 名册卡面 全身 头像 印章色条 显示隐藏角色 存档 导入存档 导出存档 资源 预载全部资源 键位方案 基础 进阶 空白处手势 自定义布局 恢复默认 编辑布局 技能 无技能冷却 无限大招 木桩 一直格挡 连段后回满血 音量 音乐 音效 播放 开打换曲 ? 只在随机播放时生效，其他时候不能改。', 'settings dialog keeps control names and option names, plus the fight-shuffle tip (the online pane exempted)');
+    assert.equal(visible, '设置 × 通用 操控 训练场 音频 联机 外观 主题 大厅模式 自动 开 关 名册 名册显示 直接排开 按乐队分组 名册卡面 全身 头像 印章色条 显示隐藏角色 存档 导入存档 导出存档 资源 预载全部资源 键位方案 基础 进阶 空白处手势 自定义布局 恢复默认 编辑布局 技能 无技能冷却 无限大招 木桩 一直格挡 连段后回满血 音量 音乐 音效 播放 开打换曲 ? 只在随机播放时生效，其他时候不能改。', 'settings dialog keeps control names and option names, plus the fight-shuffle tip (the online pane exempted)');
     // 二值项是开关，两三个选项是分段按钮，页签切页：设置弹窗里不再有下拉。
     assert.ok(!dialogHtml.includes('pick-btn') && (dialogHtml.match(/role="switch"/g) ?? []).length === 10, 'settings on/off rows are switches, not dropdowns');
     assert.ok(['暗色', '亮色', '跟随系统'].every(n => dialogHtml.includes(`aria-label="${n}"`)), 'theme icons keep their names for screen readers');
@@ -11671,4 +11673,53 @@ for (const order of [[2, 3], [3, 2]]) {
   assert.ok(hop.dmg < 1, 'over the wave, nothing lands: ' + hop.dmg.toFixed(1));
 }
 
+// 大厅 / 横屏版式的尺寸规则（docs/device-adaptation.md「横屏大厅与大厅模式」）：
+// - 横屏判定只在 mobile.ts：CSS 跟 html.ph-land / ph-port / lobby-mode / ph-phone 走，不再写 LANDSCAPE_PHONE 的媒体查询；
+// - 大厅入口群是 400×311 的设计尺寸盒子，整体 scale(--lu)，盒子里不许有跟视口走的尺寸；
+// - 大屏（PC / iPad 开大厅模式）后台页用桌面版式，不整体放大；大厅入口群用 zoom 按真实分辨率重排。
+{
+  const css = readFileSync('src/style.css', 'utf8');
+  const mobile = readFileSync('src/ui/mobile.ts', 'utf8');
+  assert.ok(!css.includes('@media (max-height: 540px) and (min-aspect-ratio: 4 / 3)'), 'landscape-phone CSS follows html.ph-land (mobile.ts), not its own media query');
+  assert.ok(['ph-land', 'ph-port', 'lobby-mode'].every(c => mobile.includes(`'${c}'`)), 'mobile.ts owns the layout classes on <html>');
+  assert.ok(/\.lb-deck \{[^}]*width: 400px; height: 311px;[^}]*transform: scale\(var\(--lu, 1\)\)/.test(css), 'lobby deck is a 400×311 design box scaled by --lu');
+  assert.ok(!/hub-scaled|--hubs-/.test(css), 'hub pages are never scaled up as a picture: big screens get the desktop layout, crisp');
+  const deck = css.split('\n').filter(l => /:where\(html\.lobby-mode\) \.(lb-|lobby)/.test(l) && /\d(vw|vh)\b|clamp\([^)]*v[wh]/.test(l));
+  assert.deepEqual(deck, [], 'lobby deck sizes are design px, never viewport-relative');
+}
+
+// 角色短称（data/shortNames.ts，对照表见 docs/character-short-names.md）：每个角色都要有，取日文原名里的「名」，
+// 所以一定是全名的结尾（高松灯 → 灯）。不许按字数截（name.slice(-2) 会得到「松灯」）。
+{
+  for (const c of ROSTER) {
+    const s = SHORT_NAMES[c.id];
+    assert.ok(s, `short name missing for ${c.id} (${c.name}): add it to src/data/shortNames.ts and the doc`);
+    assert.ok(c.name.endsWith(s), `short name of ${c.name} must be the end of the full name (given name), got ${s}`);
+  }
+  const lobbySrc = readFileSync('src/ui/lobby.ts', 'utf8') + readFileSync('src/ui/select.ts', 'utf8');
+  assert.ok(!/\.name\.slice\(-\d\)/.test(lobbySrc), 'short names come from shortName(), never from slicing the full name');
+}
+
+// 动效与加载（docs/motion-and-loading.md）：
+// - 进后台页、开弹窗只做快速渐入 / 渐出：不从卡片铺开（clip-path）、没有入场级联、弹窗不放大；状态不等动画事件。
+// - 「减少动态效果」只从 ui/motion.ts 读（开发工具能统一模拟）。
+// - 加载闸的快进、超时和取消用 checkHub 验证。
+{
+  const css = readFileSync('src/style.css', 'utf8');
+  const hubSrc = readFileSync('src/ui/hub.ts', 'utf8');
+  assert.ok(!/clipPath|clip-path/.test(hubSrc), 'hub pages open with a quick fade, not a clip-path reveal from the tapped card');
+  assert.ok(!/onfinish/.test(hubSrc), 'hub state never waits on an animation event (a page that is not rendering never fires it)');
+  assert.ok(!/\.hub\.entering|\.mc-in\b|ab-in|fv-in/.test(css), 'no entry cascades on hub pages or their dialogs');
+  const appear = css.match(/@keyframes dialog-appear \{[^\n]*\}/)?.[0] ?? '';
+  assert.ok(appear && !/scale/.test(appear), 'dialogs fade in, they do not zoom');
+  const ts = process.getBuiltinModule('fs').readdirSync('src', { recursive: true }).map(f => 'src/' + f.replace(/\\/g, '/')).filter(f => f.endsWith('.ts'));
+  const leaks = ts.filter(f => f !== 'src/ui/motion.ts' && readFileSync(f, 'utf8').includes('prefers-reduced-motion'));
+  assert.deepEqual(leaks, [], 'reduced motion is read only through ui/motion.ts (reducedMotion())');
+  // 关上后台页是瞬间的：不渐出、不留计时器，隐藏和交还点击同步做完。渐出途中透明的后台页会吃掉点击（「按入口格没反应」）。
+  const close = hubSrc.slice(hubSrc.indexOf('export function closeHub'), hubSrc.indexOf('export function bindHub'));
+  assert.ok(!/fadeOut|animate\(|setTimeout|requestAnimationFrame/.test(close), 'closing the hub has no fade, animation or timer');
+  assert.ok(/hub\.hidden = true;/.test(close) && /removeAttribute\('inert'\)/.test(close), 'closing the hub hides it and hands taps back to the lobby in the same tick');
+}
+
+await checkHub();
 console.log('selfcheck ok');

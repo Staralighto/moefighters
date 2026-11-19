@@ -1,3 +1,4 @@
+import { reducedMotion } from './motion.ts';
 import type { CharacterData } from '../data/types.ts';
 import type { FighterView } from '../render/view.ts';
 import { previewFighter, type Fighter } from '../game/fighter.ts';
@@ -39,7 +40,7 @@ const LIVE_KEY = 'mf-live-no';
 /** ms into the entrance when VS lands; the slam sound is cued on it. */
 const SLAM = 420;
 
-const still = (): boolean => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const still = reducedMotion;
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
 
 let raf = 0;

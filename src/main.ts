@@ -38,7 +38,12 @@ import { afterMatch } from './tasks/hook.ts';
 import { bindSaveUi } from './ui/saveUi.ts';
 import { bindResources } from './ui/resources.ts';
 import { chunk } from './assets/chunk.ts';
-import { bindHub, closeHub } from './ui/hub.ts';
+import { bindHub, closeHub, setNavHome, setNavStamps } from './ui/hub.ts';
+import { bindLobby, selectOnScreen } from './ui/lobby.ts';
+import { bindBackdropClose, bindFeel, bindScrollLock, bindSheetDrag, lobbyMode, lobbyPrefValue, setLobbyPref, setUiCue, type LobbyPref } from './ui/mobile.ts';
+import { bindArtFocus } from './ui/artFocus.ts';
+import { bindAppHeight } from './ui/appHeight.ts';
+import { bindBrowse } from './ui/browse.ts';
 import { bindMusicPage } from './ui/musicPage.ts';
 import { bindTasksPage } from './ui/tasksPage.ts';
 import { applyHudFrame, bindLooks, finaleOwned } from './shop/state.ts';
@@ -58,6 +63,8 @@ let game: FightGame | null = null;
 let renderer: Renderer | null = null;
 /* Dev builds only: the online E2E run reads the live match from here. */
 if (import.meta.env.DEV) (window as unknown as { __mf?: unknown }).__mf = { game: () => game, lock: () => netLock(), log: () => netLog };
+/* 开发检测工具（ui/devProbe.ts）：后台页跳转、模拟减少动效、截断 / 溢出扫描、强制演加载条。生产包不含。 */
+if (import.meta.env.DEV) void import('./ui/devProbe.ts');
 let raf = 0;
 let lastSetup: MatchSetup | null = null;
 /** Live endless run of whichever sub-mode is being played: set when a challenge fight starts,
@@ -123,6 +130,7 @@ let bootAt = 0;
 let bootDisplay = 0;
 let bootShown = false;
 let bootDone = true;
+let selectRaf = 0;
 
 function noteMissing(): void {
   const miss = bootPins.filter(s => missingImages.has(s));
@@ -135,6 +143,7 @@ function beginWait(srcs: string[]): void {
   bootAt = performance.now();
   bootDone = false;
   setMusicHeld(true);
+  queueSelectFrame();
   if (keep) return;
   bootDisplay = 0;
   bootShown = false;
@@ -213,6 +222,8 @@ select.onNeedSprite = (c, background) => {
   queue.soon(srcs);
 };
 select.mount();
+/* 横屏手机的大厅：盖在选人页上，备战三块借选人页的节点当子视图。 */
+bindLobby(select);
 mountSegThumbs($('selection'));
 /* Mouse hover ticks on the select screen and header. Touch has no hover, so it stays quiet. */
 {
@@ -272,16 +283,26 @@ if (saved) {
   startChallengeStage();
 }
 
-let selectRaf = 0;
-function selectLoop(now: number): void {
-  if (!$('selection').hidden && !document.documentElement.classList.contains('hub-covered')) {
-    tickBoot(now);
-    setMusicHeld(!bootDone);
-    select.animate(now);
-  }
-  selectRaf = requestAnimationFrame(selectLoop);
+function queueSelectFrame(): void {
+  if (!selectRaf && !$('selection').hidden && (!bootDone || selectOnScreen())) selectRaf = requestAnimationFrame(selectLoop);
 }
-selectRaf = requestAnimationFrame(selectLoop);
+
+function selectLoop(now: number): void {
+  selectRaf = 0;
+  if (!$('selection').hidden) {
+    /* 首屏加载进度不看遮挡：大厅盖着也要走完，否则音乐一直被按住。 */
+    if (!bootDone) {
+      tickBoot(now);
+      if (bootDone) setMusicHeld(false);
+    }
+    if (selectOnScreen()) select.animate(now);
+  }
+  queueSelectFrame();
+}
+const selectVisibility = new MutationObserver(queueSelectFrame);
+selectVisibility.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+selectVisibility.observe($('hub'), { attributes: true, attributeFilter: ['data-page'] });
+queueSelectFrame();
 
 /** Phone only. Call from the tap's pointerdown, before anything else spends that gesture. */
 function enterBattleFullscreen(): void {
@@ -372,6 +393,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
 
   cancelAnimationFrame(raf);
   cancelAnimationFrame(selectRaf);
+  selectRaf = 0;
   bootDone = true;
   setMusicHeld(false);
   $('stage-load').hidden = true;
@@ -694,7 +716,7 @@ function restBack(): void {
   queue.resume();
   releaseBulk?.();
   releaseBulk = null;
-  selectRaf = requestAnimationFrame(selectLoop);
+  queueSelectFrame();
   document.body.classList.remove('in-battle', 'turned', 'end-up');
   select.paintSeals();
   // The fight parked the page on its text bar (see startGame); the select screen opens at the top.
@@ -905,6 +927,7 @@ document.querySelectorAll<HTMLDialogElement>('dialog').forEach(dialog => {
 function openQuit(title: string, text: string, yes: string, cancel: string, action: () => void): void {
   $('quit-title').textContent = title;
   $('quit-text').textContent = text;
+  $('quit-text').hidden = !text;
   $('quit-yes').textContent = yes;
   $('quit-cancel').textContent = cancel;
   quitAction = action;
@@ -933,7 +956,7 @@ const stampDialog = $('stamp-dialog') as HTMLDialogElement;
 function paintStampLayout(): void {
   const layout = stampLayout();
   for (const b of document.querySelectorAll<HTMLButtonElement>('#stamp-layout button')) b.classList.toggle('active', b.dataset.layout === layout);
-  renderStampBook($('stamp-body'), layout);
+  renderStampBook($('stamp-body'), layout, $('stamp-total'));
 }
 function openStamps(): void {
   if (game && !game.paused && game.phase !== 'finished') game.togglePause(true);
@@ -1146,6 +1169,11 @@ bindSeg('set-theme-seg', {
   get: themePref,
   set: value => setThemePref(value as ThemePref),
 });
+/* 大厅模式：自动 = 横屏小屏手机开、其他关；开 / 关所有设备照办。改了立刻生效（mobile.ts 重挂 html 类并通知大厅）。 */
+bindSeg('set-lobby-seg', {
+  get: lobbyPrefValue,
+  set: value => setLobbyPref(value as LobbyPref),
+});
 bindSeg('set-roster-seg', {
   get: () => select.isGrouped ? 'band' : 'flat',
   set: value => select.setRosterGrouped(value === 'band'),
@@ -1260,7 +1288,7 @@ window.addEventListener('focus', () => setMusicSuspended(false));
 document.addEventListener('pointerdown', e => {
   const t = e.target;
   /* Start/rematch spend the tap on fullscreen. Audio unlock here would consume it first, and Chrome then rejects requestFullscreen. */
-  const start = t instanceof Element ? t.closest('#start:not([aria-disabled="true"]), #rematch') : null;
+  const start = t instanceof Element ? t.closest('#start:not([aria-disabled="true"]), #lobby-quick:not([aria-disabled="true"]), #rematch') : null;
   if (start && (start.id !== 'rematch' || !lastSetup || !hiddenRematch(lastSetup))) {
     enterBattleFullscreen();
     return;
@@ -1278,6 +1306,15 @@ document.addEventListener('keydown', e => { if (!e.repeat) game?.finalePress(); 
 bindSaveUi(openDialog);
 bindResources(openDialog);
 bindHub();
+/* 手机后台页的触感音效：只在触屏发声（ui/mobile.ts 判定），键鼠访问保持安静。 */
+setUiCue((k, step) => { sfx.unlock(); sfx.ui(k, step); });
+bindFeel();
+bindScrollLock();
+bindBackdropClose();
+bindSheetDrag();
+bindArtFocus();
+bindAppHeight();
+bindBrowse();
 bindMusicPage();
 setRewardOpener(openDialog);
 bindTasksPage(openDialog);
@@ -1289,6 +1326,9 @@ setItemPreviewOpener(openDialog);
 bindItemPreview();
 bindShopPage(openDialog);
 bindLockerPage(openStamps);
+setNavStamps(openStamps);
+/* 横屏手机的首页是大厅。 */
+setNavHome(go => lobbyMode() ? openQuit('回到大厅？', '', '回到大厅', '留在这里', go) : openQuit('返回首页？', '', '返回首页', '留在这里', go));
 bindLooks();
 /* 音乐库、自然播完换曲都会走这里：顶栏曲名、音量条、开打换曲开关跟着更新。 */
 onMusicChange(() => {

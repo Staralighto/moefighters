@@ -2,15 +2,16 @@
    这里点的歌就是全站当前的 BGM，退出页面继续放，播放方式与设置页共用，不另开音源。
 
    动效：
-   - 进页：封套落位，黑胶从封套里「滚」出来（平移的同时按滚动距离转），开着音乐的话唱臂落下。第一次进更慢更足。
+   - 进页：唱片保持半露，随整页渐入。
    - 换曲：唱臂抬起 → 黑胶滚回封套 → 新封面从左往右揭开 → 黑胶滚出 → 真正出声时唱臂落下。连点会直接截断重来。
    - 播放：黑胶匀速转（1.8 秒一圈，33⅓ 转），高光不跟着转；暂停时唱臂抬起、黑胶慢慢减速停下。
    - 封面几何随低频能量很轻地起伏，背后一大块色面跟着当前曲目换色。 */
 
+import { reducedMotion } from './motion.ts';
 import { cycleMusicOrder, musicEnabled, musicIndex, musicLevel, musicLoading, musicOrder, musicPlaying, musicPosition, musicTracks, musicVolume, onMusicChange, playTrack, pokeMusic, seekMusic, setMusicEnabled, setMusicOrder, setMusicVolume, stepMusic, type MusicOrder } from '../audio/bgm.ts';
 import { coverHTML, coverLook } from './cover.ts';
 import { assetUrl, netTask } from '../assets/loader.ts';
-import { registerHubPage } from './hub.ts';
+import { appendHubItems, registerHubPage } from './hub.ts';
 
 const ORDER_NAMES: Record<MusicOrder, string> = { seq: '列表循环', shuffle: '随机播放', one: '单曲循环' };
 /* 播放方式图标：24 网格、2px 描边、圆头，和控件里的 Phosphor 图标同一粗细观感。 */
@@ -22,30 +23,32 @@ const ORDER_ICONS: Record<MusicOrder, string> = {
 };
 const orderIcon = (o: MusicOrder) => `<svg class="mp-oi" viewBox="0 0 24 24" aria-hidden="true">${ORDER_ICONS[o]}</svg>`;
 const esc = (s: string) => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
-const motionQuery = matchMedia('(prefers-reduced-motion: reduce)');
-const reduced = () => motionQuery.matches;
+const reduced = reducedMotion;
 const mmss = (t: number) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 const icon = (id: string) => `<svg class="btn-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#${id}"/></svg>`;
 
 /* 时长：解码前不知道，用媒体元素只读文件头拿到，按需探一次。 */
 const durations = new Map<number, number>();
-function probeDurations(onOne: () => void): void {
+let nextDuration = 0;
+let probing = false;
+function probeDurations(): void {
+  if (probing) return;
   const list = musicTracks();
-  let i = 0;
   const next = () => {
-    while (i < list.length && durations.has(i)) i++;
-    if (i >= list.length) return;
-    const k = i++;
+    while (nextDuration < list.length && durations.has(nextDuration)) nextDuration++;
+    if (!open || nextDuration >= list.length) { probing = false; return; }
+    const k = nextDuration++;
     // 后台车道：只读文件头，但仍排在图片后面，不和眼前的图抢。地址必须过 assetUrl（Toy 的相对 base）。
     void netTask(`meta:${list[k].src}`, 2, () => new Promise<void>(settle => {
       const a = new Audio();
       a.preload = 'metadata';
       const done = () => { a.onloadedmetadata = a.onerror = null; a.removeAttribute('src'); a.load(); settle(); };
-      a.onloadedmetadata = () => { if (Number.isFinite(a.duration)) { durations.set(k, a.duration); onOne(); } done(); };
+      a.onloadedmetadata = () => { if (Number.isFinite(a.duration)) saveDuration(k, a.duration); done(); };
       a.onerror = done;
       a.src = assetUrl(list[k].src);
-    })).then(next);
+    })).then(next, next);
   };
+  probing = true;
   next();
 }
 
@@ -55,18 +58,20 @@ let open = false;
 let raf = 0;
 let shownIndex = -1;
 let spin: Animation | null = null;
+let coverMotion: Animation | null = null;
 let rate = 0;
 let swapJob = 0;
 /* 正在换过去的那首，换曲途中的重复通知不重新开始。 */
 let swapping = -1;
 let unsub: (() => void) | null = null;
+let durationCells: NodeListOf<HTMLElement> | undefined;
 
-function rows(): string {
-  return musicTracks().map((t, i) => `<li style="--n:${i}"><button type="button" class="mp-row" data-i="${i}">`
+function rowHTML(t: ReturnType<typeof musicTracks>[number], i: number): string {
+  return `<li style="--n:${i}"><button type="button" class="mp-row" data-i="${i}">`
     + `<span class="mp-n">${String(i + 1).padStart(2, '0')}</span>`
     + '<span class="mp-eq" aria-hidden="true"><i></i><i></i><i></i></span>'
     + `<span class="mp-t"><b>${esc(t.title)}</b>${t.from ? `<small>${esc(t.from)}</small>` : ''}</span>`
-    + `<span class="mp-d" data-d="${i}">--:--</span></button></li>`).join('');
+    + `<span class="mp-d" data-d="${i}">--:--</span></button></li>`;
 }
 
 function mount(host: HTMLElement): void {
@@ -97,10 +102,13 @@ function mount(host: HTMLElement): void {
   </section>
   <section class="mp-side" aria-label="曲目">
     <div class="mp-list-head"><b>曲目</b><small>TRACKLIST · ${count}</small></div>
-    <ol class="mp-list">${rows()}</ol>
+    <ol class="mp-list"></ol>
   </section>
 </div>`;
-  for (const b of host.querySelectorAll<HTMLButtonElement>('.mp-row')) b.onclick = () => playTrack(Number(b.dataset.i));
+  q('.mp-list').onclick = e => {
+    const row = e.target instanceof Element ? e.target.closest<HTMLButtonElement>('.mp-row') : null;
+    if (row) playTrack(Number(row.dataset.i));
+  };
   for (const b of host.querySelectorAll<HTMLButtonElement>('.mp-step')) b.onclick = () => { stepMusic(Number(b.dataset.step) as -1 | 1); if (!musicEnabled()) setMusicEnabled(true); };
   q('.mp-play').onclick = () => setMusicEnabled(!musicEnabled());
   for (const b of host.querySelectorAll<HTMLButtonElement>('.mp-order button')) b.onclick = () => setMusicOrder(b.dataset.order as MusicOrder);
@@ -124,14 +132,14 @@ function mount(host: HTMLElement): void {
   spin = q('.mp-disc').animate([{ rotate: '0deg' }, { rotate: '360deg' }], { duration: 1800, iterations: Infinity });
   spin.playbackRate = 0;
   paintCover(musicIndex(), false);
-  probeDurations(paintDurations);
 }
 
-function paintDurations(): void {
-  for (const el of root.querySelectorAll<HTMLElement>('.mp-d')) {
-    const d = durations.get(Number(el.dataset.d));
-    if (d) el.textContent = mmss(d);
-  }
+function saveDuration(index: number, duration: number): void {
+  if (durations.get(index) === duration) return;
+  durations.set(index, duration);
+  const cell = durationCells?.[index];
+  if (cell) cell.textContent = mmss(duration);
+  if (open && index === musicIndex()) scheduleTick();
 }
 
 /** 封面、标签、背景色面换成第 i 首。animate=false 时直接换。 */
@@ -144,11 +152,19 @@ function paintCover(i: number, animate: boolean): void {
   q('.mp-label b').textContent = t.title;
   const html = coverHTML(t.title, i + 1);
   const oldC = q('.mp-old'), newC = q('.mp-new');
+  coverMotion?.cancel();
+  coverMotion = null;
   if (!animate) { oldC.innerHTML = html; newC.innerHTML = ''; shownIndex = i; return; }
   newC.innerHTML = html;
   const a = newC.animate([{ clipPath: 'inset(0 100% 0 0)', scale: 1.04 }, { clipPath: 'inset(0 0% 0 0)', scale: 1 }],
     { duration: 300, easing: 'cubic-bezier(.6, 0, .2, 1)' });
-  a.onfinish = () => { oldC.innerHTML = html; newC.innerHTML = ''; };
+  coverMotion = a;
+  a.onfinish = () => {
+    if (coverMotion !== a) return;
+    coverMotion = null;
+    oldC.innerHTML = html;
+    newC.innerHTML = '';
+  };
   shownIndex = i;
 }
 
@@ -207,16 +223,22 @@ function paint(): void {
     b.classList.toggle('playing', cur && playing);
   }
   if (open && shownIndex !== i && swapping !== i) void swapTo(i);
+  scheduleTick();
 }
 
 /* 逐帧要碰的节点在 mount 后取一次。 */
 let els: { bar: HTMLElement; time: HTMLElement; deck: HTMLElement } | null = null;
-let lastSlow = 0;
+let lastLevelAt = -Infinity;
 let lastTime = '';
 let lastLv = '';
+let lastProgress = -1;
+
+function scheduleTick(): void {
+  if (!raf) raf = requestAnimationFrame(tick);
+}
 
 function tick(now: number): void {
-  raf = requestAnimationFrame(tick);
+  raf = 0;
   if (!els) els = { bar: q('.mp-bar > i'), time: q('.mp-time'), deck: q('.mp-deck') };
   const playing = musicPlaying();
   /* 起转 0.4 秒到速，停转约 1 秒滑停。 */
@@ -224,26 +246,30 @@ function tick(now: number): void {
   rate += (target - rate) * (playing ? .12 : .045);
   if (Math.abs(rate - target) < .004) rate = target;
   if (spin && spin.playbackRate !== rate) spin.playbackRate = rate;
-  /* 停着且黑胶已经停稳：进度和时长只要偶尔看一眼（等解码完成），不必逐帧。 */
-  if (!playing && rate === 0 && now - lastSlow < 250) return;
-  lastSlow = now;
+  /* 停稳后由播放状态、进度调整或新时长唤醒。 */
+  if (playing || rate > 0) scheduleTick();
   const pos = musicPosition();
-  let text: string;
-  if (pos) {
-    els.bar.style.scale = `${pos.t / pos.d} 1`;
-    text = `${mmss(pos.t)} / ${mmss(pos.d)}`;
-    if (!durations.has(musicIndex())) { durations.set(musicIndex(), pos.d); paintDurations(); }
-  } else {
-    els.bar.style.scale = '0 1';
-    const d = durations.get(musicIndex());
-    text = `00:00 / ${d ? mmss(d) : '--:--'}`;
-  }
+  const index = musicIndex();
+  if (pos && !durations.has(index)) saveDuration(index, pos.d);
+  const progress = pos ? pos.t / pos.d : 0;
+  if (progress !== lastProgress) { lastProgress = progress; els.bar.style.scale = `${progress} 1`; }
+  const d = pos?.d ?? durations.get(index);
+  const text = `${mmss(pos?.t ?? 0)} / ${d ? mmss(d) : '--:--'}`;
   if (text !== lastTime) { lastTime = text; els.time.textContent = text; }
-  const lv = (playing && !reduced() ? musicLevel() : 0).toFixed(2);
-  if (lv !== lastLv) { lastLv = lv; els.deck.style.setProperty('--lv', lv); }
+  if (!playing || now - lastLevelAt >= 32) {
+    lastLevelAt = now;
+    const lv = (playing && !reduced() ? musicLevel() : 0).toFixed(2);
+    if (lv !== lastLv) { lastLv = lv; els.deck.style.setProperty('--lv', lv); }
+  }
 }
 
-function enter(first: boolean): void {
+function* enter(): Generator<void> {
+  if (!durationCells) {
+    const list = q('.mp-list');
+    list.replaceChildren();
+    yield* appendHubItems(list, musicTracks(), rowHTML);
+    durationCells = root.querySelectorAll('.mp-d');
+  }
   open = true;
   swapping = -1;
   q('.mp').classList.remove('mp-swapping');
@@ -252,40 +278,46 @@ function enter(first: boolean): void {
   unsub ??= onMusicChange(paint);
   const i = musicIndex();
   if (shownIndex !== i) paintCover(i, false);
-  paint();
   rate = musicPlaying() ? 1 : 0;
-  cancelAnimationFrame(raf);
-  raf = requestAnimationFrame(tick);
-  if (reduced()) { root.classList.add('mp-out'); q('.mp-vinyl').style.translate = `${q('.mp-sleeve').offsetWidth * .5}px 0`; return; }
-  const sleeve = q('.mp-sleeve');
-  sleeve.getAnimations().forEach(a => a.cancel());
-  sleeve.animate(first
-    ? [{ translate: '0 -36px', rotate: '-6deg', opacity: 0 }, { translate: '0 4px', rotate: '1deg', opacity: 1, offset: .7 }, { translate: '0 0', rotate: '0deg', opacity: 1 }]
-    : [{ translate: '0 -10px', opacity: 0 }, { translate: '0 0', opacity: 1 }],
-  { duration: first ? 620 : 260, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+  spin?.play();
+  paint();
+  /* 进页不演唱片套落下、唱片滑出：直接停在「唱片已滑出」的样子（motion.ts：进页面只做整页渐入）。切歌时的滑动照旧。 */
+  q('.mp-sleeve').getAnimations().forEach(a => a.cancel());
   q('.mp-vinyl').getAnimations().forEach(a => a.cancel());
-  q('.mp-vinyl').style.translate = '0 0';
-  root.classList.remove('mp-out');
-  void slide(true, first ? 760 : 420, first ? 420 : 90);
+  root.classList.add('mp-out');
+  q('.mp-vinyl').style.translate = `${q('.mp-sleeve').offsetWidth * .5}px 0`;
 }
 
 function leave(): void {
+  if (!open) return;
   open = false;
+  unsub?.();
+  unsub = null;
   cancelAnimationFrame(raf);
+  raf = 0;
+  spin?.pause();
+  if (coverMotion) { shownIndex = -1; coverMotion.cancel(); coverMotion = null; }
+  if (swapping !== -1) {
+    for (const el of root.querySelectorAll('.mp-vinyl, .mp-roll')) el.getAnimations().forEach(a => a.cancel());
+  }
   swapJob++;
 }
 
 /** 选人页「音乐库」入口卡：在放歌时显示转着的小黑胶和曲名。 */
+let tileTitle: string | null = null;
 function paintTile(): void {
   const now = document.getElementById('bs-now');
   if (!now) return;
   const playing = musicPlaying();
+  const title = playing ? musicTracks()[musicIndex()].title : '';
+  if (tileTitle === title) return;
+  tileTitle = title;
   now.classList.toggle('on', playing);
-  now.innerHTML = playing ? `<i class="bs-disc" aria-hidden="true"></i><span>${esc(musicTracks()[musicIndex()].title)}</span>` : '';
+  now.innerHTML = playing ? `<i class="bs-disc" aria-hidden="true"></i><span>${esc(title)}</span>` : '';
 }
 
 export function bindMusicPage(): void {
-  registerHubPage('music', { title: '音乐库', en: 'RECORDS', mount, enter, leave });
+  registerHubPage('music', { title: '音乐库', en: 'RECORDS', mount, enter, ready: probeDurations, leave, loading: { line: '调音中', en: 'SOUNDCHECK' } });
   onMusicChange(paintTile);
   paintTile();
 }

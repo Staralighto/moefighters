@@ -10,7 +10,7 @@ import { FINALE_TIME, finaleCues, type FightGame, type SfxKind } from '../game/g
 import { ITEM_BY_ID } from '../shop/catalog.ts';
 import { paintStageArt, stageArtUrl } from './framePreview.ts';
 import type { CardState } from './merch.ts';
-import { renderSide, type SideRun } from './detailSide.ts';
+import { renderSide, setTool, type SideRun } from './detailSide.ts';
 
 const $ = (id: string) => document.getElementById(id)!;
 const esc = (s: string) => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
@@ -97,8 +97,8 @@ export function openFinalePreview(id: string, state: () => CardState, run: SideR
     sub: ult ? `<small>必杀</small>${esc(ult)}` : undefined,
     hint: '本地对战中用必杀终结对手时播放；联机对战双方都会看到。',
     tools: [
-      { label: '重播', onClick: () => player?.restart() },
-      { label: muted ? '声音 关' : '声音 开', pressed: !muted, onClick: b => { muted = !muted; b.textContent = muted ? '声音 关' : '声音 开'; b.setAttribute('aria-pressed', String(!muted)); } },
+      { label: '重播', icon: 'i-arrow-clockwise', onClick: () => player?.restart() },
+      { label: muted ? '声音 关' : '声音 开', icon: muted ? 'i-speaker-slash' : 'i-speaker-high', pressed: !muted, onClick: b => { muted = !muted; setTool(b, muted ? '声音 关' : '声音 开', muted ? 'i-speaker-slash' : 'i-speaker-high'); b.setAttribute('aria-pressed', String(!muted)); } },
     ],
   });
   openDialog(dlg);
