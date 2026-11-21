@@ -59,7 +59,17 @@ export type ModKind =
   | 'tent'
   /** 我的心是巧克力螺: rolled flat by 牛込里美's giant cornet; `from` is her. The squash reads it (render/clips.ts flatSquash);
    *  her step watcher lifts it once the roll is no longer running (game/rimi.ts). */
-  | 'flat';
+  | 'flat'
+  /** 双调怪笑: on 大和麻弥, v is how many U casts so far; odd is 呼嘿嘿, even 哦吼吼 (game/maya.ts). */
+  | 'laugh'
+  /** 努力家: on 羽泽鸫, v the stars lit this round (acc 1 while she is down, so a knockdown costs one); 平凡之星 spends them (game/tsugumi.ts). */
+  | 'effort'
+  /** 努力家: on 羽泽鸫, v the U / I / O cast inside the window; acc 1 once the third is in and the fever is due (game/tsugumi.ts). */
+  | 'overwork'
+  /** 冰川夹心: pressed between the sisters; the squash reads it (render/clips.ts squeezeSquash). */
+  | 'squeeze'
+  /** 似懂非懂的名言: hit again while still 混乱 from her — acc counts down to the finger snap; from is 濑田薰 (game/kaoru.ts). */
+  | 'snap';
 
 /**
  * One running buff.

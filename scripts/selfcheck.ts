@@ -1,10 +1,11 @@
 /* Headless rule check: runs the fixed-step engine without DOM or canvas. `npm run check`. */
-import { FightGame, type GameOptions } from '../src/game/game.ts';
+import { FightGame, type Effect, type GameOptions } from '../src/game/game.ts';
 import { lockComeback } from '../src/game/lock.ts';
 import { dreadMul } from '../src/game/combat.ts';
 import { LOCK_LIVE_END, LOCK_LIVE_BOW, heartTier, YOMOGI_BODY, FILLS, METEOR, BURROW, WARREN, CHISATO_LECTURE_SPAN, lectureSquash, kneadSquash } from '../src/render/clips.ts';
 import { drawHeartBack, drawHeartFront, drawYomogiFx } from '../src/render/yomogiFx.ts';
 import { drawTokoFx, drawTokoSoloLight } from '../src/render/tokoFx.ts';
+import { auraRuiSeal, drawRuiFx, drawRuiShot } from '../src/render/ruiFx.ts';
 import { drawNanamiFx } from '../src/render/nanamiFx.ts';
 import { BUSHIDO_CREEP, BUSHIDO_LUNGE, BUSHIDO_SPAN, VEIL_NORMAL, VEIL_SHOT, clockRings, drumShotTime, escapePulse, hit, holdNoteSpan, outshines, violetHidden, withGuard } from '../src/game/combat.ts';
 import { FLIGHT_HOP, vowBeatTime, VOW_BEATS, PRACTICE_GAP1, PRACTICE_HITS, practiceBeat, practiceGap, practiceRow, practiceStrums, FAMILY_MEMBERS, familyLife, PUFF_STOP, PLAY, PLAY_BYE, PLAY_DRAW, PLAY_FIGURES, PLAY_HOUSE, PLAY_PASS, PLAY_SLASHES, RARE_TIME, EAR, WIDE, WIDE_DROPS, WIDE_POP } from '../src/render/clips.ts';
@@ -31,12 +32,16 @@ import { drawKanonFx, drawKanonShot } from '../src/render/kanonFx.ts';
 import { wanderAt } from '../src/game/kanonPath.ts';
 import { drawAkoFx, drawAkoShot } from '../src/render/akoFx.ts';
 import { drawTomoeFx } from '../src/render/tomoeFx.ts';
+import { drawMayaFx, drawMayaShot } from '../src/render/mayaFx.ts';
+import { drawTsugumiFx, drawTsugumiShot } from '../src/render/tsugumiFx.ts';
+import { effortOf } from '../src/game/tsugumi.ts';
+import { drawKaoruFx, drawKaoruShot } from '../src/render/kaoruFx.ts';
 import { drawHagumiFx, drawHagumiShot } from '../src/render/hagumiFx.ts';
 import { AKO_CHANT } from '../src/game/akoPath.ts';
 import { drawRinkoFx, drawRinkoShot } from '../src/render/rinkoFx.ts';
 import { drawRimiFx, drawRimiShot } from '../src/render/rimiFx.ts';
 import { RIMI_POSE, RIMI_TOSS } from '../src/game/rimiPath.ts';
-import { SCRIPTS as RIMI_SCRIPTS } from '../src/game/scripts.ts';
+import { SCRIPTS as RIMI_SCRIPTS, SLOT_TINTS } from '../src/game/scripts.ts';
 import { RINKO_DOT_GAP, RINKO_TENT } from '../src/game/rinkoPath.ts';
 import { drawChieriFx } from '../src/render/chieriFx.ts';
 import { assetUrl, easeLoad, imageSources, linkRate, liteFight, liteSrc, nextSrc, portraitSrc, SLOW_RATE, stageThumbSrc } from '../src/assets/loader.ts';
@@ -200,11 +205,11 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const breaksAt: Record<string, number> = {
     nyamu: 4, sakiko: 10, anon: 5, rana: 10, soyo: 3, kokoro: 3, miyako: 5,
-    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5, toko: 4, nanami: 5, kanon: 7, ako: 9, rinko: 6, rimi: 5, hagumi: 6,
+    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5, toko: 4, rui: 5, nanami: 5, kanon: 7, ako: 9, rinko: 6, rimi: 5, hagumi: 6,
   };
   const segments: Record<string, number> = {
     nyamu: 4, sakiko: 16, anon: 6, rana: 22, soyo: 3, kokoro: 3, miyako: 6,
-    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7, toko: 5, nanami: 5, kanon: 13, ako: 9, rinko: 7, rimi: 6, hagumi: 9,
+    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7, toko: 5, rui: 6, nanami: 5, kanon: 13, ako: 9, rinko: 7, rimi: 6, hagumi: 9,
   };
   for (const [id, breakAt] of Object.entries(breaksAt)) {
     const s = ROSTER[at(id)].skills[5];
@@ -6850,7 +6855,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     const x = make(a, b, 1000 + a), y = make(a, b, 1000 + a);
     const p0 = pads(a * 7 + 1), p1 = pads(a * 7 + 2);
     let z: ReturnType<typeof make> | null = null;
-    // Mod closures (onExpire / pulse) cannot travel (lock.ts dumpGame); a pair with one live at the dump is not
+    // Mod closures (onExpire / pulse / hurt) cannot travel (lock.ts dumpGame); a pair with one live at the dump is not
     // expected to resume, so it is left out of the count rather than diluting it.
     let exact = false;
     for (let t = 0; t < 1800; t++) {
@@ -6863,7 +6868,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
       assert.equal(hashGame(y.g, y.r), hx, PLAYABLE[a].id + ' vs ' + PLAYABLE[b].id + ': same seed and pads, same sim at tick ' + t);
       if (z && exact && hashGame(z.g, z.r) === hx) resumed++;
       if (t === 600) {
-        exact = !x.g.fighters.some(f => f.mods.some(m => m.left > 0 && (!!m.onExpire || !!m.pulse)));
+        exact = !x.g.fighters.some(f => f.mods.some(m => m.left > 0 && (!!m.onExpire || !!m.pulse || !!m.hurt)));
         if (exact) exactPairs++;
         z = make(a, b, 1);
         loadGame(z.g, z.r, dumpGame(x.g, x.r));
@@ -10200,13 +10205,472 @@ for (const order of [[2, 3], [3, 2]]) {
   }
 }
 
+// tsugumi: 羽泽鸫。U grabs and 纱夜 / 日菜 squeeze twice (the last roots 1 s); I throws the tray out and back (both
+// passes hit); O sends seven light keys along the floor (a launch, a jump clears it); L (100 气) brings her 努力 stars
+// down as small meteors and one big one that knocks down, heavier for every star. 努力家: each U / I / O hit lights a
+// star (at most 7), a knockdown costs one, L spends them; three U / I / O inside 6 s and she stalls with a fever.
+{
+  const ts = at('tsugumi');
+  const data = ROSTER[ts];
+  assert.ok(ts === at('tomoe') + 1, '羽泽鸫 sits with Afterglow, after 巴');
+  assert.equal(data.trait, 'focus');
+  assert.equal(SHORT_NAMES.tsugumi, '鸫');
+  assert.ok(data.view.kind === 'sprite' && ['/sprites/tsugumi/tray.png', '/sprites/sayo/common.png', '/sprites/hina/common.png'].every(x => data.view.kind === 'sprite' && data.view.extras?.includes(x)), 'the tray and both sisters are preloaded');
+  const fresh = (p2x = 520) => {
+    const g = newGame(ts, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  // U: two squeezes, then a root; one star
+  {
+    const { g, p1, p2 } = fresh(380);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    let held = 0, squeezed = false, sisters = 0;
+    for (let i = 0; i < 360; i++) {
+      g.step(STEP);
+      if (p2.root > 0) held += STEP;
+      if (p2.mods.some(m => m.kind === 'squeeze' && m.left > 0)) squeezed = true;
+      sisters = Math.max(sisters, g.effects.filter(e => e.type === 'tsugumi-sister').length);
+    }
+    assert.ok(hp - p2.hp > 18, 'both squeezes land: ' + (hp - p2.hp).toFixed(1));
+    assert.ok(held > .85 && held < 1.15, 'and root about 1 s: ' + held.toFixed(2));
+    assert.ok(squeezed && sisters === 2, 'squeezed between two sisters');
+    assert.equal(effortOf(p1), 1, 'one star for the move');
+  }
+  {
+    const { g, p1, p2 } = fresh(380);
+    p2.vy = -720;
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    run(g, 1.5);
+    assert.equal(hp, p2.hp, 'a jump clears the grab');
+  }
+  // I: out and back, both passes land
+  {
+    const { g, p1, p2 } = fresh(560);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    run(g, 2);
+    assert.ok(hp - p2.hp > 24, 'the tray lands going out and coming back: ' + (hp - p2.hp).toFixed(1));
+    assert.equal(effortOf(p1), 2, 'a star for each pass');
+  }
+  // O: the keys launch; a jump clears them
+  {
+    const { g, p1, p2 } = fresh(560);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    let up = false, keys = 0;
+    for (let i = 0; i < 240; i++) { g.step(STEP); if (p2.y < FLOOR - 20) up = true; keys = Math.max(keys, g.effects.filter(e => e.type === 'tsugumi-key').length); }
+    assert.ok(hp - p2.hp > 20 && up, 'the keys throw them up: ' + (hp - p2.hp).toFixed(1));
+    assert.ok(keys >= 5, 'the keys go down one after another: ' + keys);
+  }
+  {
+    const { g, p1, p2 } = fresh(560);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    run(g, .3);
+    p2.vy = -720;
+    run(g, .6);
+    assert.equal(hp, p2.hp, 'a jump clears the keys');
+  }
+  // 努力家: at most seven; a knockdown costs one
+  {
+    const { g, p1 } = fresh();
+    addMod(p1, 'effort', 999, { v: 9, acc: 0 });
+    for (let k = 0; k < 2; k++) { p1.cooldowns[3] = 0; g.attack(p1, 3); run(g, 2); }
+    assert.ok(effortOf(p1) <= 7, 'stars stop at seven');
+    const before = effortOf(p1);
+    p1.knocked = .5;
+    g.step(STEP); g.step(STEP);
+    assert.equal(effortOf(p1), before - 1, 'a knockdown costs one star');
+    assert.ok(g.effects.some(e => e.type === 'tsugumi-sky'), 'her stars hang over the stage');
+  }
+  // 过劳: three moves inside 6 s, then a short stall once the third is over
+  {
+    const { g, p1 } = fresh(900);
+    let stalled = false, fever = false;
+    for (const slot of [3, 4, 3]) { p1.cooldowns[slot] = 0; g.attack(p1, slot); for (let i = 0; i < 150; i++) { g.step(STEP); if (!p1.attack && p1.stun > .3) stalled = true; if (g.effects.some(e => e.type === 'tsugumi-fever')) fever = true; } }
+    assert.ok(stalled && fever, 'the third move overworks her');
+  }
+  {
+    const { g, p1 } = fresh(900);
+    let stalled = false;
+    for (const slot of [3, 4]) { p1.cooldowns[slot] = 0; g.attack(p1, slot); for (let i = 0; i < 150; i++) { g.step(STEP); if (!p1.attack && p1.stun > .3) stalled = true; } }
+    assert.ok(!stalled, 'two moves are fine');
+  }
+  // L: knocks down through a guard; the stars are spent and worth more
+  const ult = (stars: number) => {
+    const { g, p1, p2 } = fresh();
+    p1.energy = p1.energyMax;
+    if (stars) addMod(p1, 'effort', 999, { v: stars, acc: 0 });
+    const hp = p2.hp;
+    assert.equal(g.attack(p1, 5), true, '平凡之星 casts');
+    let down = false;
+    for (let i = 0; i < 360; i++) { p2.blocking = p2.stun <= 0 && p2.knocked <= 0; g.step(STEP); if (p2.knocked > 0) down = true; }
+    return { dmg: hp - p2.hp, down, left: effortOf(p1) };
+  };
+  const plain = ult(0), full = ult(7);
+  assert.ok(plain.down && plain.dmg > 65, 'the meteor knocks down through a guard: ' + plain.dmg.toFixed(1));
+  assert.ok(full.dmg - plain.dmg > 15 && full.left === 0, 'seven stars hit harder and are spent: ' + (full.dmg - plain.dmg).toFixed(1));
+  {
+    const { g, p1, p2 } = fresh();
+    p1.energy = p1.energyMax;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    run(g, 1.05);
+    p2.x = 900;
+    run(g, 1.6);
+    assert.equal(hp, p2.hp, 'walking off the marked spot clears the meteor');
+  }
+  // Every picture draws and restores the canvas.
+  {
+    let depth = 0;
+    const methods = new Map<string, (...args: unknown[]) => unknown>();
+    const ctx = new Proxy({ globalAlpha: 1 } as Record<string, unknown>, {
+      get(o, key: string) {
+        if (key in o) return o[key];
+        if (!methods.has(key)) methods.set(key, (...args: unknown[]) => {
+          for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value), `Tsugumi ${key} stays finite`);
+          if (key === 'save') depth++;
+          if (key === 'restore') depth--;
+          if (key === 'arc') assert.ok(Number(args[2]) >= 0, 'Tsugumi arc radius');
+          if (key === 'ellipse') assert.ok(Number(args[2]) >= 0 && Number(args[3]) >= 0, 'Tsugumi ellipse radii');
+          if (key === 'createLinearGradient' || key === 'createRadialGradient') return { addColorStop() {} };
+        });
+        return methods.get(key);
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    const seen = new Set<string>();
+    for (const slot of [2, 3, 4, 5]) {
+      const { g, p1, p2 } = fresh(slot === 2 ? 380 : 520);
+      p1.energy = 200;
+      g.attack(p1, slot);
+      for (let i = 0; i < 360; i++) {
+        g.step(STEP);
+        for (const e of g.effects) if (e.type.startsWith('tsugumi-')) seen.add(e.type);
+        for (const p of g.projectiles) if (p.fx === 'tsugumi-tray') { assert.ok(drawTsugumiShot(ctx, p, false), 'the tray draws'); assert.equal(depth, 0); }
+      }
+      p1.knocked = .5; g.step(STEP); g.step(STEP);
+      for (const e of g.effects) if (e.type.startsWith('tsugumi-')) seen.add(e.type);
+      void p2;
+    }
+    for (const type of ['sister', 'press', 'earn', 'sky', 'clang', 'slam', 'tear', 'key', 'chord', 'night', 'gather', 'meteor', 'spark', 'impact', 'lose']) {
+      assert.ok(seen.has('tsugumi-' + type), 'her moves spawn tsugumi-' + type);
+    }
+    seen.add('tsugumi-fever');
+    for (const lite of [false, true]) for (const dir of [-1, 1]) for (const type of seen) {
+      for (let i = 0; i <= 24; i++) {
+        const e = { type, x: 450, y: FLOOR, color: '#FFEE88', max: 1.3, life: 1.3 - i * 1.3 / 24, age: i * .05, radius: 181, dir, n: i % 8, hit: i % 2 === 0, t0: .3, tx: 120 };
+        assert.ok(drawTsugumiFx(ctx, e, lite), `Tsugumi draws ${type}`);
+        assert.equal(depth, 0, 'Tsugumi restores the canvas after ' + type);
+      }
+    }
+  }
+}
+
+// kaoru: 濑田薰。U leaps at the spot chosen at take-off, faints at the top and drops on it (knockdown; walking out of
+// the shadow clears it); I is a slow petal vortex that leaves 混乱, and a second one while still muddled adds a finger
+// snap; O is a counter (a melee swing at her is taken by her fans, who stampede the swinger; nobody swings and they
+// swoon, +15 气; 千圣 only gets half); L (100 气) shuts a giant rose round them, four petal cuts and a burst.
+{
+  const ka = at('kaoru');
+  const data = ROSTER[ka];
+  assert.ok(ka === at('kokoro') + 1, '濑田薰 sits with HHW, after 心');
+  assert.equal(data.trait, 'focus');
+  assert.equal(SHORT_NAMES.kaoru, '薰');
+  assert.ok(data.view.kind === 'sprite' && data.view.height === 191 && data.view.extras?.includes('/sprites/kaoru/fans.png'), 'Kaoru uses a 191 px sprite height and preloads the fans');
+  const fresh = (p2x = 520, foe = at('boulder')) => {
+    const g = newGame(ka, foe); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  // U: the drop lands where the shadow was and knocks down; she lies a moment, then is back on her feet
+  {
+    const { g, p1, p2 } = fresh(560);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    let down = false, high = FLOOR, lay = false;
+    for (let i = 0; i < 300; i++) { g.step(STEP); high = Math.min(high, p1.y); if (p2.knocked > 0) down = true; if (p1.attack?.mode === 4) lay = true; }
+    assert.ok(hp - p2.hp > 20 && down, 'the faint drops on them and knocks down: ' + (hp - p2.hp).toFixed(1));
+    assert.ok(high < FLOOR - 200 && lay && p1.y === FLOOR && !p1.attack, 'up high, flat on the floor, then done');
+  }
+  {
+    const { g, p1, p2 } = fresh(560);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    run(g, .35);
+    p2.x = 900;
+    run(g, 2);
+    assert.equal(hp, p2.hp, 'walking out of the shadow clears the drop');
+  }
+  // I: 混乱; a second one while still muddled adds the snap
+  {
+    const { g, p1, p2 } = fresh(520);
+    let hp = p2.hp;
+    g.attack(p1, 3);
+    run(g, 1.6);
+    const first = hp - p2.hp;
+    assert.ok(first > 10 && p2.mods.some(m => m.kind === 'confuse' && m.left > 0), 'the quote lands and muddles them: ' + first.toFixed(1));
+    hp = p2.hp;
+    p1.cooldowns[3] = 0; p2.x = 420;
+    g.attack(p1, 3);
+    run(g, 1.4);
+    assert.ok(hp - p2.hp > first + 6, 'still muddled: the snap adds to the second one: ' + (hp - p2.hp).toFixed(1));
+  }
+  // O: a swing at her is taken by the fans; nobody swings and they swoon for 气; 千圣 gets half
+  const counter = (foe: number) => {
+    const { g, p1, p2 } = fresh(370, foe);
+    const hp1 = p1.hp, hp2 = p2.hp;
+    g.attack(p1, 4);
+    run(g, .2);
+    g.attack(p2, 0);
+    run(g, 1.6);
+    assert.equal(p1.hp, hp1, 'she takes no damage from the swing');
+    return hp2 - p2.hp;
+  };
+  const full = counter(at('boulder'));
+  assert.ok(full > 18, 'the fans stampede the swinger: ' + full.toFixed(1));
+  const shy = counter(at('chisato'));
+  assert.ok(shy > 0 && shy < full * .7, '千圣 is the one they will not charge: ' + shy.toFixed(1));
+  {
+    const { g, p1 } = fresh(800);
+    p1.energy = 0;
+    g.attack(p1, 4);
+    run(g, 1.6);
+    assert.ok(p1.energy >= 15, 'nobody swings: they swoon and she gains 气 (' + p1.energy + ')');
+  }
+  // L: the rose shuts on them, cuts and the burst knock down; stepping out of the bloom clears it
+  {
+    const { g, p1, p2 } = fresh(440);
+    p1.energy = 200;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    let down = false;
+    for (let i = 0; i < 400; i++) { g.step(STEP); if (p2.knocked > 0) down = true; }
+    assert.ok(hp - p2.hp > 45 && down, 'the rose closes, the petals cut, the burst knocks down: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(440);
+    p1.energy = 200;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    run(g, .5);
+    p2.x = 900;
+    run(g, 3);
+    assert.equal(hp, p2.hp, 'out of the bloom before it shuts: nothing');
+  }
+  // Every picture draws and restores the canvas.
+  {
+    let depth = 0;
+    const methods = new Map<string, (...args: unknown[]) => unknown>();
+    const ctx = new Proxy({ globalAlpha: 1 } as Record<string, unknown>, {
+      get(o, key: string) {
+        if (key in o) return o[key];
+        if (!methods.has(key)) methods.set(key, (...args: unknown[]) => {
+          for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value), `Kaoru ${key} stays finite`);
+          if (key === 'save') depth++;
+          if (key === 'restore') depth--;
+          if (key === 'arc') assert.ok(Number(args[2]) >= 0, 'Kaoru arc radius');
+          if (key === 'ellipse') assert.ok(Number(args[2]) >= 0 && Number(args[3]) >= 0, 'Kaoru ellipse radii');
+          if (key === 'createLinearGradient' || key === 'createRadialGradient') return { addColorStop() {} };
+        });
+        return methods.get(key);
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    const seen = new Set<string>();
+    for (const [slot, x, foe] of [[2, 560, at('boulder')], [3, 520, at('boulder')], [4, 800, at('boulder')], [5, 440, at('chisato')]] as const) {
+      const { g, p1 } = fresh(x, foe);
+      p1.energy = 200;
+      g.attack(p1, slot);
+      for (let i = 0; i < 360; i++) {
+        g.step(STEP);
+        for (const e of g.effects) if (e.type.startsWith('kaoru-') && !e.type.includes('@')) seen.add(e.type);
+        for (const p of g.projectiles) if (p.fx === 'kaoru-quote') { assert.ok(drawKaoruShot(ctx, p, false), 'the quote draws'); assert.equal(depth, 0); }
+      }
+    }
+    for (const type of ['flip', 'mark', 'birds', 'faint', 'land', 'pose', 'fans', 'swoon', 'spot', 'rose', 'snap', 'storm', 'bloom', 'blush']) {
+      assert.ok(seen.has('kaoru-' + type), 'her moves spawn kaoru-' + type);
+    }
+    seen.add('kaoru-rush'); seen.add('kaoru-shy');
+    for (const lite of [false, true]) for (const dir of [-1, 1]) for (const type of seen) {
+      for (let i = 0; i <= 24; i++) {
+        const e = { type, x: 450, y: FLOOR, color: '#AA33CC', max: 1.3, life: 1.3 - i * 1.3 / 24, radius: 120, dir, n: i % 4, hit: i % 2 === 0, t0: .3, tx: 120 * dir, ox: 8 * dir };
+        assert.ok(drawKaoruFx(ctx, e, lite), `Kaoru draws ${type}`);
+        assert.equal(depth, 0, 'Kaoru restores the canvas after ' + type);
+      }
+    }
+  }
+}
+
+// maya: 大和麻弥。U alternates: odd casts send the 呼嘿嘿 wave that roots ~0.8 s in 'maya-shiver', even casts the 哦吼吼
+// fan that knocks down; I is a grab that talks at them for two seconds and leaves 沉默 ('maya-gearhead'); O sends Leo
+// along the floor (knockdown, a jump clears him) while she leaps back with invuln and bows on landing; L (150 气) puts
+// up the console, the bass wave catches a body (a guard or a jump stops it), then nine beats, the last knocks down.
+{
+  const ma = at('maya');
+  const data = ROSTER[ma];
+  assert.ok(ma === at('chisato') + 1, '大和麻弥 sits with Pastel*Palettes, after 千圣');
+  assert.equal(data.trait, 'beat', 'a drummer');
+  assert.equal(SHORT_NAMES.maya, '麻弥');
+  assert.ok(data.skills[3].superArmor, '器材宅讲座 wears 霸体');
+  assert.ok(data.skills[2].superArmor && data.skills[2].cd === 4, '双调怪笑 wears 霸体 on a 4 s cooldown');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/maya/leo.png') && data.view.extras.includes('/sprites/maya/console.png'), 'Leo and the console are preloaded pictures');
+  assert.ok(!!STATUS_MARKS['maya-shiver'] && !!STATUS_MARKS['maya-gearhead'], 'her 定身 and 沉默 looks are registered');
+  const fresh = (p2x = 520) => {
+    const g = newGame(ma, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  // U: the first cast roots in the shiver, the second knocks down; the movelist colour follows
+  {
+    const { g, p1, p2 } = fresh(560);
+    assert.equal(RIMI_SCRIPTS['maya-laugh'] && SLOT_TINTS['maya-laugh']?.(p1), '#99DD88', 'the first laugh is the green one');
+    g.attack(p1, 2);
+    let held = 0, look = false;
+    for (let i = 0; i < 240; i++) { g.step(STEP); if (p2.root > 0) { held += STEP; if (p2.rootMark === 'maya-shiver') look = true; } }
+    assert.ok(held > .6 && held < 1, '呼嘿嘿 roots about 0.8 s: ' + held.toFixed(2));
+    assert.ok(look, 'in the shiver');
+    assert.equal(SLOT_TINTS['maya-laugh']?.(p1), '#ffa8c8', 'the next laugh is the pink one');
+    p1.cooldowns[2] = 0;
+    p2.x = p1.x + 150; p2.root = 0;
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    let down = false;
+    for (let i = 0; i < 120; i++) { g.step(STEP); if (p2.knocked > 0) down = true; }
+    assert.ok(down && hp - p2.hp > 15, '哦吼吼 knocks down: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(560);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    run(g, .25);
+    p2.vy = -720;
+    run(g, .9);
+    assert.equal(hp, p2.hp, 'a jump clears the wave');
+  }
+  // I: talked at, five ticks, then 沉默 for about 3 s
+  {
+    const { g, p1, p2 } = fresh(390);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    let quiet = 0;
+    for (let i = 0; i < 840; i++) { g.step(STEP); if (p2.mods.some(m => m.kind === 'silence' && m.left > 0 && m.mark === 'maya-gearhead')) quiet += STEP; }
+    assert.ok(hp - p2.hp > 14 && hp - p2.hp < 22, 'five ticks of 4 (the boulder shrugs some off): ' + (hp - p2.hp).toFixed(1));
+    assert.ok(quiet > 2.8 && quiet < 3.3, 'silenced about 3 s after the talk: ' + quiet.toFixed(2));
+  }
+  // O: she leaps back untouchable, Leo knocks them down, she bows on the floor
+  {
+    const { g, p1, p2 } = fresh(620);
+    const x0 = p1.x, hp = p2.hp;
+    g.attack(p1, 4);
+    run(g, .2);
+    assert.ok(p1.invuln > 0 && p1.y < FLOOR - 5, 'the startled leap is in the air and untouchable');
+    let down = false, bowed = false;
+    for (let i = 0; i < 240; i++) { g.step(STEP); if (p2.knocked > 0) down = true; if (p1.attack?.mode === 2) bowed = true; }
+    assert.ok(p1.x < x0 - 120, 'she lands well back: ' + (x0 - p1.x).toFixed(0));
+    assert.ok(bowed && p1.y >= FLOOR - .5, 'and bows on the floor');
+    assert.ok(down && hp - p2.hp > 20, 'Leo knocks them down: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(620);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    run(g, .15);
+    p2.vy = -760;
+    run(g, .5);
+    assert.equal(hp, p2.hp, 'a jump clears Leo');
+  }
+  // L: 150 气; the bass wave catches, nine beats, knocked down; a guard turns the wave and nothing follows
+  {
+    const { g, p1, p2 } = fresh();
+    assert.equal(p1.energyMax, 150);
+    p1.energy = 149;
+    assert.equal(g.attack(p1, 5), false, '149 energy cannot cast the show');
+    p1.energy = 150;
+    const hp = p2.hp;
+    assert.equal(g.attack(p1, 5), true, '150 energy casts the show');
+    let down = false;
+    for (let i = 0; i < 600; i++) { g.step(STEP); if (p2.knocked > 0) down = true; }
+    assert.ok(down && hp - p2.hp > 140, 'nine beats and the spark fall: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh();
+    p1.energy = 150;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    for (let i = 0; i < 600; i++) { p2.blocking = true; g.step(STEP); }
+    assert.ok(hp - p2.hp < 20, 'a guard stops the wave and the show plays to an empty stage: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    // The thump shoves a close foe back without holding them; guarding the moment the stun ends is in time.
+    const { g, p1, p2 } = fresh(380);
+    p1.energy = 150;
+    const x0 = p2.x, hp = p2.hp;
+    g.attack(p1, 5);
+    run(g, .35);
+    assert.ok(p2.x > x0 + 90, 'the thump shoves them back: ' + (p2.x - x0).toFixed(0));
+    for (let i = 0; i < 600; i++) { if (p2.stun <= 0) p2.blocking = true; g.step(STEP); }
+    assert.ok(hp - p2.hp < 20, 'a guard after the shove stops the show: ' + (hp - p2.hp).toFixed(1));
+  }
+  // Every picture draws and restores the canvas, and every effect her moves spawn is one of hers.
+  {
+    let depth = 0;
+    const methods = new Map<string, (...args: unknown[]) => unknown>();
+    const ctx = new Proxy({ globalAlpha: 1 } as Record<string, unknown>, {
+      get(o, key: string) {
+        if (key in o) return o[key];
+        if (!methods.has(key)) methods.set(key, (...args: unknown[]) => {
+          for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value), `Maya ${key} stays finite`);
+          if (key === 'save') depth++;
+          if (key === 'restore') depth--;
+          if (key === 'arc') assert.ok(Number(args[2]) >= 0, 'Maya arc radius');
+          if (key === 'ellipse') assert.ok(Number(args[2]) >= 0 && Number(args[3]) >= 0, 'Maya ellipse radii');
+          if (key === 'createLinearGradient' || key === 'createRadialGradient') return { addColorStop() {} };
+        });
+        return methods.get(key);
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    const seen = new Set<string>();
+    const shots = new Set<string>();
+    for (const slot of [2, 2, 3, 4, 5]) {
+      const { g, p1, p2 } = fresh(slot === 3 ? 390 : 520);
+      p1.energy = 200;
+      if (slot === 2 && seen.has('maya-glint')) addMod(p1, 'laugh', 999, { v: 1 });
+      g.attack(p1, slot);
+      for (let i = 0; i < 600; i++) {
+        g.step(STEP);
+        for (const e of g.effects) if (e.type.startsWith('maya-') && !e.type.includes('@')) seen.add(e.type);
+        for (const p of g.projectiles) if (p.fx.startsWith('maya-')) shots.add(p.fx);
+      }
+      void p2;
+    }
+    for (const type of ['glint', 'ohoho', 'orbit', 'chatter', 'sparkle-eyes', 'tick', 'steam', 'startle', 'bark', 'pounce', 'leo-off', 'sweat', 'dim', 'stagewave', 'repel', 'console', 'faders', 'bass', 'beam', 'laser', 'co2', 'spark', 'confetti']) {
+      assert.ok(seen.has('maya-' + type), 'her moves spawn maya-' + type);
+    }
+    assert.ok(shots.has('maya-laugh') && shots.has('maya-leo-dog'), 'the wave and Leo fly as shots');
+    for (const lite of [false, true]) for (const dir of [-1, 1]) for (const type of seen) {
+      for (let i = 0; i <= 24; i++) {
+        const e = { type, x: 450, y: FLOOR - 90, color: '#99DD88', max: 1.3, life: 1.3 - i * 1.3 / 24, age: i * .05, radius: 190, dir, n: i % 3 };
+        assert.ok(drawMayaFx(ctx, e, lite), `Maya draws ${type}`);
+        assert.equal(depth, 0, 'Maya restores the canvas after ' + type);
+      }
+    }
+    for (const fx of shots) for (let i = 0; i <= 12; i++) {
+      const p = { fx, x: 450, y: FLOOR - 90, vx: i % 2 ? 400 : -400, vy: 0, life: 1.2 - i * .1, age: i * .1 } as unknown as Parameters<typeof drawMayaShot>[1];
+      assert.ok(drawMayaShot(ctx, p, undefined, i % 2 === 0), 'Maya draws the shot ' + fx);
+      assert.equal(depth, 0, 'Maya restores the canvas after the shot ' + fx);
+    }
+  }
+}
+
 // hagumi: 北泽育美。U sprints to the wall and back, through a body each way (霸体, ground only); I pitches a hot
 // croquette that 烧焦s, and a miss lies on the floor for her to eat (HP + 气); O rides 米歇尔 and runs them over
 // (knocked down, ground only); L rains croquettes on a patch (eight hits) and buries them under a giant one.
 {
   const hg = at('hagumi');
   const data = ROSTER[hg];
-  assert.ok(hg === at('kokoro') + 1 && hg === at('kanon') - 1, '北泽育美 sits with HHW, between 心 and 花音');
+  assert.ok(hg === at('kaoru') + 1 && hg === at('kanon') - 1, '北泽育美 sits with HHW, between 薰 and 花音');
   assert.equal(data.trait, 'rush', 'she runs');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/hagumi/croquette.png') && data.view.extras.includes('/sprites/misaki/michelle.png'), 'the croquette and 米歇尔 are preloaded pictures');
   assert.ok(data.skills[2].superArmor && data.skills[4].superArmor && data.skills[5].superArmor, 'U, O and L wear 霸体');
@@ -11719,6 +12183,180 @@ for (const order of [[2, 3], [3, 2]]) {
   const close = hubSrc.slice(hubSrc.indexOf('export function closeHub'), hubSrc.indexOf('export function bindHub'));
   assert.ok(!/fadeOut|animate\(|setTimeout|requestAnimationFrame/.test(close), 'closing the hub has no fade, animation or timer');
   assert.ok(/hub\.hidden = true;/.test(close) && /removeAttribute\('inert'\)/.test(close), 'closing the hub hides it and hands taps back to the lobby in the same tick');
+}
+
+// rui: 八潮瑠唯。U is one straight thrust — 脆弱 on a clean hit, a heavy 削防 on a guard, a jump clears it; I is the council
+// seal (沉默 in the 'rui-seal' look); O is thrown and done (脱手技, a walk drops the recovery) while chocolate rains on the patch
+// ahead on its own clock — a jump does not help, walking off does; L lays five
+// strings that reach the air too, then the floor resonance that knocks down — a jump as the colour comes in clears it —
+// on a plan that breaks at the fifth string.
+// 绷住了: 混乱 never lands on her, and 透子's laugh frails her half as long.
+{
+  const ri = at('rui');
+  const data = ROSTER[ri];
+  assert.ok(ri === at('tsukushi') + 1, '八潮瑠唯 sits with Morfonica, after 筑紫');
+  assert.equal(data.trait, 'focus', 'cool and steady');
+  assert.ok(data.unfazed?.status.includes('confuse'), 'she does not crack');
+  assert.ok(!!STATUS_MARKS['rui-seal'], 'her 沉默 look is registered');
+  const fresh = (p2x = 520) => {
+    const g = newGame(ri, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  // U: the thrust
+  {
+    const { g, p1, p2 } = fresh(500);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    let frail = 0;
+    for (let i = 0; i < 90; i++) { g.step(STEP); frail = Math.max(frail, p2.frail); }
+    assert.ok(hp - p2.hp > 8, 'the point lands from range: ' + (hp - p2.hp).toFixed(1));
+    assert.ok(frail > 2 && Math.abs(p2.frailBonus - .2) < 1e-9, 'and leaves them 脆弱: ' + frail.toFixed(2));
+  }
+  {
+    const { g, p1, p2 } = fresh(500);
+    g.keyDown('ArrowDown'); run(g, .1);
+    const guard = p2.guard;
+    g.attack(p1, 2);
+    run(g, .6);
+    assert.ok(guard - p2.guard >= 35, 'a guard holds it and pays: ' + (guard - p2.guard).toFixed(1));
+    assert.equal(p2.frail, 0, 'no 脆弱 through a guard');
+  }
+  {
+    const { g, p1, p2 } = fresh(500);
+    const hp = p2.hp;
+    p2.vy = -720; run(g, .06);
+    g.attack(p1, 2);
+    run(g, .75);
+    assert.equal(p2.hp, hp, 'a jump clears the thrust');
+  }
+  // I: the seal
+  {
+    const { g, p1, p2 } = fresh(560);
+    g.attack(p1, 3);
+    let sealed = false;
+    for (let i = 0; i < 180; i++) { g.step(STEP); if (p2.mods.some(m => m.kind === 'silence' && m.left > 0 && m.mark === 'rui-seal')) sealed = true; }
+    assert.ok(sealed, 'the council seal silences them in her look');
+    assert.ok(!g.canAttack(p2, 2), 'they cannot cast while sealed');
+  }
+  // O: the chocolate rain
+  {
+    const { g, p1, p2 } = fresh(560);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    let airHit = false, last = p2.hp, shadow = false;
+    for (let i = 0; i < 220; i++) {
+      if (i === 70) p2.vy = -720;
+      g.step(STEP);
+      if (p2.hp < last && p2.y < FLOOR - 20) airHit = true;
+      last = p2.hp;
+      if (g.effects.some(e => e.type === 'rui-shadow')) shadow = true;
+    }
+    assert.ok(shadow, 'the shadow warns first');
+    assert.ok(airHit, 'a jump does not get out from under it');
+    assert.ok(hp - p2.hp > 25, 'the boxes land: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(560);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    run(g, .45);
+    p2.x = 900;
+    run(g, 1.3);
+    assert.equal(p2.hp, hp, 'walking off the shadow clears it');
+  }
+  {
+    const { g, p1, p2 } = fresh(560);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    run(g, .36);
+    assert.ok(p1.attack, 'right after the throw she is still in the pose');
+    g.keyDown('KeyA'); run(g, .05);
+    assert.equal(p1.attack, null, 'a walk drops the recovery at once');
+    run(g, .3);
+    g.keyUp('KeyA');
+    assert.ok(p1.x < 300, 'and she walks away');
+    run(g, 1.2);
+    assert.ok(hp - p2.hp > 25, 'the rain keeps falling without her: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1 } = fresh(560);
+    g.attack(p1, 4);
+    run(g, .65);
+    assert.equal(p1.attack, null, 'standing still she is free in well under a second');
+  }
+  // L: five strings and the resonance
+  {
+    const { g, p1 } = fresh();
+    assert.equal(p1.energyMax, 120);
+    p1.energy = 119;
+    assert.equal(g.attack(p1, 5), false, '119 energy cannot cast it');
+    p1.energy = 120;
+    assert.equal(g.attack(p1, 5), true, '120 energy casts it');
+  }
+  const ult = (mode: 'stand' | 'jump' | 'block') => {
+    const { g, p1, p2 } = fresh();
+    if (mode === 'block') { g.keyDown('ArrowDown'); run(g, .1); }
+    p1.energy = p1.energyMax;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    let down = false, broke = false;
+    for (let i = 0; i < 420; i++) {
+      if (mode === 'jump' && i === 240) p2.vy = -720;
+      g.step(STEP);
+      if (p2.knocked > 0) down = true;
+      if (p2.guardBroken > 0) broke = true;
+    }
+    return { dmg: hp - p2.hp, down, broke };
+  };
+  const plain = ult('stand'), hop = ult('jump'), held = ult('block');
+  assert.ok(plain.down && plain.dmg > 80, 'every string and the resonance land: ' + plain.dmg.toFixed(1));
+  assert.ok(!hop.down && hop.dmg < plain.dmg - 25 && hop.dmg > 40, 'the strings land in the air, a jump clears the resonance: ' + hop.dmg.toFixed(1) + ' / ' + plain.dmg.toFixed(1));
+  assert.ok(held.broke && held.down && held.dmg < plain.dmg, 'a held guard breaks on the fifth string: ' + held.dmg.toFixed(1));
+  // Every graphic draws through its whole life without NaN, and no blend mode leaks out.
+  {
+    const bad: string[] = [];
+    const ctx = new Proxy({ globalAlpha: 1, globalCompositeOperation: 'source-over' } as Record<string, unknown>, {
+      get(o, key: string) {
+        if (key in o) return o[key];
+        if (key === 'createLinearGradient' || key === 'createRadialGradient') return () => ({ addColorStop() {} });
+        return (...args: unknown[]) => { if (args.some(v => typeof v === 'number' && !Number.isFinite(v))) bad.push(key); };
+      },
+      set(o, key: string, value) { if (typeof value === 'number' && !Number.isFinite(value)) bad.push(key); o[key] = value; return true; },
+    }) as unknown as CanvasRenderingContext2D;
+    const kinds: [string, number, Partial<Effect>][] = [
+      ['rui-thrust', .32, { radius: 220 }], ['rui-pierce', .45, { n: 1 }], ['rui-shadow', 1.3, { radius: 110 }],
+      ['rui-box', .9, { t0: .45, n: 0 }], ['rui-box', 1.2, { t0: .5, n: 1 }], ['rui-grey', 2.55, {}],
+      ['rui-strings', 2.9, { radius: 560 }], ['rui-wave', .8, { radius: 560 }], ['unfazed', .5, {}],
+    ];
+    for (const lite of [false, true]) for (const dir of [-1, 1]) for (const [type, max, extra] of kinds) {
+      for (let k = 0; k <= 20; k++) {
+        assert.ok(drawRuiFx(ctx, { type, x: 400, y: FLOOR, color: '#669988', max, life: max * (1 - k / 20) + .001, dir, ...extra }, lite), type + ' is hers');
+        assert.equal(ctx.globalCompositeOperation, 'source-over', type + ' leaves the blend mode alone');
+      }
+    }
+    for (let k = 0; k < 10; k++) drawRuiShot(ctx, { fx: 'rui-seal', x: 400, y: 300, vx: 520, vy: 0, life: 1 - k / 10, age: k / 10, size: 46 } as never, false);
+    auraRuiSeal(ctx, newGame(ri, at('boulder')).fighters[0], 181, 1, 3);
+    assert.equal(bad.length, 0, 'no NaN reaches the canvas: ' + bad.join(','));
+  }
+  // 绷住了
+  {
+    const g = newGame(at('nanami'), ri); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 480; p1.facing = 1; p2.facing = -1;
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    let confused = false, shrug = false;
+    for (let i = 0; i < 240; i++) { g.step(STEP); if (hasStatus(p2, 'confuse')) confused = true; if (g.effects.some(e => e.type === 'unfazed')) shrug = true; }
+    assert.ok(p2.hp < hp && !confused && shrug, 'the bubbles hit her and she does not crack');
+  }
+  {
+    const g = newGame(at('toko'), ri); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 480; p1.facing = 1; p2.facing = -1;
+    g.attack(p1, 4);
+    let frail = 0;
+    for (let i = 0; i < 120; i++) { g.step(STEP); frail = Math.max(frail, p2.frail); }
+    assert.ok(frail > 1.5 && frail <= 2.01, '透子 laughs and it lasts half as long: ' + frail.toFixed(2));
+  }
 }
 
 await checkHub();

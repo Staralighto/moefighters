@@ -1290,6 +1290,8 @@ export class FightGame {
         f.attack = null;
         if (!blockHeld) f.blockLeft = Math.max(f.blockLeft, BLOCK_MIN);
         f.blockBuffer = 0;
+      } else if (move && grounded && SCRIPTS[f.attack.skill.fx]?.walkCancel) {
+        f.attack = null;
       }
     }
 

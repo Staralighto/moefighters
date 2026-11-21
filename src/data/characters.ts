@@ -1150,6 +1150,57 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'kaoru', name: '濑田薰', title: '吉他 / 哈卡奈', quote: '啊……儚い。', color: '#AA33CC',
+    bands: ['hello-happy'],
+    ...stats('focus'),
+    view: {
+      kind: 'sprite', common: '/sprites/kaoru/common.png', special: '/sprites/kaoru/special.png', height: 191, lift: 5,
+      // 小猫咪亲卫队: the fans are one shared sheet (cheering row, swooning row); everything else is drawn by kaoruFx.ts.
+      extras: ['/sprites/kaoru/fans.png'],
+    },
+    // 濑田薰（萌娘百科）: Hello, Happy World! 的吉他手，羽丘「王子」，口癖「儚い」（别号哈卡奈），管粉丝叫小猫咪，身边永远
+    // 围着迷妹（里美、绯玛丽是后援团铁粉）；背莎士比亚却一句不懂，被追问就「つまり、そういうことさ」；恐高，跳伞时念着
+    // 不会飞的鸟的名字在空中微笑着昏了过去；千圣一声「小薰」就破功。全部空手（src/game/kaoru.ts、render/kaoruFx.ts）。
+    // 彩蛋：迷妹不敢冲千圣（反击减半），对千圣谢幕会脸红。
+    skills: [
+      // 王子之礼 (羽丘的王子).
+      skill(0, 'light', '王子之礼'),
+      // 谢幕回旋踢 (演剧部的主演).
+      skill(1, 'heavy', '谢幕回旋踢'),
+      // 高空微笑坠落 (萌娘百科: 恐高却被心拉去跳伞，念着不会飞的鸟的名字在空中微笑着昏了过去).
+      skill(2, 'endure', '高空微笑坠落', {
+        damage: 26, range: 86, start: .22, duration: 1.95, cd: 9, fx: 'kaoru-fall', knock: 200, gain: 4,
+        react: { kind: 'knockdown', vy: -260, knocked: .8 },
+        brief: '跳向对手昏倒砸下击倒；看影子躲，落地躺一下',
+        detail: '优雅起跳飞向对手，在空中吓得微笑昏倒，直挺挺砸在起跳时选定的落点，周围 26 伤害并击倒；地上的影子就是落点，走开可躲，可格挡；昏倒和下坠时被打不会中断；落地后躺 0.4 秒，是破绽',
+      }),
+      // 似懂非懂的名言 (萌娘百科 / niconico: 引用莎士比亚却不懂意思，被追问就「つまり、そういうことさ」).
+      skill(3, 'projectile', '似懂非懂的名言', {
+        damage: 14, speed: 250, size: 58, life: 2.2, start: .3, duration: .7, cd: 8, knock: 60, gain: 3, fx: 'kaoru-quote',
+        solid: false,
+        status: [{ kind: 'confuse', time: 1.5, mark: 'kaoru-quote' }],
+        react: { kind: 'stand', stun: .3 },
+        brief: '慢速花瓣漩涡使对手混乱；已混乱再中追加响指',
+        detail: '抚胸朗诵，一团紫色花瓣漩涡缓缓飘出，命中 14 伤害并混乱 1.5 秒（左右方向颠倒）；对手已处于混乱时再中，她随后打个响指追加 10 伤害；可格挡，格挡不混乱',
+      }),
+      // 小猫咪亲卫队 (萌娘百科: 在羽丘总是被迷妹围住；里美、绯玛丽是后援团铁粉).
+      skill(4, 'endure', '小猫咪亲卫队', {
+        damage: 24, range: 0, start: .9, duration: 1.35, cd: 10, fx: 'kaoru-fans', knock: 380, gain: 4,
+        react: { kind: 'knockdown', vy: -220, knocked: .8 },
+        brief: '迷妹围住她；被近身打则冲出推飞，没人打就回气',
+        detail: '张开双臂，迷妹们在身后探出 0.9 秒：期间被近身攻击则她不受伤，迷妹尖叫着冲出去把攻击者推飞，24 伤害并击倒；没人攻击则迷妹幸福地昏倒，她回 15 气；飞行道具、抓投和必杀照常命中',
+      }),
+      // 虚幻蔷薇·终幕 (口癖「儚い」: 转瞬即逝的东西最美).
+      skill(5, 'endure', '虚幻蔷薇·终幕', {
+        damage: 5, range: 92, start: .4, duration: 2.5, knock: 0, gain: 2, fx: 'kaoru-rose', superArmor: true, noBlock: true, holdEndure: true,
+        react: { kind: 'stand', stun: .4 },
+        finale: { damage: 60, knock: 360, react: { kind: 'knockdown', vy: -320, knocked: 1 } },
+        brief: '蔷薇裹住对手化作花瓣风暴；跳起可躲，不能格挡',
+        detail: '霸体，追光落下，对手脚下绽开一朵巨大紫蔷薇，0.3 秒后合拢把站在花里的对手裹住；她背身打响指，蔷薇碎成花瓣风暴四段各 5 伤害，最后炸开 60 伤害并击倒；绽放时跳起或走出花外可躲；不能格挡',
+      }),
+    ],
+  },
+  {
     id: 'hagumi', name: '北泽育美', title: '贝斯 / 可乐饼大王', quote: 'Happy! Lucky! Smile! Yeah!', color: '#FF9922',
     bands: ['hello-happy'],
     ...stats('rush'),
@@ -1514,6 +1565,55 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    id: 'maya', name: '大和麻弥', title: '鼓手 / 器材宅', quote: '被器材包围的时候，就是最幸福的时候！呼嘿嘿……', color: '#99DD88',
+    bands: ['pastel-palettes'],
+    ...stats('beat'),
+    view: {
+      kind: 'sprite', common: '/sprites/maya/common.png', special: '/sprites/maya/special.png', height: 178, lift: 5,
+      extras: ['/sprites/maya/leo.png', '/sprites/maya/console.png'],
+    },
+    // 大和麻弥（萌娘百科）: Pastel*Palettes 的鼓手，别号狂乱的器材宅 / 12321（やまとまや 正读倒读一样）；笑声「呼嘿嘿（フヘヘ）」，
+    // 被千圣禁止后改成「哦吼吼（オホホ）」；原本是事务所技术人员和学校演艺部的后台技术担当；怕狗（被千圣家金毛 Leo 舔了，对着狗道歉）。
+    // 全部空手；Leo 和调音台各一张 PNG，其余特效由 mayaFx.ts 绘制（src/game/maya.ts）。
+    skills: [
+      // 试音 (技术员出身).
+      skill(0, 'light', '试音'),
+      // 四拍起手 (鼓手数拍).
+      skill(1, 'heavy', '四拍起手'),
+      // 双调怪笑 (maya.ts, 「呼嘿嘿」/ 被千圣禁止后的「哦吼吼」): odd casts a shivering wave (定身), even casts a fan (击倒).
+      skill(2, 'projectile', '双调怪笑', {
+        damage: 18, speed: 420, size: 60, life: 1.2, start: .3, duration: .6, cd: 4, knock: 0, fx: 'maya-laugh', root: .8, superArmor: true,
+        brief: '霸体：单数声波定身，双数近身击倒；可格挡可跳过',
+        detail: '单数次放出中程声波，命中定身 0.8 秒；双数次改为身前扇形，24 伤害并击倒，被格挡时只推开；两种交替，技能键边框颜色提示下一次（绿 / 粉）；出招霸体；可格挡，跳起可躲',
+      }),
+      // 器材宅讲座 (maya.ts, 「被器材包围的时候最幸福」, 一聊器材就滔滔不绝): held and talked at until the head smokes (沉默).
+      skill(3, 'grab', '器材宅讲座', {
+        damage: 4, count: 5, range: 96, start: .22, duration: 2.5, cd: 12, knock: 0, fx: 'maya-lecture', noSparks: true, superArmor: true,
+        react: { kind: 'pin', stun: .3, holdStill: true },
+        status: [{ kind: 'silence', time: 3, mark: 'maya-gearhead' }],
+        brief: '霸体抓投：讲器材连打，放开后沉默；跳起可躲',
+        detail: '抓住身前对手讲器材 2 秒，五段各 4 伤害，放开后沉默 3 秒（不能用 U / I / O / L）；全程霸体；跳起可躲',
+      }),
+      // 金毛惊魂 (maya.ts, 怕狗; 四格《我我我我不怕……》): Leo bursts out ahead, she leaps back, then bows to the dog.
+      skill(4, 'dash', '金毛惊魂', {
+        damage: 30, range: 0, speed: 640, size: 80, life: 1.4, start: .12, duration: .95, cd: 10, invuln: .35, knock: 260, fx: 'maya-leo',
+        react: { kind: 'knockdown', vy: -220, knocked: .6 },
+        brief: '后跳闪避，金毛冲撞击倒；可格挡可跳过，收招有破绽',
+        detail: '向后大跳，起跳无敌 0.35 秒；金毛贴地冲出，30 伤害并击倒；可格挡，跳起可躲；落地鞠躬 0.3 秒，期间可被打',
+      }),
+      // 幕后演出·全开 (maya.ts, 后台技术担当 / 演出团队; 1-2-3-2-1 是名字的回文): faders up, the bass wave checks for a body,
+      // then lights, lasers, CO2 and the cold-spark fall in beats of 1, 2, 3, 2, 1.
+      skill(5, 'projectile', '幕后演出·全开', {
+        cost: 150, damage: 14, count: 9, range: 0, start: .55, duration: 3.6, knock: 0, gain: 2, fx: 'maya-show', superArmor: true, noSparks: true,
+        guardDmg: 30,
+        react: { kind: 'pin', stun: .4, holdStill: true },
+        finale: { damage: 50, knock: 360, react: { kind: 'knockdown', vy: -320, knocked: 1 }, shake: 8 },
+        brief: '震开后低音波打中再九段连打，霸体；可格挡可跳过',
+        detail: '先震开身边的对手（4 伤害，硬直 0.3 秒，不可格挡），再推出贴地低音冲击波；打中后锁定对手：光束、激光、CO2 按 2、3、2 段连打，前八段各 14 伤害，CO2 命中减速 1.5 秒，末段冷焰火 50 伤害击飞；冲击波可格挡，跳起可躲，没打中只放灯光；控台阶段霸体',
+      }),
+    ],
+  },
+  {
     id: 'mitake', name: '美竹兰', title: '主唱 / 挑染', quote: 'いつも通り、行こう。', color: '#EE0022',
     bands: ['afterglow'],
     ...stats('rush'),
@@ -1698,6 +1798,57 @@ export const ROSTER: CharacterData[] = [
         finale: { damage: 66, knock: 380, react: { kind: 'knockdown', vy: -340, knocked: 1 } },
         brief: '扛神轿三撞推向版边，上抛直拳击倒；霸体，跳起可躲',
         detail: '提灯亮起后扛起神轿前冲，撞上对手后顶着推向版边连撞三下，第三撞不可格挡；最后上抛直拳击倒，夜空炸开巴纹烟花；没撞到人则在前方出拳，伤害较低；全程霸体，跳起可躲',
+      }),
+    ],
+  },
+  {
+    id: 'tsugumi', name: '羽泽鸫', title: '键盘 / 伟大的平凡', quote: '为了能和大家站在一起，我会更努力的！', color: '#FFEE88',
+    bands: ['afterglow'],
+    ...stats('focus'),
+    view: {
+      kind: 'sprite', common: '/sprites/tsugumi/common.png', special: '/sprites/tsugumi/special.png', height: 181, lift: 5,
+      // 冰川夹心: 纱夜 and 日菜 walk in on their own standing cells; 银盘回旋's tray is its own PNG.
+      extras: ['/sprites/tsugumi/tray.png', '/sprites/sayo/common.png', '/sprites/hina/common.png'],
+    },
+    // 羽泽鸫（萌娘百科）: Afterglow 的键盘手，别号「伟大的普通人」（B 站「初印象：平凡 / 现印象：伟大的平凡」）；羽泽咖啡店的
+    // 看板娘、羽丘学生会长、努力家，对冰川家有独特的吸引力（冰川三明治不可避），曾因为过分工作而倒下，特技是训练后最快
+    // 找到最亮的星星。全部空手（O 是空气琴键）；托盘一张 PNG，纱夜 / 日菜用她们自己的站立格，其余由 tsugumiFx.ts 绘制
+    // （src/game/tsugumi.ts）。被动「努力家」：U / I / O 每命中一次亮一颗星，最多 7 颗，被击倒掉一颗，平凡之星全部用掉；
+    // 6 秒内放满 3 个特殊技会过劳僵住一下。
+    skills: [
+      // 看板娘轻击 (萌娘百科: 羽泽咖啡店的看板娘).
+      skill(0, 'light', '看板娘轻击'),
+      // 会长正蹬 (萌娘百科: 高三接任羽丘学生会长).
+      skill(1, 'heavy', '会长正蹬'),
+      // 冰川夹心 (萌娘百科: 冰川三明治不可避; B 站「当日菜知道姐姐有女朋友的时候」): the sisters squeeze them instead of her.
+      skill(2, 'grab', '冰川夹心', {
+        damage: 10, range: 70, speed: 560, start: .16, duration: 1.4, cd: 9, fx: 'tsugumi-squeeze', knock: 0, gain: 4,
+        react: { kind: 'pin', stun: .3, holdStill: true },
+        finale: { damage: 12, knock: 120, root: 1, rootPin: true, rootBreak: 1, react: { kind: 'stand', stun: .3 } },
+        brief: '前冲抓人，纱夜日菜两侧夹扁两下并定身',
+        detail: '前冲抓取，纱夜和日菜从两侧滑入把对手夹在中间挤两下：10 伤害，再 12 伤害并定身 1 秒（再受击一次解除）；抓投不吃格挡，跳起可躲',
+      }),
+      // 银盘回旋 (萌娘百科: 羽泽咖啡店的看板娘): the silver tray, out and back.
+      skill(3, 'projectile', '银盘回旋', {
+        damage: 14, speed: 560, size: 50, life: 1.3, start: .26, duration: .6, cd: 8, knock: 60, fx: 'tsugumi-tray',
+        react: { kind: 'stand', stun: .3 },
+        brief: '银托盘飞出再旋回，去回各打一次；可挡可跳',
+        detail: '甩出招牌银托盘水平旋转飞出，飞到尽头折返，去程和回程各 14 伤害，回程能打到身后；可格挡，跳起可躲',
+      }),
+      // 琴键重锤 (B 站手书「练琴中出错的 tsugu」: 指节好痛; 萌娘百科: 努力家): a wrong note and both fists down.
+      skill(4, 'endure', '琴键重锤', {
+        damage: 24, range: 340, start: .32, duration: 1, cd: 10, knock: 160, fx: 'tsugumi-keys', gain: 4,
+        react: { kind: 'launch', vy: -420, knocked: .8 },
+        brief: '双拳砸下，琴键光板沿地面掀飞；可挡可跳',
+        detail: '弹错后懊恼地双拳砸下，七块琴键光板沿地面依次按下推出 340 距离，碰到的对手 24 伤害并掀飞；可格挡，跳起可躲',
+      }),
+      // 平凡之星 (萌娘百科别号「伟大的普通人」, 特技: 训练之后最快找出最亮的星星): night, the stars she earned, one meteor.
+      skill(5, 'endure', '平凡之星', {
+        damage: 6, range: 120, start: .4, duration: 2.4, knock: 0, gain: 2, fx: 'tsugumi-star', superArmor: true, noBlock: true, holdEndure: true,
+        react: { kind: 'stand', stun: .4 },
+        finale: { damage: 70, knock: 380, react: { kind: 'knockdown', vy: -320, knocked: 1 } },
+        brief: '星星汇成流星砸下击倒；不能格挡，努力星加伤',
+        detail: '霸体指向夜空，星星汇成最亮的一颗：先落下三颗小流星各 6 伤害，再砸下 70 伤害并击倒，每颗努力星再加 4 伤害；落点锁定在对手当时的位置，走开可躲；不能格挡',
       }),
     ],
   },
@@ -1963,7 +2114,7 @@ export const ROSTER: CharacterData[] = [
       // 笑到你破防 (toko.ts, B 站「正在嘲笑你的辣妹」): pointing and laughing; whoever it reaches takes more from everything.
       skill(4, 'light', '笑到你破防', {
         damage: 10, range: 300, start: .3, duration: .75, cd: 6, knock: 40, fx: 'toko-laugh',
-        frail: 4, frailBonus: .25, react: { kind: 'stand', stun: .25 },
+        frail: 4, frailBonus: .25, laugh: true, react: { kind: 'stand', stun: .25 },
         brief: '指着大笑，身前对手脆弱；可挡可跳',
         detail: '指着对手大笑，身前较长距离 10 伤害并脆弱 4 秒（受伤 +25%）；可格挡，跳起可躲',
       }),
@@ -2071,6 +2222,56 @@ export const ROSTER: CharacterData[] = [
         finale: { knock: 420, react: { kind: 'knockdown', vy: -260, knocked: .72 } },
         brief: '妹妹撞上才连打，末击倒；跳起可躲',
         detail: '两个妹妹跑向面前的场边，碰到后折返，再走出另一边。撞上才连打，末击击倒。跳起可躲',
+      }),
+    ],
+  },
+  {
+    id: 'rui', name: '八潮瑠唯', title: '小提琴 / 道理轰炸机', quote: '我想确认，这份声音的意义。', color: '#669988',
+    bands: ['morfonica'],
+    ...stats('focus'),
+    passive: ['远距专注 · 绷住了', '飞行道具速度提高 15%；免疫混乱，被嘲笑造成的脆弱时间减半'],
+    // 绷住了 (B 站「邦邦五大严肃突然嬉皮笑脸」: 别人都绷不住笑了，只有瑠唯面不改色).
+    unfazed: { status: ['confuse'], laughFrail: .5 },
+    view: { kind: 'sprite', common: '/sprites/rui/common.png', special: '/sprites/rui/special.png', height: 181, lift: 5 },
+    // 八潮瑠唯（萌娘百科）: Morfonica 的小提琴，月之森学生会长、年级第一；别号「道理轰炸机」「没有感情的小提琴机器」。
+    // 认为理性重于感情、音乐无意义，二章退团后被真白拉回。琴弓只在 U、小提琴只在 L、学生会臂章只在 I 出现（画进精灵）；
+    // 突刺、封条、巧克力和琴弦全由代码画（ruiFx.ts），不需要独立图片。
+    skills: [
+      skill(0, 'light', '简洁'),
+      skill(1, 'heavy', '高效'),
+      // 一针见血 (rui.ts, 萌百别号「道理轰炸机」+ B 站「正论暴击机」): the bow as a foil, one thin straight line, the point
+      // that leaves no reply. A guard holds it but pays for it.
+      skill(2, 'light', '一针见血', {
+        damage: 14, range: 260, start: .14, duration: .5, cd: 5, knock: 60, fx: 'rui-thrust', guardDmg: 40,
+        frail: 2.5, frailBonus: .2, react: { kind: 'stand', stun: .25 },
+        brief: '琴弓直刺，命中脆弱；被挡大幅削防',
+        detail: '琴弓当花剑平直一刺，身前较长距离 14 伤害并脆弱 2.5 秒（受伤 +20%）；被格挡时防御条额外削去 40；跳起可躲',
+      }),
+      // 取消使用许可 (rui.ts, 一章 6 话初登场: 学生会来取消空教室的使用许可): a seal of the council tape.
+      skill(3, 'projectile', '取消使用许可', {
+        damage: 10, speed: 520, size: 46, life: 1.1, start: .3, duration: .75, cd: 10, knock: 40, fx: 'rui-seal',
+        status: [{ kind: 'silence', time: 2.5, mark: 'rui-seal' }], react: { kind: 'stand', stun: .3 },
+        brief: '学生会封条贴身，沉默；可挡可跳',
+        detail: '甩出一张学生会封条，命中 10 伤害并沉默 2.5 秒（放不出 U / I / O / L，普通攻击和解控照常）；可格挡，跳起可躲',
+      }),
+      // 情人节收不完 (rui.ts, 萌百: 每年情人节送她巧克力的人从教室排到楼梯): she folds her arms and the chocolate
+      // rains on whoever is in front. 脱手技: the rain is on its own clock, and a walk drops her recovery at once.
+      skill(4, 'projectile', '情人节收不完', {
+        damage: 5, range: 520, start: .3, duration: .6, cd: 12, knock: 20, fx: 'rui-choco', guardDmg: 8, life: 1.2, size: 40, noSiphon: true,
+        slow: .6, slowMul: .7, react: { kind: 'stand', stun: .22 },
+        finale: { damage: 14, guardDmg: 14, knock: 300, react: { kind: 'knockdown', vy: -220, knocked: .7 } },
+        brief: '脱手：巧克力雨砸向对手一带；跳起躲不开',
+        detail: '脱手技：抱臂一指，对手头顶出现粉色阴影，0.35 秒后心形巧克力盒落下：六盒各 5 伤害，最后一个大盒 14 伤害并击退；落区里被砸中会减速；可格挡，跳起躲不开，要走出阴影；出手后左右移动即可取消后摇'
+      }),
+      // 无意义的旋律 (rui.ts, 别号「没有感情的小提琴机器」+ 二章退团又归队): five strings laid like a machine, then the
+      // five of Morfonica in them, and the colour back.
+      skill(5, 'endure', '无意义的旋律', {
+        cost: 120, damage: 14, range: 560, start: .6, duration: 2.65, knock: 20, gain: 2, fx: 'rui-strings', holdEndure: true,
+        guardPlan: [8, 12, 16, 30, 40, 75],
+        react: { kind: 'stand', stun: .35 },
+        finale: { damage: 50, knock: 420, react: { kind: 'knockdown', vy: -300, knocked: .9 } },
+        brief: '五弦横贯全场，染色后贴地共振击倒；共振可跳',
+        detail: '霸体，画面褪成灰色，五根琴弦依次横贯全场各 14 伤害，空中也躲不开；随后五弦染上 Morfonica 五色，贴地共振音浪 50 伤害并击倒，看到琴弦染色时起跳可躲'
       }),
     ],
   },

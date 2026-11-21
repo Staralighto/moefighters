@@ -16,11 +16,15 @@ import './saaya.ts';
 import './lisa.ts';
 import './himari.ts';
 import './tomoe.ts';
+import './tsugumi.ts';
+import './kaoru.ts';
 import './hagumi.ts';
 import './toko.ts';
+import './rui.ts';
 import './nanami.ts';
 import './pareo.ts';
 import './chisato.ts';
+import './maya.ts';
 import './mizuho.ts';
 import './bocchi.ts';
 import './lock.ts';
@@ -817,7 +821,8 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       const fresh = defender.frail <= 0;
       const bonus = skill.frailBonus ?? 0;
       if (fresh || bonus >= defender.frailBonus) defender.frailBonus = bonus;
-      defender.frail = Math.max(defender.frail, skill.frail);
+      const calm = skill.laugh ? defender.data.unfazed?.laughFrail ?? 1 : 1;
+      defender.frail = Math.max(defender.frail, skill.frail * calm);
       if (fresh) g.text('脆弱', defender.x, defender.y - 195, '#ffb4c8', .6, 18);
     }
     // 飘了 / 主角: the clean hit lays a mod on the defender. Data only; the mark picks the graphic.

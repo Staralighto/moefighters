@@ -13,15 +13,18 @@ import type { ImageCache } from '../assets/loader.ts';
 import { TAU, burst, cycle, dot, flame, glow, glyph, hash, snowflake, soap, sparkle, stampText, streak, tri } from './fxParticles.ts';
 import { isLiteFx } from './fxQuality.ts';
 import { drawDoodleDizzy, drawDoodleLand } from './chisatoFx.ts';
+import { applyMayaGearhead, applyMayaShiver, auraMayaGearhead, auraMayaShiver } from './mayaFx.ts';
 import { applyMaze, applyZap, auraMaze, auraZap } from './kanonFx.ts';
 import { applyHypno, auraHypno } from './akoFx.ts';
 import { applyTomoeHeart, auraTomoeHeart } from './tomoeFx.ts';
 import { applyNanamiFright, applyNanamiWeird, auraNanamiFright, auraNanamiGenius, auraNanamiTell, auraNanamiWeird } from './nanamiFx.ts';
 import { applyRinkoHush, auraRinkoHush } from './rinkoFx.ts';
+import { applyRuiSeal, auraRuiSeal } from './ruiFx.ts';
 import { auraPareoWig, auraPareoWigFail } from './pareoFx.ts';
 import { applyRimiChoco, applyRimiHands, auraRimiChoco, auraRimiHands } from './rimiFx.ts';
 import { applyAnonLight, auraAnonLight, expireAnonLight } from './anonFx.ts';
 import { auraUmiriQuote } from './umiriFx.ts';
+import { applyKaoruQuote, auraKaoruQuote } from './kaoruFx.ts';
 
 /** A status that changes the body itself, painted by the renderer with the view's own outline and tint:
  *  the outline replaces the team rim, each wash is the sprite's silhouette in one colour laid over it, and the
@@ -947,6 +950,9 @@ export const STATUS_MARKS: Record<string, MarkDrawer> = {
   'pareo-wig': { aura: (ctx, f, left, t) => auraPareoWig(ctx, f, bodyH(f), left, t, isLiteFx()) },
   'pareo-wig-fail': { aura: (ctx, f, left, t) => auraPareoWigFail(ctx, f, bodyH(f), left, t) },
   'chisato-doodle': { aura: auraDoodle, apply: applyDoodle },
+  // 大和麻弥: the shiver of 呼嘿嘿 (定身) and the smoking head after 器材宅讲座 (沉默). Drawn in mayaFx.ts.
+  'maya-shiver': { aura: (ctx, f, left, t) => auraMayaShiver(ctx, f, bodyH(f), left, t), apply: applyMayaShiver },
+  'maya-gearhead': { aura: (ctx, f, left, t) => auraMayaGearhead(ctx, f, bodyH(f), left, t), apply: applyMayaGearhead },
   sleepy: { aura: auraSleepy, apply: applySleepy, expire: expireSleepy },
   'saaya-toast': { aura: auraToast, apply: applyToast, body: TOAST_BODY },
   // 松原花音: lost on her footprints (混乱), stung by her jellyfish (定身). Drawn in kanonFx.ts.
@@ -958,10 +964,14 @@ export const STATUS_MARKS: Record<string, MarkDrawer> = {
   'ako-hypno': { aura: (ctx, f, left, t) => auraHypno(ctx, f, bodyH(f), left, t), apply: applyHypno },
   // 白金燐子: left with nothing to say by her 「……」 (沉默). Drawn in rinkoFx.ts.
   'rinko-hush': { aura: (ctx, f, left, t) => auraRinkoHush(ctx, f, bodyH(f), left, t), apply: applyRinkoHush },
+  // 八潮瑠唯: the council tape crossed on the chest after 取消使用许可 (沉默). Drawn in ruiFx.ts.
+  'rui-seal': { aura: (ctx, f, left, t) => auraRuiSeal(ctx, f, bodyH(f), left, t), apply: applyRuiSeal },
   // 牛込里美: ankles held by the ghost of her 今晚放映恐怖片 (定身), and chocolate dripping off after 告一段"螺" (冻僵). Drawn in rimiFx.ts.
   'rimi-hands': { aura: (ctx, f, left, t) => auraRimiHands(ctx, f, bodyH(f), left, t), apply: applyRimiHands },
   'rimi-choco': { aura: (ctx, f, left, t) => auraRimiChoco(ctx, f, bodyH(f), left, t), apply: applyRimiChoco },
   // 千早爱音: wrapped in the heart bubble of 多夸夸我嘛 (定身); it cracks on the first shake-off hit. Drawn in anonFx.ts.
+  // 濑田薰: muddled by a quote nobody understood (混乱). Drawn in kaoruFx.ts.
+  'kaoru-quote': { aura: (ctx, f, left, t) => auraKaoruQuote(ctx, f, bodyH(f), left, t, isLiteFx()), apply: applyKaoruQuote },
   'anon-light': { aura: (ctx, f, left, t) => auraAnonLight(ctx, f, left, t, isLiteFx()), apply: applyAnonLight, expire: expireAnonLight },
 };
 

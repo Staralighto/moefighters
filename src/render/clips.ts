@@ -965,6 +965,25 @@ export const TOKO_SOLO_FINAL = 1.7;
 export const TOKO_SOLO_TURN = 1.95;
 /** The five of Morfonica in line-up order (真白 / 透子 / 七深 / 筑紫 / 瑠唯): the colours the one spotlight splits into. */
 export const TOKO_FIVE = ['#6677CC', '#EE6666', '#EE7744', '#EE7788', '#669988'] as const;
+/** 八潮瑠唯. 情人节收不完: the shadow shows at the throw, the boxes land RUI_CHOCO_WARN later one every RUI_CHOCO_GAP,
+ *  the big one at RUI_CHOCO_LAST (seconds after the throw, on the shots' own clock). Shared by game/rui.ts and ruiFx.ts. */
+export const RUI_CHOCO_WARN = .35;
+export const RUI_CHOCO_GAP = .1;
+export const RUI_CHOCO_SMALL = 6;
+export const RUI_CHOCO_LAST = 1;
+/** Seconds a small (0) and the big (1) box spend landing and bursting; a box falls for RUI_BOX_FALL before that. */
+export const RUI_BOX_BURST = [.45, .7] as const;
+export const RUI_BOX_FALL = .22;
+/** Half-width of the patch the chocolate lands on. */
+export const RUI_CHOCO_R = 110;
+/** 无意义的旋律: the five strings, the moment they take Morfonica's colours (one after another, RUI_COLOR_STEP apart),
+ *  and the resonance. Even strings are drawn low and odd ones high (the look only: every string reaches the air). */
+export const RUI_STRINGS = [.75, .95, 1.15, 1.35, 1.55] as const;
+export const RUI_COLOR = 1.85;
+export const RUI_COLOR_STEP = .06;
+export const RUI_FINAL = 2.2;
+export const RUI_STRING_LOW = 46;
+export const RUI_STRING_HIGH = 150;
 
 /** 广町七深. 只是普通地路过: crouching into the bush, creeping inside it (the body is hidden), the jump-out.
  *  Shared by game/nanami.ts and the cell pick. */
@@ -1054,6 +1073,85 @@ export function lectureSquash(f: Fighter): { x: number; y: number } | undefined 
   return { x: s * (1 + .08 * settle), y: s * (1 - .2 * settle) };
 }
 
+/* ---- 大和麻弥: shared by src/game/maya.ts, the cell picks below and render/mayaFx.ts ---- */
+/** 双调怪笑: the hit cell holds until this long before the end, then she is back on the wind-up cell. */
+export const MAYA_LAUGH_TAIL = .14;
+/** 器材宅讲座: a.mode — the reach, the talk (five beats at MAYA_TALK_BEATS after the catch, let go at MAYA_TALK_SPAN), done. */
+export const MAYA_TALK = { lunge: 0, held: 1, done: 2 } as const;
+export const MAYA_TALK_BEATS: readonly number[] = [.3, .65, 1.0, 1.35, 1.75];
+export const MAYA_TALK_SPAN = 2;
+export const MAYA_TALK_TAIL = .3;
+/** 金毛惊魂: a.mode — the start, the leap back, the bow (MAYA_BOW long), done. */
+export const MAYA_SCARE = { startle: 0, leap: 1, bow: 2, done: 3 } as const;
+export const MAYA_BOW = .3;
+/** 幕后演出·全开: a.mode — up to the console, the bass wave out, the show on a caught body (or to thin air), done.
+ *  MAYA_SHOW_BEATS are seconds after the wave lands: two beams, three lasers, two CO2 jets, the cold-spark fall. */
+export const MAYA_SHOW = { walk: 0, wave: 1, show: 2, empty: 3, done: 4 } as const;
+export const MAYA_SHOW_BEATS: readonly number[] = [.45, .6, 1.0, 1.12, 1.24, 1.6, 1.75, 2.25];
+export const MAYA_SHOW_TAIL = .45;
+/** The console stands this far in front of her. */
+export const MAYA_CONSOLE_X = 70;
+export const MAYA_LEO_SRC = '/sprites/maya/leo.png';
+export const MAYA_CONSOLE_SRC = '/sprites/maya/console.png';
+
+/* ---- 羽泽鸫: shared by src/game/tsugumi.ts, the cell picks below and render/tsugumiFx.ts ---- */
+/** 努力家: at most this many stars over the stage. */
+export const TSUGUMI_EFFORT_MAX = 7;
+/** 冰川夹心: a.mode — the lunge (at most TSUGUMI_SQUEEZE_LUNGE), held between the sisters, done. The sisters are in
+ *  TSUGUMI_SQUEEZE_IN after the catch; the two squeezes land at TSUGUMI_SQUEEZE_BEATS after it. */
+export const TSUGUMI_SQUEEZE = { lunge: 0, held: 1, done: 2 } as const;
+export const TSUGUMI_SQUEEZE_LUNGE = .3;
+export const TSUGUMI_SQUEEZE_IN = .2;
+export const TSUGUMI_SQUEEZE_BEATS: readonly number[] = [.32, .58];
+export const TSUGUMI_SQUEEZE_TAIL = .3;
+/** The sisters end up this far either side of the body they squeeze (they walk in from twice as far). */
+export const TSUGUMI_SISTER_GAP = 58;
+/** A guest's cell on her own common sheet, by locomotion key or 'light' / 'heavy' with a phase column (冰川夹心). */
+export function guestCell(key: string, phase = 1): { sx: number; sy: number } {
+  const n = (NORMAL as Record<string, { c: number; r: number }>)[key];
+  const c = n ? { c: n.c + phase, r: n.r } : LOCO[key] ?? LOCO.idle;
+  return { sx: c.c * CELL, sy: c.r * CELL };
+}
+export const TSUGUMI_SAYO_SRC = '/sprites/sayo/common.png';
+export const TSUGUMI_HINA_SRC = '/sprites/hina/common.png';
+export const TSUGUMI_TRAY_SRC = '/sprites/tsugumi/tray.png';
+/** 琴键重锤: seven keys after the fists come down, each TSUGUMI_KEY_STEP further out. */
+export const TSUGUMI_KEYS = 7;
+export const TSUGUMI_KEY_FIRST = .04;
+export const TSUGUMI_KEY_GAP = .05;
+export const TSUGUMI_KEY_STEP = 44;
+/** 平凡之星 on the attack clock: night is up at 0; she points at `point`, the stars gather until `fall`, the meteor
+ *  lands at `land`; one small star every TSUGUMI_STAR_GAP after that, the big one `finale` after the last; `nod`. */
+export const TSUGUMI_STAR = { point: .45, fall: 1.0, land: 1.3, finale: .12, nod: 2.05 } as const;
+export const TSUGUMI_STAR_GAP = .07;
+export const TSUGUMI_STAR_MIN = 3;
+/** 冰川夹心: squeezed from both sides — narrow and a little tall, springing back as the mod runs out. */
+export function squeezeSquash(f: Fighter): { x: number; y: number } | undefined {
+  const m = f.mods.find(x => x.kind === 'squeeze' && x.left > 0);
+  if (!m) return undefined;
+  const k = Math.sin(Math.min(1, m.left / .28) * Math.PI * .5);
+  return { x: 1 - .2 * k, y: 1 + .07 * k };
+}
+
+/* ---- 濑田薰: shared by src/game/kaoru.ts, the cell picks below and render/kaoruFx.ts ---- */
+/** 高空微笑坠落: a.mode — the crouch, the leap (KAORU_RISE, up KAORU_APEX), the faint at the top (KAORU_HANG), the drop
+ *  (KAORU_DROP), lying where she landed (KAORU_LIE, her opening), then back up in a pose. */
+export const KAORU_FALL = { crouch: 0, rise: 1, hang: 2, drop: 3, lie: 4, done: 5 } as const;
+export const KAORU_RISE = .32;
+export const KAORU_APEX = 250;
+export const KAORU_HANG = .45;
+export const KAORU_DROP = .16;
+export const KAORU_LIE = .42;
+/** 似懂非懂的名言: the finger snap comes this long after the second quote lands. */
+export const KAORU_SNAP_DELAY = .3;
+/** 小猫咪亲卫队: fans.png is four fans in a row, each one cell; row 0 cheering with a fan up, row 1 swooning.
+ *  Fan 2 is 牛込里美 (a chocolate cornet in one hand), fan 3 上原绯玛丽 (a big 应援扇). */
+export const KAORU_FANS_SRC = '/sprites/kaoru/fans.png';
+export const KAORU_FANS = 4;
+/** 虚幻蔷薇·终幕 on the attack clock: she points at `point`; the rose opens at `bloom` and shuts at `wrap`; the snap;
+ *  the petal cuts at `hits`; the burst at `finale`; the curtain call from `bow`. */
+export const KAORU_ROSE = { point: .3, bloom: .4, wrap: .72, snap: 1.05, hits: [1.15, 1.27, 1.39, 1.51] as readonly number[], finale: 1.72, bow: 1.95 } as const;
+
 export const LISA_CAT_BODY = 22;
 
 /* ---- 山吹沙绫: shared by src/game/saaya.ts, the cell picks below and render/saayaFx.ts ---- */
@@ -1137,7 +1235,7 @@ export function flatSquash(f: Fighter): { x: number; y: number } | undefined {
   return { x: 1 + (RIMI_FLAT.x - 1) * k, y: 1 - (1 - RIMI_FLAT.y) * k };
 }
 export function bodySquash(f: Fighter): { x: number; y: number } | undefined {
-  return lectureSquash(f) ?? kneadSquash(f) ?? flatSquash(f);
+  return lectureSquash(f) ?? kneadSquash(f) ?? flatSquash(f) ?? squeezeSquash(f);
 }
 
 
@@ -1506,6 +1604,12 @@ export function clipFor(f: Fighter): Clip {
       const a = f.attack;
       return at('special', a.index - 2, a.t < TOKO_SOLO_SKY - .2 ? 0 : a.t < TOKO_SOLO_TURN ? 1 : 2);
     }
+    // 情人节收不完 is a plain three-phase cell (she is free once it is thrown). 无意义的旋律: the violin up; the mechanical
+    // bow; eyes closed from the colour on.
+    if (f.attack.skill.fx === 'rui-strings') {
+      const a = f.attack;
+      return at('special', a.index - 2, a.t < RUI_STRINGS[0] - .1 ? 0 : a.t < RUI_COLOR ? 1 : 2);
+    }
     // 只是普通地路过: the crouch; the jump-out (the creep itself is the bush, her body hidden); the scare held after.
     if (f.attack.skill.fx === 'nanami-bush') {
       const a = f.attack, mode = a.mode ?? NANAMI_BUSH.creep;
@@ -1558,6 +1662,36 @@ export function clipFor(f: Fighter): Clip {
       }
       if (t < G.bow) return at('special', 2, 1);
       return at('special', a.index - 2, 2);
+    }
+    // 高空微笑坠落: hand through the hair on the crouch; the jump cell up; arms crossed, eyes shut through the faint and
+    // the drop; flat on the floor; up again on the bow.
+    if (f.attack.skill.fx === 'kaoru-fall') {
+      const m = f.attack.mode ?? KAORU_FALL.crouch, F = KAORU_FALL;
+      if (m === F.crouch) return at('special', 0, 0);
+      if (m === F.rise) return loco('jump');
+      if (m === F.hang || m === F.drop) return at('special', 0, 1);
+      if (m === F.lie) return loco('down');
+      return at('special', 0, 2);
+    }
+    // 小猫咪亲卫队: arms open through the window; the hair flick while they charge; the hand on the chest after the swoon.
+    if (f.attack.skill.fx === 'kaoru-fans') {
+      const m = f.attack.mode ?? 0;
+      return at('special', 2, m === 0 ? 0 : m === 1 ? 1 : 2);
+    }
+    // 虚幻蔷薇·终幕: pointing at them; her back turned on the snap through the storm; the curtain call.
+    if (f.attack.skill.fx === 'kaoru-rose') {
+      const t = f.attack.t, R = KAORU_ROSE;
+      return at('special', 3, t < R.snap ? 0 : t < R.bow ? 1 : 2);
+    }
+    // 冰川夹心: hands out on the lunge; the little hop back out of the middle; wiping her brow.
+    if (f.attack.skill.fx === 'tsugumi-squeeze') {
+      const a = f.attack, mode = a.mode ?? TSUGUMI_SQUEEZE.lunge;
+      return at('special', a.index - 2, mode === TSUGUMI_SQUEEZE.lunge ? 0 : mode === TSUGUMI_SQUEEZE.held ? 1 : 2);
+    }
+    // 平凡之星: hands together looking up; pointing at the sky through the fall; the small nod.
+    if (f.attack.skill.fx === 'tsugumi-star') {
+      const a = f.attack;
+      return at('special', a.index - 2, a.t < TSUGUMI_STAR.point ? 0 : a.t < TSUGUMI_STAR.nod ? 1 : 2);
     }
     // 摇匀一杯摩卡: hands out on the lunge; the grip through the shaking; the brush-off after.
     if (f.attack.skill.fx === 'himari-shake') {
@@ -1628,6 +1762,26 @@ export function clipFor(f: Fighter): Clip {
       if (mode === CHISATO_LECTURE.beckon) return at('special', a.index - 2, 0);
       if (mode === CHISATO_LECTURE.whiff) return at('special', a.index - 2, a.t < a.skill.duration - .35 ? 1 : 2);
       return at('special', a.index - 2, mode === CHISATO_LECTURE.done ? 2 : 1);
+    }
+    // 双调怪笑: glasses pushed up; the 呼嘿嘿 hunch (odd) or the 哦吼吼 laugh (even, a.mode 1); back on the glasses.
+    if (f.attack.skill.fx === 'maya-laugh') {
+      const a = f.attack, s = a.skill;
+      return at('special', a.index - 2, a.t < s.start || a.t >= s.duration - MAYA_LAUGH_TAIL ? 0 : a.mode === 1 ? 2 : 1);
+    }
+    // 器材宅讲座: the reach; the talk; the satisfied push of the glasses.
+    if (f.attack.skill.fx === 'maya-lecture') {
+      const a = f.attack, mode = a.mode ?? MAYA_TALK.lunge;
+      return at('special', a.index - 2, mode === MAYA_TALK.lunge ? 0 : mode === MAYA_TALK.held ? 1 : 2);
+    }
+    // 金毛惊魂: the start; curled up in the leap; the bow to the dog.
+    if (f.attack.skill.fx === 'maya-leo') {
+      const a = f.attack, mode = a.mode ?? MAYA_SCARE.startle;
+      return at('special', a.index - 2, mode === MAYA_SCARE.startle ? 0 : mode === MAYA_SCARE.leap ? 1 : 2);
+    }
+    // 幕后演出·全开: the trot up; hands on the faders through the whole show; the fist pump.
+    if (f.attack.skill.fx === 'maya-show') {
+      const a = f.attack, mode = a.mode ?? MAYA_SHOW.walk;
+      return at('special', a.index - 2, mode === MAYA_SHOW.walk ? 0 : mode === MAYA_SHOW.done ? 2 : 1);
     }
     // 死亡银河号: the kick start; the run and the skid lean over the tank; off the bike.
     if (f.attack.skill.fx === 'galaxy-ride') {

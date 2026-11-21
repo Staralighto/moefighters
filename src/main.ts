@@ -55,6 +55,10 @@ import { bindFinalePreview, setFinalePreviewHooks } from './ui/finalePreview.ts'
 import { bindItemPreview, setItemPreviewOpener } from './ui/itemPreview.ts';
 import { Rng } from './net/lock.ts';
 
+/* 展示模式：只给录宣传视频 / 截宣传图用（地址带 ?showcase）。版式不变，只把会被低倍率栅格化的部分改成按设备像素清晰重画；
+   平时不带参数，什么都不改。录制时浏览器自己把 deviceScaleFactor 设到 4，大厅 852×393 就出 3408×1572。 */
+if (new URLSearchParams(location.search).has('showcase')) document.documentElement.classList.add('showcase');
+
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
 const sfx = new Sfx();
 const images: ImageCache = new Map();

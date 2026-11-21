@@ -111,6 +111,8 @@ export interface Skill {
   gain?: number;
   /** Seconds of 脆弱 on a clean hit. The amount is frailBonus. */
   frail?: number;
+  /** 笑到你破防: this 脆弱 comes from being laughed at (CharacterData.unfazed shortens it). */
+  laugh?: boolean;
   /** Extra damage taken during 脆弱. 0.2 is +20%, and it multiplies with every other factor. */
   frailBonus?: number;
   /** Seconds of 定身 on a clean hit. Unset means the move never roots. */
@@ -414,6 +416,9 @@ export interface CharacterData {
   };
   /** 一人二役 (奥泽美咲): two forms, each with its own six moves and sheets. Unset: one form. */
   forms?: FormPair;
+  /** 绷住了 (八潮瑠唯): she does not crack. Statuses of these kinds never land on her, and 脆弱 from a move marked
+   *  `laugh` lasts `laughFrail` as long. Declared per character so the kernel needs no id branch. */
+  unfazed?: { status: StatusKind[]; laughFrail: number };
   /** 狂化 (夢はパワー！): how this character's frenzy behaves. Soyo stays on the arcade defaults
    *  (rate 1.55, J/K cooldowns ×.6, the jab-chain auto-heavy) by leaving this unset. */
   frenzy?: {

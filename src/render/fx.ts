@@ -18,11 +18,15 @@ import { drawSaayaFx, drawSaayaShot } from './saayaFx.ts';
 import { drawLisaFx, drawLisaShot } from './lisaFx.ts';
 import { drawHimariFx, drawHimariShot } from './himariFx.ts';
 import { drawTomoeFx } from './tomoeFx.ts';
+import { drawTsugumiFx, drawTsugumiShot } from './tsugumiFx.ts';
+import { drawKaoruFx, drawKaoruShot } from './kaoruFx.ts';
 import { drawHagumiFx, drawHagumiShot } from './hagumiFx.ts';
 import { drawTokoFx, drawTokoShot } from './tokoFx.ts';
+import { drawRuiFx, drawRuiShot } from './ruiFx.ts';
 import { drawNanamiFx, drawNanamiShot } from './nanamiFx.ts';
 import { drawPareoFx } from './pareoFx.ts';
 import { drawChisatoFx, drawChisatoShot } from './chisatoFx.ts';
+import { drawMayaFx, drawMayaShot } from './mayaFx.ts';
 import { drawKanonFx, drawKanonShot } from './kanonFx.ts';
 import { drawAnonFx, drawAnonShot } from './anonFx.ts';
 import { drawUmiriFx, drawUmiriShot } from './umiriFx.ts';
@@ -1028,15 +1032,21 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
   if (drawHimariFx(ctx, e, liteFx, images)) return;
   // 宇田川巴 too.
   if (drawTomoeFx(ctx, e, liteFx, images)) return;
+  // 羽泽鸫 too.
+  if (drawTsugumiFx(ctx, e, liteFx, images)) return;
+  if (drawKaoruFx(ctx, e, liteFx, images)) return;
   // 北泽育美 too.
   if (drawHagumiFx(ctx, e, liteFx, images)) return;
   // 桐谷透子 too.
   if (drawTokoFx(ctx, e, liteFx, images)) return;
+  if (drawRuiFx(ctx, e, liteFx)) return;
   if (drawNanamiFx(ctx, e, liteFx, images)) return;
   // PAREO too.
   if (drawPareoFx(ctx, e, liteFx, images)) return;
   // 白鹭千圣 too.
   if (drawChisatoFx(ctx, e, liteFx, images)) return;
+  // 大和麻弥 too.
+  if (drawMayaFx(ctx, e, liteFx, images)) return;
   if (e.type.startsWith('mizuho-') && drawMizuhoFx(ctx, e, liteFx, mizuhoArt(images))) return;
   // 后藤一里 too.
   if (drawBocchiFx(ctx, e, liteFx, images)) return;
@@ -6211,9 +6221,13 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   if (drawSaayaShot(ctx, p, liteFx)) return;
   if (drawLisaShot(ctx, p, liteFx, images)) return;
   if (drawHimariShot(ctx, p, liteFx)) return;
+  if (drawTsugumiShot(ctx, p, liteFx, images)) return;
+  if (drawKaoruShot(ctx, p, liteFx)) return;
   if (drawTokoShot(ctx, p, liteFx)) return;
+  if (drawRuiShot(ctx, p, liteFx)) return;
   if (drawNanamiShot(ctx, p, liteFx)) return;
   if (drawChisatoShot(ctx, p, images)) return;
+  if (drawMayaShot(ctx, p, images, liteFx)) return;
   if (drawKanonShot(ctx, p, liteFx, images)) return;
   if (drawAnonShot(ctx, p, liteFx)) return;
   if (drawUmiriShot(ctx, p, liteFx, mizuhoArt(images))) return;

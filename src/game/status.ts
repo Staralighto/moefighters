@@ -67,6 +67,11 @@ export function statusCount(f: Fighter): number {
 /** Lay one status. The caller has already passed the clean-hit gate. Returns true when it was a freeze. */
 export function layStatus(g: FightGame, attacker: Fighter, defender: Fighter, st: StatusApply, source = '', word = 0): boolean {
   const mark = st.mark ?? DEFAULT_MARK[st.kind];
+  // 绷住了: a body that never cracks shrugs these off; a small glint says the status met nothing.
+  if (defender.data.unfazed?.status.includes(st.kind)) {
+    g.effect('unfazed', defender.x, defender.y, defender.data.color, .5, { follow: defender.id, ox: 0, oy: 0 });
+    return false;
+  }
   // 跟班 does not refresh and has a cooldown of its own: a body that just walked behind someone shrugs it off.
   if (st.kind === 'follow' && (has(defender, 'follow') || has(defender, 'followCd') || defender === attacker)) return false;
   const fresh = !hasStatus(defender, st.kind);

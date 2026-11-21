@@ -1169,6 +1169,9 @@ body.pause-peek-on .touchpad { visibility: hidden; }
    empty and made every tier-2 brief wrap several characters early. */
 #battle-skills .skill .cooldown { grid-column: 3; grid-row: 1; position: static; font-size: 12px; }
 #battle-skills .skill.super kbd { color: var(--on-accent); }
+/* A move whose next cast changes (SLOT_TINTS, e.g. 双调怪笑) wears the colour of the next one on its border. */
+#battle-skills .skill.tinted { border-color: var(--slot-tint); }
+.touchpad .tp-actions .sk.tinted { border-color: var(--slot-tint); }
 #battle-skills .skill.super { padding-right: 18px; }
 #battle-skills .skill.super .charge { position: absolute; right: 6px; top: 8px; bottom: 8px; width: 6px; background: var(--well); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
 #battle-skills .skill.super .charge i { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: var(--p1); display: block; }
@@ -3254,6 +3257,16 @@ html.hub-covered .page-deco * { animation-play-state: paused; }
   :where(html.ph-land) .gf-name { padding: 8px 12px; }
   :where(html.ph-land) .gift-dialog .quit-actions { margin-top: 10px; }
 
+  /* 领取奖励演出：竖排的数字 + 物品卡 + 「收下」在 393 高的横屏里放不下，按钮被挤出屏幕。横屏收紧字号、卡片和间距，
+     整组在一屏内居中（单界面全展示）。 */
+  :where(html.ph-land) .rw-center { gap: 6px; padding: 10px; }
+  :where(html.ph-land) .rw-total { font-size: clamp(40px, 11vh, 56px); }
+  :where(html.ph-land) .rw-items { gap: 16px; margin-top: 4px; }
+  :where(html.ph-land) .rw-flip { width: min(96px, 24vh); }
+  :where(html.ph-land) .rw-face .fp { --fs: 52px; }
+  :where(html.ph-land) .rw-card { gap: 6px; }
+  :where(html.ph-land) .rw-ok { margin-top: 8px; padding: .6em 1.6em; font-size: 15px; }
+
   /* 钉住地址栏：横屏里上下拖一下，只要这一下传到了整页，Chrome / Safari 就会收放地址栏，视口高度跟着变，整屏元素一起跳。
      后台页和它的弹窗里只有真正竖滚的区域接上下拖，其余只接左右滑；所有滚动区滚到头也不把拖动传给整页。 */
   html.hub-open:where(.ph-land), html.hub-open:where(.ph-land) body { overscroll-behavior: none; }
@@ -3435,6 +3448,9 @@ body.touch .al-tile[data-state="clear"]:hover .al-art::after { translate: -120% 
     :where(html.lobby-mode) .lobby[data-side="right"] .lb-cap { left: max(18px, calc(env(safe-area-inset-left, 0px) / var(--lu, 1))); }
   }
   :where(html.lobby-mode) .lb-deck > * { transform: rotateY(var(--tilt)); transform-style: preserve-3d; }
+  /* 展示模式（?showcase，录宣传视频用）：preserve-3d 的层在 Chromium 里按约 1 倍 CSS 像素栅格化，高倍率截图时入口格的字、图标、斜边发糊带锯齿；
+     改成 flat 后倾斜外观不变，按设备像素重画。平时不生效。 */
+  :where(html.showcase.lobby-mode) .lb-deck > * { transform-style: flat; }
   :where(html.lobby-mode) .lb-rail { position: absolute; top: calc(var(--dk-top) + 4px * var(--lu, 1)); height: calc(303px * var(--lu, 1)); width: 1px; background: linear-gradient(transparent, var(--line) 12%, var(--line) 88%, transparent); }
   :where(html.lobby-mode) .lobby[data-side="left"] .lb-rail { left: max(calc(11px * var(--lu, 1)), calc(env(safe-area-inset-left, 0px) - 11px * var(--lu, 1))); }
   :where(html.lobby-mode) .lobby[data-side="right"] .lb-rail { right: max(calc(11px * var(--lu, 1)), calc(env(safe-area-inset-right, 0px) - 11px * var(--lu, 1))); }

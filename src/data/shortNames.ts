@@ -16,17 +16,17 @@ export const SHORT_NAMES: Readonly<Record<string, string>> = {
   // Roselia
   yukina: '友希那', sayo: '纱夜', lisa: '莉莎', ako: '亚子', rinko: '燐子',
   // Hello, Happy World!
-  kokoro: '心', hagumi: '育美', kanon: '花音', misaki: '美咲',
+  kokoro: '心', kaoru: '薰', hagumi: '育美', kanon: '花音', misaki: '美咲',
   // sumimi
   mana: '真奈',
   // Pastel*Palettes
-  aya: '彩', hina: '日菜', eve: '伊芙', chisato: '千圣',
+  aya: '彩', hina: '日菜', eve: '伊芙', chisato: '千圣', maya: '麻弥',
   // Afterglow
-  mitake: '兰', moca: '摩卡', himari: '绯玛丽', tomoe: '巴',
+  mitake: '兰', moca: '摩卡', himari: '绯玛丽', tomoe: '巴', tsugumi: '鸫',
   // RAISE A SUILEN（游戏里用艺名）
   layer: 'LAYER', chuchu: 'CHU²', masking: 'MASKING', lock: 'LOCK', pareo: 'PAREO',
   // Morfonica
-  mashiro: '真白', toko: '透子', nanami: '七深', tsukushi: '筑紫',
+  mashiro: '真白', toko: '透子', nanami: '七深', tsukushi: '筑紫', rui: '瑠唯',
   // millsage
   kanata: '奏多', hotaru: '萤', natsume: '枣', houka: '朋花', nagi: '凪', mahoro: '茉幌',
   // 一家Dumb Rock!

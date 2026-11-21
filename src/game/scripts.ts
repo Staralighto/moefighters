@@ -35,6 +35,8 @@ export interface MoveScript {
   brace?: (a: Attack) => number | undefined;
   /** Once the payload is away, the pose is done (剪、火的故事). */
   freeWhenEmitted?: boolean;
+  /** 脱手技: once the move is settled (see effectSettled), a human's walk input also drops the recovery (情人节收不完). */
+  walkCancel?: boolean;
   /** Seconds before the end that a released hold counts as finished. */
   settle?: number;
   /** From this shot on, the key has to stay down. */
@@ -124,6 +126,10 @@ export interface MoveScript {
   /** Rolled once when the shot is born. 0 leaves the art as drawn (幻海). */
   hue?: (g: FightGame) => number;
 }
+
+/** A colour the movelist row and the touch key of a move wear right now, keyed by fx, so a move whose next cast
+ *  changes (双调怪笑's odd / even laugh) can say which one is next without words. Undefined leaves the key plain. */
+export const SLOT_TINTS: Record<string, (f: Fighter) => string | undefined> = {};
 
 /** Called at the end of every successful cast (FightGame.attack), with the slot and the skill it resolved to.
  *  A character module pushes one here when a move of hers has to see someone else start a move (不用说我也懂). */

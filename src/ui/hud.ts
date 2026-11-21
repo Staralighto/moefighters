@@ -7,6 +7,7 @@ import { assetUrl, assignFirst } from '../assets/loader.ts';
 import { guideIndex, skillHTML } from './select.ts';
 import { applyTouchIcons } from './touchIcons.ts';
 import { CONTROLS } from '../game/constants.ts';
+import { SLOT_TINTS } from '../game/scripts.ts';
 import type { MatchReport } from '../game/report.ts';
 import { hideReport, showReport } from './report.ts';
 
@@ -178,6 +179,18 @@ export function updateHUD(g: FightGame): void {
     if (b.style.getPropertyValue('--cd') !== next) b.style.setProperty('--cd', next);
     if (!b.classList.contains('cooling')) b.classList.add('cooling');
   };
+  // A move whose next cast changes (SLOT_TINTS) colours its row and its touch key.
+  const skills = skillsOf(me);
+  const tintOf = (i: number) => i >= 2 && i <= 4 ? SLOT_TINTS[skills[i]?.fx ?? '']?.(me) : undefined;
+  const paintTint = (el: HTMLElement, tint: string | undefined) => {
+    if (tint) {
+      if (el.style.getPropertyValue('--slot-tint') !== tint) el.style.setProperty('--slot-tint', tint);
+      if (!el.classList.contains('tinted')) el.classList.add('tinted');
+    } else if (el.classList.contains('tinted')) {
+      el.classList.remove('tinted');
+      el.style.removeProperty('--slot-tint');
+    }
+  };
   // The pad is display:none on plain desktop, so body.touch gates the whole block out for free.
   // Wide mode shows the same pad as cooldown indicators, so it rides the same updates.
   if (document.body.classList.contains('touch') || document.body.classList.contains('wide')) {
@@ -186,6 +199,7 @@ export function updateHUD(g: FightGame): void {
       if (b.classList.contains('ult')) continue;
       const i = CONTROLS[0].attacks.indexOf(b.dataset.key!);
       paintCd(b, i >= 0 ? me.cooldowns[i] : 0);
+      paintTint(b, tintOf(i));
     }
     // 进阶键位的后撤键：后撤自己的冷却，跟技能键同一套显示。
     touchEvade ??= $m('touchpad').querySelector<HTMLElement>('.evade');
@@ -213,6 +227,7 @@ export function updateHUD(g: FightGame): void {
       if (el.classList.contains('ready') !== ready) el.classList.toggle('ready', ready);
       continue;
     }
+    paintTint(el, tintOf(i));
     const msg = cdMsg(i);
     let tag = cooldownTags[i] ?? null;
     if (msg) {
