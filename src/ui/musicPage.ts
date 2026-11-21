@@ -16,7 +16,7 @@ import { appendHubItems, registerHubPage } from './hub.ts';
 const ORDER_NAMES: Record<MusicOrder, string> = { seq: '列表循环', shuffle: '随机播放', one: '单曲循环' };
 /* 播放方式图标：24 网格、2px 描边、圆头，和控件里的 Phosphor 图标同一粗细观感。 */
 const LOOP = '<path d="M17 2.5 20 5.5 17 8.5"/><path d="M4 11.5V10a4.5 4.5 0 0 1 4.5-4.5H20"/><path d="M7 21.5 4 18.5 7 15.5"/><path d="M20 12.5V14a4.5 4.5 0 0 1-4.5 4.5H4"/>';
-const ORDER_ICONS: Record<MusicOrder, string> = {
+export const ORDER_ICONS: Record<MusicOrder, string> = {
   seq: LOOP,
   shuffle: '<path d="M16 3.5h4.5V8"/><path d="M4 19.5 20.5 3.5"/><path d="M20.5 16v4.5H16"/><path d="M14.5 14.5l6 6"/><path d="M4 4.5l5.5 5.5"/>',
   one: LOOP + '<path d="M11 10.2 12.4 9.2V14.8"/>',

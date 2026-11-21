@@ -67,7 +67,7 @@ function shelfItemHTML(it: ItemDef, i: number): string {
 }
 
 function shelfBadge(it: ItemDef, owned: boolean): string {
-  return owned ? '<span class="sf-own">已拥有</span>' : `<span class="mc-tag">${SHARD}<b>${it.price}</b></span>`;
+  return owned ? '<span class="sf-own" aria-label="已拥有"><svg class="own-ico" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-check"/></svg><span class="own-t">已拥有</span></span>' : `<span class="mc-tag">${SHARD}<b>${it.price}</b></span>`;
 }
 
 /** 空格子：只占位，和商品卡一样高（同样的内部结构），整格不可见。 */

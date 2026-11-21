@@ -1080,7 +1080,12 @@ export class SelectScreen {
       b.setAttribute('aria-pressed', String(i === this.selected[this.side]));
       const tag = b.querySelector('.slot-tag') as HTMLElement;
       tag.hidden = !chosen.length;
-      tag.textContent = net ? '你' : [...new Set(chosen.map(p => this.rosterTag(p)))].join('/');
+      /* 「人机」在横屏显示成机器人图标（.tag-t 文字照留，桌面看文字）。 */
+      const tagText = net ? '你' : [...new Set(chosen.map(p => this.rosterTag(p)))].join('/');
+      if (tag.dataset.t !== tagText) {
+        tag.dataset.t = tagText;
+        tag.innerHTML = tagText.split('/').map(t => t === '人机' ? '<span class="tag-cpu" aria-label="人机"><svg class="tag-ico" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-robot"/></svg><span class="tag-t">人机</span></span>' : `<span>${t}</span>`).join('<span class="tag-sep">/</span>');
+      }
     }
     const c = this.roster[this.selected[this.side]];
     const scheme = net ? 0 : this.scheme(this.side);

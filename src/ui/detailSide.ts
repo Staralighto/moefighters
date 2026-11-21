@@ -37,6 +37,9 @@ export interface SideOpts {
   dialog: HTMLDialogElement;
 }
 
+/** 跳转类动作：横屏只显示目标页面的图标 + 箭头（文字留作读屏名）。 */
+const GO_ICON: Record<string, string> = { shop: 'n-shop', locker: 'n-locker', tasks: 'n-tasks' };
+
 export function renderSide(side: HTMLElement, o: SideOpts, pop = false): void {
   const item = ITEM_BY_ID.get(o.id);
   const state = o.state();
@@ -46,12 +49,12 @@ export function renderSide(side: HTMLElement, o: SideOpts, pop = false): void {
   /* 碎片不够的购买键不灰死：压暗、价格变红，点了抖一下说「星之碎片不够」。 */
   const short = !!state.action?.disabled && state.action.act === 'buy';
   const btn = state.action
-    ? `<button type="button" class="fv-act${['buy', 'wear'].includes(state.action.act) ? ' set-primary' : ''}" data-cue="${state.action.act === 'buy' ? 'none' : ''}"${short ? ' aria-disabled="true"' : state.action.disabled ? ' disabled' : ''}>${state.action.act === 'buy' ? SHARD : ''}${esc(state.action.label)}</button>`
+    ? `<button type="button" class="fv-act${['buy', 'wear'].includes(state.action.act) ? ' set-primary' : ''}${GO_ICON[state.action.act] ? ' fv-go' : ''}" data-cue="${state.action.act === 'buy' ? 'none' : ''}" aria-label="${esc(state.action.label)}"${short ? ' aria-disabled="true"' : state.action.disabled ? ' disabled' : ''}>${state.action.act === 'buy' ? SHARD : ''}${GO_ICON[state.action.act] ? `<svg class="go-ico" viewBox="0 0 256 256" aria-hidden="true"><use href="#${GO_ICON[state.action.act]}"/></svg><svg class="go-arrow" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-arrow-right"/></svg>` : ''}<span class="act-t">${esc(state.action.label)}</span></button>`
     : '';
   const tools = o.tools?.length ? `<div class="fn-row">${o.tools.map((t, i) => `<button type="button" class="fv-tool" data-i="${i}" aria-label="${esc(t.label)}"${t.pressed === undefined ? '' : ` aria-pressed="${t.pressed}"`}>${toolHTML(t.label, t.icon)}</button>`).join('')}</div>` : '';
   side.innerHTML = `<p class="fv-kicker">${esc(o.kicker)}</p><h2 class="fv-name" id="${esc(o.nameId)}">${esc(itemName(o.id))}</h2>${badge}`
     + (o.sub ? `<p class="fn-ult">${o.sub}</p>` : '')
-    + `<p class="fv-note">${esc(state.note ?? '')}</p>${price}<p class="fv-hint">${esc(o.hint)}</p>`
+    + `<p class="fv-note${price && /^商店 · \d+ 星之碎片$/.test(state.note ?? '') ? ' fv-note-price' : ''}">${esc(state.note ?? '')}</p>${price}<p class="fv-hint">${esc(o.hint)}</p>`
     + `<div class="fv-actions">${tools}${btn}</div><div class="ss-printer" aria-hidden="true"></div>`;
   side.querySelectorAll<HTMLButtonElement>('.fv-tool').forEach(b => { b.onclick = () => o.tools![Number(b.dataset.i)].onClick(b); });
   const act = side.querySelector<HTMLButtonElement>('.fv-act');

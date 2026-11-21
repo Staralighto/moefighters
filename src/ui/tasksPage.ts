@@ -124,7 +124,8 @@ function sizeWall(): void {
   if (!wall) return;
   const measure = () => {
     /* 横屏手机：墙是两行横滑，封面边长由墙高定（两行封面 + 两行名字 + 行距）。 */
-    if (phoneLayout() === 'land' && wall.clientHeight) wall.style.setProperty('--tile', Math.max(84, Math.floor((wall.clientHeight - 14 - 2 * 24) / 2)) + 'px');
+    /* 横屏不显示名字，两排封面平分墙高（减去行距 14 和上下边距 6）。 */
+    if (phoneLayout() === 'land' && wall.clientHeight) wall.style.setProperty('--tile', Math.max(84, Math.floor((wall.clientHeight - 14 - 6) / 2)) + 'px');
     else wall.style.removeProperty('--tile');
     const art = wall.querySelector<HTMLElement>('.al-art');
     if (art?.offsetWidth) wall.style.setProperty('--cw', art.offsetWidth + 'px');
@@ -167,12 +168,12 @@ function paintAlbum(): void {
   bonus.dataset.state = bonusState;
   /* 全清奖励的头像框可以点开看效果（右下角小眼睛表明可点）。 */
   bonus.innerHTML = `<button type="button" class="ab-frame" aria-label="查看${esc(itemName(a.frame))}的效果">${frameHTML(a.frame)}<span class="mc-peek" aria-hidden="true"><svg viewBox="0 0 256 256"><use href="#i-eye"/></svg></span></button><span class="ab-bonus-t"><small>全清奖励</small><b>${esc(itemName(a.frame))}</b><span>${SHARD}${a.bonus}</span></span>`
-    + (bonusState === 'got' ? '<span class="tk-got" aria-label="已领取">✓</span>' : bonusState === 'ready' ? `<button type="button" class="tk-claim" data-cue="none" data-claim="${esc(bid)}">领取</button>` : '<span class="ab-lock">完成全部曲目后解锁</span>');
+    + (bonusState === 'got' ? '<span class="tk-got" aria-label="已领取">✓</span>' : bonusState === 'ready' ? `<button type="button" class="tk-claim" data-cue="none" data-claim="${esc(bid)}">领取</button>` : '<span class="ab-lock"><svg class="lock-ico" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-lock"/></svg><span class="lk-long">完成全部曲目后解锁</span><span class="lk-short" aria-hidden="true">全清解锁</span></span>');
+  /* 任意一条「领取」= 领取本专辑全部可领的（现代手游的默认做法，省掉单独的「全部领取」按钮）。 */
   const all = dlg.querySelector<HTMLButtonElement>('.ab-claim-all')!;
-  all.hidden = !c.ready;
-  all.disabled = !c.ready;
-  all.textContent = `领取本专辑全部 · ${c.ready}`;
-  for (const b of dlg.querySelectorAll<HTMLButtonElement>('[data-claim]')) b.onclick = () => void claimRows([b.dataset.claim!]);
+  all.hidden = true;
+  all.disabled = true;
+  for (const b of dlg.querySelectorAll<HTMLButtonElement>('[data-claim]')) b.onclick = () => { if (openAlbum) void claimRows(claimable(openAlbum.id).map(x => x.id)); };
   dlg.querySelector<HTMLButtonElement>('.ab-frame')!.onclick = () => {
     clearBrowse();
     openFramePreview(a.frame, () => ({ owned: has(a.frame), note: `${a.name} · 全清奖励`, action: null }), () => {});

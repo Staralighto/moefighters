@@ -39,12 +39,14 @@ import { bindSaveUi } from './ui/saveUi.ts';
 import { bindResources } from './ui/resources.ts';
 import { chunk } from './assets/chunk.ts';
 import { bindHub, closeHub, setNavHome, setNavStamps } from './ui/hub.ts';
+import { bindLayerBack, registerLayer } from './ui/layerBack.ts';
+import { bindPeeks } from './ui/peek.ts';
 import { bindLobby, selectOnScreen } from './ui/lobby.ts';
-import { bindBackdropClose, bindFeel, bindScrollLock, bindSheetDrag, lobbyMode, lobbyPrefValue, setLobbyPref, setUiCue, type LobbyPref } from './ui/mobile.ts';
+import { bindBackdropClose, bindFeel, bindScrollLock, bindPress, cue, fadeMore, bindSheetDrag, lobbyMode, lobbyPrefValue, setLobbyPref, setUiCue, type LobbyPref } from './ui/mobile.ts';
 import { bindArtFocus } from './ui/artFocus.ts';
 import { bindAppHeight } from './ui/appHeight.ts';
 import { bindBrowse } from './ui/browse.ts';
-import { bindMusicPage } from './ui/musicPage.ts';
+import { bindMusicPage, ORDER_ICONS } from './ui/musicPage.ts';
 import { bindTasksPage } from './ui/tasksPage.ts';
 import { applyHudFrame, bindLooks, finaleOwned } from './shop/state.ts';
 import { setRewardOpener } from './ui/reward.ts';
@@ -918,7 +920,16 @@ function openDialog(dialog: HTMLDialogElement): void {
 }
 document.querySelectorAll<HTMLDialogElement>('dialog').forEach(dialog => {
   bindDialogFallback(dialog);
-  dialog.addEventListener('click', e => { if (e.target === dialog) dialog.close(); });
+  /* 点空白处关：按下和抬起都要落在弹窗框外（::backdrop 的点击 target 也是 dialog 本身，所以按坐标判）。
+     只看 click 的话，从框里拖出来（滑列表、拖音量、左右翻页）在框外松手也会关；点到框自己的内边距也会关。 */
+  let downOutside = false;
+  const outside = (e: MouseEvent) => {
+    if (e.target !== dialog) return false;
+    const r = dialog.getBoundingClientRect();
+    return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+  };
+  dialog.addEventListener('pointerdown', e => { downOutside = outside(e); });
+  dialog.addEventListener('click', e => { if (downOutside && outside(e)) { cue('back'); dialog.close(); } downOutside = false; });
   dialog.addEventListener('close', () => {
     unlockScroll();
     const trigger = dialogTriggers.get(dialog);
@@ -1017,17 +1028,38 @@ const helpDialog = $('help-dialog') as HTMLDialogElement;
 $('help').onclick = () => { if (game && !game.paused) game.togglePause(true); openDialog(helpDialog); };
 $('close-help').onclick = () => helpDialog.close();
 
+/* 音乐弹层里的三个状态钮（音效 / 音乐 / 播放方式）：桌面和竖屏照旧显示整句文字（.pop-full），
+   大厅里显示图标 + 短名（.pop-short），图标随状态换（关 = 带斜杠）。24 网格、2px 描边。 */
+const SPEAKER = '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/>';
+const NOTES = '<path d="M9 18V6l10.5-2.5v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17" cy="15.5" r="2.5"/>';
+const POP_ICONS: Record<string, string> = {
+  sfxOn: SPEAKER + '<path d="M15.5 9a4 4 0 0 1 0 6"/><path d="M18.2 6.5a7.5 7.5 0 0 1 0 11"/>',
+  sfxOff: SPEAKER + '<path d="M16 9.5l5 5M21 9.5l-5 5"/>',
+  bgmOn: NOTES,
+  bgmOff: NOTES + '<path d="M3.5 3.5l17 17"/>',
+};
+function setPopTile(btn: HTMLElement, full: string, short: string, icon: string): void {
+  if (!btn.classList.contains('pop-tile')) {
+    btn.classList.add('pop-tile');
+    btn.innerHTML = '<svg class="pop-ico" viewBox="0 0 24 24" aria-hidden="true"></svg><span class="pop-full"></span><span class="pop-short" aria-hidden="true"></span>';
+  }
+  const ico = btn.querySelector('.pop-ico')!, f = btn.querySelector('.pop-full')!, sh = btn.querySelector('.pop-short')!;
+  if (ico.innerHTML !== icon) ico.innerHTML = icon;
+  if (f.textContent !== full) f.textContent = full;
+  if (sh.textContent !== short) sh.textContent = short;
+}
 /* 竖屏手机把音效开关收进音乐弹层（#sound-toggle），两处是同一个开关。 */
 function toggleSound(): void {
   sfx.muted = !sfx.muted;
   setIconBtn($('sound'), sfx.muted ? '♪ 音效关' : '♪ 音效开');
-  $('sound-toggle').textContent = sfx.muted ? '♪ 音效关' : '♪ 音效开';
+  setPopTile($('sound-toggle'), sfx.muted ? '♪ 音效关' : '♪ 音效开', '音效', POP_ICONS[sfx.muted ? 'sfxOff' : 'sfxOn']);
   $('sound-toggle').setAttribute('aria-pressed', String(!sfx.muted));
   if (!sfx.muted) { sfx.unlock(); sfx.play('select'); }
   syncAudioSettings();
 }
 $('sound').onclick = toggleSound;
 $('sound-toggle').onclick = toggleSound;
+setPopTile($('sound-toggle'), sfx.muted ? '♪ 音效关' : '♪ 音效开', '音效', POP_ICONS[sfx.muted ? 'sfxOff' : 'sfxOn']);
 
 /* 音乐与音效各自独立，这条只管 BGM。做法对齐参考站的 music-settings：开关是同步布尔，
    点击立即翻转并刷 UI，点击路径上不 await 任何东西，关闭永远跟手；面板用原生 details
@@ -1043,11 +1075,11 @@ function syncMusicUi(): void {
     const on = musicEnabled();
     const label = on ? '♫ 音乐开' : '♫ 音乐关';
     const btn = $('music-toggle');
-    if (btn.textContent !== label) btn.textContent = label;
+    setPopTile(btn, label, '音乐', POP_ICONS[on ? 'bgmOn' : 'bgmOff']);
     btn.setAttribute('aria-pressed', String(on));
     const orderBtn = $('music-order');
     const orderLabel = ORDER_LABEL[musicOrder()];
-    if (orderBtn.textContent !== orderLabel) orderBtn.textContent = orderLabel;
+    setPopTile(orderBtn, orderLabel, orderLabel.slice(0, 2), ORDER_ICONS[musicOrder()]);
     const title = $('music-title');
     const name = musicTitle();
     if (title.textContent !== name) title.textContent = name;
@@ -1115,6 +1147,7 @@ document.addEventListener('keydown', e => {
 
 /* 设置弹窗目前只有名册显示。战斗中打开会像帮助弹窗一样先暂停；ESC 与原生 dialog 行为一致。 */
 const settingsDialog = $('settings-dialog') as HTMLDialogElement;
+settingsDialog.querySelector('.set-tabs')?.addEventListener('click', () => requestAnimationFrame(() => settingsDialog.querySelector('.set-panes')?.dispatchEvent(new Event('scroll'))));
 const codenameDialog = $('codename-dialog') as HTMLDialogElement;
 function syncCodenameUi(): void {
   const cn = ensureCodename();
@@ -1158,6 +1191,9 @@ function openSettings(tab?: string): void {
   if (game && !game.paused) game.togglePause(true);
   showSettingsTab(tab);
   openDialog(settingsDialog);
+  /* 当前页下面还有选项时，底边渐隐一截提示还能往下滑（和后台页分类栏同一个提示）；切页后重算。 */
+  const panes = settingsDialog.querySelector<HTMLElement>('.set-panes');
+  if (panes) { fadeMore(panes); requestAnimationFrame(() => panes.dispatchEvent(new Event('scroll'))); }
 }
 $('settings').onclick = () => openSettings();
 $('close-settings').onclick = () => settingsDialog.close();
@@ -1313,6 +1349,24 @@ bindHub();
 /* 手机后台页的触感音效：只在触屏发声（ui/mobile.ts 判定），键鼠访问保持安静。 */
 setUiCue((k, step) => { sfx.unlock(); sfx.ui(k, step); });
 bindFeel();
+bindPress();
+bindLayerBack();
+bindPeeks();
+/* 「直接排开 / 按乐队分组」两处（印章册、设置名册）横屏换成视图图标：平铺网格 / 分组网格。图标运行时插入，文字照留（桌面显示、读屏名），横屏只看图标。 */
+{
+  const VIEW_ICONS: Record<string, string> = {
+    flat: '<rect x="3.5" y="4" width="4.5" height="4.5" rx="1"/><rect x="9.75" y="4" width="4.5" height="4.5" rx="1"/><rect x="16" y="4" width="4.5" height="4.5" rx="1"/><rect x="3.5" y="10" width="4.5" height="4.5" rx="1"/><rect x="9.75" y="10" width="4.5" height="4.5" rx="1"/><rect x="16" y="10" width="4.5" height="4.5" rx="1"/><rect x="3.5" y="16" width="4.5" height="4.5" rx="1"/><rect x="9.75" y="16" width="4.5" height="4.5" rx="1"/><rect x="16" y="16" width="4.5" height="4.5" rx="1"/>',
+    band: '<path d="M3.5 4h7"/><rect x="3.5" y="6.5" width="4.5" height="4.5" rx="1"/><rect x="9.75" y="6.5" width="4.5" height="4.5" rx="1"/><path d="M3.5 14h7"/><rect x="3.5" y="16.5" width="4.5" height="4.5" rx="1"/><rect x="9.75" y="16.5" width="4.5" height="4.5" rx="1"/><rect x="16" y="16.5" width="4.5" height="4.5" rx="1"/>',
+  };
+  for (const b of document.querySelectorAll<HTMLButtonElement>('#stamp-layout button[data-layout], #set-roster-seg button[data-value]')) {
+    const k = b.dataset.layout ?? b.dataset.value ?? '';
+    if (!VIEW_ICONS[k] || b.querySelector('.view-ico')) continue;
+    b.setAttribute('aria-label', b.textContent?.trim() ?? '');
+    b.classList.add('view-btn');
+    b.insertAdjacentHTML('afterbegin', `<svg class="view-ico" viewBox="0 0 24 24" aria-hidden="true">${VIEW_ICONS[k]}</svg>`);
+  }
+}
+registerLayer(() => { const s = $('music-settings') as HTMLDetailsElement; if (!s.open) return false; s.open = false; return true; });
 bindScrollLock();
 bindBackdropClose();
 bindSheetDrag();

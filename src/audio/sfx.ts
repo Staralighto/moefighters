@@ -51,7 +51,7 @@ const FINALE_SAMPLES: Partial<Record<SfxKind, { src: string; at: number; dur: nu
 /** Select-screen cues. Not SfxKind: the match never plays these. */
 export type UiSound = 'hover' | 'swish' | 'confirm' | 'deny' | 'land' | 'whoosh' | 'vs'
   /* 手机后台页（ui/mobile.ts，只在触屏发声）：都很轻、很短，是装饰不是主角。 */
-  | 'tap' | 'tab' | 'tick' | 'open' | 'back' | 'buy' | 'coin' | 'chime';
+  | 'tap' | 'tab' | 'tick' | 'open' | 'back' | 'buy' | 'coin' | 'chime' | 'cancel';
 
 const VOLUME_KEY = 'mf-sfx-volume';
 function readVolume(): number {
@@ -171,12 +171,19 @@ export class Sfx {
 
   /** Select-screen sounds. Kept apart from SfxKind: the fight, the net relay and the lockstep
    *  replay never see these, so nothing on the wire changes. */
+  /* 界面音的强度表（从轻到重，同一级的操作共用同一个声音；越常按的越轻，免得熟手听烦）：
+     tick 横滑经过 < cancel 滑开取消 < tap 普通点按 < tab 切分类 / 单选 < back / open 退一层 / 进一层
+     < deny 不可用（温和的低音，不刺耳） < buy / coin / chime 买下、领取、演出落定（最重，偶尔才有）。
+     高频的 tap / tab / tick / back / open 每次随机偏 ±3% 音高，连点不像机关枪。 */
   ui(kind: UiSound, step = 0): void {
     if (this.muted || !this.ctx) return;
     const ctx = this.ctx, t = ctx.currentTime;
+    const jit = kind === 'tap' || kind === 'tab' || kind === 'tick' || kind === 'back' || kind === 'open' || kind === 'cancel'
+      ? 2 ** ((Math.random() * 2 - 1) * .5 / 12) : 1;
     const tone = (type: OscillatorType, f0: number, f1: number, at: number, dur: number, gain: number, lowpass = 0) => {
       const o = ctx.createOscillator(), g = ctx.createGain();
       o.type = type;
+      f0 *= jit; f1 *= jit;
       o.frequency.setValueAtTime(f0, t + at);
       o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + at + dur);
       g.gain.setValueAtTime(.0001, t + at);
@@ -211,7 +218,10 @@ export class Sfx {
       case 'hover': tone('sine', 2300, 1900, 0, .03, .016); break;
       case 'swish': noise(0, .2, .07, 700, 3400); break;
       case 'confirm': tone('triangle', 660, 640, 0, .08, .06); tone('triangle', 990, 980, .055, .12, .06); break;
-      case 'deny': tone('square', 150, 95, 0, .09, .06, 700); tone('square', 130, 80, .1, .11, .06, 700); break;
+      /* 不可用：两下温和的低音（三角波 + 低通），听得出「不行」但不刺耳。 */
+      case 'deny': tone('triangle', 220, 170, 0, .08, .05, 900); tone('triangle', 196, 150, .09, .1, .045, 900); break;
+      /* 滑开取消：比 tap 更短更暗、往下走的一下，「没算」。 */
+      case 'cancel': tone('sine', 820, 620, 0, .04, .012); break;
       case 'land': tone('sine', 130, 42, 0, .17, .13); noise(0, .1, .05, 900, 300, .6); break;
       case 'whoosh': noise(0, .38, .09, 400, 2600, .6); break;
       /* 轻点：一粒很短的木质高音。 */

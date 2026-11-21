@@ -79,13 +79,15 @@ export const peekHTML = (kind: Kind) => `<span class="mc-peek" aria-hidden="true
 
 export function cardHTML(item: ItemDef, s: CardState, i: number): string {
   const tag = item.price != null && !s.owned
-    ? `<span class="mc-tag">${SHARD}<b>${item.price}</b></span>` : '';
-  const stamp = s.owned && item.price != null && s.worn === undefined ? '<span class="mc-stamp" aria-hidden="true">已拥有</span>' : '';
+    ? `<span class="mc-tag"><svg class="lock-ico" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-lock"/></svg>${SHARD}<b>${item.price}</b></span>` : '';
+  const stamp = s.owned && item.price != null && s.worn === undefined ? '<span class="mc-stamp" aria-hidden="true"><svg class="own-ico" viewBox="0 0 256 256" aria-hidden="true"><use href="#i-check"/></svg><span class="own-t">已拥有</span></span>' : '';
   const worn = s.worn ? '<span class="mc-worn">使用中</span>' : '';
-  const btn = s.action ? `<button type="button" class="mc-btn${s.action.act === 'buy' || s.action.act === 'wear' ? ' set-primary' : ''}"${s.action.act === 'wear' ? ' data-cue="confirm"' : ''} data-act="${s.action.act}" data-id="${esc(item.id)}"${s.action.disabled ? ' disabled' : ''}>${s.action.act === 'buy' ? SHARD : ''}${esc(s.action.label)}</button>` : '';
+  /* 去商店 / 去任务是跳转（.mc-go），横屏的仓库卡片不放：卡上有锁和价格，点卡片看详情，详情里有跳转。 */
+  const go = s.action?.act === 'shop' || s.action?.act === 'tasks';
+  const btn = s.action ? `<button type="button" class="mc-btn${go ? ' mc-go' : ''}${s.action.act === 'buy' || s.action.act === 'wear' ? ' set-primary' : ''}"${s.action.act === 'wear' ? ' data-cue="confirm"' : ''} data-act="${s.action.act}" data-id="${esc(item.id)}"${s.action.disabled ? ' disabled' : ''}>${s.action.act === 'buy' ? SHARD : ''}${esc(s.action.label)}</button>` : '';
   return `<li class="mc" data-id="${esc(item.id)}" data-kind="${item.kind}" data-owned="${s.owned}"${s.worn ? ' data-worn="true"' : ''} style="--n:${i}">`
     + `<div class="mc-art">${itemPreviewHTML(item.id)}${tag}${stamp}${worn}${peekHTML(item.kind)}</div>`
-    + `<div class="mc-body"><b>${esc(item.name)}</b>${s.note ? `<small>${esc(s.note)}</small>` : ''}${btn}</div></li>`;
+    + `<div class="mc-body"><b>${esc(item.name)}</b>${s.note ? `<small${tag && /^商店 · /.test(s.note) ? ' class="mc-note-price"' : ''}>${esc(s.note)}</small>` : ''}${btn}</div></li>`;
 }
 
 /** 空分类：一个空衣架。 */

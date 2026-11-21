@@ -9,6 +9,7 @@ import { netMark, pendingNet } from '../assets/loader.ts';
 import { onWallet, shards } from '../save/wallet.ts';
 import { cue, lobbyMode } from './mobile.ts';
 import { settleAppHeight } from './appHeight.ts';
+import { backOne, setPageBack } from './layerBack.ts';
 
 export type HubId = 'shop' | 'locker' | 'tasks' | 'music' | 'battle' | 'stage' | 'moves';
 
@@ -226,6 +227,9 @@ export function openHub(id: HubId, from?: HTMLElement | null): void {
   cancelGate = gate.cancel;
   opener = from ?? null;
   $('hub-no').textContent = NO[id];
+  /* 横屏：编号圆标换成这一页的图标（和弹出式导航里同一个），字母 / 编号对玩家没有意义。 */
+  const ico = document.getElementById('hub-ico');
+  if (ico) ico.querySelector('use')?.setAttribute('href', `#${LAND_STOPS.find(s => s.id === id)?.icon ?? 'i-house'}`);
   setHubCount(null);
   $('hub-title').textContent = page.title;
   $('hub-en').textContent = page.en;
@@ -323,7 +327,9 @@ export function bindHub(): void {
     tile.onclick = () => openHub(tile.dataset.hub as HubId, tile);
   }
   /* 返回、Esc 都先收起最上面那一层：导航开着就只收导航。 */
-  $('hub-back').onclick = () => { if (!closeNav()) closeHub(); };
+  /* 返回键、系统返回、Esc 都走 layerBack 的逐层返回：导航开着只收导航，然后才关页面。 */
+  setPageBack(() => { if (!current) return false; if (!closeNav()) closeHub(); return true; });
+  $('hub-back').onclick = () => { backOne(true); };
   $('hub-nav-btn').onclick = () => { if (!closeNav()) openNav(); };
   $('hub-nav').querySelector<HTMLElement>('.hn-scrim')!.onclick = () => { cue('back'); closeNav(); };
   document.addEventListener('keydown', e => {
@@ -335,7 +341,8 @@ export function bindHub(): void {
   window.addEventListener('popstate', () => {
     /* 哨兵只在触屏挂（swipeBack.ts）；键鼠访问的返回是真离开，触屏刚被撤掉时哨兵自己退的那一步也不算。 */
     if (!document.body.classList.contains('touch')) return;
-    if (!current || document.querySelector('dialog[open]')) return;
-    if (!closeNav()) closeHub();
+    /* 弹窗开着时先关弹窗（原来这里直接不管，系统返回在弹窗上没反应）。战斗中不接。 */
+    if (document.body.classList.contains('in-battle') && !document.querySelector('dialog[open]')) return;
+    backOne();
   });
 }

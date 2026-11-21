@@ -182,7 +182,8 @@ function paintWho(info: ReturnType<SelectScreen['lobbyInfo']>): void {
   const key = info.sides.map(x => `${x.slot}${x.mark}${x.name}`).join('|') + '#' + info.side;
   if (seg.dataset.key === key) return;
   seg.dataset.key = key;
-  seg.innerHTML = info.sides.map(x => `<button type="button" data-side="${x.slot}"${x.slot === info.side ? ' class="active" aria-pressed="true"' : ' aria-pressed="false"'}>${esc(x.mark)} · ${esc(x.name)}</button>`).join('');
+  /* 横屏只写 1P / 2P（.ms-mark）：选了谁玩家自己记得，不放名字就永远不会因为太长而挤；桌面仍是「1P · 灯」（.ms-t）。 */
+  seg.innerHTML = info.sides.map(x => `<button type="button" data-side="${x.slot}"${x.slot === info.side ? ' class="active" aria-pressed="true"' : ' aria-pressed="false"'} aria-label="${esc(x.mark)} · ${esc(x.name)}"><i class="ms-mark" aria-hidden="true">${esc(x.mark)}</i><span class="ms-t">${esc(x.mark)} · ${esc(x.name)}</span></button>`).join('');
   for (const btn of seg.querySelectorAll<HTMLButtonElement>('button')) btn.onclick = () => select.pickSide(Number(btn.dataset.side));
 }
 

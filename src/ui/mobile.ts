@@ -83,18 +83,177 @@ export function refuse(el: HTMLElement | null): void {
   el.animate([{ translate: '0 0' }, { translate: '-6px 0' }, { translate: '5px 0' }, { translate: '-3px 0' }, { translate: '0 0' }], { duration: 280, easing: 'ease-out' });
 }
 
-/* ---- 委托：后台页与它的弹窗里，按钮点下去默认一声 tap。
-   data-cue 指定别的音色；data-cue="none" 表示由代码自己发声（购买、领取）。 ---- */
-const SCOPE = '#hub, .album-dialog, .frame-dialog, .gift-dialog, #stamp-dialog';
+/* ---- 委托：大厅、顶栏、后台页和所有弹窗（设置、说明、印章册……）里，按钮点下去默认一声。
+   页签 / 单选（分段）是 tab，关闭叉是 back，其余 tap；data-cue 指定别的音色，data-cue="none" 表示由代码自己发声。
+   自己会发声的入口（打开后台页 / 备战页、快速开打、音效开关、切歌）不再叠一声。 ---- */
+const SCOPE = '#hub, dialog, .lobby, body > header';
+const SELF_SOUNDED = '[data-hub], [data-prep], #lobby-quick, #sound-toggle, #set-sfx-switch, #music-prev, #music-next';
 export function bindFeel(): void {
   document.addEventListener('click', e => {
     if (!isTouch() || !(e.target instanceof Element)) return;
-    const el = e.target.closest<HTMLElement>('button, [role="button"], .mc[data-id] .mc-art');
-    if (!el || !el.closest(SCOPE) || (el as HTMLButtonElement).disabled) return;
+    const el = e.target.closest<HTMLElement>('button, summary, [role="button"], .mc[data-id] .mc-art');
+    if (!el || !el.closest(SCOPE) || (el as HTMLButtonElement).disabled || el.matches(SELF_SOUNDED)) return;
     const k = el.dataset.cue;
     if (k === 'none') return;
-    cue((k as UiSound) || 'tap');
+    const role = el.getAttribute('role');
+    cue((k as UiSound) || (role === 'tab' || role === 'radio' ? 'tab' : el.getAttribute('aria-label') === '关闭' ? 'back' : 'tap'));
   }, { capture: true, passive: true });
+  /* 拖滑条（音量等）：每变一档轻轻 tick 一下，最多 25 次/秒。 */
+  let at = 0;
+  document.addEventListener('input', e => {
+    const el = e.target;
+    if (!isTouch() || !(el instanceof HTMLInputElement) || el.type !== 'range' || !el.closest(SCOPE)) return;
+    const now = performance.now();
+    if (now - at > 40) { cue('tick'); at = now; }
+  }, { capture: true, passive: true });
+}
+
+/* ---- 触屏按压（照 React Native Pressable 的 HitRect / PressRect 做）：点按由这里判定，不交给浏览器的 click 命中。
+   为什么：①按钮按下会缩小（按压反馈），命中框跟着缩，按在边缘、抬起落到框外 → click 发给外层或不发；
+   ②iOS 按「触点半径」把 click 派给附近别的元素（WebKit bug 139221），表现为按钮亮了（:active / :hover 变白）却没反应；
+   ③click 迟到会落到刚弹出来的新控件上（幽灵点击，padEditor 早就为此自己处理）。
+   做法：
+   - 命中区（HitRect）= 按钮本身外扩 HIT_SLOP：手指落在按钮旁边一点也算按到它（热区始终略大于按钮）。
+   - 保持区（PressRect）= 按下那一刻的原始框外扩 RETAIN：之后按钮怎么缩都不影响，抬起时还在保持区里就算点到。
+   - 手指移动超过 MOVE_SLOP（在滑列表 / 翻页）或浏览器接管成滚动（touchcancel）就放弃。
+   - 判定成功：touchend 上 preventDefault（浏览器不再补发 click / 鼠标兼容事件，没有幽灵点击），立刻调 el.click()。
+   - 长按 LONG_PRESS 以上：有 data-tip 或纯图标钮（aria-label）的显示一个小标签，松手不触发。
+   键盘、鼠标不经过这里；滑条、输入框、按键板、布局编辑器保留原生行为。 ---- */
+const PRESSABLE = 'button, summary, [role="button"], [role="tab"], [role="radio"], [role="switch"], .mc[data-id] .mc-art';
+const NATIVE = 'input, select, textarea, label, a, [contenteditable], .touchpad, .pad-editor, #battle .arena, [data-native-tap]';
+const HIT_SLOP = 8, RETAIN = 18, MOVE_SLOP = 12, LONG_PRESS = 480;
+function pressableAt(x: number, y: number): HTMLElement | null {
+  const pick = (px: number, py: number) => {
+    const t = document.elementFromPoint(px, py);
+    const el = t?.closest<HTMLElement>(PRESSABLE) ?? null;
+    return el && !el.closest(NATIVE) ? el : null;
+  };
+  const direct = pick(x, y);
+  if (direct) return direct;
+  /* 手指落在空白上：四周 HIT_SLOP 内有按钮就算按到它（落在别的东西上时不抢）。 */
+  const under = document.elementFromPoint(x, y);
+  if (!under || under.closest(NATIVE) || getComputedStyle(under).cursor === 'pointer') return null;
+  for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0], [-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    const el = pick(x + dx * HIT_SLOP, y + dy * HIT_SLOP);
+    if (el) return el;
+  }
+  return null;
+}
+/* 长按只用来「看」、不用来「做」：注册的元素长按弹出一张预览卡（松手就收），没注册的纯图标钮弹名称小标签。 */
+type Peek = { sel: string; build: (el: HTMLElement) => HTMLElement | null };
+const peeks: Peek[] = [];
+export function onLongPress(sel: string, build: (el: HTMLElement) => HTMLElement | null): void { peeks.push({ sel, build }); }
+let peekEl: HTMLElement | null = null;
+export function dropPeek(): void { peekEl?.remove(); peekEl = null; }
+/** 把浮层摆到元素上方（放不下就下方），水平居中并夹在可视区里；在弹窗里就放进弹窗、坐标换成相对弹窗。 */
+function float(card: HTMLElement, el: HTMLElement, gap: number): void {
+  const host = el.closest<HTMLElement>('dialog[open]');
+  (host ?? document.body).append(card);
+  card.style.position = host ? 'absolute' : 'fixed';
+  const r = el.getBoundingClientRect(), o = host?.getBoundingClientRect();
+  const W = o ? o.width : window.innerWidth, H = o ? o.height : window.innerHeight;
+  const ox = o?.left ?? 0, oy = o?.top ?? 0;
+  const cw = card.offsetWidth, ch = card.offsetHeight;
+  let left: number, top: number;
+  const rightRoom = W - (r.right - ox) - gap, leftRoom = r.left - ox - gap;
+  if (W > H && Math.max(rightRoom, leftRoom) >= cw + 4) {
+    /* 横屏高度紧：放在按住的那张卡的旁边（右边放得下就右边），竖直对齐它的中心，手指不挡。 */
+    left = rightRoom >= cw + 4 ? r.right - ox + gap : r.left - ox - gap - cw;
+    top = Math.min(H - ch - 4, r.top - oy + r.height / 2 - ch / 2);
+  } else {
+    const above = r.top - oy - gap - ch >= 4;
+    top = above ? r.top - oy - gap - ch : Math.min(H - ch - 4, r.bottom - oy + gap);
+    left = Math.max(4, Math.min(W - cw - 4, r.left - ox + r.width / 2 - cw / 2));
+  }
+  card.style.left = `${Math.round(left)}px`;
+  card.style.top = `${Math.round(Math.max(4, top))}px`;
+}
+function showPeek(el: HTMLElement): boolean {
+  for (const p of peeks) {
+    const hit = el.matches(p.sel) ? el : null;
+    if (!hit) continue;
+    const card = p.build(hit);
+    if (!card) continue;
+    dropPeek();
+    card.classList.add('press-peek');
+    card.setAttribute('aria-hidden', 'true');
+    peekEl = card;
+    float(card, hit, 10);
+    cue('open');
+    buzz(10);
+    return true;
+  }
+  return false;
+}
+let tipEl: HTMLElement | null = null, tipTimer = 0;
+function showTip(el: HTMLElement): boolean {
+  /* 纯图标钮（看得见的字为空）才给标签；innerText 不算 display: none 的隐藏字。 */
+  const text = el.dataset.tip || (el.innerText.trim() ? '' : el.getAttribute('aria-label')) || '';
+  if (!text) return false;
+  if (!tipEl) { tipEl = document.createElement('div'); tipEl.className = 'press-tip'; tipEl.setAttribute('aria-hidden', 'true'); }
+  /* 弹窗在顶层：标签要放进弹窗里才盖得住；弹窗是定位容器（可能还带 translate），坐标换成相对弹窗。 */
+  const host = el.closest<HTMLElement>('dialog[open]');
+  (host ?? document.body).append(tipEl);
+  tipEl.style.position = host ? 'absolute' : 'fixed';
+  tipEl.textContent = text;
+  const r = el.getBoundingClientRect(), o = host?.getBoundingClientRect();
+  const below = r.bottom + 40 < (o ? o.bottom : window.innerHeight);
+  tipEl.style.left = `${Math.round(r.left + r.width / 2 - (o?.left ?? 0))}px`;
+  tipEl.style.top = `${Math.round((below ? r.bottom + 6 : r.top - 6) - (o?.top ?? 0))}px`;
+  tipEl.dataset.side = below ? 'below' : 'above';
+  tipEl.hidden = false;
+  clearTimeout(tipTimer);
+  tipTimer = window.setTimeout(() => { if (tipEl) tipEl.hidden = true; }, 1400);
+  buzz(8);
+  return true;
+}
+export function bindPress(): void {
+  let el: HTMLElement | null = null, rect: DOMRect | null = null, x0 = 0, y0 = 0, longTimer = 0, longDone = false;
+  const release = () => { el?.classList.remove('pressing'); el = null; clearTimeout(longTimer); dropPeek(); };
+  document.addEventListener('touchstart', e => {
+    release();
+    slid = null;
+    if (!isTouch() || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const hit = pressableAt(t.clientX, t.clientY);
+    if (!hit || (hit as HTMLButtonElement).disabled) return;
+    el = hit; rect = hit.getBoundingClientRect(); x0 = t.clientX; y0 = t.clientY; longDone = false;
+    hit.classList.add('pressing');
+    longTimer = window.setTimeout(() => { if (el === hit && (showPeek(hit) || showTip(hit))) { longDone = true; hit.classList.remove('pressing'); } }, LONG_PRESS);
+  }, { capture: true, passive: true });
+  /* 按住后手指滑开（不是在滚列表）再松手 = 取消：给一声很轻的取消音，让人知道这一下没算。滚列表时按钮跟着动，不出声。 */
+  let slid: { el: HTMLElement; x: number; y: number } | null = null;
+  document.addEventListener('touchmove', e => {
+    if (!el) return;
+    const t = e.touches[0];
+    if (!t || Math.hypot(t.clientX - x0, t.clientY - y0) > MOVE_SLOP) {
+      const r = el.getBoundingClientRect();
+      slid = longDone ? null : { el, x: r.left, y: r.top };
+      release();
+    }
+  }, { capture: true, passive: true });
+  document.addEventListener('touchend', () => {
+    const s = slid; slid = null;
+    if (!s || !s.el.isConnected) return;
+    const r = s.el.getBoundingClientRect();
+    if (Math.abs(r.left - s.x) < 3 && Math.abs(r.top - s.y) < 3) cue('cancel');
+  }, { capture: true, passive: true });
+  document.addEventListener('touchcancel', release, { capture: true, passive: true });
+  document.addEventListener('touchend', e => {
+    const b = el, r = rect, long = longDone;
+    release();
+    if (!b || !r || e.touches.length) return;
+    const t = e.changedTouches[0];
+    if (!t || t.clientX < r.left - RETAIN || t.clientX > r.right + RETAIN || t.clientY < r.top - RETAIN || t.clientY > r.bottom + RETAIN) return;
+    /* 拦不住浏览器补发的 click（touchend 不可取消，比如正在滚动）就不自己点，交给原生，免得点两次。 */
+    if (!e.cancelable) return;
+    e.preventDefault();
+    if (long || !b.isConnected || (b as HTMLButtonElement).disabled) return;
+    /* 浏览器的 click 被拦了，焦点不会自己移走：输入框还聚焦着就先收起键盘。 */
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active !== b && active.matches('input, textarea')) active.blur();
+    b.click();
+  }, { capture: true, passive: false });
 }
 
 /* ---- 滚动锁：后台页和弹窗里，上下拖只交给真的还能往那个方向滚的区域。

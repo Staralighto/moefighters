@@ -6,6 +6,7 @@ import { FADE_OUT_MS, fadeIn, reducedMotion } from './motion.ts';
 import { ITEM_BY_ID, KINDS, itemsOf, slotOf, type ItemDef, type Kind } from '../shop/catalog.ts';
 import { current, has, wear } from '../shop/state.ts';
 import { onInventory } from '../save/inventory.ts';
+import { registerLayer } from './layerBack.ts';
 import { PLAYABLE_BY_ID } from '../data/characters.ts';
 import { readStamps } from './stamps.ts';
 import { appendHubItems, hubOpen, openHub, registerHubPage, setHubCount } from './hub.ts';
@@ -320,6 +321,8 @@ function mount(host: HTMLElement): void {
 
 export function bindLockerPage(stamps: () => void): void {
   openStamps = stamps;
+  /* 返回先收起小卡片，不直接退出仓库。 */
+  registerLayer(() => { if (!popOpen) return false; closePop(); return true; });
   registerHubPage('locker', {
     title: '仓库', en: 'MY LOCKER', mount,
     loading: { line: '储物柜开锁中', en: 'UNLOCKING LOCKER' },

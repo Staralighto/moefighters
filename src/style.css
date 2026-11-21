@@ -78,6 +78,42 @@ body.touch {
 /* 不把 :has 与 body.touch 拼成一个选择器列表，旧内核会把整条触屏保护一起丢弃。 */
 html:has(body.touch) { touch-action: pan-y; overscroll-behavior: none; }
 body.touch img { -webkit-user-drag: none; }
+/* 按压态由 ui/mobile.ts bindPress 挂 .pressing（手指落在按钮旁边的热区里时 :active 不会亮，靠这个）。 */
+body.touch :is(button, summary, [role="button"]).pressing { filter: brightness(1.18); }
+/* 弹窗开着时浮在最上面的导航带（ui/layerBack.ts）：一份顶栏拷贝盖在原位，popover 放进顶层。 */
+.layer-bar[popover] { position: fixed; inset: 0 0 auto 0; top: var(--app-top, 0px); width: auto; height: var(--dlg-top, 50px); max-width: none; max-height: none; margin: 0; padding: 0; overflow: visible; border: 0; background: none; color: var(--text); }
+.layer-bar[popover]:not(:popover-open) { display: none; }
+[data-mirrored] { visibility: hidden; }
+/* 只有按钮接手指：导航带上的空白处照旧算「点空白关闭」。 */
+.layer-bar, .layer-bar * { pointer-events: none; }
+.layer-bar :is(button, summary), .layer-bar :is(button, summary) * { pointer-events: auto; }
+/* 大厅里的返回键（后台页里用的是拷贝出来的页面返回键，样式跟 .hub-bar .hub-back 走）。 */
+.layer-bar > .layer-back { position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); top: max(6px, env(safe-area-inset-top, 0px)); display: inline-flex; align-items: center; justify-content: center; width: 76px; height: 40px; padding: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--panel-2); color: var(--text); }
+.layer-back .btn-icon { display: block; width: 22px; height: 22px; }
+@supports (corner-shape: squircle) { .layer-bar > .layer-back { border-radius: 20px; corner-shape: squircle; } }
+/* 横屏弹窗的暗色遮罩从导航带下沿才开始，上面一截渐变过去，没有硬边：导航带（含碎片数、弹出式导航）整条不压暗。 */
+:where(html.ph-land) dialog:not(.reward-dialog)::backdrop { background: linear-gradient(transparent 0 34px, var(--shade-scrim) 58px); }
+/* 长按预览卡（ui/peek.ts）：只看不做，松手就收。 */
+.press-peek { z-index: 200; padding: 12px 14px; border-radius: 16px; background: var(--panel); color: var(--text); box-shadow: 0 16px 36px var(--shade), inset 0 0 0 1px var(--line); pointer-events: none; transform-origin: 50% 100%; animation: peek-in .12s ease-out; }
+@keyframes peek-in { from { opacity: 0; scale: .94; } }
+@media (prefers-reduced-motion: reduce) { .press-peek { animation: none; } }
+.peek-char { width: 280px; border-top: 3px solid var(--c, var(--brand-ink)); }
+.peek-char header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.peek-char header b { font: 900 16px/1.2 var(--font-head); }
+.peek-char header small { color: var(--muted); font-size: 11.5px; }
+.peek-char ol { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.peek-char li { display: grid; grid-template-columns: 2.4em minmax(0, 1fr); align-items: start; gap: 8px; }
+.peek-char kbd { display: grid; place-items: center; height: 20px; border-radius: 6px; background: var(--well); font: 700 11px/1 var(--font); }
+.peek-char li.ult kbd { background: var(--brand); color: var(--on-brand); }
+.peek-char li b { display: block; font-size: 13px; line-height: 1.3; }
+.peek-char li small { display: block; color: var(--muted); font-size: 11.5px; line-height: 1.35; }
+/* 长按纯图标钮出的小标签。 */
+.press-tip { position: fixed; z-index: 200; translate: -50% 0; padding: 5px 10px; border-radius: 8px; background: var(--text); color: var(--bg); font: 700 12px/1.2 var(--font); white-space: nowrap; pointer-events: none; box-shadow: 0 6px 16px var(--shade); }
+.press-tip[data-side="above"] { translate: -50% -100%; }
+.press-tip[hidden] { display: none; }
+/* 触屏上的可点控件不参与双击缩放：iOS 会把两次快速点击（连点切换、点完一个马上点下一个）当成双击手势吞掉第二下。 */
+/* 零优先级（:where）：按键板、摇杆、滑条、布局编辑器自己写的 touch-action: none 必须盖得过它（否则拖动按键 / 滑条会被浏览器当成平移）。 */
+:where(body.touch) :where(button, summary, a, label, input, select, [role="button"], [role="tab"], [role="radio"], [role="switch"]) { touch-action: manipulation; }
 button { font: inherit; color: inherit; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: .45em .9em; cursor: pointer; transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .26s cubic-bezier(.34, 1.7, .5, 1), box-shadow .15s ease, filter .15s ease; }
 /* 悬停描边只给有悬停的指针：触屏点过以后它会粘在按钮上。:where 不加权重，组件里的悬停规则照旧盖得住它。 */
 :where(body:not(.touch)) button:hover { border-color: var(--muted); }
@@ -382,6 +418,7 @@ nav { display: flex; gap: 8px; align-items: center; }
 /* 宽度写死，曲名变了面板也不跟着变。窄屏用顶栏的 cqw 封顶，视口单位会把滚动条算进去、把页面撑出去。 */
 .music-pop { --music-hit: calc(1.5em + .9em + 2px); position: absolute; top: calc(100% + 10px); right: 0; z-index: 30; display: flex; flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 14px; width: 17.5rem; max-width: calc(100vmin - 1.5rem); max-width: max(calc(100vmin - 1.5rem), calc(100cqw - 1.5rem)); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 18px var(--shade); user-select: none; }
 .music-pop > button { width: 100%; }
+.btn-icon-b, .music-pop .pop-ico, .music-pop .pop-short { display: none; }
 /* 曲名格固定，短名只在中间居中。箭头盒高等于全局按钮（1.5 行高 + .45em 上下内边距 + 1px 边框）。 */
 .music-now { display: grid; grid-template-columns: var(--music-hit) minmax(0, 1fr) var(--music-hit); align-items: center; gap: 8px; }
 .music-step { display: grid; place-items: center; width: var(--music-hit); height: var(--music-hit); padding: 0; border: 0; background: transparent; border-radius: 8px; }
@@ -483,6 +520,8 @@ nav { display: flex; gap: 8px; align-items: center; }
 #settings-dialog .dialog-head, #settings-dialog .set-tabs { flex: none; }
 #settings-dialog .set-panes { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin-right: -8px; padding-right: 8px; }
 .set-pane { grid-area: 1 / 1; min-width: 0; visibility: hidden; }
+/* 各页叠在同一格里：没选中的页压成 0 高，滚动区只按当前页的高度算（否则短的页能滑到下面一大片空白，那是最长那页的高）。宽度照常排，分段滑块量得到。 */
+.set-pane:not(.on) { height: 0; overflow: hidden; }
 .set-pane.on { visibility: visible; animation: pane-in .2s cubic-bezier(0.16, 1, 0.3, 1); }
 @keyframes pane-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 /* 分组：小标题不再画线（页签下已经有一道），每组设置收进一块圆角卡片，组与组靠留白和卡片边界分开。 */
@@ -526,6 +565,13 @@ nav { display: flex; gap: 8px; align-items: center; }
 .set-actions button { min-width: 0; padding: .65em .8em; border-radius: 12px; white-space: nowrap; font-weight: 700; }
 .set-primary { background: var(--primary); color: var(--on-primary); border-color: transparent; font-weight: 800; }
 .set-primary:disabled { opacity: .45; cursor: not-allowed; }
+/* 按钮四级（docs/device-adaptation.md「按钮层级」）：
+   主要 = .set-primary（粉色实心，一屏最多一个）；次要 = 默认按钮（面板底 + 细描边）；
+   取消 = 默认按钮放在主要按钮左边（同高、同圆角，只靠底色区分）；危险 = .btn-danger（不实心，红色字和描边，删除 / 重置 / 放弃才用）。
+   状态：按下（缩一点 + 提亮，触屏热区内也亮，见 .pressing）、禁用（半透明 + 禁止光标，点了会抖并发 deny）、处理中（aria-busy：半透明、不接点击）。 */
+.btn-danger { background: transparent; border: 1.5px solid var(--danger-ink); color: var(--danger-ink); font-weight: 800; }
+:where(button:disabled) { opacity: .45; cursor: not-allowed; }
+:where(button[aria-busy="true"]) { opacity: .7; cursor: progress; pointer-events: none; }
 @media (max-width: 620px) {
   #settings-dialog { padding: 20px 18px 24px; }
   #settings-dialog .set-tabs button { padding: .7em .2em; font-size: 13px; }
@@ -1827,7 +1873,9 @@ dialog { border-radius: 18px; }
 /* ---- 开打过场（ui/versusCut.ts）：几何海报 ----
    双方各一枚大色圆（角色色提亮到海报明度），角色只放到接近原生像素的尺寸，不暴露细节；
    气势交给大字、VS 徽章和图形的入场节奏。退场是一个圆形光圈收拢，露出已经开打的画面。 */
-.vs-cut { position: fixed; top: 0; right: 0; bottom: 0; left: 0; inset: 0; z-index: 30; overflow: hidden; pointer-events: none; color: var(--text); }
+/* 开打的对阵 / 加载画面要盖住一切界面层：大厅 40、顶栏 45、后台页 60 都在它下面（原来是 30，横屏大厅把整段加载盖住了，
+   玩家看到的是大厅停着不动，加载快结束才突然切到半截的对阵画面）。提示条 80 仍在它上面。 */
+.vs-cut { position: fixed; top: 0; right: 0; bottom: 0; left: 0; inset: 0; z-index: 70; overflow: hidden; pointer-events: none; color: var(--text); }
 .vs-cut::before { content: ""; position: absolute; top: 0; right: 0; bottom: 0; left: 0; inset: 0; background: radial-gradient(circle, var(--wash) 1px, transparent 1.4px) 0 0 / 16px 16px, var(--well); }
 .vs-side { position: absolute; top: 0; bottom: 0; width: 50%; display: grid; place-items: center; }
 .vs-side.left { left: 0; }
@@ -2357,7 +2405,10 @@ html.hub-open, html.hub-open body { overflow: hidden; }
 :is(.dialog-head > button[aria-label="关闭"], .ab-close) { display: grid; grid-template-rows: 100%; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 12px; background: none; box-shadow: none; color: var(--muted); font-size: 0; }
 :is(.dialog-head > button[aria-label="关闭"], .ab-close)::before, :is(.dialog-head > button[aria-label="关闭"], .ab-close)::after { content: ""; grid-area: 1 / 1; width: 24px; height: 3px; border-radius: 2px; background: currentColor; rotate: 45deg; }
 :is(.dialog-head > button[aria-label="关闭"], .ab-close)::after { rotate: -45deg; }
-:is(.dialog-head > button[aria-label="关闭"], .ab-close):hover { color: var(--text); background: none; }
+:where(body:not(.touch)) :is(.dialog-head > button[aria-label="关闭"], .ab-close):hover { color: var(--text); background: none; }
+/* 触屏没有悬停：点过以后 :hover 会粘在叉上（变白），看起来像「按了没反应」。触屏只在按住时变亮。 */
+:is(.dialog-head > button[aria-label="关闭"], .ab-close):hover { background: none; }
+body.touch :is(.dialog-head > button[aria-label="关闭"], .ab-close):is(:active, .pressing) { color: var(--text); }
 .ab-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); height: 100%; }
 @media (max-width: 760px) { .album-dialog { height: auto; max-height: 90vh; overflow: auto; } .ab-grid { grid-template-columns: minmax(0, 1fr); height: auto; } .album-dialog .ab-tracks { overflow: visible; } .album-dialog .ab-list { overflow: visible; } }
 .ab-side-col { display: grid; align-content: start; gap: 10px; padding: 28px 24px; background: var(--panel-2); }
@@ -3123,7 +3174,7 @@ html.hub-covered .page-deco * { animation-play-state: paused; }
   @supports (corner-shape: squircle) { :where(html.ph-land) .lk-pop-go, :where(html.ph-land) .lk-pop-peek { border-radius: 16px; corner-shape: squircle; } }
   /* 卡片按行高伸缩：预览吃掉名字、说明、按钮之外的高度，矮屏也不压字。价签和底下的「商店 · N 星之碎片」重复，横屏去掉。 */
   /* 卡身定高：正在使用的卡没有按钮，预览也和别的卡一样大。 */
-  :where(html.ph-land) .lk .mc { grid-template-rows: minmax(0, 1fr) 106px; }
+  :where(html.ph-land) .lk .mc { grid-template-rows: minmax(0, 1fr) 72px; }
   :where(html.ph-land) .lk .mc-art { aspect-ratio: auto; min-height: 0; }
   :where(html.ph-land) .lk .mc-tag { display: none; }
   :where(html.ph-land) .lk .mc-body { gap: 2px; padding: 8px 12px 10px; }
@@ -3191,8 +3242,8 @@ html.hub-covered .page-deco * { animation-play-state: paused; }
   :where(html.ph-land) .tk-wall { height: 100%; min-height: 0; grid-template-columns: none; grid-template-rows: repeat(2, auto); grid-auto-flow: column; grid-auto-columns: var(--tile, 120px); align-content: space-between; gap: 14px 16px; padding: 2px 4px 4px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scroll-snap-type: x proximity; }
   :where(html.ph-land) .tk-wall > li { scroll-snap-align: start; }
   :where(html.ph-land) .al-tile { gap: 5px; }
-  :where(html.ph-land) .al-meta b { font-size: 13px; }
-  :where(html.ph-land) .al-meta small { display: none; }
+  /* 横屏只留封面：封面上已经印着乐队名，名字行收掉，空间全给封面（按钮的 aria-label 仍带名字）。 */
+  :where(html.ph-land) .al-meta { display: none; }
 
   /* 印章册：首屏给头像墙。标题、三项统计（章 + 数字）、排列、保存、关闭并成一条吸顶工具栏，规则说明落到墙底当脚注。 */
   :where(html.ph-land) #stamp-dialog { width: calc(100% - 24px); max-width: none; max-height: calc(var(--app-h, 100vh) - 16px); padding: 0 16px 14px; }
@@ -3288,6 +3339,76 @@ html.hub-covered .page-deco * { animation-play-state: paused; }
   :where(html.ph-land) .mp-side { min-height: 0; padding: 12px 6px 6px; overflow: auto; overscroll-behavior: contain; }
 
 
+  /* ==== 横屏弹窗统一外框（2026-11 手机横屏 UX 排查）====
+     横屏握持时两根拇指搭在屏幕左右两条边上：二级弹窗左右各留一条够拇指按的空白（屏宽 7.5%，至少 64；刘海一侧再加安全区），
+     上下也留一截，点空白处就关（main.ts 要求按下和抬起都落在框外，滑动、拖进度不会误关）。
+     弹窗变小以后内容不放大，字号和行距按「一屏看多条」收紧：标题 14、说明 12，行高跟着压。 */
+  /* 顶上一条（返回键 / 页名 / 碎片，或大厅的图标钮）是常驻导航带，弹窗从它下面开始，左上角的返回键始终不被盖、也不压弹窗。 */
+  :where(html.ph-land) { --dlg-gx: max(64px, 7.5vw, calc(env(safe-area-inset-left, 0px) + 28px), calc(env(safe-area-inset-right, 0px) + 28px)); --dlg-gy: max(20px, calc(env(safe-area-inset-bottom, 0px) + 6px)); --dlg-top: max(50px, calc(env(safe-area-inset-top, 0px) + 50px)); --dlg-h: calc(var(--app-h, 100vh) - var(--dlg-top) - var(--dlg-gy)); }
+  /* 居中只在导航带以下、底边空白以上这一段里：frame / gift 用 top + translate，其余模态弹窗用 inset + margin: auto。 */
+  :where(html.ph-land) .frame-dialog, :where(html.ph-land) .gift-dialog { top: calc(var(--app-top, 0px) + var(--dlg-top) + var(--dlg-h) / 2); }
+  :where(html.ph-land) :is(#stamp-dialog, #settings-dialog, #help-dialog, #save-dialog, #res-dialog, #codename-dialog, #quit-dialog, #net-join-dialog, #net-connection-dialog) { inset: calc(var(--app-top, 0px) + var(--dlg-top)) 0 var(--dlg-gy); margin: auto; }
+  :where(html.ph-land) .frame-dialog, :where(html.ph-land) #stamp-dialog, :where(html.ph-land) .gift-dialog { width: calc(100% - 2 * var(--dlg-gx)); max-height: var(--dlg-h); }
+  :where(html.ph-land) .frame-dialog .fv-grid { grid-template-columns: minmax(0, calc((var(--dlg-h) - 8px) * 16 / 9)) minmax(220px, 1fr); }
+  :where(html.ph-land) .frame-dialog .fv-side { max-height: var(--dlg-h); padding: 16px 14px 12px; }
+  :where(html.ph-land) .fv-name { font-size: 18px; }
+  :where(html.ph-land) .album-dialog { top: calc(var(--app-top, 0px) + var(--dlg-top)); width: calc(100% - 2 * var(--dlg-gx)); height: var(--dlg-h); }
+  :where(html.ph-land) .gf-art { height: clamp(56px, calc(var(--dlg-h) - 176px), 220px); }
+  :where(html.ph-land) .gift-dialog { padding: 10px 16px; }
+  :where(html.ph-land) :is(#help-dialog, #save-dialog, #res-dialog, #codename-dialog, #quit-dialog, #net-join-dialog, #net-connection-dialog) { max-width: min(560px, calc(100% - 2 * var(--dlg-gx))); max-height: var(--dlg-h); }
+
+  /* 专辑背面：左列收窄，曲目行一屏看到 6 条左右（原来 17 / 14 号字、87 高一行，只看得到 4 条半）。 */
+  :where(html.ph-land) .album-dialog .ab-grid { grid-template-columns: clamp(150px, 26%, 204px) minmax(0, 1fr); }
+  :where(html.ph-land) .ab-side { font-size: 10px; letter-spacing: .1em; white-space: nowrap; }
+  :where(html.ph-land) .ab-side-col { padding: 14px 12px; }
+  :where(html.ph-land) .ab-cover { --cw: min(96px, calc(var(--dlg-h) * .28)); }
+  :where(html.ph-land) .ab-name { font-size: 16px; }
+  :where(html.ph-land) .ab-bonus { grid-template-columns: auto minmax(0, 1fr); padding: 8px; }
+  /* 全清奖励的名字不截断：最多两行。 */
+  :where(html.ph-land) .ab-bonus-t b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; font-size: 13px; line-height: 1.3; }
+  :where(html.ph-land) .album-dialog .ab-tracks { padding: 12px 12px 10px; }
+  :where(html.ph-land) .ab-head { padding: 0 6px 6px; }
+  :where(html.ph-land) .ab-head b { font-size: 15px; }
+  :where(html.ph-land) .album-dialog .tk-row { grid-template-columns: 1.8em minmax(0, 1fr) auto; gap: 10px; min-height: 0; padding: 7px 6px; }
+  :where(html.ph-land) .album-dialog .tk-no { font-size: 12px; }
+  :where(html.ph-land) .album-dialog .tk-main { gap: 2px; }
+  :where(html.ph-land) .album-dialog .tk-main b { font-size: 14px; line-height: 1.3; }
+  :where(html.ph-land) .album-dialog .tk-main small { font-size: 12px; line-height: 1.35; }
+  :where(html.ph-land) .album-dialog .tk-prog { grid-template-columns: minmax(0, 160px) auto; margin-top: 2px; }
+  :where(html.ph-land) .album-dialog .tk-reward { font-size: 13px; }
+  :where(html.ph-land) .album-dialog .tk-claim { padding: .4em .9em; font-size: 13px; }
+  :where(html.ph-land) .album-dialog .ab-claim-all { margin-top: 8px; padding: .55em 1em; }
+
+  /* 设置：页签改成左侧竖轨（原神 / 方舟的设置页做法），省出整行高度给选项；关闭叉独占右上一列，不压选项。
+     宽度在横屏里富余、高度稀缺，所以宁可横向多让一列。 */
+  :where(html.ph-land) #settings-dialog { width: calc(100% - 2 * var(--dlg-gx)); max-width: 760px; max-height: var(--dlg-h); padding: 10px 6px 10px 10px; }
+  :where(html.ph-land) #settings-dialog[open] { display: grid; grid-template-columns: 92px minmax(0, 1fr) 46px; grid-template-rows: minmax(0, 1fr); column-gap: 8px; }
+  :where(html.ph-land) #settings-dialog .dialog-head { position: static; grid-column: 3; grid-row: 1; align-self: start; height: auto; }
+  :where(html.ph-land) #settings-dialog .set-tabs { grid-column: 1; grid-row: 1; flex-direction: column; align-self: start; gap: 2px; margin: 0; box-shadow: none; }
+  :where(html.ph-land) #settings-dialog .set-tabs button { flex: none; height: 40px; padding: 0 12px; border-radius: 10px; text-align: center; font-size: 14px; }
+  /* 选中项和横排页签同一个记号：字变亮 + 字下面一截粉色短粗线（竖排时滑块不跟，选中项自己画）。 */
+  :where(html.ph-land) #settings-dialog .set-tabs button { position: relative; }
+  :where(html.ph-land) #settings-dialog .set-tabs button.active::after { content: ""; position: absolute; left: 50%; translate: -50% 0; bottom: 5px; width: 1.4em; height: 3px; border-radius: 3px; background: var(--brand); }
+  :where(html.ph-land) #settings-dialog .set-tabs .seg-thumb { display: none; }
+  :where(html.ph-land) #settings-dialog .set-panes { grid-column: 2; grid-row: 1; margin: 0; padding: 0 2px 0 0; }
+  :where(html.ph-land) #settings-dialog .setting-title { margin: 12px 4px 5px; font-size: 11.5px; }
+  :where(html.ph-land) #settings-dialog .set-card { padding: 2px 12px; border-radius: 12px; }
+  :where(html.ph-land) #settings-dialog .set-card + .set-card { margin-top: 8px; }
+  :where(html.ph-land) #settings-dialog .set-card .setting-row, :where(html.ph-land) #settings-dialog .setting-row { padding: 6px 0; column-gap: 16px; font-size: 14px; }
+  :where(html.ph-land) #settings-dialog .set-seg button { padding-block: .3em; font-size: 13px; }
+  :where(html.ph-land) #settings-dialog .set-icons button { padding-block: .25em; }
+  :where(html.ph-land) #settings-dialog .set-tabs button { padding-bottom: 4px; }
+
+  /* 操作说明是阅读型内容：横屏排成两栏，少滚一半。 */
+  :where(html.ph-land) #help-dialog { max-width: min(760px, calc(100% - 2 * var(--dlg-gx))); padding: 12px 18px 14px; }
+  :where(html.ph-land) #help-dialog .help-body { columns: 2; column-gap: 28px; }
+  :where(html.ph-land) #help-dialog .help-body > * { break-inside: avoid; }
+  :where(html.ph-land) #help-dialog .help-body h3 { margin: 10px 0 4px; font-size: 14px; break-after: avoid; }
+  :where(html.ph-land) #help-dialog .help-body > :first-child { margin-top: 0; }
+  :where(html.ph-land) #help-dialog .dialog-head h2 { font-size: 18px; }
+  :where(html.ph-land) #help-dialog .help-body ul { font-size: 13px; }
+
+
 /* ---- 两种手机版式共用：图标工具钮、详情栏按钮并排、出纸小票改成盖在最上面的浮层。 ---- */
 /* 两种手机版式共用（原 @media PORTRAIT_PHONE, LANDSCAPE_PHONE）：跟 html.ph-land / html.ph-port 走。 */
   :where(html.ph-land, html.ph-port) .fv-tool .btn-icon { display: block; width: 20px; height: 20px; }
@@ -3315,14 +3436,14 @@ html.hub-covered .page-deco * { animation-play-state: paused; }
   :where(html.ph-land, html.ph-port) .dlg-pager button:active .btn-icon { color: var(--text); }
   :where(html.ph-land, html.ph-port) .dlg-n { min-width: 4.2em; text-align: center; font: 700 13px/1 var(--font-num); font-variant-numeric: tabular-nums; color: var(--muted); }
   /* 返回键先保证好点：40 高的圆角长条带字，和其他工具钮同一家族。关闭键是全站统一的悬浮叉（见 .ab-close）。 */
-  :where(html.ph-land, html.ph-port) .hub-bar #hub-back { display: inline-flex; align-items: center; gap: 4px; height: 40px; padding: 0 14px 0 10px; border-radius: 14px; line-height: 1; }
-  :where(html.ph-land, html.ph-port) .hub-bar #hub-back .btn-icon { display: block; width: 20px; height: 20px; }
-  :where(html.ph-land, html.ph-port) .hub-bar #hub-back .btn-label { display: none; }
-  :where(html.ph-land, html.ph-port) .hub-bar #hub-back::after { content: "返回"; font-weight: 800; font-size: 14px; }
+  :where(html.ph-land, html.ph-port) .hub-bar .hub-back { display: inline-flex; align-items: center; gap: 4px; height: 40px; padding: 0 14px 0 10px; border-radius: 14px; line-height: 1; }
+  :where(html.ph-land, html.ph-port) .hub-bar .hub-back .btn-icon { display: block; width: 20px; height: 20px; }
+  :where(html.ph-land, html.ph-port) .hub-bar .hub-back .btn-label { display: none; }
+  :where(html.ph-land, html.ph-port) .hub-bar .hub-back::after { content: "返回"; font-weight: 800; font-size: 14px; }
   /* 窄屏放不下「返回」两个字 + 页名 + 两枚胶囊（碎片四位数时）：≤ 380 返回只留箭头成 40 见方，≤ 340 再收掉页名前的字母徽章。 */
-  @media (max-width: 380px) { :where(html.ph-land, html.ph-port) .hub-bar #hub-back { justify-content: center; width: 40px; padding: 0; } :where(html.ph-land, html.ph-port) .hub-bar #hub-back::after{ content: none; } }
+  @media (max-width: 380px) { :where(html.ph-land, html.ph-port) .hub-bar .hub-back { justify-content: center; width: 40px; padding: 0; } :where(html.ph-land, html.ph-port) .hub-bar .hub-back::after{ content: none; } }
   @media (max-width: 340px) { :where(html.ph-land, html.ph-port) .hub-title i { display: none; } }
-  @supports (corner-shape: squircle) { :where(html.ph-land, html.ph-port) .hub-bar #hub-back { border-radius: 20px; corner-shape: squircle; } }
+  @supports (corner-shape: squircle) { :where(html.ph-land, html.ph-port) .hub-bar .hub-back { border-radius: 20px; corner-shape: squircle; } }
   /* 默认跟随动态视口。只有视觉视口确实更矮时才用 appHeight.ts 给出的高度。 */
   :where(html.ph-land, html.ph-port) .hub { top: var(--app-top, 0px); }
   :where(html.ph-land, html.ph-port) .hub, :where(html.lobby-mode) .lobby { height: var(--app-pin-h, var(--app-shell-h, auto)); }
@@ -3392,6 +3513,11 @@ body.touch .al-tile[data-state="clear"]:hover .al-art::after { translate: -120% 
   :where(html.lobby-mode) .lobby:not([hidden]) { display: block; }
   html.lobby-on:where(.lobby-mode), html.lobby-on:where(.lobby-mode) body { overflow: hidden; }
   html.lobby-on:where(.lobby-mode) #selection, html.lobby-on:where(.lobby-mode) .page-deco, html.lobby-on:where(.lobby-mode) .site-foot { visibility: hidden; }
+  /* 大厅盖在选人页上，选人页只是 visibility 藏起来，仍占着约 2600 高的排版。html / body 的 overflow: hidden 只拦得住手指滚，
+     拦不住脚本滚（全页截图插件、scrollTo、锚点跳转），于是能滚出下面一大片空白。把选人页限高一屏并裁掉（宽度和内部排版不变，
+     选人页里量尺寸的逻辑照常），页脚不排：文档就只有一屏高。不支持 clip 的旧内核落到 hidden。 */
+  html.lobby-on:where(.lobby-mode) #selection { max-height: 100vh; max-height: 100dvh; overflow: hidden; overflow: clip; }
+  html.lobby-on:where(.lobby-mode) .site-foot { display: none; }
   html.hub-covered:where(.lobby-mode) .lobby { visibility: hidden; }
   html.hub-covered:where(.lobby-mode) .lobby * { animation-play-state: paused; }
 
@@ -3417,19 +3543,43 @@ body.touch .al-tile[data-state="clear"]:hover .al-art::after { translate: -120% 
   :where(html.lobby-mode) .lobby[data-side="right"] .lb-scrim::after { right: 0; }
   @media (prefers-reduced-motion: reduce) { :where(html.lobby-mode) .lb-art { animation: none; } }
 
-  /* 顶栏：站点 header 浮在大厅上。只留字标、碎片、印章册 / 设置 / 音乐 / 说明四个圆钮。 */
-  html.lobby-on:where(.lobby-mode) body > header { position: fixed; top: var(--app-top, 0px); left: 0; right: auto; width: calc(100% / var(--lu, 1)); transform: scale(var(--lu, 1)); transform-origin: 0 0; z-index: 45; padding: max(8px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 6px max(16px, env(safe-area-inset-left, 0px)); border-bottom: 0; background: none; }
+  /* 顶栏：站点 header 浮在大厅上。只留字标、碎片、印章册 / 设置 / 音乐 / 说明四个图标钮。 */
+  /* .layer-bar > header：弹窗开着时浮在顶上的那份顶栏拷贝（ui/layerBack.ts），走完全相同的定位和缩放规则，位置才和原件严丝合缝。 */
+  html.lobby-on:where(.lobby-mode) :is(body, .layer-bar) > header { position: fixed; top: var(--app-top, 0px); left: 0; right: auto; width: calc(100% / var(--lu, 1)); transform: scale(var(--lu, 1)); transform-origin: 0 0; z-index: 45; padding: max(8px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 6px max(16px, env(safe-area-inset-left, 0px)); border-bottom: 0; background: none; }
   html.lobby-on:where(.lobby-mode) header .brand-icon { width: 28px; height: 28px; border-radius: 8px; }
   html.lobby-on:where(.lobby-mode) header .brand-lock { display: block; }
   html.lobby-on:where(.lobby-mode) header .brand-cn { font: 900 16px/1 var(--font-head); letter-spacing: .08em; }
   html.lobby-on:where(.lobby-mode) header :is(.brand-en, .brand-lock small, .brand-kicker), html.lobby-on:where(.lobby-mode) header #sound { display: none; }
+  /* 大厅不放字标：入口群自己就是主视觉，左上角让给画面。 */
+  html.lobby-on:where(.lobby-mode) header .brand { display: none; }
+  html.lobby-on:where(.lobby-mode) header nav { margin-left: auto; }
   /* 音效开关和竖屏一样收进音乐弹层。 */
   html.lobby-on:where(.lobby-mode) .music-pop .sound-inpop { display: block; }
-  html.lobby-on:where(.lobby-mode) header nav { gap: 8px; }
-  html.lobby-on:where(.lobby-mode) header :is(.icon-btn, .music-wrap summary) { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; background: rgb(18 23 41 / 60%); box-shadow: inset 0 0 0 1px var(--wash); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
-  html.lobby-on:where(.lobby-mode) header :is(.icon-btn, .music-wrap summary) .btn-label { display: none; }
-  html.lobby-on:where(.lobby-mode) header :is(.icon-btn, .music-wrap summary) .btn-icon { display: block; width: 18px; height: 18px; }
-  html.lobby-on:where(.lobby-mode) .lb-shards { display: inline-flex; margin-right: 4px; background: rgb(18 23 41 / 72%); box-shadow: inset 0 0 0 1px var(--wash); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+  /* 功能钮不画圆底：粗描边图标直接浮在画面上（原神 / 明日方舟顶栏的做法），一圈柔和投影保证压在亮色立绘上也看得清。
+     看得见的图标 24，可点区域 44（Apple HIG 的最小触控尺寸）；资源（碎片）仍是胶囊，和功能钮在形态上分开。 */
+  html.lobby-on:where(.lobby-mode) header nav { gap: 0; }
+  html.lobby-on:where(.lobby-mode) header :is(.icon-btn, .music-wrap summary) { display: grid; place-items: center; width: 50px; height: 50px; padding: 0; border: 0; border-radius: 14px; background: none; box-shadow: none; color: var(--text-strong); transform: none; filter: none; transition: color .15s ease; touch-action: manipulation; }
+  html.lobby-on:where(.lobby-mode) header :is(.icon-btn, .music-wrap summary) .btn-label, html.lobby-on:where(.lobby-mode) header :is(.icon-btn, .music-wrap summary) .btn-icon { display: none; }
+  html.lobby-on:where(.lobby-mode) header .btn-icon-b { display: block; width: 28px; height: 28px; filter: drop-shadow(0 1px 3px var(--shade)); transition: scale .12s ease; }
+  html.lobby-on:where(.lobby-mode) header :is(.icon-btn, .music-wrap summary):hover { background: none; color: var(--text-strong); }
+  /* 按下只缩图标，不缩按钮本身：缩按钮会把命中框一起缩小，按在边缘、抬起落到框外就「没反应」。 */
+  html.lobby-on:where(.lobby-mode) header :is(.icon-btn, .music-wrap summary):active { transform: none; }
+  html.lobby-on:where(.lobby-mode) header :is(.icon-btn, .music-wrap summary):active .btn-icon-b { scale: .84; }
+  html.lobby-on:where(.lobby-mode) header .music-wrap[open] > summary { color: var(--brand-ink); }
+  html.lobby-on:where(.lobby-mode) header :is(.icon-btn, .music-wrap summary):focus-visible { outline: 2px solid var(--brand-ink); outline-offset: -2px; }
+  /* 音乐弹层：音效 / 音乐 / 播放方式三个状态做成一排图标格，图标本身就是当前状态（关 = 斜杠、灰），不再读「♪ 音效开」这种又像状态又像动作的字。 */
+  html.lobby-on:where(.lobby-mode) .music-pop { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  html.lobby-on:where(.lobby-mode) .music-pop > :not(.pop-tile) { grid-column: 1 / -1; }
+  html.lobby-on:where(.lobby-mode) .music-pop > .pop-tile { display: grid; justify-items: center; gap: 4px; width: auto; padding: 9px 0 7px; border-radius: 12px; font-size: 12px; line-height: 1.2; }
+  html.lobby-on:where(.lobby-mode) .music-pop .pop-ico { display: block; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  html.lobby-on:where(.lobby-mode) .music-pop .pop-full { display: none; }
+  html.lobby-on:where(.lobby-mode) .music-pop .pop-short { display: block; }
+  html.lobby-on:where(.lobby-mode) .music-pop .pop-tile[aria-pressed="false"] { color: var(--muted); }
+  /* 碎片不再是一颗胶囊：和旁边的图标钮一样直接浮在画面上（金色碎片 + 等宽数字 + 同一圈投影），
+     右边一根短竖线把「资源」和「功能钮」隔开。 */
+  html.lobby-on:where(.lobby-mode) .lb-shards { display: inline-flex; align-items: center; gap: 6px; margin-right: 6px; padding: 0 14px 0 4px; border-radius: 0; background: none; box-shadow: none; font: 800 17px/1 var(--font-num); color: var(--text-strong); text-shadow: 0 1px 3px var(--shade); position: relative; }
+  html.lobby-on:where(.lobby-mode) .lb-shards svg { width: 20px; height: 20px; color: var(--p1-ink); filter: drop-shadow(0 1px 3px var(--shade)); }
+  html.lobby-on:where(.lobby-mode) .lb-shards::after { content: ""; position: absolute; right: 0; top: 50%; width: 1px; height: 20px; translate: 0 -50%; background: var(--line); }
 
   /* 入口群：整体朝美术侧微微转过去，外缘一根带刻度的索引轨。 */
   :where(html.lobby-mode) .lb-deck { position: absolute; top: var(--dk-top); width: 400px; height: 311px; display: grid; grid-template-rows: 1.3fr .9fr 1fr; align-items: stretch; gap: 9px; perspective: 900px; transform: scale(var(--lu, 1)); }
@@ -3442,7 +3592,7 @@ body.touch .al-tile[data-state="clear"]:hover .al-art::after { translate: -120% 
   @supports (zoom: 2) {
     :where(html.lobby-mode) .lb-deck { width: calc(400px * var(--lu, 1)); height: calc(311px * var(--lu, 1)); gap: calc(9px * var(--lu, 1)); perspective: calc(900px * var(--lu, 1)); transform: none; }
     :where(html.lobby-mode) .lb-deck > * { zoom: var(--lu, 1); }
-    html.lobby-on:where(.lobby-mode) body > header { top: calc(var(--app-top, 0px) / var(--lu, 1)); right: 0; width: auto; transform: none; zoom: var(--lu, 1); }
+    html.lobby-on:where(.lobby-mode) :is(body, .layer-bar) > header { top: calc(var(--app-top, 0px) / var(--lu, 1)); right: 0; width: auto; transform: none; zoom: var(--lu, 1); }
     :where(html.lobby-mode) .lb-cap { bottom: max(10px, calc(env(safe-area-inset-bottom, 0px) / var(--lu, 1))); transform: none; zoom: var(--lu, 1); }
     :where(html.lobby-mode) .lobby[data-side="left"] .lb-cap { right: max(18px, calc(env(safe-area-inset-right, 0px) / var(--lu, 1))); }
     :where(html.lobby-mode) .lobby[data-side="right"] .lb-cap { left: max(18px, calc(env(safe-area-inset-left, 0px) / var(--lu, 1))); }
@@ -3538,7 +3688,11 @@ body.touch .al-tile[data-state="clear"]:hover .al-art::after { translate: -120% 
   @media (prefers-reduced-motion: reduce) { :where(html.lobby-mode) .lb-eq i { animation: none; } }
 
   /* ---- 备战三页：后台页同一个壳。返回回到大厅；导航九站分「备战」「后台」两组。 ---- */
-  :where(html.lobby-mode) .hub-bar #hub-back::after { content: "大厅"; }
+  :where(html.lobby-mode) .hub-bar .hub-back::after { content: "大厅"; }
+  /* 横屏：返回键只留箭头（页名就在旁边，说明这是哪），长度保持原来带字时的 76 × 40 实心长条，好按。弹窗开着时整条导航带浮在弹窗上（ui/layerBack.ts 的 .layer-bar）。 */
+  :where(html.ph-land) .hub-bar .hub-back { justify-content: center; width: 76px; padding: 0; }
+  :where(html.ph-land) .hub-bar .hub-back::after { content: none; }
+  :where(html.ph-land) .hub-bar .hub-back .btn-icon { width: 22px; height: 22px; }
   :where(html.lobby-mode) .hn-stops.grouped { grid-template-rows: auto auto; row-gap: 6px; max-width: 900px; }
   :where(html.lobby-mode) .hn-grp { grid-row: 1; margin: 0 10px; padding-top: 2px; border-top: 1.5px solid var(--line); border-radius: 6px 6px 0 0; text-align: center; list-style: none; }
   :where(html.lobby-mode) .hn-grp b { position: relative; top: -8px; padding: 0 6px; background: var(--panel); font: 900 10px/1 var(--font-head); letter-spacing: .12em; color: var(--muted); }
@@ -3694,3 +3848,40 @@ body.touch .al-tile[data-state="clear"]:hover .al-art::after { translate: -120% 
 .hl-line small { font: 700 9px/1 var(--font-num); letter-spacing: .28em; opacity: .55; white-space: nowrap; }
 .hl-n { margin-left: auto; font: 700 12px/1 var(--font-num); font-variant-numeric: tabular-nums; letter-spacing: .06em; opacity: .7; }
 @media (prefers-reduced-motion: reduce) { .hl-dots { animation-duration: 2.4s; } .hl-line b::after { animation: none; width: 2em; } }
+
+/* ==== 文字换图标（横屏手机，放在文件末尾才盖得住前面各页的横屏规则）：图标默认不显示（桌面看文字），:where(html.ph-land) 下换成图标，文字留作读屏名。 ==== */
+.own-ico, .lock-ico, .lk-short, .go-ico, .go-arrow, .tag-ico, .view-ico, .hub-ico, .ms-mark { display: none; }
+:where(html.ph-land) :is(.sf-own, .mc-stamp) .own-t { display: none; }
+:where(html.ph-land) :is(.sf-own, .mc-stamp) .own-ico { display: block; width: 18px; height: 18px; }
+:where(html.ph-land) :is(.sf-own, .mc-stamp) { display: inline-grid; place-items: center; padding: 3px 7px; }
+/* 仓库卡片：未拥有 = 预览上的锁 + 价格（不再在下面写「商店 · N 星之碎片」、不放「去商店」）。 */
+:where(html.ph-land) .lk .mc-tag { display: inline-flex; align-items: center; gap: 3px; }
+:where(html.ph-land) .mc-tag .lock-ico { display: block; width: 13px; height: 13px; }
+:where(html.ph-land) .lk .mc-go, :where(html.ph-land) .lk .mc-note-price { display: none; }
+/* 全清奖励：锁 + 「全清解锁」。 */
+:where(html.ph-land) .ab-lock { display: inline-flex; align-items: center; gap: 4px; }
+:where(html.ph-land) .ab-lock .lock-ico { display: block; width: 13px; height: 13px; }
+:where(html.ph-land) .ab-lock .lk-long { display: none; }
+:where(html.ph-land) .ab-lock .lk-short { display: inline; }
+/* 详情栏：价格已经写在上面，「商店 · N 星之碎片」不重复；去商店 / 仓库 / 任务 = 目标页图标 + 箭头。 */
+:where(html.ph-land) .fv-note-price { display: none; }
+:where(html.ph-land) .fv-act.fv-go { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 76px; padding: 0 14px; }
+:where(html.ph-land) .fv-go .act-t { display: none; }
+:where(html.ph-land) .fv-go :is(.go-ico, .go-arrow) { display: block; }
+:where(html.ph-land) .fv-go .go-ico { width: 22px; height: 22px; }
+:where(html.ph-land) .fv-go .go-arrow { width: 16px; height: 16px; opacity: .7; }
+/* 名册上的「人机」= 机器人图标。 */
+:where(html.ph-land) .tag-cpu .tag-t { display: none; }
+:where(html.ph-land) .tag-cpu .tag-ico { display: block; width: 13px; height: 13px; }
+:where(html.ph-land) .tag-cpu { display: inline-grid; place-items: center; vertical-align: middle; }
+/* 「直接排开 / 按乐队分组」= 平铺网格 / 分组网格。 */
+:where(html.ph-land) .view-btn { font-size: 0; display: grid; place-items: center; }
+:where(html.ph-land) :is(.sb-top #stamp-layout, #settings-dialog .set-seg) .view-btn { min-width: 48px; padding: .3em .9em; font-size: 0; }
+:where(html.ph-land) .view-btn .view-ico { display: block; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; }
+/* 后台页 / 备战页标题：编号圆标换成本页图标。 */
+:where(html.ph-land) .hub-title .hub-no { display: none; }
+:where(html.ph-land) .hub-title .hub-ico { display: block; flex: none; box-sizing: border-box; width: 28px; height: 28px; padding: 5px; border-radius: 50%; background: var(--brand); color: var(--on-brand); }
+/* 招式页切换：只写 1P / 2P。 */
+:where(html.ph-land) .ms-t { display: none; }
+:where(html.ph-land) [data-side] > .ms-mark { display: inline; font-style: normal; }
+
