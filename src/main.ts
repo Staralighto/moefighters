@@ -6,7 +6,8 @@ import { KeyboardInput, TouchInput } from './game/input.ts';
 import type { Renderer } from './render/renderer.ts';
 import { isLiteFx, setLiteFx, shouldGoLite } from './render/fxQuality.ts';
 import { createViews } from './render/view.ts';
-import { assetsFor, cssUrl, easeLoad, holdBulk, holdIdle, imageQueue, trimImages, liteFight, loadInto, loadKujiFont, missingImages, portraitSrc, preload, slowLink, stageThumbSrc, supportsWebp, type ImageCache } from './assets/loader.ts';
+import { assetsFor, cssUrl, easeLoad, holdBulk, holdIdle, imageQueue, trimImages, liteFight, loadInto, loadKujiFont, missingImages, pendingNet, portraitSrc, preload, slowLink, stageThumbSrc, supportsWebp, type ImageCache } from './assets/loader.ts';
+import { noteRecent, predict, prefetchHas, recentIds, setPrefetchScene, startPrefetch } from './assets/prefetch.ts';
 import { Sfx } from './audio/sfx.ts';
 import { cycleMusicOrder, onMusicChange, fightShuffle, musicEnabled, musicOrder, musicTitle, musicVolume, nudgeMusic, pokeMusic, setFightShuffle, setMusicEnabled, setMusicHeld, setMusicOrder, setMusicSuspended, setMusicVolume, shuffleFightTrack, stepMusic } from './audio/bgm.ts';
 import { matchName, parseRosterThumb, SelectScreen, type MatchSetup } from './ui/select.ts';
@@ -39,7 +40,7 @@ import { afterMatch } from './tasks/hook.ts';
 import { bindSaveUi } from './ui/saveUi.ts';
 import { bindResources } from './ui/resources.ts';
 import { chunk } from './assets/chunk.ts';
-import { bindHub, closeHub, setNavHome, setNavStamps } from './ui/hub.ts';
+import { bindHub, closeHub, hubOpen, openHub, registerHubPage, setNavHome, setNavStamps } from './ui/hub.ts';
 import { bindLayerBack, registerLayer } from './ui/layerBack.ts';
 import { bindPeeks } from './ui/peek.ts';
 import { bindLobby, selectOnScreen } from './ui/lobby.ts';
@@ -57,6 +58,11 @@ import { bindFramePreview, setFramePreviewOpener } from './ui/framePreview.ts';
 import { bindFinalePreview, setFinalePreviewHooks } from './ui/finalePreview.ts';
 import { bindItemPreview, setItemPreviewOpener } from './ui/itemPreview.ts';
 import { Rng } from './net/lock.ts';
+import { progressLine, refreshStoryMap, selectStage, setStoryPlay, storyPage } from './story/map.ts';
+import { afterWin, bindStory, leaveStory, playStage, storyFight } from './story/run.ts';
+import { hasNew, nextStage, onStory } from './story/progress.ts';
+import { ALL_STAGES, stageById } from './story/chapters.ts';
+import { setTheatreSound } from './story/theatre.ts';
 
 /* 展示模式：只给录宣传视频 / 截宣传图用（地址带 ?showcase）。版式不变，只把会被低倍率栅格化的部分改成按设备像素清晰重画；
    平时不带参数，什么都不改。录制时浏览器自己把 deviceScaleFactor 设到 4，大厅 852×393 就出 3408×1572。 */
@@ -111,7 +117,13 @@ void supportsWebp().then(ok => { webpOk = ok; });
 
 /** null on a fast link: the fight waits for the full set, as before. */
 function litePlan(characters: CharacterData[], stage: StageData): { need: string[]; rest: string[] } | null {
-  return webpOk && slowLink() ? liteFight(characters, stage, s => images.has(s)) : null;
+  if (!webpOk || !slowLink()) return null;
+  const plan = liteFight(characters, stage, s => images.has(s) || prefetchHas(s));
+  // 整张已在 worker 缓存里的不拉半尺寸替身，开打直接等整张：从缓存读只剩解码，比慢网下 lite 快。
+  // （liteFight 把「已有」的当成不用等，这里把它们补回 need，否则会以色块人形开打。）
+  plan.need.push(...assetsFor(characters, stage).filter(s => !images.has(s) && prefetchHas(s)));
+  plan.need = [...new Set(plan.need)];
+  return plan;
 }
 
 function portraitOf(list: CharacterData[]): string[] {
@@ -132,7 +144,13 @@ function fightSources(characters: CharacterData[], stage: StageData): string[] {
   return assetsFor(withGuests(characters), stage);
 }
 
+/** Fight sheets only (no backdrop): what the background downloader guesses a fighter will need. */
+function sheetsOf(characters: CharacterData[]): string[] {
+  return assetsFor(withGuests(characters), { ...select.stage, image: undefined } as StageData);
+}
+
 let bootPins: string[] = [];
+let castGuess = 0;
 let bootAt = 0;
 let bootDisplay = 0;
 let bootShown = false;
@@ -215,6 +233,10 @@ const select = new SelectScreen(PLAYABLE, previewViews, setup => {
   else sfx.play('select');
 }, shown => {
   if (followCast) queue.soon(portraitOf(shown));
+  // 站上舞台的就是最可能开打的：整套动作图提前进缓存（不解码），点开打时只剩解码。
+  // 停留 0.8 秒才算：连着点过一串角色时不给每个都下整套。
+  clearTimeout(castGuess);
+  castGuess = window.setTimeout(() => predict(sheetsOf(shown), 'cast'), 800);
 });
 select.liteStage = slowLink();
 select.onLand = () => sfx.ui('land');
@@ -278,6 +300,12 @@ bindOnline(() => select.onlinePick(), (role, hostChar, guestChar, stageId, link,
   // Roster crops (or avatars) load on scroll. Full sheets wait until a fight starts.
   followCast = true;
   select.watchRoster();
+  // 后台下载在首屏的图都到齐后再起：不和首屏抢。顺序：最近玩过的角色、当前舞台大图，然后按清单分档。
+  const order = PLAYABLE.flatMap(c => c.view.kind === 'sprite' ? [c.view.common.split('/')[2] ?? ''] : []);
+  void Promise.all(pendingNet(1)).then(() => window.setTimeout(() => {
+    const recent = recentIds().flatMap(id => PLAYABLE.filter(c => c.id === id));
+    startPrefetch(order, [...sheetsOf(recent), ...(select.stage.image ? [select.stage.image] : [])]);
+  }, 2500));
 }
 watchTouch(() => { syncFullscreenLabel(); select.refresh(); });
 
@@ -340,9 +368,10 @@ async function startGame(setup: MatchSetup): Promise<void> {
   pokeMusic();
   syncMusicUi();
   const versusLabel = setup.online ? '联机对战'
+    : setup.story ? storyLabel(setup.story)
     : setup.mode === 'challenge' ? challengeName(setup.challengeKind ?? 'brawl') + ' · 第 ' + setup.stageNumber + ' 关'
     : matchName(setup);
-  showVersus(versusSides(setup.characters, setup.mode === 'team'), setup.stage.name, versusLabel, previewViews, k => sfx.ui(k));
+  showVersus(versusSides(setup.characters, setup.mode === 'team', setup.allies), setup.stage.name, versusLabel, previewViews, k => sfx.ui(k));
   const cast = withGuests(setup.characters);
   // Result-screen faces and glyphs ride the versus load, so the end of the match shows them at once.
   preloadReport(setup.characters);
@@ -355,8 +384,11 @@ async function startGame(setup: MatchSetup): Promise<void> {
   // "开打" wait is not competing with 2-at-a-time prefetch for the same bandwidth.
   // 选人队列一直停到回选人页（restBack）：对战里看不见名单，不该再和对战换图抢链路。
   queue.pause();
-  // 设置里的「预载全部资源」整场对战都停着，回选人页（restBack）再继续。
-  releaseBulk ??= holdBulk();
+  // 后台下载：联机整场停着（holdBulk，回选人页 restBack 再继续）；本地对战只走小文件慢车道（prefetch.ts）。
+  if (setup.online) releaseBulk ??= holdBulk();
+  setPrefetchScene(setup.online ? 'online' : 'local');
+  // 最近玩过 = 玩家自己操控的角色（人机对手不算）。没写操控表时 1P 是玩家。
+  noteRecent(setup.characters.filter((c, i) => !c.hidden && (setup.controllers ? setup.controllers[i] != null : i === 0)).map(c => c.id));
   const releaseIdle = holdIdle();
   // 开打是玩家主动的一次请求：之前失败过的图（断网、切网）这次重新下，不沿用整局会话的「缺图」结论。
   for (const s of need) missingImages.delete(s);
@@ -375,6 +407,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
     queue.resume();
     releaseBulk?.();
     releaseBulk = null;
+    setPrefetchScene('menu');
     hideVersus();
     throw err;
   } finally {
@@ -416,10 +449,11 @@ async function startGame(setup: MatchSetup): Promise<void> {
   paintConnection('battle-connection', null);
   $('battle-mode').textContent = setup.online
     ? '联机 · ' + setup.stage.name
+    : setup.story ? storyLabel(setup.story)
     : setup.mode === 'challenge'
     ? challengeName(setup.challengeKind ?? 'brawl') + ' · 第 ' + setup.stageNumber + ' 关'
     : matchName(setup) + ' · ' + setup.stage.name;
-  setRoundLabel(setup.mode === 'challenge' ? '第 ' + setup.stageNumber + ' 关' : '');
+  setRoundLabel(setup.story ?? (setup.mode === 'challenge' ? '第 ' + setup.stageNumber + ' 关' : ''));
   setBattleGuide(setup.characters, setup.online === 'guest' ? [null, 0] : setup.controllers);
   setIconBtn($('pause'), '暂停 ESC');
   showPauseMenu(false);
@@ -428,7 +462,10 @@ async function startGame(setup: MatchSetup): Promise<void> {
   setIconBtn($('rematch'), '再来一局 ↻');
   $('rematch').hidden = false;
   $('end-book').hidden = true;
-  setIconBtn($('reselect'), setup.mode === 'challenge' ? '返回选人' : '重新选人');
+  setIconBtn($('reselect'), setup.story ? '返回地图' : setup.mode === 'challenge' ? '返回选人' : '重新选人');
+  // 剧情关的战斗里，左上返回和暂停菜单的离开都是回剧情地图（battleExit），字要对上。
+  setIconBtn($('back'), setup.story ? '← 返回地图' : '← 返回选人');
+  setIconBtn($('pause-quit'), setup.story ? '返回地图' : '返回选人');
 
   const lockRng = setup.lock ? new Rng(setup.lock.seed) : null;
   // Lockstep plays its own sounds; a resync replay runs with them off, so nothing is heard twice.
@@ -443,7 +480,10 @@ async function startGame(setup: MatchSetup): Promise<void> {
     difficulty: setup.difficulty,
     controllers: setup.controllers,
     mods: setup.mods,
-    roundsToWin: setup.mode === 'challenge' ? 1 : undefined,
+    roundsToWin: setup.mode === 'challenge' || setup.story ? 1 : undefined,
+    allies: setup.allies,
+    survive: setup.survive,
+    roundTime: setup.roundTime,
     stage: setup.stage,
     ultFreeze: ultCut,
     training: trainPrefs(),
@@ -571,6 +611,19 @@ function openChallengeStage(): void {
 }
 
 function onFightEnd(title: string, stats: string): void {
+  // 结算画面没有对战手感要顾：本地对战回到正常的后台下载（下一关的对手图能在选 buff 时下完）。联机还停着。
+  if (game && !game.netRole) setPrefetchScene('menu');
+  // 剧情闯关：赢了直接接战后演出（纸板一展开就是战后），输了停在结算上给「再来一次 / 返回地图」。
+  if (game && lastSetup?.story && storyFight()) {
+    const g = game;
+    const report = buildReport(g, 0);
+    afterMatch(g, report);
+    if (g.winnerTeam === 0) { restBack(); void afterWin(g); return; }
+    showEnd('败北', storyLabel(lastSetup.story) + ' · 调整一下再来', report);
+    setIconBtn($('rematch'), '再来一次 ↻');
+    setIconBtn($('reselect'), '返回地图');
+    return;
+  }
   if (!game || game.mode !== 'challenge' || !challenge) {
     const report = game ? buildReport(game, humanTeam(game)) : null;
     const first = game && report ? recordMatchClear(game, report) : false;
@@ -596,6 +649,8 @@ function onFightEnd(title: string, stats: string): void {
     setIconBtn($('reselect'), '返回休息');
     challenge.stage = stage + 1;
     challenge.enemies = rollEnemies(foeCount(kind));
+    // 结算 + 选 buff 的这几秒够把下一关对手的动作图下进缓存。
+    predict(sheetsOf(challenge.enemies), 'challenge');
     // The deck stays; the next stage only reopens the picker. Saved at once: closing the tab
     // on this end screen still resumes at the next stage's picker.
     challenge.armed = false;
@@ -732,6 +787,7 @@ function restBack(): void {
   queue.resume();
   releaseBulk?.();
   releaseBulk = null;
+  setPrefetchScene('menu');
   queueSelectFrame();
   document.body.classList.remove('in-battle', 'turned', 'end-up');
   select.paintSeals();
@@ -754,6 +810,7 @@ function goBack(): void {
 /** Every battle-side exit routes here: mid-fight a challenge must be confirmed away, the win
     screen parks the run, and a dead run (or a plain match) just leaves. */
 function battleExit(): void {
+  if (lastSetup?.story && storyFight()) { const id = leaveStory(); restBack(); backToStory(id); return; }
   if (game?.mode === 'challenge' && challenge && $('end').hidden) {
     openQuit('结束本次挑战？',
       `当前进行到第 ${challenge.stage} 关。离开后本次挑战结束、进度清零，历史最高纪录保留。`,
@@ -1389,6 +1446,40 @@ bindArtFocus();
 bindAppHeight();
 bindBrowse();
 bindMusicPage();
+
+/* ---- 剧情闯关（src/story/）：后台壳里的「剧情」页 + 首页「更多」入口 + 大厅进度卡 ---- */
+function storyLabel(id: string): string {
+  const s = stageById(id);
+  return s ? `剧情 · ${s.id} ${s.title}` : '剧情';
+}
+function backToStory(id: string | null): void {
+  if (id) selectStage(id);
+  if (hubOpen() === 'story') refreshStoryMap();
+  else openHub('story');
+}
+function paintStoryEntry(): void {
+  const p = progressLine();
+  const fresh = hasNew();
+  $('bs-story').textContent = `${p.title} ${p.done} / ${p.total}`;
+  $('bs-story-new').hidden = !fresh;
+  $('lb-story-ch').textContent = p.title;
+  // 大厅卡窄：只放下一关的编号（全部通过时放最后一关），进度交给下面的进度条。
+  $('lb-story-n').textContent = nextStage() ?? ALL_STAGES[ALL_STAGES.length - 1].id;
+  $('lb-story-n').closest('button')?.setAttribute('aria-label', `剧情 · ${p.title} ${p.done} / ${p.total}`);
+  $('lb-story-bar').style.setProperty('--k', String(p.total ? p.done / p.total : 0));
+  $('lb-story-new').hidden = !fresh;
+}
+registerHubPage('story', storyPage);
+setStoryPlay(id => { sfx.unlock(); void playStage(id); });
+setTheatreSound((k, o) => sfx.story(k, o));
+bindStory({ fight: setup => startGame(setup), back: backToStory });
+onStory(paintStoryEntry);
+paintStoryEntry();
+/* 剧本预览：?story=1-03 直接演这一关（含战斗），不记进度。 */
+{
+  const id = new URLSearchParams(location.search).get('story');
+  if (id && stageById(id)) void playStage(id, true);
+}
 setRewardOpener(openDialog);
 bindTasksPage(openDialog);
 setFramePreviewOpener(openDialog);

@@ -1133,6 +1133,25 @@ export function squeezeSquash(f: Fighter): { x: number; y: number } | undefined 
   return { x: 1 - .2 * k, y: 1 + .07 * k };
 }
 
+/* ---- 伊地知虹夏: shared by src/game/nijika.ts, the cell picks below and render/nijikaFx.ts ---- */
+/** 进攻姿态: seconds of the burst, and the walk / swing multiplier. */
+export const NIJIKA_ATTACK = { time: 4, speed: 1.2 } as const;
+/** 虹色神速滚奏 on the attack clock: `beats` strokes `gap` apart from the active frame, the crash at `crash`. */
+export const NIJIKA_ROLL = { beats: 10, gap: .065, crash: .95 } as const;
+/** Which stroke of the roll the clock is on (integers land on a stroke; negative before the first). */
+export function nijikaRollBeat(a: Attack): number {
+  return (a.t - a.skill.start) / NIJIKA_ROLL.gap;
+}
+/** 繁星的起拍 on the attack clock: four clicks over her head; each small star is aimed at `stars[i]` and lands
+ *  `fall` later; the big one is aimed at `big` and lands `bigFall` later. `strike` is the cell change. */
+export const NIJIKA_STARRY = {
+  clicks: [.22, .42, .62, .82] as readonly number[],
+  stars: [.98, 1.14, 1.3, 1.46, 1.62] as readonly number[],
+  fall: .24,
+  big: 1.86, bigFall: .3,
+  strike: .95,
+} as const;
+
 /* ---- 濑田薰: shared by src/game/kaoru.ts, the cell picks below and render/kaoruFx.ts ---- */
 /** 高空微笑坠落: a.mode — the crouch, the leap (KAORU_RISE, up KAORU_APEX), the faint at the top (KAORU_HANG), the drop
  *  (KAORU_DROP), lying where she landed (KAORU_LIE, her opening), then back up in a pose. */
@@ -1491,6 +1510,16 @@ export function clipFor(f: Fighter): Clip {
       if (mode === SHADOW.scare) return at('special', a.index - 2, 1);
       if (mode === SHADOW.done) return at('special', a.index - 2, 2);
       return at('special', 0, 1);
+    }
+    // 悬浮呆毛回旋 / 最大音量: the default three phases. 虹色神速滚奏: ready; the roll (one cell, the rest is fx); the crash.
+    // 繁星的起拍: the count-in; striking on the beat; the stick up after the big star.
+    if (f.attack.skill.fx === 'nijika-roll') {
+      const a = f.attack;
+      return at('special', a.index - 2, a.t < a.skill.start ? 0 : a.t < NIJIKA_ROLL.crash ? 1 : 2);
+    }
+    if (f.attack.skill.fx === 'nijika-star') {
+      const t = f.attack.t, S = NIJIKA_STARRY;
+      return at('special', f.attack.index - 2, t < S.strike ? 0 : t < S.big + S.bigFall ? 1 : 2);
     }
     // 吉他英雄: alternate both guitar frames until the stage dive takes over.
     if (f.attack.skill.fx === 'bocchi-hero') {

@@ -11,7 +11,8 @@
     "check:adaptation": "node scripts/adaptation-e2e.mjs",
     "sprite:align": "node --experimental-strip-types scripts/repack-common.ts",
     "sheets": "node --experimental-strip-types scripts/write-sheets.ts",
-    "portraits": "node --experimental-strip-types scripts/portraits.ts"
+    "portraits": "node --experimental-strip-types scripts/portraits.ts",
+    "story": "node --no-warnings --experimental-strip-types scripts/story.ts"
   },
   "devDependencies": {
     "sharp": "^0.35.5",

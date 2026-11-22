@@ -49,6 +49,13 @@ export interface MatchSetup {
   stageNumber?: number;
   /** Challenge only: which sub-mode the match belongs to. */
   challengeKind?: ChallengeKind;
+  /** 剧情闯关：这一关的编号（src/story/）。单回合决胜，打完回剧情地图。 */
+  story?: string;
+  /** 剧情闯关：我方几人（GameOptions.allies）和生存关的秒数（GameOptions.survive）。 */
+  allies?: number;
+  survive?: number;
+  /** 一回合的秒数（GameOptions.roundTime）。 */
+  roundTime?: number;
   /** Set when this 1V1 is a network match. The sim role is host or a snapshot guest. */
   online?: 'host' | 'guest';
   /** Online: which match this is on the same link. A rematch counts up. */

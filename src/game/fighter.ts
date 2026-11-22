@@ -39,6 +39,9 @@ export interface Attack {
   whiffed?: boolean;
   /** Per-move phase. 剑道三连: 0 pending, 1 tap, 2 stance, 3 waves. 请你喝茶: 0 lunge, 1 caught, 2 whiff. */
   mode?: number;
+  /** 双月轮舞: where the run stood last step and how long it has made no headway (the stall failsafe). */
+  runX?: number;
+  stall?: number;
   /** 花园兔王: the eruption clock, rabbits already shown, and the carried body's lift. */
   warren?: { open: number; shown: number; from: number; base: number };
 }
@@ -218,6 +221,10 @@ export interface Fighter {
   /** 因为我爱慕虚荣: damage/energy bonus armed by the next kill; cleared once it fires. 0 is neutral. */
   vainDmg: number;
   vainEnergy: number;
+  /** 剧情闯关：U I O L 封住（ChallengeMods.seal）。 */
+  sealed: boolean;
+  /** 剧情闯关：梦魇（复制体），只影响画面和血条名字。 */
+  nightmare: boolean;
   /** 录音: seconds of tape left on the master. Drives the input capture; dies with DECAY_TIMERS. */
   recLeft: number;
   /** 录音: the events captured so far. The echo holds the same array by reference. */
@@ -311,7 +318,7 @@ export function makeFighter(
     critChance: 0, comboTimeBonus: 0, comboDecay: COMBO_DECAY, energyMul: 1,
     moveMul: 1, dodgeCdMul: 1, cdMul: 1,
     lowHpDmg: 0, executeDmg: 0, lifesteal: 0, thorns: 0, rose: 0, roseBase: 0, shout: 0,
-    stunMul: 1, escapeCombo: COMBO_ESCAPE, deathSave: 0, vainDmg: 0, vainEnergy: 0,
+    stunMul: 1, escapeCombo: COMBO_ESCAPE, deathSave: 0, vainDmg: 0, vainEnergy: 0, sealed: false, nightmare: false,
     recLeft: 0, recTape: [], recMove: 0,
     gauge: 0,
     heartPhase: 0, heartBeats: 0, heartRest: 0, shadowRig: 0,

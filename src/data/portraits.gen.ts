@@ -325,5 +325,10 @@ export const PORTRAITS: Record<string, { v: string; h: string; face: readonly [n
     "v": "v1",
     "h": "3c7ec9d9",
     "face": [0.476, 0.151]
+  },
+  "nijika": {
+    "v": "v1",
+    "h": "d9513fe1",
+    "face": [0.397, 0.15]
   }
 };

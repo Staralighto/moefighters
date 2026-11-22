@@ -45,6 +45,8 @@ export function finaleCues(spec?: FinaleSpec): [number, SfxKind | null][] {
 export const FINALE_DEAF = .8;
 export const FINALE_HINT = 2;
 
+const passing = (f: Fighter): boolean => !!f.attack && !!SCRIPTS[f.attack.skill.fx]?.passThrough?.(f.attack);
+
 const DUO_SPAWN = [
   { x: 265, facing: 1 as const, team: 0, controller: 0 as number | null },
   { x: 695, facing: -1 as const, team: 1, controller: null },
@@ -196,6 +198,12 @@ export interface GameOptions {
   mods?: ChallengeMods[];
   /** Rounds a side needs to win the match. Defaults to the classic best-of-three (first to 2). */
   roundsToWin?: number;
+  /** 剧情闯关 team 模式 3 人时我方几人：2 = 二打一（默认），1 = 一打二（站位同无尽激战）。 */
+  allies?: number;
+  /** 剧情闯关生存关：倒计时从这么多秒开始，我方撑到 0 还站着就算赢。 */
+  survive?: number;
+  /** 一回合的秒数（默认 60）。剧情闯关单回合决胜给 99，容错更多。 */
+  roundTime?: number;
   stage: StageData;
   /** Source is the fighter id when the sound belongs to one; online echo matching uses it. */
   audio: { play(kind: SfxKind, source?: number): void };
@@ -253,6 +261,12 @@ export interface ChallengeMods {
   /** 因为我爱慕虚荣: damage/energy bonus armed by the first kill of the round. */
   vainDamage?: number;
   vainEnergy?: number;
+  /** 剧情闯关「闪耀之力未觉醒」：U I O L 全部封住（连解控技也出不来），只剩 J K 和走位。 */
+  seal?: boolean;
+  /** 剧情闯关：开场的气（超过上限就是满气）。不写是平常的 20。 */
+  startEnergy?: number;
+  /** 剧情闯关的梦魇（复制体）：压暗偏紫 + 紫描边 + 更深的地面影子，血条名字前加「梦魇」。 */
+  nightmare?: boolean;
 }
 
 export class FightGame {
@@ -393,7 +407,9 @@ export class FightGame {
     this.finaleBy = null;
     this.finaleHint = 0;
     this.finaleFlight = false;
-    const spawn = this.mode === 'team' ? TEAM_SPAWN
+    // 剧情闯关的二打一也走 team：我方两人照 2V2 站位，对面一人站在 2V2 的前排。
+    // 一打二（allies 1）照无尽激战站位：我方一人在左，对面两人在右。
+    const spawn = this.mode === 'team' ? (this.characters.length === 3 ? (this.options.allies === 1 ? CHALLENGE_SPAWN : TEAM_SPAWN.slice(0, 3)) : TEAM_SPAWN)
       : this.mode === 'challenge' ? (this.characters.length === 2 ? DUO_SPAWN : CHALLENGE_SPAWN)
       : DUO_SPAWN;
     const controls = this.options.controllers;
@@ -401,7 +417,7 @@ export class FightGame {
       const f = makeFighter(d, i, {
         ...spawn[i],
         controller: controls ? (controls[i] ?? null) : spawn[i].controller,
-        energy: this.trainOn('infiniteUlt') ? meterCap(d) : 20,
+        energy: this.trainOn('infiniteUlt') ? meterCap(d) : this.options.mods?.[i]?.startEnergy ?? 20,
       });
       const m = this.options.mods?.[i];
       f.dmgMul = m?.damage ?? 1;
@@ -424,6 +440,8 @@ export class FightGame {
       // vain re-arms every round from the deck; the kill itself spends it until the next reset.
       f.vainDmg = m?.vainDamage ?? 0;
       f.vainEnergy = m?.vainEnergy ?? 0;
+      f.sealed = !!m?.seal;
+      f.nightmare = !!m?.nightmare;
       return f;
     });
     this.projectiles = [];
@@ -433,7 +451,7 @@ export class FightGame {
     this.effects = [];
     this.particles = [];
     this.texts = [];
-    this.time = 60;
+    this.time = this.options.survive ?? this.options.roundTime ?? 60;
     this.firstHitBy = -1;
     this.phase = 'intro';
     this.phaseTime = 2.25;
@@ -578,6 +596,8 @@ export class FightGame {
     }
     if (f.basic && index >= 2) return false;
     if (f.king && index >= 2 && !f.data.frenzy?.skills) return false;
+    // 剧情闯关「未觉醒」：U I O L 全封，解控技也不例外。
+    if (index >= 2 && f.sealed) return false;
     // 沉默: no U I O L; J, K and a breakout still come out.
     if (index >= 2 && !breakout && has(f, 'silence')) return false;
     // 帐篷出行: nothing comes out of the tent until it is flung; a breakout still does.
@@ -856,8 +876,10 @@ export class FightGame {
 
   private endRound(): void {
     const health = [this.teamHealth(0), this.teamHealth(1)];
-    const winner = health[0] > health[1] ? 0 : 1;
-    const draw = Math.abs(health[0] - health[1]) < .00001;
+    // 生存关：时间到我方还站着就是赢，不比血量。
+    const survived = !!this.options.survive && this.time <= 0 && this.teamAlive(0);
+    const winner = survived || health[0] > health[1] ? 0 : 1;
+    const draw = !survived && Math.abs(health[0] - health[1]) < .00001;
     if (!draw) this.wins[winner]++;
     if (!draw) this.roundLog.push({ winner, fin: this.time <= 0 ? '' : this.roundFin[1 - winner] });
     this.phase = 'roundend';
@@ -921,7 +943,7 @@ export class FightGame {
   }
 
   private koBanner(draw: boolean, winner: number): void {
-    const title = draw ? 'DRAW' : this.time <= 0 ? 'TIME UP' : 'K.O.';
+    const title = draw ? 'DRAW' : this.time <= 0 ? (this.options.survive && winner === 0 ? 'SURVIVED' : 'TIME UP') : 'K.O.';
     this.setBanner(title, draw ? '平局 · 再战一回合' : this.teamNames(winner) + ' 赢下本回合');
     this.audio.play('ko');
     this.options.onHUD?.(this);
@@ -942,6 +964,8 @@ export class FightGame {
         const b = all[j];
         if (b.hp <= 0 || b.echo || a.team === b.team) continue;
         if (Math.abs(a.y - b.y) >= 40) continue;
+        // A run that only ends on distance (双月轮舞) goes through bodies: two foes side by side would otherwise pin it.
+        if (passing(a) || passing(b)) continue;
         const dx = b.x - a.x;
         const adx = Math.abs(dx);
         if (adx >= GAP) continue;

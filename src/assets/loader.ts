@@ -57,7 +57,7 @@ export function liteSrc(src: string, prod = import.meta.env.PROD): string {
 }
 export const LITE_SCALE = 0.5;
 
-interface Timed { transferSize?: number; responseStart: number; responseEnd: number }
+interface Timed { transferSize?: number; responseStart: number; responseEnd: number; workerStart?: number }
 
 /**
  * Bytes per second while something was arriving. Parallel downloads share one link, so
@@ -81,6 +81,27 @@ export function linkRate(entries: readonly Timed[]): number | null {
 export const SLOW_RATE = 300_000;
 const RATE_KEY = 'moefighters.link';
 
+/* 有缓存 worker（public/sw.js）时，经它转交的响应在 resource timing 里只记响应头那几百字节，按它算吞吐会把快网判成慢网。
+   所以经 worker 的条目不算，改用 worker 自己量的真实下载（它从网络拿到完整文件时发 {t:'rate'} 过来）。时间用绝对毫秒对齐。 */
+const workerSamples: Timed[] = [];
+export function noteLinkSample(bytes: number, startAbs: number, endAbs: number): void {
+  if (!(bytes > 0) || !(endAbs > startAbs) || typeof performance === 'undefined') return;
+  const o = performance.timeOrigin;
+  workerSamples.push({ transferSize: bytes, responseStart: startAbs - o, responseEnd: endAbs - o });
+  if (workerSamples.length > 24) workerSamples.shift();
+}
+
+/* resource timing 缓冲满了（main.ts 设成 1000 条）就不再记新条目，测速会一直停在旧数据上。
+   后台下载一次就是几百个请求，所以满了就清空：测速只看最近 24 条，清掉旧的不影响。 */
+if (typeof performance !== 'undefined') {
+  performance.addEventListener?.('resourcetimingbufferfull', () => performance.clearResourceTimings());
+}
+
+function linkEntries(): Timed[] {
+  const own = (performance.getEntriesByType('resource') as PerformanceResourceTiming[]).filter(e => !(e.workerStart > 0));
+  return [...own, ...workerSamples].sort((a, b) => a.responseEnd - b.responseEnd);
+}
+
 /**
  * A slow link starts fights on lite sheets. Fresh downloads decide; a visit served from cache
  * reuses the last measured rate; with neither, the browser's own estimate, where it has one.
@@ -89,7 +110,7 @@ export function slowLink(prod = import.meta.env.PROD): boolean {
   if (!prod || typeof performance === 'undefined') return false;
   const net = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
   if (net?.saveData) return true;
-  let rate = linkRate(performance.getEntriesByType('resource') as PerformanceResourceTiming[]);
+  let rate = linkRate(linkEntries());
   try {
     if (rate != null) localStorage.setItem(RATE_KEY, String(Math.round(rate)));
     else rate = Number(localStorage.getItem(RATE_KEY)) || null;
@@ -105,10 +126,17 @@ export function slowLink(prod = import.meta.env.PROD): boolean {
      1 眼前要看：当前页面的图。和 0 级合计不超过 base（快网 3，慢网 2）。
      2 后台预取：对战中换高清、终幕图、下一首 BGM、音乐库时长。同时只跑 1 条，
        有 0 级在等或在跑、或有人 holdIdle 时一律不开。
-     3 批量预载：设置里「预载全部资源」。比 2 级还低：前面任何一级有人在等就不开，同时最多 2 条。
+     3 批量预载：设置里「立即下载全部」。比 2 级还低：前面任何一级有人在等就不开，同时最多 2 条。
+     4 空闲下载：src/assets/prefetch.ts 自动排的。前面任何一级有人在等就不开，同时 1 条。
+   3、4 级在联机对战中（holdBulk）一律不开。
+   抢占：有 0 级在等或在跑、或 1 级在等名额时，正在跑的 3、4 级里 > 512KB 的（BGM、立绘）立刻中断，由发起方放回自己的队列；
+   小文件让它下完，比中断重来省。
    同一 key 再被要求时只提升优先级，不会再下一次。 */
-export type NetPri = 0 | 1 | 2 | 3;
-interface NetJob { key: string; pri: NetPri; seq: number; start: () => void; done?: Promise<void> }
+export type NetPri = 0 | 1 | 2 | 3 | 4;
+export interface NetOpts { bytes?: number; cancel?: () => void }
+interface NetJob { key: string; pri: NetPri; seq: number; start: () => void; done?: Promise<void>; bytes: number; cancel?: () => void }
+/** A running bulk/idle download bigger than this gives way to a waiting foreground image. */
+export const PREEMPT_BYTES = 512 * 1024;
 const netWait: NetJob[] = [];
 const netRun = new Set<NetJob>();
 let netSeq = 0;
@@ -118,6 +146,13 @@ let idleHolds = 0;
 let bulkHolds = 0;
 let slowAt = -Infinity;
 let slowNow = false;
+/** Last moment a priority 0/1 job was waiting or running. The idle downloader waits a beat after the screen settles. */
+let fgAt = -Infinity;
+const nowMs = () => typeof performance !== 'undefined' ? performance.now() : Date.now();
+export function foregroundIdleMs(): number {
+  if ([...netRun, ...netWait].some(j => j.pri <= 1)) { fgAt = nowMs(); return 0; }
+  return nowMs() - fgAt;
+}
 
 function netBase(): number {
   const now = typeof performance !== 'undefined' ? performance.now() : 0;
@@ -126,14 +161,15 @@ function netBase(): number {
 }
 
 function netCanStart(pri: NetPri): boolean {
-  let zero = 0, idle = 0, bulk = 0;
-  for (const j of netRun) { if (j.pri === 0) zero++; else if (j.pri === 2) idle++; else if (j.pri === 3) bulk++; }
+  let zero = 0, idle = 0, bulk = 0, auto = 0;
+  for (const j of netRun) { if (j.pri === 0) zero++; else if (j.pri === 2) idle++; else if (j.pri === 3) bulk++; else if (j.pri === 4) auto++; }
   if (pri === 0) return zero < 6;
   if (netRun.size >= netBase()) return false;
   if (pri === 1) return true;
   if (idleHolds > 0 || zero > 0 || netWait.some(j => j.pri === 0)) return false;
   if (pri === 2) return idle < 1;
-  return bulk < 2 && bulkHolds === 0 && !netWait.some(j => j.pri < 3);
+  if (bulkHolds > 0 || netWait.some(j => j.pri < pri)) return false;
+  return pri === 3 ? bulk < 2 : auto < 1;
 }
 
 function netPump(): void {
@@ -143,19 +179,30 @@ function netPump(): void {
     if (netCanStart(job.pri)) { netWait.splice(i, 1); job.start(); }
     else i++;
   }
+  // 挡画面的 0 级不管在等还是已经开了都算；1 级只在等名额时才算（选人页滚动名单一直有 1 级，不能因此把大文件反复打断）。
+  if (netWait.some(j => j.pri <= 1) || [...netRun].some(j => j.pri === 0)) {
+    fgAt = nowMs();
+    for (const j of netRun) {
+      if (j.pri < 3 || !j.cancel || j.bytes <= PREEMPT_BYTES) continue;
+      const cancel = j.cancel;
+      j.cancel = undefined;
+      cancel();
+    }
+  }
 }
 
 /** Run `run` when the gate gives it a slot. */
-export function netTask<T>(key: string, pri: NetPri, run: () => Promise<T>): Promise<T> {
+export function netTask<T>(key: string, pri: NetPri, run: () => Promise<T>, opts: NetOpts = {}): Promise<T> {
   let made: NetJob | undefined;
   const out = new Promise<T>((resolve, reject) => {
     const job: NetJob = made = {
-      key, pri, seq: netSeq++,
+      key, pri, seq: netSeq++, bytes: opts.bytes ?? 0, cancel: opts.cancel,
       start: () => {
         netRun.add(job);
         // 一条卡死的连接（无响应、不报错）不能永久占着名额：超时后让出位置，请求本身继续。
         const free = () => { clearTimeout(timer); if (netRun.delete(job)) netPump(); };
-        // 批量预载（3 级）不让：它只会挡住别的批量文件，让了反而会越开越多条。
+        // 批量预载、空闲下载（3、4 级）不让：它们只会挡住同级文件，让了反而会越开越多条。
+        if (job.pri <= 1) fgAt = nowMs();
         const timer = job.pri < 3 ? setTimeout(free, NET_STALL_MS) : undefined;
         let p: Promise<T>;
         try { p = run(); } catch (e) { p = Promise.reject(e); }
@@ -187,8 +234,8 @@ export function bumpNet(key: string, pri: NetPri): void {
   if (moved) netPump();
 }
 
-/** Hold back priority-3 work (the settings bulk preload) — for the whole time a fight is on screen:
- *  tens of MB in the background would push up an online match's round-trip time. */
+/** Hold back priority-3/4 work (bulk and idle downloads) — for the whole time an online fight is on screen:
+ *  tens of MB in the background would push up the match's round-trip time. */
 export function holdBulk(): () => void {
   bulkHolds++;
   let done = false;
@@ -200,7 +247,7 @@ export function holdBulk(): () => void {
   };
 }
 
-/** Hold back priority-2 work (fight preload in progress). Call the returned function to let it go. */
+/** Hold back priority-2/3/4 work (fight preload in progress). Call the returned function to let it go. */
 export function holdIdle(): () => void {
   idleHolds++;
   let done = false;

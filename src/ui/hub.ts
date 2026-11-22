@@ -11,7 +11,7 @@ import { cue, lobbyMode } from './mobile.ts';
 import { settleAppHeight } from './appHeight.ts';
 import { backOne, setPageBack } from './layerBack.ts';
 
-export type HubId = 'shop' | 'locker' | 'tasks' | 'music' | 'battle' | 'stage' | 'moves';
+export type HubId = 'shop' | 'locker' | 'tasks' | 'music' | 'battle' | 'stage' | 'moves' | 'story';
 
 export interface HubPage {
   title: string;
@@ -27,7 +27,7 @@ export interface HubPage {
 }
 
 const $ = (id: string) => document.getElementById(id)!;
-const NO: Record<HubId, string> = { shop: 'A', locker: 'B', tasks: 'C', music: 'D', battle: '01', stage: '02', moves: '03' };
+const NO: Record<HubId, string> = { shop: 'A', locker: 'B', tasks: 'C', music: 'D', battle: '01', stage: '02', moves: '03', story: 'S' };
 const BUILD_BUDGET_MS = 8;
 const pages = new Map<HubId, HubPage>();
 const hosts = new Map<HubId, HTMLElement>();
@@ -96,21 +96,24 @@ type StopId = HubId | 'home' | 'stamps';
 type Stop = { id: StopId; name: string; icon: string };
 const STOPS: readonly Stop[] = [
   { id: 'home', name: '首页', icon: 'i-house' },
+  { id: 'story', name: '剧情', icon: 'n-story' },
   { id: 'shop', name: '商店', icon: 'n-shop' },
   { id: 'locker', name: '仓库', icon: 'n-locker' },
   { id: 'tasks', name: '任务', icon: 'n-tasks' },
   { id: 'music', name: '音乐库', icon: 'i-music-notes' },
   { id: 'stamps', name: '印章册', icon: 'i-seal' },
 ];
-/* 横屏手机：首页是大厅，路线多出「备战」三站（作战 / 场景 / 招式），上方两段括号标出备战和后台。竖屏仍是六站。 */
+/* 横屏手机：首页是大厅，路线多出「备战」三站（作战 / 场景 / 招式），上方两段括号标出备战和后台。竖屏是七站。
+   「剧情」一站排在首页 / 大厅后面、备战前面。站多了放不下时整条路线可以左右拖。 */
 const LAND_STOPS: readonly Stop[] = [
   { id: 'home', name: '大厅', icon: 'i-house' },
+  STOPS[1],
   { id: 'battle', name: '作战', icon: 'n-battle' },
   { id: 'stage', name: '场景', icon: 'k-stage' },
   { id: 'moves', name: '招式', icon: 'n-moves' },
-  ...STOPS.slice(1),
+  ...STOPS.slice(2),
 ];
-const GROUPS = [{ name: '备战', from: 2, to: 5 }, { name: '后台', from: 5, to: 9 }];
+const GROUPS = [{ name: '备战', from: 3, to: 6 }, { name: '后台', from: 6, to: 10 }];
 /** 大厅模式：多出备战三站、返回叫「‹ 大厅」。只看大厅模式，不看版式（关了大厅的横屏手机仍是原来 6 站）。 */
 const land = () => lobbyMode();
 let prepMeta: (id: StopId) => string = () => '';
@@ -146,7 +149,21 @@ function paintNav(): void {
       + `<span class="hn-dot"><svg viewBox="0 0 256 256" aria-hidden="true"><use href="#${s.icon}"/></svg></span>`
       + `<b>${s.name}</b><small${s.id === 'tasks' && meta ? ' class="hot"' : ''}>${meta.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)}</small></button></li>`;
   }).join('');
-  for (const b of list.querySelectorAll<HTMLButtonElement>('.hn-stop')) b.onclick = () => goStop(b.dataset.stop as StopId, b);
+  for (const b of list.querySelectorAll<HTMLButtonElement>('.hn-stop')) b.onclick = () => { if (navDragged) return; goStop(b.dataset.stop as StopId, b); };
+  /* 当前站滚进视野（窄屏放不下整条路线时）。 */
+  const panel = list.parentElement!;
+  const here = list.querySelector<HTMLElement>('[aria-current="page"]');
+  if (here && panel.scrollWidth > panel.clientWidth) panel.scrollLeft = Math.max(0, here.offsetLeft + here.offsetWidth / 2 - panel.clientWidth / 2);
+}
+
+/* 鼠标也能拖整条路线（触屏本来就能横滑）。拖过之后松手不算点站。 */
+let navDragged = false;
+function bindNavDrag(panel: HTMLElement): void {
+  let from: { x: number; left: number } | null = null;
+  panel.addEventListener('pointerdown', e => { navDragged = false; if (e.pointerType === 'mouse' && e.button === 0 && panel.scrollWidth > panel.clientWidth) from = { x: e.clientX, left: panel.scrollLeft }; });
+  addEventListener('pointermove', e => { if (!from) return; const d = e.clientX - from.x; if (Math.abs(d) > 5) navDragged = true; panel.scrollLeft = from.left - d; });
+  addEventListener('pointerup', () => { from = null; setTimeout(() => { navDragged = false; }, 0); });
+  panel.addEventListener('scroll', () => { if (from) navDragged = true; }, { passive: true });
 }
 
 function closeNav(instant = false): boolean {
@@ -332,6 +349,7 @@ export function bindHub(): void {
   $('hub-back').onclick = () => { backOne(true); };
   $('hub-nav-btn').onclick = () => { if (!closeNav()) openNav(); };
   $('hub-nav').querySelector<HTMLElement>('.hn-scrim')!.onclick = () => { cue('back'); closeNav(); };
+  bindNavDrag($('hub-nav').querySelector<HTMLElement>('.hn-panel')!);
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape' || !current || document.querySelector('dialog[open]')) return;
     e.preventDefault();

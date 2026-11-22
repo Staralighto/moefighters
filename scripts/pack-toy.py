@@ -3,6 +3,7 @@
 BGM m4a is re-encoded to 64 kbps AAC only as a zip entry. public/ and dist/ are left alone.
 Run from the repo root: python -P scripts/pack-toy.py
 """
+import hashlib
 import json, os, re, subprocess, tempfile, zipfile
 
 root, cap = "dist", 50 * 1024 * 1024
@@ -62,17 +63,19 @@ def main():
                         z.write(tmp, rel)
                         bgm_from += os.path.getsize(p)
                         bgm_to += os.path.getsize(tmp)
-                        bgm_sizes[rel] = os.path.getsize(tmp)
+                        with open(tmp, "rb") as fh:
+                            bgm_sizes[rel] = (os.path.getsize(tmp), hashlib.sha256(fh.read()).hexdigest()[:8])
                     finally:
                         os.remove(tmp)
                 else:
                     z.write(p, rel)
                 n += 1
-        # 设置 → 资源 lists sizes from this file: the re-encoded bgm is what Toy actually serves.
+        # 设置 → 资源 lists sizes from this file, and public/sw.js keeps a cached copy only while its hash matches:
+        # the re-encoded bgm is what Toy actually serves, so both its size and hash are rewritten.
         mp = os.path.join(root, "asset-manifest.json")
         if os.path.exists(mp):
             manifest = json.load(open(mp, encoding="utf-8"))
-            manifest["files"] = [[f, bgm_sizes.get(f, s)] for f, s in manifest["files"]]
+            manifest["files"] = [[f[0], *bgm_sizes[f[0]]] if f[0] in bgm_sizes else f for f in manifest["files"]]
             z.writestr("asset-manifest.json", json.dumps(manifest, separators=(",", ":")))
             n += 1
         names = set(z.namelist())

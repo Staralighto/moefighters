@@ -49,3 +49,7 @@ __pycache__/
 # 本地 AI 技能（转场设计等），不进 git
 skills/
 .claude/skills/
+
+# 剧情写作流程的临时文件和本地进度，不进 git
+story/_send/
+story/state.json

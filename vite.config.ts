@@ -177,6 +177,10 @@ export default defineConfig(({ command }) => ({
     layoutWriter('prop-layout', './src/render/propLayout.data.ts', serialize),
     layoutWriter('touch-layout', './src/ui/touchLayout.data.ts', serializeTouch),
   ],
-  server: { host: true },
+  // 开发服务器只监听游戏自己的文件。local/ 里放过 Python 虚拟环境（4 万多个文件）：不排除的话，
+  // 每次启动都要先把它们逐个登记、再扫一遍其中的 .html，期间所有请求一起卡住十几秒到半分钟。
+  server: { host: true, watch: { ignored: ['**/*venv*/**', '**/.venv/**', '**/__pycache__/**', '**/site-packages/**', '**/_transfer/**'] } },
+  // 依赖扫描只从游戏首页出发（默认会把项目里每个 .html 都当入口，包括 local/、素材/ 里的预览页和虚拟环境自带的网页）。
+  optimizeDeps: { entries: ['index.html'] },
   preview: { host: true },
 }));

@@ -28,6 +28,7 @@ import { RIMI_BACK } from './rimiFx.ts';
 import { HIMARI_BACK, HIMARI_SCREEN_BACK, HIMARI_SCREEN_FRONT } from './himariFx.ts';
 import { TOMOE_BACK, TOMOE_SCREEN_BACK, TOMOE_SCREEN_FRONT } from './tomoeFx.ts';
 import { TSUGUMI_BACK, TSUGUMI_SCREEN_BACK } from './tsugumiFx.ts';
+import { NIJIKA_SCREEN_BACK, drawNijikaRollBack } from './nijikaFx.ts';
 import { KAORU_BACK, KAORU_SCREEN_BACK } from './kaoruFx.ts';
 import { HAGUMI_BACK, HAGUMI_SCREEN_BACK } from './hagumiFx.ts';
 import { drawTokoSoloLight, TOKO_BACK } from './tokoFx.ts';
@@ -58,10 +59,14 @@ export function portraitBodyScale(padSplit: boolean): number {
 
 /** Hard 1px rim, yellow for the left team and green for the right. */
 const TEAM_GLOW = SIDE;
+/** 剧情闯关的梦魇（复制体）：紫描边 + 深紫压暗。和纸板背面揭晓时的紫色裂纹同一个紫。 */
+const NIGHTMARE_RIM = '#9a5cff';
+const NIGHTMARE_TINT = '#170a2c';
+const NIGHTMARE_DIM = .42;
 /** Effects painted under every body: 和泉朋花's coffin and her spotlights. */
 const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK, ...MIZUHO_BACK, ...MIKU_BACK, ...SHIZUKU_BACK, ...CHIERI_BACK, ...YOMOGI_BACK, ...MASKING_BACK, ...TAE_BACK, ...SAAYA_BACK, ...HIMARI_BACK, ...TOMOE_BACK, ...TSUGUMI_BACK, ...KAORU_BACK, ...HAGUMI_BACK, ...TOKO_BACK, ...RUI_BACK, ...NANAMI_BACK, ...CHISATO_BACK, ...MAYA_BACK, ...BOCCHI_BACK, ...LOCK_BACK, ...KANON_BACK, ...AKO_BACK, ...RINKO_BACK, ...RIMI_BACK, ...ANON_BACK, ...UMIRI_BACK]);
 /** Screen-space layers that ignore the body zoom: behind every body, and in front of them. */
-const SCREEN_BACK = new Set(['encore-stage', 'family-dim', ...SAKIKO_SCREEN_BACK, ...MIZUHO_SCREEN_BACK, ...MIKU_SCREEN_BACK, ...YOMOGI_SCREEN_BACK, ...MASKING_SCREEN_BACK, ...TAE_SCREEN_BACK, ...SAAYA_SCREEN_BACK, ...HIMARI_SCREEN_BACK, ...TOMOE_SCREEN_BACK, ...TSUGUMI_SCREEN_BACK, ...KAORU_SCREEN_BACK, ...HAGUMI_SCREEN_BACK, ...CHISATO_SCREEN_BACK, ...MAYA_SCREEN_BACK, ...BOCCHI_SCREEN_BACK, ...LOCK_SCREEN_BACK, ...KANON_SCREEN_BACK, ...AKO_SCREEN_BACK, ...RINKO_SCREEN_BACK]);
+const SCREEN_BACK = new Set(['encore-stage', 'family-dim', ...SAKIKO_SCREEN_BACK, ...MIZUHO_SCREEN_BACK, ...MIKU_SCREEN_BACK, ...YOMOGI_SCREEN_BACK, ...MASKING_SCREEN_BACK, ...TAE_SCREEN_BACK, ...SAAYA_SCREEN_BACK, ...HIMARI_SCREEN_BACK, ...TOMOE_SCREEN_BACK, ...TSUGUMI_SCREEN_BACK, ...NIJIKA_SCREEN_BACK, ...KAORU_SCREEN_BACK, ...HAGUMI_SCREEN_BACK, ...CHISATO_SCREEN_BACK, ...MAYA_SCREEN_BACK, ...BOCCHI_SCREEN_BACK, ...LOCK_SCREEN_BACK, ...KANON_SCREEN_BACK, ...AKO_SCREEN_BACK, ...RINKO_SCREEN_BACK]);
 const SCREEN_FRONT = new Set(['encore-rain', 'encore-crowd', 'encore-call', 'slap-flash', ...CHIERI_SCREEN_FRONT, ...YOMOGI_SCREEN_FRONT, ...HIMARI_SCREEN_FRONT, ...TOMOE_SCREEN_FRONT, ...CHISATO_SCREEN_FRONT, ...MAYA_SCREEN_FRONT, ...AKO_SCREEN_FRONT, ...RINKO_SCREEN_FRONT, ...PAREO_SCREEN_FRONT, ...PAREO_SCREEN_FRONT]);
 /** 安可是主唱的: the eye line on the 175 px body, measured up from the feet. */
 const ENCORE_EYE_Y = 152;
@@ -253,9 +258,11 @@ export class Renderer {
     // 圆形地面影子：跳得越高影越小；中心比脚线高 7px（FLOOR+3 再上移 10），对齐成图的实际脚线。
     for (const f of g.fighters) {
       if (violetHidden(f)) continue;
-      c.fillStyle = '#05050c40';
+      // 梦魇：影子深得几乎看不见地面（剧本里唯一的识别线索），也稍大一圈。
+      const deep = f.nightmare && f.hp > 0;
+      c.fillStyle = deep ? '#020104d9' : '#05050c40';
       c.beginPath();
-      c.ellipse(f.x, FLOOR - 7, Math.max(0, 50 - (FLOOR - f.y) * .09) * bodyScale, 9 * bodyScale, 0, 0, Math.PI * 2);
+      c.ellipse(f.x, FLOOR - 7, Math.max(0, (deep ? 60 : 50) - (FLOOR - f.y) * .09) * bodyScale, (deep ? 12 : 9) * bodyScale, 0, 0, Math.PI * 2);
       c.fill();
     }
 
@@ -293,7 +300,8 @@ export class Renderer {
       // 哭泣的紫罗兰: between the vanish and the reappear she does not exist on screen.
       if (violetHidden(f)) continue;
       const view = this.view(f.data.id);
-      const outline = teamRim ? TEAM_GLOW[f.team] : undefined;
+      // 梦魇的紫描边盖过队伍描边：镜像对局里一眼分得清谁是谁。
+      const outline = f.nightmare ? NIGHTMARE_RIM : teamRim ? TEAM_GLOW[f.team] : undefined;
       // 舞台装置: a skill cast lifts the veil look for the length of the move, so the pose reads.
       // The veil mod itself stays: misses and targeting are untouched. Another live veil
       // (忍法·隐身术) keeps its transparency — only the device's own veil is lifted.
@@ -313,7 +321,11 @@ export class Renderer {
         const look = f.hp > 0 ? statusBodyOf(f) : undefined;
         // 心跳计 (矢仓蓬咲): ゴゴゴ and the closing dark behind her once her heart is out of control.
         if (f.data.heart) drawHeartBack(c, f, g.age, lite);
+        // 虹色神速滚奏: the rainbow halo and the extra arms sit behind her own body.
+        if (f.attack?.skill.fx === 'nijika-roll' && f.hp > 0) drawNijikaRollBack(c, f, view, footY, alpha, lite);
         view.draw(c, f, f.x, footY, alpha, undefined, look?.outline ?? outline);
+        // 梦魇：整身压一层深紫，像本人被抽走了光。状态异常的着色照常叠在上面。
+        if (f.nightmare) view.draw(c, f, f.x, footY, alpha * NIGHTMARE_DIM, NIGHTMARE_TINT);
         drawTokoSoloLight(c, f, view, footY, alpha);
         if (f.attack?.skill.fx === 'bocchi-hero' && f.hp > 0) drawBocchiSolo(c, f, lite);
         // 帝王引擎式误会: from 失控 up a shadow falls over the top of her face — killing intent, to anyone watching.

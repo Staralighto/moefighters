@@ -2923,6 +2923,54 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    // 伊地知虹夏 (game/nijika.ts, render/nijikaFx.ts): 孤独摇滚！结束乐队的鼓手兼队长，「下北泽大天使」。稳健队长型：
+    // I 震开、O 贴身爆发、U 远处牵制。全部空手，I / O / L 的必杀格手持鼓棒；呆毛、声浪、镲片、星空全部由代码绘制。
+    // 被动「进攻姿态」（「攻めの姿勢で行こうよ〜」）：6 秒内 U / I / O 都用过，4 秒加速。
+    id: 'nijika', name: '伊地知虹夏', title: '鼓手 / 大天使', quote: '我想看小孤独的摇滚！', color: '#F9D648',
+    // 成图与全身立绘到位前先不进公开名册（立绘缺失会让开打过场退回空白）。
+    hidden: true,
+    bands: ['kessoku-band'],
+    ...stats('beat'),
+    passive: ['进攻姿态', '6 秒内 U、I、O 都用过：4 秒移速 +20%、出手速度 +20%'],
+    view: { kind: 'sprite', common: '/sprites/nijika/common.png', special: '/sprites/nijika/special.png', height: 181, lift: 5, specialScale: 1.05 },
+    skills: [
+      skill(0, 'light', '打拍子'),
+      // 吐槽担当，团队唯一常识人
+      skill(1, 'heavy', '吐槽一击'),
+      // 悬浮呆毛回旋（三角呆毛 = 多力多滋 / Dorito Girl；网页小游戏「呆毛无限长的虹夏」）
+      skill(2, 'projectile', '悬浮呆毛回旋', {
+        damage: 14, speed: 600, size: 46, life: 1.3, start: .22, duration: .58, cd: 7, knock: 60, fx: 'nijika-ahoge',
+        react: { kind: 'stand', stun: .3 },
+        brief: '三角呆毛飞出再旋回，去回各打一次；可挡可跳',
+        detail: '拔下三角呆毛甩出，水平旋转飞到尽头折返，去程和回程各 14 伤害，回程能打到身后；可格挡，跳起可躲',
+      }),
+      // 最大音量（小时候把星歌的音响开到最大报复；选鼓是因为鼓的声音最大）
+      skill(3, 'endure', '最大音量', {
+        damage: 22, range: 280, start: .3, duration: .8, cd: 9, fx: 'nijika-volume', holdEndure: true, breakout: true,
+        knock: 320, root: .5, rootBreak: 1, react: { kind: 'stand', stun: .3 },
+        brief: '霸体可解控，砸地贴身击倒，稍远推定身；可挡可跳',
+        detail: '霸体双鼓棒砸地，受控中也能放出（解控）；声浪向两侧炸开：130 以内 46 伤害并击倒，130～280 推开 22 伤害并定身 0.5 秒；可格挡，跳起可躲',
+      }),
+      // 虹色神速滚奏（动画里「肌肉虹夏超高速打鼓」的名场面：彩虹光、手多到数不清、镲片乱飞）
+      skill(4, 'endure', '虹色神速滚奏', {
+        damage: 7, range: 120, start: .22, duration: 1.22, cd: 8, fx: 'nijika-roll', holdEndure: true,
+        knock: 20, gain: 3, guardDmg: 4, react: { kind: 'stand', stun: .3 },
+        finale: { damage: 46, knock: 360, guardDmg: 24, gain: 8, react: { kind: 'launch', vy: -420, knocked: .8 } },
+        brief: '霸体原地高速连打五下，末下打飞；可挡可跳',
+        detail: '霸体原地高速打鼓，身前连打五下各 7 伤害，最后一记重音 46 伤害并打飞；可格挡，末下削防较多；跳起可躲',
+      }),
+      // 繁星的起拍（STARRY = 繁星；鼓手开曲前的四下起拍；点心盒缎带；「想看小孤独的摇滚」）
+      skill(5, 'endure', '繁星的起拍', {
+        damage: 12, range: 92, start: .22, duration: 2.6, knock: 0, gain: 2, fx: 'nijika-star', superArmor: true, holdEndure: true,
+        react: { kind: 'stand', stun: .45 },
+        guardPlan: [12, 18, 34, 46],
+        finale: { damage: 130, knock: 380, react: { kind: 'knockdown', vy: -320, knocked: 1 } },
+        brief: '霸体起拍，流星按拍砸落，大星击倒；可挡，走开可躲',
+        detail: '霸体鼓棒四下起拍后，五颗流星按拍落向对手当时的位置各 12 伤害，最后大星 130 伤害并击倒；落点锁定，走开可躲；可格挡，第四段破防',
+      }),
+    ],
+  },
+  {
     id: 'gale', name: '疾风', title: '快攻 / 连击', quote: '跟上我的速度。', color: '#7ee0ff',
     playable: false,
     ...stats('rush'),

@@ -73,6 +73,14 @@ export function setRoundLabel(text: string): void {
   roundLabel = text;
 }
 
+/** 剧情闯关「未觉醒」：封住的键整体压暗（还在原位，只是按了没反应）。 */
+function sealKey(el: HTMLElement, on: boolean): void {
+  if (el.classList.contains('sealed') === on) return;
+  el.classList.toggle('sealed', on);
+  el.style.opacity = on ? '.32' : '';
+  el.style.filter = on ? 'grayscale(1)' : '';
+}
+
 export function updateHUD(g: FightGame): void {
   const team = g.mode === 'team';
   const challenge = g.mode === 'challenge';
@@ -90,14 +98,24 @@ export function updateHUD(g: FightGame): void {
       if (!avatar.hidden) avatar.hidden = true;
     }
   }
-  $('hud-ally').hidden = !team;
-  $('hud-enemy2').hidden = !(team || pair);
-  const bars: { f: Fighter; n: number; score: boolean }[] = team
+  // 剧情闯关 team 模式只有 3 名角色：二打一时对面只有一条血条，一打二时我方没有队友条。召唤物排在 characters 后面，不能按下标数。
+  const three = team && g.characters.length === 3;
+  const lone = three && g.options.allies === 1;
+  const solo = three && !lone;
+  $('hud-ally').hidden = !team || lone;
+  $('hud-enemy2').hidden = !(team || pair) || solo;
+  const bars: { f: Fighter; n: number; score: boolean }[] = lone
+    ? [
+        { f: g.fighters[0], n: 1, score: true },
+        { f: g.fighters[1], n: 2, score: true },
+        { f: g.fighters[2], n: 4, score: false },
+      ]
+    : team
     ? [
         { f: g.fighters[0], n: 1, score: true },
         { f: g.fighters[1], n: 3, score: false },
         { f: g.fighters[2], n: 2, score: true },
-        { f: g.fighters[3], n: 4, score: false },
+        ...solo ? [] : [{ f: g.fighters[3], n: 4, score: false }],
       ]
     : pair
       ? [
@@ -115,7 +133,7 @@ export function updateHUD(g: FightGame): void {
             { f: g.fighters[1], n: 2, score: true },
           ];
   for (const { f, n, score } of bars) {
-    setText($m('hud-name' + n), f.data.name);
+    setText($m('hud-name' + n), f.nightmare ? '梦魇·' + f.data.name : f.data.name);
     if (faces && (n === 1 || n === 2)) {
       const avatar = $m('hud-avatar' + n) as HTMLImageElement;
       if (avatar.hidden) avatar.hidden = false;
@@ -150,7 +168,7 @@ export function updateHUD(g: FightGame): void {
     const full = f.energy >= f.energyMax;
     const barBox = mp.parentElement;
     if (barBox && barBox.classList.contains('full') !== full) barBox.classList.toggle('full', full);
-    if (score) setText($m('score' + n), g.mode === 'training' ? '' : '●'.repeat(g.wins[f.team]) + '○'.repeat(2 - g.wins[f.team]));
+    if (score) setText($m('score' + n), g.mode === 'training' ? '' : '●'.repeat(g.wins[f.team]) + '○'.repeat(Math.max(0, g.roundsToWin - g.wins[f.team])));
   }
   // A challenge run has no round score; stale dots from a previous match must not linger.
   if (challenge) { setText($m('score1'), ''); setText($m('score2'), ''); }
@@ -160,6 +178,7 @@ export function updateHUD(g: FightGame): void {
   if ((me.form ?? 0) !== guideForm) showGuideMoves(me.data.forms ? { ...me.data, skills: skillsOf(me) } : me.data, me.form ?? 0);
   const ultCost = skillsOf(me)[5]?.cost ?? 100;
   const cdMsg = (i: number) => {
+    if (me.sealed && i >= 2) return '未觉醒';
     const cd = me.cooldowns[i];
     return cd > 0 ? cd.toFixed(1) : i === 5 && me.energy < ultCost ? Math.floor(me.energy) + ' / ' + ultCost : '';
   };
@@ -200,6 +219,7 @@ export function updateHUD(g: FightGame): void {
       const i = CONTROLS[0].attacks.indexOf(b.dataset.key!);
       paintCd(b, i >= 0 ? me.cooldowns[i] : 0);
       paintTint(b, tintOf(i));
+      sealKey(b, me.sealed && i >= 2);
     }
     // 进阶键位的后撤键：后撤自己的冷却，跟技能键同一套显示。
     touchEvade ??= $m('touchpad').querySelector<HTMLElement>('.evade');
@@ -209,7 +229,8 @@ export function updateHUD(g: FightGame): void {
       const ready = me.energy >= ultCost;
       const p = String(Math.min(1, me.energy / ultCost));
       if (touchUlt.style.getPropertyValue('--p') !== p) touchUlt.style.setProperty('--p', p);
-      touchUlt.classList.toggle('ready', ready);
+      touchUlt.classList.toggle('ready', ready && !me.sealed);
+      sealKey(touchUlt, me.sealed);
     }
   }
   // Landscape phones, the portrait turn, and wide mode hide the movelist. Writing it still dirties style.
@@ -219,7 +240,8 @@ export function updateHUD(g: FightGame): void {
   if (skillsHidden) return;
   for (let i = 0; i < skillRows.length; i++) {
     const el = skillRows[i];
-    const charge = i === 5 ? skillCharges[i] : null;
+    const charge = i === 5 && !me.sealed ? skillCharges[i] : null;
+    if (i === 5 && skillCharges[i]) sealKey(el, me.sealed);
     if (charge) {
       const h = me.energy / me.energyMax * 100 + '%';
       if (charge.style.height !== h) charge.style.height = h;

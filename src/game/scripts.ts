@@ -53,6 +53,9 @@ export interface MoveScript {
   noMelee?: boolean;
   /** Dash travel is the script's, not the stock line. */
   customDash?: boolean;
+  /** While this returns true the dasher passes through enemy bodies (team / challenge body separation skips her),
+   *  so a crowd cannot pin a run that only ends on distance travelled. */
+  passThrough?: (a: Attack) => boolean;
   /** While `attack.mode` is one of these, the script places `attack.hold`. 跟班 must not walk that body off the spot. */
   placesHold?: readonly number[];
   /** 心跳计: while this move runs the heart never bursts on its own — the move spends it (人体感应雷达、想象吧). */

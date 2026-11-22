@@ -69,7 +69,9 @@ export type ModKind =
   /** 冰川夹心: pressed between the sisters; the squash reads it (render/clips.ts squeezeSquash). */
   | 'squeeze'
   /** 似懂非懂的名言: hit again while still 混乱 from her — acc counts down to the finger snap; from is 濑田薰 (game/kaoru.ts). */
-  | 'snap';
+  | 'snap'
+  /** 进攻姿态: on 伊地知虹夏, one per U / I / O cast inside the window (tag nijika-2/3/4); all three live → the burst (game/nijika.ts). */
+  | 'offense';
 
 /**
  * One running buff.

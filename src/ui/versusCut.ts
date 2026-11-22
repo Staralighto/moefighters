@@ -59,7 +59,9 @@ let figures: { canvas: HTMLCanvasElement; view: FighterView | undefined; f: Figh
 let ghosts: { canvas: HTMLCanvasElement; view: FighterView | undefined; f: Fighter; tint: string; facing: 1 | -1; drawn: string }[] = [];
 
 /** Who stands on which half for a match's character list. */
-export function versusSides(characters: CharacterData[], team: boolean): VersusSides {
+export function versusSides(characters: CharacterData[], team: boolean, allies?: number): VersusSides {
+  // 剧情闯关的一打二 / 二打一：我方人数由关卡给出。
+  if (allies) return { left: characters.slice(0, allies), right: characters.slice(allies) };
   return team
     ? { left: characters.slice(0, 2), right: characters.slice(2, 4) }
     : { left: characters.slice(0, 1), right: characters.slice(1) };
@@ -69,11 +71,12 @@ function figureHTML(c: CharacterData): string {
   return `<figure class="vs-fighter"><canvas width="${FIG_W}" height="${FIG_H}"></canvas><figcaption><small>${c.title}</small><b>${c.name}</b><em>${c.id.toUpperCase()}</em></figcaption></figure>`;
 }
 
-/** 这一边有人没有立绘（交付表里没有）就整边不出立绘，留在色圆 + 小人版。 */
+/** 这一边有人没有立绘（交付表里没有）就整边不出立绘，留在色圆 + 小人版。
+ *  --fy 是脸在立绘里的高度（portraits.ts）：CSS 按它把每个人的脸对到同一高度，高矮不同的角色头不会一高一低。 */
 function artHTML(list: CharacterData[]): string {
   const arts = list.map(c => portraitOf(c.id));
   if (arts.some(a => !a)) return '';
-  return `<div class="vs-art">${arts.map((a, i) => `<i class="vs-art-${i ? 'mate' : 'lead'}"><img alt="" data-src="${a!.src}" draggable="false"></i>`).reverse().join('')}</div>`;
+  return `<div class="vs-art">${arts.map((a, i) => `<i class="vs-art-${i ? 'mate' : 'lead'}"><img alt="" data-src="${a!.src}" style="--fy:${a!.face.y}" draggable="false"></i>`).reverse().join('')}</div>`;
 }
 
 function sideHTML(list: CharacterData[]): string {

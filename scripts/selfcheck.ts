@@ -36,6 +36,8 @@ import { drawTomoeFx } from '../src/render/tomoeFx.ts';
 import { drawMayaFx, drawMayaShot } from '../src/render/mayaFx.ts';
 import { drawTsugumiFx, drawTsugumiShot } from '../src/render/tsugumiFx.ts';
 import { effortOf } from '../src/game/tsugumi.ts';
+import { drawNijikaFx, drawNijikaShot, drawNijikaRollBack } from '../src/render/nijikaFx.ts';
+import { attackStance } from '../src/game/nijika.ts';
 import { drawKaoruFx, drawKaoruShot } from '../src/render/kaoruFx.ts';
 import { drawHagumiFx, drawHagumiShot } from '../src/render/hagumiFx.ts';
 import { AKO_CHANT } from '../src/game/akoPath.ts';
@@ -91,7 +93,7 @@ declare const process: { getBuiltinModule(name: 'fs'): {
   readFileSync(path: string, encoding: 'utf8'): string;
   readdirSync(path: string, options: { recursive: true }): string[];
   statSync(path: string): { size: number };
-} };
+}; getBuiltinModule(name: 'vm'): { Script: new (code: string, options?: { filename?: string }) => unknown } };
 const readFileSync = process.getBuiltinModule('fs').readFileSync;
 const statSync = process.getBuiltinModule('fs').statSync;
 
@@ -206,11 +208,11 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const breaksAt: Record<string, number> = {
     nyamu: 4, sakiko: 10, anon: 5, rana: 10, soyo: 3, kokoro: 3, miyako: 5,
-    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5, toko: 4, rui: 5, nanami: 5, kanon: 7, ako: 9, rinko: 6, rimi: 5, hagumi: 6,
+    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5, toko: 4, rui: 5, nanami: 5, kanon: 7, ako: 9, rinko: 6, rimi: 5, hagumi: 6, nijika: 4,
   };
   const segments: Record<string, number> = {
     nyamu: 4, sakiko: 16, anon: 6, rana: 22, soyo: 3, kokoro: 3, miyako: 6,
-    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7, toko: 5, rui: 6, nanami: 5, kanon: 13, ako: 9, rinko: 7, rimi: 6, hagumi: 9,
+    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7, toko: 5, rui: 6, nanami: 5, kanon: 13, ako: 9, rinko: 7, rimi: 6, hagumi: 9, nijika: 6,
   };
   for (const [id, breakAt] of Object.entries(breaksAt)) {
     const s = ROSTER[at(id)].skills[5];
@@ -2699,6 +2701,47 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const edge = JSON.parse(readFileSync('edgeone.json', 'utf8')) as { nodeVersion?: string; headers?: { source: string; headers: { key: string; value: string }[] }[] };
   assert.equal(edge.nodeVersion, '22.21.1', 'EdgeOne builds on preinstalled Node 22.21');
   assert.deepEqual(edge.headers?.map(h => [h.source, h.headers.length === 1 && h.headers[0].key === 'Cache-Control' ? h.headers[0].value : '']), rules, 'edgeone.json carries the same cache rules as public/_headers');
+  assert.equal(rule('/sw.js'), 'public, max-age=0, must-revalidate', 'the cache worker is always asked fresh, so a deploy reaches return visits');
+  assert.equal(rule('/asset-manifest.json'), 'public, max-age=0, must-revalidate', 'the manifest the worker sweeps by is always fresh');
+  {
+    // 后台资源下载（src/assets/prefetch.ts）
+    const { netPolicy, orderFiles, tierOf, manifestPath } = await import('../src/assets/prefetch.ts');
+    const n = { slow: false, touch: true, lowBattery: false, roomy: true };
+    assert.deepEqual(netPolicy('smart', n).tiers, ['core'], 'smart: a phone that cannot tell its network (iPhone) takes small files and guesses only');
+    assert.deepEqual(netPolicy('smart', { ...n, touch: false }).tiers, ['core', 'roster', 'heavy'], 'smart: a desktop with no network type downloads everything');
+    assert.deepEqual(netPolicy('smart', { ...n, type: 'wifi' }).tiers, ['core', 'roster', 'heavy'], 'smart: known Wi-Fi downloads everything');
+    assert.deepEqual(netPolicy('smart', { ...n, touch: false, type: 'cellular' }).tiers, ['core'], 'smart: cellular takes small files only');
+    assert.deepEqual(netPolicy('smart', { ...n, type: 'wifi', saveData: true }), { tiers: [], predict: true }, 'smart: save-data keeps guesses only');
+    assert.deepEqual(netPolicy('smart', { ...n, type: 'wifi', lowBattery: true }).tiers, [], 'smart: low battery keeps guesses only');
+    assert.deepEqual(netPolicy('all', n).tiers, ['core', 'roster', 'heavy'], 'all: every tier regardless of network');
+    assert.deepEqual(netPolicy('off', { ...n, type: 'wifi' }), { tiers: [], predict: false }, 'off: nothing automatic');
+    assert.deepEqual(netPolicy('smart', { ...n, type: 'wifi', roomy: false }).tiers, ['core'], 'low storage: small files only');
+    assert.equal(tierOf('stages/ring-thumb.webp'), 'core', 'stage previews are small files');
+    assert.equal(tierOf('sprites/aya/common.webp'), 'roster', 'sheets are the roster tier');
+    assert.equal(tierOf('bgm/x.m4a'), 'heavy', 'music is the heavy tier');
+    const order = orderFiles([['bgm/a.m4a', 3e6, ''], ['sprites/b/king.webp', 9e4, ''], ['sprites/b/common.webp', 2e5, ''], ['sprites/a/special.webp', 2e5, ''], ['avatars/a.png', 9e3, ''], ['portraits/a.webp?v=1', 1e5, '']], f => ['a', 'b'].indexOf(f))
+      .map(f => f[0]);
+    assert.deepEqual(order, ['avatars/a.png', 'sprites/a/special.webp', 'sprites/b/common.webp', 'sprites/b/king.webp', 'portraits/a.webp?v=1', 'bgm/a.m4a'], 'small files, then fighters in roster order (main sheets first), then portraits, music last');
+    assert.equal(manifestPath('/sprites/aya/common.png', true, true), 'sprites/aya/common.webp', 'a guess maps to the file production requests');
+    assert.equal(manifestPath('/portraits/aya.webp?v=ab', true, true), 'portraits/aya.webp?v=ab', 'a portrait guess keeps its ?v= cache key');
+    const ms = readFileSync('scripts/asset-manifest.ts', 'utf8');
+    assert.ok(ms.includes("rel += '?v=' + v"), 'the manifest lists portraits at the ?v= url the game requests, so a preload is not wasted');
+    const sw = readFileSync('public/sw.js', 'utf8');
+    // sw.js is not bundled or type-checked: a syntax error only shows as a silent failed registration.
+    let swParses = true;
+    try { new (process.getBuiltinModule('vm').Script)(sw, { filename: 'public/sw.js' }); } catch { swParses = false; }
+    assert.ok(swParses, 'public/sw.js parses');
+    assert.ok(sw.includes('inflight.get(req.url)'), 'a foreground request joins a background download of the same file instead of fetching it twice');
+    assert.ok(sw.includes("req.headers.has('range')"), 'the worker passes media range requests through');
+    assert.ok(sw.includes("'no-cache'"), 'a worker miss revalidates, so a pre-deploy HTTP copy is never stored under the new hash');
+    assert.ok(/const TRACK = \/\^\(sprites\|[a-z|]+\)\\\/\//.test(sw) && !/TRACK = [^\n]*index/.test(sw), 'the worker only handles asset folders, never the document');
+    assert.ok(sw.includes("t: 'rate'") && readFileSync('src/assets/loader.ts', 'utf8').includes('!(e.workerStart > 0)'), 'responses through the worker (header bytes only) never read as a slow link; the worker reports real throughput');
+    assert.ok(sw.includes("msg?.t === 'abort'") && readFileSync('src/assets/prefetch.ts', 'utf8').includes("'x-mf-bg': '1'"), 'a preempted background download is aborted inside the worker too, so the link is actually freed');
+    const main = readFileSync('src/main.ts', 'utf8');
+    assert.ok(main.includes('plan.need.push(...assetsFor(characters, stage).filter(s => !images.has(s) && prefetchHas(s)))'), 'slow link: a sheet already in the worker cache is waited for in full, not skipped (no block-figure start)');
+    assert.ok(main.includes("predict(sheetsOf(shown), 'cast')") && main.includes('800'), 'cast guesses wait for the pick to settle and replace the previous cast');
+    assert.ok(main.includes('if (setup.online) releaseBulk ??= holdBulk();'), 'bulk and idle downloads stop for online fights only');
+  }
   assert.ok(!readFileSync('src/assets/loader.ts', 'utf8').includes('loadPortrait'), 'a failed idle crop does not download the full sheet');
   assert.ok(readFileSync('src/render/spriteView.ts', 'utf8').includes('missingImages.has(stand)'), 'a failed idle crop shows the block figure');
   assert.equal(portraitSrc('/sprites/aya/common.png'), '/sprites/aya/idle.png', 'dev and production both ask for the idle cell, not the whole sheet');
@@ -2834,7 +2877,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const onlinePane = dialogHtml.match(/<section class="set-pane"[^>]*id="set-pane-online"[\s\S]*?<\/section>/)?.[0] ?? '';
     assert.equal(text(onlinePane), '联机代号 修改代号', 'online codename setting row has control name and button only');
     const visible = text(dialogHtml.replace(onlinePane, ''));
-    assert.equal(visible, '设置 × 通用 操控 训练场 音频 联机 外观 主题 大厅模式 自动 开 关 名册 名册显示 直接排开 按乐队分组 名册卡面 全身 头像 印章色条 显示隐藏角色 对战 必杀演出 报幕 特写 存档 导入存档 导出存档 资源 预载全部资源 键位方案 基础 进阶 空白处手势 自定义布局 恢复默认 编辑布局 技能 无技能冷却 无限大招 木桩 一直格挡 连段后回满血 音量 音乐 音效 播放 开打换曲 ? 只在随机播放时生效，其他时候不能改。', 'settings dialog keeps control names and option names, plus the fight-shuffle tip (the online pane exempted)');
+    assert.equal(visible, '设置 × 通用 操控 训练场 音频 联机 外观 主题 大厅模式 自动 开 关 名册 名册显示 直接排开 按乐队分组 名册卡面 全身 头像 印章色条 显示隐藏角色 对战 必杀演出 报幕 特写 存档 导入存档 导出存档 资源 资源下载 键位方案 基础 进阶 空白处手势 自定义布局 恢复默认 编辑布局 技能 无技能冷却 无限大招 木桩 一直格挡 连段后回满血 音量 音乐 音效 播放 开打换曲 ? 只在随机播放时生效，其他时候不能改。', 'settings dialog keeps control names and option names, plus the fight-shuffle tip (the online pane exempted)');
     // 二值项是开关，两三个选项是分段按钮，页签切页：设置弹窗里不再有下拉。
     assert.ok(!dialogHtml.includes('pick-btn') && (dialogHtml.match(/role="switch"/g) ?? []).length === 10, 'settings on/off rows are switches, not dropdowns');
     assert.ok(['暗色', '亮色', '跟随系统'].every(n => dialogHtml.includes(`aria-label="${n}"`)), 'theme icons keep their names for screen readers');
@@ -10365,6 +10408,169 @@ for (const order of [[2, 3], [3, 2]]) {
         const e = { type, x: 450, y: FLOOR, color: '#FFEE88', max: 1.3, life: 1.3 - i * 1.3 / 24, age: i * .05, radius: 181, dir, n: i % 8, hit: i % 2 === 0, t0: .3, tx: 120 };
         assert.ok(drawTsugumiFx(ctx, e, lite), `Tsugumi draws ${type}`);
         assert.equal(depth, 0, 'Tsugumi restores the canvas after ' + type);
+      }
+    }
+  }
+}
+
+// nijika: 伊地知虹夏。U throws the triangle ahoge out and back (both passes hit); I slams both sticks down (close in
+// knocks down, further out shoves and roots; a jump clears it); O is the rainbow roll (five strokes and a crash that
+// launches, under 霸体); L (100 气) counts in four clicks, drops five stars on the beat and a big one that knocks down.
+// 进攻姿态: U, I and O all inside 6 s → a short burst of speed.
+{
+  const nj = at('nijika');
+  const data = ROSTER[nj];
+  assert.ok(nj === at('bocchi') + 1, '伊地知虹夏 sits with 结束乐队, after 一里');
+  assert.equal(data.trait, 'beat');
+  assert.equal(SHORT_NAMES.nijika, '虹夏');
+  const fresh = (p2x = 520) => {
+    const g = newGame(nj, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  // U: out and back
+  {
+    const { g, p1, p2 } = fresh(560);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    run(g, 2);
+    assert.ok(hp - p2.hp > 24, 'the ahoge lands going out and coming back: ' + (hp - p2.hp).toFixed(1));
+  }
+  // I: close in knocks down; further out shoves and roots
+  {
+    const { g, p1, p2 } = fresh(380);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    let down = false;
+    for (let i = 0; i < 120; i++) { g.step(STEP); if (p2.knocked > 0) down = true; }
+    assert.ok(down && hp - p2.hp > 40, 'close in the slam knocks down: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(520);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    let rooted = false;
+    for (let i = 0; i < 120; i++) { g.step(STEP); if (p2.root > 0) rooted = true; }
+    assert.ok(rooted && p2.knocked <= 0 && hp - p2.hp > 15 && hp - p2.hp < 30, 'further out it roots: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(520);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    run(g, .12);
+    p2.vy = -720;
+    run(g, .8);
+    assert.equal(hp, p2.hp, 'a jump clears the slam');
+  }
+  {
+    const { g, p1 } = fresh(520);
+    p1.stun = .8;
+    assert.equal(g.attack(p1, 3), true, '最大音量 breaks out of hitstun');
+    assert.equal(p1.attack?.skill.fx, 'nijika-volume');
+  }
+  // O: five strokes and a launching crash, under 霸体; blocked it chips
+  {
+    const { g, p1, p2 } = fresh(390);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    let up = false, beats = 0;
+    for (let i = 0; i < 160; i++) {
+      g.step(STEP);
+      if (p2.y < FLOOR - 20) up = true;
+      beats += g.effects.filter(e => e.type === 'nijika-beat' && e.life === e.max).length;
+    }
+    assert.ok(beats >= 8, 'ten strokes ring: ' + beats);
+    assert.ok(hp - p2.hp > 45 && up, 'the roll lands and the crash launches: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(390);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    for (let i = 0; i < 160; i++) { p2.blocking = true; g.step(STEP); }
+    assert.ok(hp - p2.hp < 20, 'a guard takes the roll as chip: ' + (hp - p2.hp).toFixed(1));
+  }
+  // 进攻姿态: U, I and O inside 6 s
+  {
+    const { g, p1 } = fresh(900);
+    for (const slot of [2, 3]) { p1.cooldowns[slot] = 0; g.attack(p1, slot); run(g, 1.3); }
+    assert.ok(!attackStance(p1), 'two moves are not enough');
+    p1.cooldowns[4] = 0; g.attack(p1, 4);
+    g.step(STEP);
+    assert.ok(attackStance(p1) && g.effects.some(e => e.type === 'nijika-attack'), 'the third one lights 进攻姿态');
+  }
+  // L: the stars land on the beat and the big one knocks down; walking off the marks clears them
+  {
+    const { g, p1, p2 } = fresh();
+    p1.energy = p1.energyMax;
+    const hp = p2.hp;
+    assert.equal(g.attack(p1, 5), true, '繁星的起拍 casts');
+    let down = false, clicks = 0;
+    for (let i = 0; i < 360; i++) {
+      g.step(STEP);
+      if (p2.knocked > 0) down = true;
+      clicks += g.effects.filter(e => e.type === 'nijika-click' && e.life === e.max).length;
+    }
+    assert.ok(down && hp - p2.hp > 105, 'the stars and the big one land: ' + (hp - p2.hp).toFixed(1));
+    assert.equal(clicks, 4, 'four clicks of the count-in');
+  }
+  {
+    const { g, p1, p2 } = fresh();
+    p1.energy = p1.energyMax;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    // The attack clock, not the wall clock: hitstop holds it.
+    for (let i = 0; i < 600 && (p1.attack?.t ?? 9) < 1.92; i++) g.step(STEP);
+    const mid = p2.hp;
+    p2.x = 900;
+    run(g, 1.2);
+    assert.ok(hp - mid > 0 && mid === p2.hp, 'walking off the last mark clears the big star');
+  }
+  // Every picture draws and restores the canvas.
+  {
+    let depth = 0;
+    const methods = new Map<string, (...args: unknown[]) => unknown>();
+    const ctx = new Proxy({ globalAlpha: 1 } as Record<string, unknown>, {
+      get(o, key: string) {
+        if (key in o) return o[key];
+        if (!methods.has(key)) methods.set(key, (...args: unknown[]) => {
+          for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value), `Nijika ${key} stays finite`);
+          if (key === 'save') depth++;
+          if (key === 'restore') depth--;
+          if (key === 'arc') assert.ok(Number(args[2]) >= 0, 'Nijika arc radius');
+          if (key === 'ellipse') assert.ok(Number(args[2]) >= 0 && Number(args[3]) >= 0, 'Nijika ellipse radii');
+          if (key === 'createLinearGradient' || key === 'createRadialGradient') return { addColorStop() {} };
+        });
+        return methods.get(key);
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    const view = { draw() {} } as unknown as Parameters<typeof drawNijikaRollBack>[2];
+    const seen = new Set<string>();
+    let rolled = false;
+    for (const slot of [2, 3, 4, 5]) {
+      const { g, p1 } = fresh(slot === 4 ? 390 : 520);
+      p1.energy = 200;
+      g.attack(p1, slot);
+      for (let i = 0; i < 360; i++) {
+        g.step(STEP);
+        for (const e of g.effects) if (e.type.startsWith('nijika-')) seen.add(e.type);
+        for (const p of g.projectiles) if (p.fx === 'nijika-ahoge') { assert.ok(drawNijikaShot(ctx, p, false), 'the ahoge draws'); assert.equal(depth, 0); }
+        if (p1.attack?.skill.fx === 'nijika-roll') {
+          for (const lite of [false, true]) drawNijikaRollBack(ctx, p1, view, FLOOR, 1, lite);
+          assert.equal(depth, 0, 'the rainbow halo restores the canvas');
+          rolled = true;
+        }
+      }
+    }
+    assert.ok(rolled, 'the roll was drawn');
+    for (const type of ['chip', 'volume', 'boom', 'cymbals', 'beat', 'crash', 'starry', 'click', 'meteor', 'bigstar', 'ribbon']) {
+      assert.ok(seen.has('nijika-' + type), 'her moves spawn nijika-' + type);
+    }
+    seen.add('nijika-attack');
+    for (const lite of [false, true]) for (const dir of [-1, 1]) for (const type of seen) {
+      for (let i = 0; i <= 24; i++) {
+        const e = { type, x: 450, y: FLOOR, color: '#F9D648', max: 1.3, life: 1.3 - i * 1.3 / 24, age: i * .05, radius: 181, dir, n: i % 6, hit: i % 2 === 0, t0: .3, tx: 120 };
+        assert.ok(drawNijikaFx(ctx, e, lite), `Nijika draws ${type}`);
+        assert.equal(depth, 0, 'Nijika restores the canvas after ' + type);
       }
     }
   }

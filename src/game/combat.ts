@@ -17,6 +17,7 @@ import './lisa.ts';
 import './himari.ts';
 import './tomoe.ts';
 import './tsugumi.ts';
+import './nijika.ts';
 import './kaoru.ts';
 import './hagumi.ts';
 import './toko.ts';
@@ -7131,6 +7132,11 @@ function step_twin_moon(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   const moon = mode === TWIN_PHASE.out ? f.data.color : '#dfe6f5';
   // Never let the clock run out mid-run: the brake owns the last TWIN_MOON.brake seconds.
   a.t = Math.min(a.t, s.duration - TWIN_MOON.brake - .01);
+  // That frozen clock means the run ends only on distance. Anything that holds her in place (a body she
+  // could not pass, a push, a pin) would leave her stuck forever: no headway for a moment counts as a wall.
+  // runX is where she stood at the start of the last step: the gap to now is her real headway after every push.
+  if (a.runX !== undefined && dt > 0) a.stall = Math.abs(f.x - a.runX) < speed * dt * .3 ? (a.stall ?? 0) + dt : 0;
+  a.runX = f.x;
   f.x = clamp(f.x + f.facing * speed * dt, X_MIN, X_MAX);
   // A Set keeps insertion order, so the ids past `before` are exactly the ones this step hit.
   const before = a.hit.size;
@@ -7149,13 +7155,14 @@ function step_twin_moon(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   if (Math.floor(a.t * 14) !== Math.floor((a.t - dt) * 14)) {
     g.effect('ghost', f.x - f.facing * 22, f.y, f.data.color, .26, { fighter: f.id, alpha: .4, tint: moon });
   }
-  const wall = f.x <= X_MIN || f.x >= X_MAX;
+  const wall = f.x <= X_MIN || f.x >= X_MAX || (a.stall ?? 0) > TWIN_STALL;
   if (mode === TWIN_PHASE.out) {
     if (Math.abs(f.x - a.anchor) < TWIN_MOON.out && !wall) return;
     a.mode = TWIN_PHASE.back;
     a.liftAt = f.x;
     f.facing = (-f.facing) as 1 | -1;
     a.hit = new Set();
+    a.stall = 0;
     g.effect('saki-eclipse', f.x, f.y - 96, '#ffffff', .6, { radius: 52 });
     g.shake = Math.max(g.shake, 4);
     return;
@@ -7166,7 +7173,12 @@ function step_twin_moon(g: FightGame, f: Fighter, a: Attack, dt: number): void {
   a.t = Math.max(a.t, s.duration - TWIN_MOON.brake);
   g.effect('saki-crossmoon', f.x + f.facing * 20, f.y - 96, '#ffffff', .5, { radius: 62 });
 }
-SCRIPTS['twin-moon'] = Object.assign(SCRIPTS['twin-moon'] ?? {}, { update: step_twin_moon, customDash: true });
+/** Seconds without headway before the run turns (out) or brakes (home). */
+const TWIN_STALL = .2;
+SCRIPTS['twin-moon'] = Object.assign(SCRIPTS['twin-moon'] ?? {}, {
+  update: step_twin_moon, customDash: true,
+  passThrough: (a: Attack) => a.t >= a.skill.start && (a.mode ?? TWIN_PHASE.out) !== TWIN_PHASE.brake,
+});
 
 /** 血月的奏鸣: the house goes black under a rising blood moon, a red light falls on her and the music
  *  pours out of her hands as a staff across the stage. Her own super entrance replaces the stock square. */

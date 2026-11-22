@@ -28,6 +28,7 @@ const FACE_FIX: Record<string, readonly [number, number]> = {
   misaki: [.55, .255],
   nagi: [.77, .199],
   raika: [.478, .187],
+  nijika: [.498, .232],
 };
 
 export function portraitOf(characterId: string): Portrait | null {

@@ -61,6 +61,8 @@ function readVolume(): number {
   } catch { return 1; }
 }
 
+export type StorySound = 'blip' | 'pop' | 'boing' | 'sparkle' | 'step' | 'flip' | 'thud' | 'curtain' | 'bell' | 'glitch' | 'nod' | 'stomp';
+
 export class Sfx {
   muted = false;
   private ctx: AudioContext | null = null;
@@ -249,6 +251,59 @@ export class Sfx {
         tone('square', 240, 70, 0, .14, .05, 1200);
         noise(0, .32, .12, 2400, 380, .5);
         break;
+    }
+  }
+
+  /** 剧情演出（src/story/theatre.ts）的音：全部现场合成，走同一个总音量。
+   *  blip 是打字音：每个角色一个音高和音色（voice），广播加一点失真。 */
+  story(kind: StorySound, o: { pitch?: number; wave?: OscillatorType; fuzz?: boolean; soft?: boolean } = {}): void {
+    if (this.muted || !this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const tone = (type: OscillatorType, f0: number, f1: number, at: number, dur: number, gain: number, lowpass = 0) => {
+      const osc = ctx.createOscillator(), g = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(f0, t + at);
+      osc.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + at + dur);
+      g.gain.setValueAtTime(.0001, t + at);
+      g.gain.exponentialRampToValueAtTime(gain, t + at + Math.min(.008, dur / 4));
+      g.gain.exponentialRampToValueAtTime(.0001, t + at + dur);
+      let head: AudioNode = osc;
+      if (lowpass) { const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = lowpass; head = osc.connect(lp); }
+      head.connect(g).connect(this.dest());
+      osc.start(t + at);
+      osc.stop(t + at + dur + .02);
+    };
+    const hiss = (at: number, dur: number, gain: number, f0: number, f1: number, q = .8) => {
+      const n = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), g = ctx.createGain();
+      n.buffer = this.noiseBuffer();
+      bp.type = 'bandpass'; bp.Q.value = q;
+      bp.frequency.setValueAtTime(f0, t + at);
+      bp.frequency.exponentialRampToValueAtTime(f1, t + at + dur);
+      g.gain.setValueAtTime(.0001, t + at);
+      g.gain.exponentialRampToValueAtTime(gain, t + at + dur * .3);
+      g.gain.exponentialRampToValueAtTime(.0001, t + at + dur);
+      n.connect(bp).connect(g).connect(this.dest());
+      n.start(t + at, Math.random() * .3);
+      n.stop(t + at + dur + .02);
+    };
+    switch (kind) {
+      case 'blip': {
+        const f = (o.pitch ?? 480) * 2 ** ((Math.random() * 2 - 1) * .6 / 12);
+        tone(o.wave ?? 'square', f, f * .97, 0, .045, o.soft ? .018 : .03, o.wave === 'sine' ? 0 : 3200);
+        if (o.fuzz) hiss(0, .05, .012, 2400, 1800, 2);
+        break;
+      }
+      case 'pop': tone('sine', 520, 1180, 0, .09, .07); tone('triangle', 1180, 1400, .05, .06, .03); break;
+      case 'boing': tone('triangle', 260, 620, 0, .12, .07); tone('sine', 620, 380, .1, .12, .04); break;
+      case 'sparkle': for (let i = 0; i < 3; i++) tone('sine', 1320 * 2 ** (i * 4 / 12), 1320 * 2 ** (i * 4 / 12), i * .06, .12, .035); break;
+      case 'step': hiss(0, .05, .05, 1400, 900, 1.6); tone('sine', 160, 110, 0, .05, .03); break;
+      case 'flip': hiss(0, .16, .07, 900, 3600, .9); break;
+      case 'thud': tone('sine', 90, 42, 0, .45, .22); hiss(0, .2, .05, 300, 120, 1); break;
+      case 'curtain': hiss(0, .9, .06, 380, 1500, .6); break;
+      case 'bell': for (const [f, at] of [[880, 0], [1320, .16]] as const) { tone('sine', f, f, at, 1.1, .06); tone('sine', f * 2.01, f * 2.01, at, .5, .015); } break;
+      case 'glitch': for (let i = 0; i < 6; i++) tone('sawtooth', 120 + Math.random() * 300, 60 + Math.random() * 90, i * .05, .07, .035, 1400); hiss(0, .4, .04, 2000, 400, 3); break;
+      case 'nod': tone('triangle', 420, 380, 0, .06, .025); break;
+      case 'stomp': tone('sine', 140, 70, 0, .12, .09); hiss(0, .08, .04, 800, 400, 1.2); break;
     }
   }
 
