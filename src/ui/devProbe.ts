@@ -6,6 +6,7 @@
    __mf.reduce(true | false | null)   强制「减少动态效果」（null = 跟随系统）
    __mf.settle()                       有限次数的动画全部快进到结束
    __mf.load(ms | null)                之后每次进后台页都演一遍 ms 毫秒的加载条（null = 按预测）
+   __mf.ult('l' | 'r')                 在战斗里演一次必杀演出「特写」（祥子；不定格，只看画面）
    __mf.lobby('auto' | 'on' | 'off')   大厅模式
    __mf.scan()                         { truncated, overflow }：被截断的文字、超出屏幕的元素（滚动容器里的不算）
    __mf.geometry()                     大厅缩放系数、入口群和当前后台页的几何 */
@@ -13,6 +14,7 @@
 import { closeHub, hubOpen, openHub, type HubId } from './hub.ts';
 import { forceReducedMotion } from './motion.ts';
 import { forceLoadMs } from './loadGate.ts';
+import { play as playUlt } from './ultCut.ts';
 import { setLobbyPref, type LobbyPref } from './mobile.ts';
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
@@ -93,5 +95,6 @@ w.__mf = Object.assign(w.__mf ?? {}, {
   go, back: () => go(null), settle, scan, geometry,
   reduce: (v: boolean | null) => forceReducedMotion(v),
   load: (ms: number | null) => forceLoadMs(ms),
+  ult: (side: 'l' | 'r' = 'l') => playUlt('sakiko', '血月的奏鸣', '#7799cc', side),
   lobby: (v: LobbyPref) => setLobbyPref(v),
 });

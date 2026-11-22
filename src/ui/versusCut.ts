@@ -4,12 +4,18 @@ import type { FighterView } from '../render/view.ts';
 import { previewFighter, type Fighter } from '../game/fighter.ts';
 import { fitCanvasCached } from './canvasFit.ts';
 import type { UiSound } from '../audio/sfx.ts';
+import { portraitOf } from '../data/portraits.ts';
+import { loadImage } from '../assets/loader.ts';
 
 /* 开打过场: the cut between the select screen and the fight, laid out like a gig poster. Each side
    gets one big disc in its lead's colour; the cast stands on it at close to native sprite size, so
    the pixel art never gets blown up past what it can hold. The drama is type, the VS stamp and the
    timing. It leaves through a circular iris onto the fight, which is already running behind it.
-   Purely a picture: the match itself is untouched. */
+   Purely a picture: the match itself is untouched.
+
+   全身立绘（data/portraits.ts）：每边的人各一张半身，主角在前、搭档缩小压暗站在外侧后面。
+   立绘到了就挂 .art：背景换成两条代表色斜带交叉（.vs-xband），色圆、像素小人和大剪影让位，只留名字；
+   人物像拳皇那样从两侧滑进来。立绘加载失败就退回原来的色圆 + 小人版。 */
 
 export interface VersusSides { left: CharacterData[]; right: CharacterData[] }
 
@@ -63,8 +69,31 @@ function figureHTML(c: CharacterData): string {
   return `<figure class="vs-fighter"><canvas width="${FIG_W}" height="${FIG_H}"></canvas><figcaption><small>${c.title}</small><b>${c.name}</b><em>${c.id.toUpperCase()}</em></figcaption></figure>`;
 }
 
+/** 这一边有人没有立绘（交付表里没有）就整边不出立绘，留在色圆 + 小人版。 */
+function artHTML(list: CharacterData[]): string {
+  const arts = list.map(c => portraitOf(c.id));
+  if (arts.some(a => !a)) return '';
+  return `<div class="vs-art">${arts.map((a, i) => `<i class="vs-art-${i ? 'mate' : 'lead'}"><img alt="" data-src="${a!.src}" draggable="false"></i>`).reverse().join('')}</div>`;
+}
+
 function sideHTML(list: CharacterData[]): string {
-  return `<div class="vs-disc"><div class="vs-ghost"><canvas width="${GHOST}" height="${GHOST}"></canvas></div><i class="vs-ring"></i><i class="vs-stripe"></i></div><div class="vs-cast">${list.map(figureHTML).join('')}</div>`;
+  return `<div class="vs-disc"><div class="vs-ghost"><canvas width="${GHOST}" height="${GHOST}"></canvas></div><i class="vs-ring"></i><i class="vs-stripe"></i></div>${artHTML(list)}<div class="vs-cast">${list.map(figureHTML).join('')}</div>`;
+}
+
+/** 立绘全部到了才换成立绘版；有一张失败就留在小人版。 */
+let artGen = 0;
+function mountArt(half: HTMLElement): void {
+  const imgs = [...half.querySelectorAll<HTMLImageElement>('.vs-art img')];
+  half.classList.remove('art', 'art-ok');
+  if (!imgs.length) return;
+  half.classList.add('art');
+  // 连开两次过场（再来一局很快）时，上一次晚到的图不能改这一次的状态。
+  const gen = String(++artGen);
+  half.dataset.artGen = gen;
+  const current = () => half.dataset.artGen === gen;
+  void Promise.all(imgs.map(img => loadImage(img.dataset.src!).then(im => { if (current()) img.src = im.src; })))
+    .then(() => { if (current()) half.classList.add('art-ok'); })
+    .catch(() => { if (current()) half.classList.remove('art'); });
 }
 
 /** #rrggbb mixed toward black by `k`. */
@@ -74,6 +103,26 @@ function darken(hex: string, k: number): string {
   const n = parseInt(m[1], 16);
   const ch = (shift: number) => Math.round(((n >> shift) & 255) * (1 - k));
   return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
+}
+
+/** #rrggbb mixed toward `to` (also #rrggbb) by `k`, as rgb(). */
+function mix(hex: string, to: string, k: number): string {
+  const p = (h: string) => { const n = parseInt(h.replace('#', ''), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+  if (!/^#?[0-9a-f]{6}$/i.test(hex)) return hex;
+  const a = p(hex), b = p(to);
+  return `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * k)).join(',')})`;
+}
+
+/** 斜带的颜色：浅色角色（亮度 > .62）统一压暗约 24%，再做和必杀快切同款的同色深浅渐变（人物一端亮、远端暗）。 */
+function bandFill(hex: string, dir: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  let base = hex;
+  if (m) {
+    const n = parseInt(m[1], 16);
+    const l = (.2126 * ((n >> 16) & 255) + .7152 * ((n >> 8) & 255) + .0722 * (n & 255)) / 255;
+    if (l > .62) base = '#' + [16, 8, 0].map(s => Math.round(((n >> s) & 255) * .76).toString(16).padStart(2, '0')).join('');
+  }
+  return `linear-gradient(${dir}, ${mix(base, '#ffffff', .18)} 0%, ${base} 40%, ${mix(base, '#000000', .35)} 100%)`;
 }
 
 /** LIVE No.0001, 0002…: counts up once per cut; storage failing just shows 0001. */
@@ -97,7 +146,12 @@ export function showVersus(sides: VersusSides, stageName: string, modeLabel: str
     half.innerHTML = sideHTML(list);
     half.classList.toggle('duo', list.length > 1);
     half.style.setProperty('--c', lead(list));
+    mountArt(half);
   }
+  /* 双斜带对冲：每人一条代表色斜带，从自己头顶那一角斜贯全场，在 VS 处交叉。 */
+  if (!cut.querySelector('.vs-xband')) cut.insertAdjacentHTML('afterbegin', '<i class="vs-xband l"></i><i class="vs-xband r"></i>');
+  cut.querySelector<HTMLElement>('.vs-xband.l')!.style.background = bandFill(lead(sides.left), '90deg');
+  cut.querySelector<HTMLElement>('.vs-xband.r')!.style.background = bandFill(lead(sides.right), '270deg');
   $('vs-stage').textContent = stageName;
   $('vs-mode').textContent = modeLabel;
   $('vs-live').textContent = nextLiveNo();

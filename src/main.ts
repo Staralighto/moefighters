@@ -17,6 +17,7 @@ import { recordMatchClear, renderStampBook, setStampLayout, setStripOn, stampLay
 import { buildReport, humanTeam } from './game/report.ts';
 import { setIconBtn } from './ui/iconBtn.ts';
 import { hideVersus, showVersus, versusHeld, versusProgress, versusSides } from './ui/versusCut.ts';
+import { resetUltCut, watchUlt } from './ui/ultCut.ts';
 import { mountSegThumbs } from './ui/segThumb.ts';
 import { applyTouchDevice, watchTouch } from './ui/device.ts';
 import { applyTouchLayout, bindBattleFrame, onBattleLayout } from './ui/touchLayout.ts';
@@ -24,7 +25,7 @@ import { resetCamera, stepCamera } from './ui/battleCamera.ts';
 import { onMediaChange } from './ui/media.ts';
 import { bindDialogFallback, closePopover } from './ui/overlays.ts';
 import { bindSwipeGuard } from './ui/swipeBack.ts';
-import { bindPick, bindSeg, bindSwitch, bindTabs, bindTip, setTrainPrefs, trainPrefs } from './ui/settings.ts';
+import { bindPick, bindSeg, bindSwitch, bindTabs, bindTip, setTrainPrefs, setUltShowPref, trainPrefs, ultShowPref, type UltShow } from './ui/settings.ts';
 import { blankGesture, hasCustom, onControls, resetLayout, scheme, setBlankGesture, setScheme, type Scheme } from './ui/controls.ts';
 import { abortPadEditor, openPadEditor, padEditing } from './ui/padEditor.ts';
 import { setThemePref, themePref, type ThemePref } from './ui/theme.ts';
@@ -263,6 +264,7 @@ bindOnline(() => select.onlinePick(), (role, hostChar, guestChar, stageId, link,
     stage,
     online: role,
     lock: plan.mode === 'lock' ? { seed: plan.seed } : undefined,
+    ultCut: plan.cut === true,
   });
 }, on => select.setNetLocked(on), (charId, codename) => select.setOnlinePeer(charId, codename), openDialog);
 {
@@ -434,6 +436,8 @@ async function startGame(setup: MatchSetup): Promise<void> {
   let muted = false;
   const hostAudio = netAudio(sfx);
   const lockSound = setup.lock ? { play: (k: Parameters<typeof sfx.play>[0], source?: number) => { if (muted) return; if (game?.netRole === 'host' || game?.netRole === 'guest') hostAudio.play(k, source); else sfx.play(k); } } : null;
+  // 必杀演出：本地对局看设置；联机看握手协商结果（双方都选特写才是特写），两端必须一致（定格会改时序）。
+  ultCut = setup.online ? setup.ultCut === true : ultShowPref() === 'cut';
   game = new FightGame(setup.characters, {
     mode: setup.mode,
     difficulty: setup.difficulty,
@@ -441,6 +445,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
     mods: setup.mods,
     roundsToWin: setup.mode === 'challenge' ? 1 : undefined,
     stage: setup.stage,
+    ultFreeze: ultCut,
     training: trainPrefs(),
     random: lockRng?.next,
     audio: lockSound ?? (setup.online ? netAudio(sfx) : sfx),
@@ -522,6 +527,8 @@ async function startGame(setup: MatchSetup): Promise<void> {
   hostTicker(setup.online === 'host' || !!setup.lock);
   // previewViews covers the whole roster: a 诗超绊 bandmate borrows their sheets mid-match.
   renderer = new render.Renderer($('game') as HTMLCanvasElement, previewViews, setup.stage, images);
+  // 报幕模式不需要立绘，不预先烘焙。
+  resetUltCut(ultCut ? setup.characters.map(c => ({ id: c.id, color: c.color })) : []);
   // 跟随镜头拉远时，画布外面垫的是同一张场景图（CSS 背景），不是黑边。
   const art = setup.stage.image ? images.get(setup.stage.image)?.src || setup.stage.image : '';
   if (art) $('arena').style.setProperty('--stage-art', cssUrl(art));
@@ -616,6 +623,8 @@ let gapSum = 0;
 let gapCount = 0;
 let avgGap = 0;
 
+/** 这一局放 L 用不用「特写」（否则「报幕」）。开局时定下，整局不变。 */
+let ultCut = false;
 const endOverlay = $('end');
 const finaleCut = $('finale-cut') as HTMLCanvasElement;
 
@@ -644,6 +653,7 @@ function frame(now: number): void {
     // 摆键时战斗是暂停的、画面不会变：不重画整张画布，手机上拖键更跟手。
     if (!(game.paused && document.body.classList.contains('pad-edit'))) renderer.draw(game);
     renderer.drawFinaleCut(finaleCut, game);
+    if (ultCut) watchUlt(game);
     if (showFps) renderer.drawFps(avgGap);
   }
   raf = requestAnimationFrame(frame);
@@ -1213,6 +1223,11 @@ bindSeg('set-theme-seg', {
 bindSeg('set-lobby-seg', {
   get: lobbyPrefValue,
   set: value => setLobbyPref(value as LobbyPref),
+});
+/* 必杀演出：报幕（默认，不停顿）/ 特写（定格快切）。下一局起生效，进行中的对局不变。 */
+bindSeg('set-ult-seg', {
+  get: ultShowPref,
+  set: value => setUltShowPref(value as UltShow),
 });
 bindSeg('set-roster-seg', {
   get: () => select.isGrouped ? 'band' : 'flat',

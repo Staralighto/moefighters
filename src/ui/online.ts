@@ -1,6 +1,7 @@
 /* Online lobby. The select screen shows this panel only while place is 联网. */
 
 import { PLAYABLE, PLAYABLE_BY_ID, PUBLIC_ROSTER } from '../data/characters.ts';
+import { ultShowPref } from './settings.ts';
 import { NET_BUILD, NET_HASH, cleanCode } from '../net/proto.ts';
 import { acceptAnswer, createGuest, createHost, NetFail, type Link } from '../net/rtc.ts';
 import { MailError, postMail, sleep } from '../net/signal.ts';
@@ -170,7 +171,12 @@ const $ = (id: string) => document.getElementById(id) as HTMLElement;
 
 export interface OnlinePick { charId: string; stageId: string }
 /** How the match runs: lockstep with this seed, or host snapshots (seed 0). The host decides. */
-export interface NetPlan { mode: 'lock' | 'snap'; seed: number }
+export interface NetPlan {
+  mode: 'lock' | 'snap';
+  seed: number;
+  /** 必杀演出用特写：房主收到客人的 hello 后算（双方都选了特写才是 true），随 welcome / go 发给客人。 */
+  cut?: boolean;
+}
 
 export interface OnlineStart {
   (role: 'host' | 'guest', hostChar: string, guestChar: string, stageId: string, link: Link, plan: NetPlan): void;
@@ -669,6 +675,7 @@ function handshake(link: Link, role: 'host' | 'guest', picked: OnlinePick, board
         }
         myChar = currentPick().charId || myChar;
         myCode = formatCodename(ensureCodename());
+        plan = { ...plan, cut: ultShowPref() === 'cut' && msg.cut === true };
         link.sendRel({ t: 'welcome', build: NET_BUILD, hash: NET_HASH, hostChar: myChar, stageId, code: myCode, plan });
         if (myReady) link.sendRel({ t: 'ready' });
         enterReady();
@@ -686,7 +693,7 @@ function handshake(link: Link, role: 'host' | 'guest', picked: OnlinePick, board
         peerCode = validCodenameText(msg.code);
         stageId = stg;
         const raw = (msg.plan ?? {}) as Partial<NetPlan>;
-        plan = raw.mode === 'lock' && Number.isInteger(raw.seed) ? { mode: 'lock', seed: raw.seed! } : { mode: 'snap', seed: 0 };
+        plan = raw.mode === 'lock' && Number.isInteger(raw.seed) ? { mode: 'lock', seed: raw.seed!, cut: raw.cut === true } : { mode: 'snap', seed: 0, cut: raw.cut === true };
         enterReady();
         return;
       }
@@ -704,7 +711,7 @@ function handshake(link: Link, role: 'host' | 'guest', picked: OnlinePick, board
           showIdle();
           setLocked(false);
           const raw = (msg.plan ?? {}) as Partial<NetPlan>;
-          const goPlan: NetPlan = raw.mode === 'lock' && Number.isInteger(raw.seed) ? { mode: 'lock', seed: raw.seed! } : { mode: 'snap', seed: 0 };
+          const goPlan: NetPlan = raw.mode === 'lock' && Number.isInteger(raw.seed) ? { mode: 'lock', seed: raw.seed!, cut: raw.cut === true } : { mode: 'snap', seed: 0, cut: raw.cut === true };
           startFight('guest', hostChar, guestChar, stg, link, goPlan);
           resolve();
         });
@@ -714,7 +721,7 @@ function handshake(link: Link, role: 'host' | 'guest', picked: OnlinePick, board
       const sendHello = () => {
         myChar = currentPick().charId || myChar;
         myCode = formatCodename(ensureCodename());
-        link.sendRel({ t: 'hello', build: NET_BUILD, hash: NET_HASH, charId: myChar, code: myCode, soft: document.body.classList.contains('touch') });
+        link.sendRel({ t: 'hello', build: NET_BUILD, hash: NET_HASH, charId: myChar, code: myCode, soft: document.body.classList.contains('touch'), cut: ultShowPref() === 'cut' });
       };
       sendHello();
       // One dropped hello used to sit here until the 8s timeout. Keep knocking until welcome/go/bad.

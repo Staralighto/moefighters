@@ -30,6 +30,8 @@
   --shade-strong: rgb(0 0 0 / 80%);
   --shade-scrim: rgb(0 0 0 / 67%);
   --wash: rgb(255 255 255 / 6%);
+  /* 开打过场暗场上的网点，比 --wash 亮一档，看得出一层细点。 */
+  --wash-dot: rgb(255 255 255 / 10%);
   --font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
   /* 海报字：英文数字走窄体，缺的汉字逐字落到中文海报黑体，再落到系统字。 */
   --font-display: "MF Mono", ui-monospace, "MF Poster", "Noto Sans SC", "Microsoft YaHei", sans-serif;
@@ -867,6 +869,57 @@ body.in-finale .arena .hud { visibility: hidden; }
    fills the visible arena, and the 16:9 picture is letterboxed inside it. */
 #finale-cut { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 5; pointer-events: none; }
 #finale-cut[hidden] { display: none; }
+/* 必杀快切（ui/ultCut.ts）：主角色放 L 时全场定格约 0.6 秒，这层在定格里演完。
+   .uc-stage 是 960×540 的设计稿，JS 按 #game 的位置和大小整体缩放贴上去；里面一律写设计稿 px。
+   时间轴（总长 --life）：0–26% 斜带从下角划到位、人物淡入并顺滑放大；16–30% 招式名落位；
+   26–70% 扫光一次；人物全程缓推；81–100% 整块淡出。data-side="r" 时几何左右镜像，图和字不翻。 */
+.ult-cut { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 4; overflow: hidden; pointer-events: none; --life: .62s; }
+.ult-cut[hidden] { display: none; }
+/* 舞台不裁边：宽屏上斜带一直延伸到两侧，裁边交给 .ult-cut（看得见的画面）。 */
+.uc-stage { position: absolute; left: 0; top: 0; width: 960px; height: 540px; transform-origin: 0 0; }
+.uc-dim { position: absolute; inset: 0; background: rgb(8 10 20 / 62%); }
+.uc-geo { position: absolute; inset: 0; }
+.ult-cut[data-side="r"] .uc-geo { transform: scaleX(-1); }
+/* 斜带比设计稿两头各长出一截（沿自身方向往左下挪 400、总长 2800），超宽屏也能贯穿两角。 */
+.uc-band { position: absolute; left: -505px; top: 498px; width: 2800px; height: 215px; rotate: -24deg; transform-origin: 0 50%; overflow: hidden; will-change: transform; background: var(--c, var(--brand)); }
+.uc-sheen { position: absolute; top: -20px; bottom: -20px; left: 0; width: 120px; transform: translateX(-200px) skewX(-20deg); background: linear-gradient(90deg, transparent, rgb(255 255 255 / 45%), transparent); }
+/* 文字层：和斜带同一几何、同一入场，但叠在人物上面，头发、手臂伸过来也挡不住招式名。 */
+.uc-band.uc-words { background: none; overflow: visible; }
+/* 曲目号小胶囊在上、招式名在下，招式名独占一整行的长度（长名字的缩放、换行见 ultCut.ts fitTitle）。 */
+.uc-title { position: absolute; left: 970px; top: 50%; translate: 0 -50%; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; white-space: nowrap; }
+.ult-cut[data-side="r"] .uc-title { transform: scaleX(-1); }
+.uc-skill { width: max-content; font: 900 58px/1.08 var(--font-head); letter-spacing: .14em; color: var(--text-strong); text-shadow: 3px 3px 0 var(--well); }
+.uc-title small { order: -1; padding: 6px 12px; border-radius: 999px; background: var(--well); font: 700 15px/1 var(--font-display); letter-spacing: .18em; color: var(--text-strong); }
+.uc-fig { position: absolute; left: var(--fig-l, -46px); top: var(--fig-t, -4px); width: 533.33px; height: 800px; transform-origin: calc(var(--fx, .47) * 100%) 30%; will-change: transform, opacity; }
+.uc-fig:not(.ok) { visibility: hidden; }
+/* 逆光、亮边、下半身渐暗都已烘焙进这张画布（ultCut.ts bake），这里只管位置。 */
+.uc-art { position: absolute; display: block; }
+.ult-cut[data-side="r"] .uc-art { transform: scaleX(-1); }
+@supports (color: color-mix(in oklab, white, black)) {
+  .uc-band { background: linear-gradient(90deg, color-mix(in oklab, var(--c, var(--brand)) 82%, white) 400px, var(--c, var(--brand)) 1030px, color-mix(in oklab, var(--c, var(--brand)) 70%, black) 1800px); }
+}
+.ult-cut.on .uc-stage { animation: uc-out var(--life) linear both; }
+/* 定格期间暂停对局：整套演出停在当前帧，继续时接着演。 */
+.ult-cut.held, .ult-cut.held * { animation-play-state: paused !important; }
+.ult-cut.on .uc-dim { animation: uc-dim var(--life) linear both; }
+.ult-cut.on .uc-band { animation: uc-band var(--life) linear both; }
+.ult-cut.on .uc-sheen { animation: uc-sheen var(--life) linear both; }
+.ult-cut.on .uc-title { animation: uc-title var(--life) linear both; }
+.ult-cut.on .uc-fig { animation: uc-fig var(--life) linear both; }
+@keyframes uc-out { 0%, 81% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes uc-dim { 0% { opacity: 0; } 12%, 81% { opacity: 1; } 100% { opacity: 0; } }
+/* 斜带沿自身方向从下角滑进来（只动 transform，走合成层，不逐帧重绘）。 */
+@keyframes uc-band { 0% { transform: translateX(-1900px); animation-timing-function: cubic-bezier(.2, .7, .2, 1); } 26% { transform: none; } }
+@keyframes uc-sheen { 0%, 26% { transform: translateX(200px) skewX(-20deg); animation-timing-function: cubic-bezier(.4, 0, .4, 1); } 70%, 100% { transform: translateX(1850px) skewX(-20deg); } }
+@keyframes uc-title { 0%, 16% { opacity: 0; transform: scale(1.3); animation-timing-function: cubic-bezier(.2, .8, .2, 1); } 30% { opacity: 1; transform: scale(1); } }
+.ult-cut[data-side="r"].on .uc-title { animation-name: uc-title-r; }
+@keyframes uc-title-r { 0%, 16% { opacity: 0; transform: scaleX(-1) scale(1.3); animation-timing-function: cubic-bezier(.2, .8, .2, 1); } 30% { opacity: 1; transform: scaleX(-1); } }
+/* 人物：淡入同时顺滑放大到位，再缓推，全程一条曲线，没有切换。 */
+@keyframes uc-fig { 0% { opacity: 0; transform: scale(1.08); animation-timing-function: cubic-bezier(.15, .8, .25, 1); } 26% { opacity: 1; transform: scale(1.17); animation-timing-function: cubic-bezier(.3, 0, .7, 1); } 100% { opacity: 1; transform: scale(1.23) translateX(18px); } }
+@media (prefers-reduced-motion: reduce) {
+  .ult-cut.on :is(.uc-band, .uc-sheen, .uc-title, .uc-fig) { animation: none; }
+  .ult-cut.on .uc-fig { transform: scale(1.17); }
+}
 .hud { --face: 96px; position: absolute; top: 10px; right: 14px; bottom: auto; left: 14px; inset: 10px 14px auto; display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: start; pointer-events: none; }
 /* 手机头像收到和血条一档。桌面仍是 96。票根按 108/96、22/96 跟着缩。 */
 body.touch.in-battle .hud,
@@ -1876,7 +1929,7 @@ dialog { border-radius: 18px; }
 /* 开打的对阵 / 加载画面要盖住一切界面层：大厅 40、顶栏 45、后台页 60 都在它下面（原来是 30，横屏大厅把整段加载盖住了，
    玩家看到的是大厅停着不动，加载快结束才突然切到半截的对阵画面）。提示条 80 仍在它上面。 */
 .vs-cut { position: fixed; top: 0; right: 0; bottom: 0; left: 0; inset: 0; z-index: 70; overflow: hidden; pointer-events: none; color: var(--text); }
-.vs-cut::before { content: ""; position: absolute; top: 0; right: 0; bottom: 0; left: 0; inset: 0; background: radial-gradient(circle, var(--wash) 1px, transparent 1.4px) 0 0 / 16px 16px, var(--well); }
+.vs-cut::before { content: ""; position: absolute; top: 0; right: 0; bottom: 0; left: 0; inset: 0; background: radial-gradient(circle, var(--wash-dot) 1.2px, transparent 1.7px) 0 0 / 16px 16px, var(--panel); }
 .vs-side { position: absolute; top: 0; bottom: 0; width: 50%; display: grid; place-items: center; }
 .vs-side.left { left: 0; }
 .vs-side.right { right: 0; }
@@ -1943,6 +1996,54 @@ dialog { border-radius: 18px; }
 @keyframes vs-iris { from { clip-path: circle(75% at 50% 50%); } to { clip-path: circle(0% at 50% 50%); } }
 @keyframes vs-blowup { from { opacity: 1; scale: 1; } to { opacity: 0; scale: 1.6; } }
 
+/* 立绘版（ui/versusCut.ts 挂 .art）：全身立绘站在色圆前，脚落在画面底边附近，向外侧偏一点给 VS 让中线。
+   搭档缩小、压暗，站在主角外侧后面。像素小人和大剪影让位，只留名字条，名字条贴到靠中线的下角。
+   入场：立绘到了直接淡入（0.2 秒），不加滑入、闪白之类的过渡。 */
+.vs-art { position: absolute; inset: 0; pointer-events: none; display: none; }
+.vs-side.art .vs-art { display: block; }
+.vs-side.art .vs-ghost, .vs-side.art .vs-fighter canvas { display: none; }
+/* 双斜带对冲（versusCut.ts 填颜色）：每人一条，从自己头顶那一角斜贯全场，在画面正中 VS 处交叉。
+   横屏交叉成 X；竖屏改成上下两条平行斜带。入场时两条带沿自身方向从各自的角滑进来。 */
+.vs-xband { position: absolute; left: 50%; top: 54%; width: 180vmax; height: 24vh; translate: -50% -50%; pointer-events: none; }
+.vs-xband.l { rotate: 28deg; }
+.vs-xband.r { rotate: -28deg; }
+.vs-cut.in .vs-xband.l { animation: vs-xband-l .42s cubic-bezier(.2, .8, .2, 1) both; }
+.vs-cut.in .vs-xband.r { animation: vs-xband-r .42s cubic-bezier(.2, .8, .2, 1) .04s both; }
+@keyframes vs-xband-l { from { transform: translateX(-100%); } to { transform: none; } }
+@keyframes vs-xband-r { from { transform: translateX(100%); } to { transform: none; } }
+.vs-side.art .vs-disc { display: none; }
+.vs-head b { display: none; }
+/* 人物像拳皇那样从两侧滑进来：快进、轻刹，无闪白。 */
+.vs-cut.in .vs-side.left.art-ok .vs-art-lead { animation: vs-slide-l .46s cubic-bezier(.16, 1, .3, 1) .08s both; }
+.vs-cut.in .vs-side.right.art-ok .vs-art-lead { animation: vs-slide-r .46s cubic-bezier(.16, 1, .3, 1) .08s both; }
+.vs-cut.in .vs-side.left.art-ok .vs-art-mate { animation: vs-slide-l .5s cubic-bezier(.16, 1, .3, 1) .14s both; }
+.vs-cut.in .vs-side.right.art-ok .vs-art-mate { animation: vs-slide-r .5s cubic-bezier(.16, 1, .3, 1) .14s both; }
+@keyframes vs-slide-l { from { translate: calc(-50% + var(--out, 0%) - 60vw) 0; } to { translate: calc(-50% + var(--out, 0%)) 0; } }
+@keyframes vs-slide-r { from { translate: calc(-50% + var(--out, 0%) + 60vw) 0; } to { translate: calc(-50% + var(--out, 0%)) 0; } }
+/* 半身：每张立绘只取头顶到大腿（整张图的 5%–62%），框按这个比例裁，底边往下渐隐，人物贴着半边的底。 */
+.vs-art > i { position: absolute; bottom: 0; height: 90%; aspect-ratio: 1.17; left: 50%; translate: calc(-50% + var(--out, 0%)) 0; overflow: hidden; -webkit-mask-image: linear-gradient(#000 80%, transparent); mask-image: linear-gradient(#000 80%, transparent); }
+.vs-side.left .vs-art > i { --out: -8%; }
+.vs-side.right .vs-art > i { --out: 8%; }
+.vs-art img { position: absolute; left: 0; top: -8.8%; width: 100%; height: auto; aspect-ratio: 2 / 3; opacity: 0; transition: opacity .2s ease-out; filter: drop-shadow(0 0 2px rgb(0 0 0 / 55%)); -webkit-user-drag: none; user-select: none; }
+.vs-side.art-ok .vs-art img { opacity: 1; }
+.vs-art .vs-art-mate { height: 74%; z-index: 0; }
+.vs-side.left .vs-art .vs-art-mate { --out: -52%; }
+.vs-side.right .vs-art .vs-art-mate { --out: 52%; }
+.vs-art .vs-art-mate img { filter: brightness(.55) saturate(.8); }
+.vs-art .vs-art-lead { z-index: 1; }
+.vs-side.duo .vs-art .vs-art-lead { --out: 6%; }
+.vs-side.right.duo .vs-art .vs-art-lead { --out: -6%; }
+/* 名字条：贴在靠中线一侧的下方，压在立绘的裙摆上。 */
+.vs-side.art .vs-cast { position: absolute; bottom: 15vh; margin: 0; z-index: 2; flex-direction: column; align-items: flex-end; gap: 10px; }
+.vs-side.left.art .vs-cast { right: 4%; }
+.vs-side.right.art .vs-cast { left: 4%; align-items: flex-start; }
+.vs-side.art .vs-fighter { justify-items: inherit; }
+.vs-side.left.art .vs-fighter { justify-items: end; }
+.vs-side.right.art .vs-fighter { justify-items: start; }
+.vs-side.art .vs-fighter figcaption { justify-items: inherit; margin-top: 0; }
+.vs-side.art .vs-fighter figcaption b { text-shadow: 3px 3px 0 var(--well), 0 0 18px rgb(0 0 0 / 60%); }
+.vs-side.art .vs-fighter figcaption em { color: var(--text-strong); opacity: .5; }
+
 /* 手机竖屏和矮横屏：舞台本来就挤，头衔和台词让位。 */
 @media (max-width: 1100px) and (orientation: portrait), (orientation: landscape) and (max-height: 500px) {
   .slot-title, .slot-quote { display: none; }
@@ -1999,6 +2100,17 @@ dialog { border-radius: 18px; }
   .vs-flash { width: 92px; }
   .vs-head { left: 5vw; }
   .vs-foot { bottom: max(2vh, env(safe-area-inset-bottom, 0px)); }
+  /* 竖屏上下两半：立绘贴外侧（左右交错），名字条在另一侧，VS 留在正中。 */
+  .vs-xband { width: 220vmax; height: 14vh; }
+  .vs-xband.l { top: 33%; rotate: -22deg; }
+  .vs-xband.r { top: 71%; rotate: -22deg; }
+  .vs-side.left .vs-art > i { --out: -22%; }
+  .vs-side.right .vs-art > i { --out: 22%; }
+  /* 下半边的人物收在底部那行场景名上面，不压字。 */
+  .vs-side.right .vs-art > i { bottom: 13%; height: 80%; }
+  .vs-side.art .vs-cast { bottom: 12%; }
+  .vs-side.left.art .vs-cast { right: 6%; }
+  .vs-side.right.art .vs-cast { left: 6%; }
 }
 
 /* 减少动态：不位移、不漂浮，登场和过场只剩淡入淡出。 */
@@ -2014,7 +2126,10 @@ dialog { border-radius: 18px; }
   .vs-cut.in .vs-flash, .vs-cut.in .vs-cast { animation: none; }
   .vs-cut.out { animation: vs-unfade .2s ease-in forwards; }
   .vs-cut.out .vs-mark span { animation: none; }
+  .vs-cut.in .vs-xband.l, .vs-cut.in .vs-xband.r, .vs-cut.in .vs-side.art-ok .vs-art-lead, .vs-cut.in .vs-side.art-ok .vs-art-mate { animation: vs-fade .2s ease-out both; }
 }
+/* 矮横屏（手机横握）：名字条抬高，让出底部的模式和场景名。 */
+@media (orientation: landscape) and (max-height: 500px) { .vs-side.art .vs-cast { bottom: 23vh; } }
 @keyframes vs-unfade { from { opacity: 1; } to { opacity: 0; } }
 @keyframes diff-bump { 0% { transform: scale(.85); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }
 
@@ -3542,6 +3657,7 @@ body.touch .al-tile[data-state="clear"]:hover .al-art::after { translate: -120% 
   :where(html.lobby-mode) .lobby[data-side="left"] .lb-scrim::after { left: 0; }
   :where(html.lobby-mode) .lobby[data-side="right"] .lb-scrim::after { right: 0; }
   @media (prefers-reduced-motion: reduce) { :where(html.lobby-mode) .lb-art { animation: none; } }
+
 
   /* 顶栏：站点 header 浮在大厅上。只留字标、碎片、印章册 / 设置 / 音乐 / 说明四个图标钮。 */
   /* .layer-bar > header：弹窗开着时浮在顶上的那份顶栏拷贝（ui/layerBack.ts），走完全相同的定位和缩放规则，位置才和原件严丝合缝。 */

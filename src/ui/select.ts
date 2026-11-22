@@ -55,6 +55,8 @@ export interface MatchSetup {
   match?: number;
   /** Online lockstep: the shared seed. Absent runs host snapshots. */
   lock?: { seed: number };
+  /** Online: both sides chose 特写 for the L cut-in (NetPlan.cut). Local matches read the setting instead. */
+  ultCut?: boolean;
 }
 
 const STATE_KEY = 'mf-select-state';

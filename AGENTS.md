@@ -19,6 +19,7 @@
 | 重制 sprite、重制精灵表、对齐脚线、归格；sprite 工作包「收尾 / 启用」 | `docs/sprite-remake-sop.md`；动作表对齐统一走 `npm run sprite:align` | 启用时 `npm run check` |
 | 新角色、色块占位图 | `docs/new-character-sop.md` | `npm run check` |
 | 角色头像、血条旁头像 | `docs/avatar-sop.md` | 无 |
+| 全身立绘入库、换图、脸的位置（必杀快切 / 开打过场） | `docs/portraits.md` | `npm run portraits -- --check` |
 | 手机键位方案（基础 / 进阶）、自定义布局编辑器、设置页签、暂停菜单 | `docs/controls-plan.md` | `npm run check` |
 | 招式、受击、buff、弹道 | `docs/public/moves.md` | `npm run check` |
 | 安全排查、密钥泄露、准备公开仓库 | `docs/SECURITY_AUDIT.md` | 文档内扫描命令 + `npm run check` |

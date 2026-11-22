@@ -32,6 +32,20 @@ loadTrain();
 
 export function trainPrefs(): TrainPrefs { return prefs; }
 
+/* 必杀演出（放 L 那一下）：
+   · 报幕（banner）：老样子，战斗不停，屏幕上方飘一条大招名。默认。
+   · 特写（cut）：全场定格约 0.6 秒，代表色斜带 + 半身立绘 + 大招名（ui/ultCut.ts）。
+   联机时只有双方都选了特写才用特写，否则一律报幕（online.ts 握手时协商，结果放在 NetPlan.cut）。 */
+export type UltShow = 'banner' | 'cut';
+const ULT_KEY = 'mf-ult-show';
+let ultShow: UltShow = 'banner';
+try { if (localStorage.getItem(ULT_KEY) === 'cut') ultShow = 'cut'; } catch { /* private mode */ }
+export function ultShowPref(): UltShow { return ultShow; }
+export function setUltShowPref(v: UltShow): void {
+  ultShow = v === 'cut' ? 'cut' : 'banner';
+  try { localStorage.setItem(ULT_KEY, ultShow); } catch { /* private mode */ }
+}
+
 export function setTrainPrefs(patch: Partial<TrainPrefs>): void {
   for (const k of FLAGS) if (typeof patch[k] === 'boolean') prefs[k] = patch[k];
   try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* private mode */ }

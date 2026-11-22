@@ -12,6 +12,7 @@ import { FLIGHT_HOP, vowBeatTime, VOW_BEATS, PRACTICE_GAP1, PRACTICE_HITS, pract
 import { SHEET_SCALE } from '../src/render/proportions.ts';
 import { PLAYABLE, PUBLIC_ROSTER, ROSTER, bandMembers, guestsFor } from '../src/data/characters.ts';
 import { SHORT_NAMES } from '../src/data/shortNames.ts';
+import { PORTRAITS } from '../src/data/portraits.gen.ts';
 import { checkHub } from './hub-selfcheck.ts';
 import { BANDS, BAND_BY_ID, IPS, groupOf, groupOrder, ipOf } from '../src/data/bands.ts';
 import { AIR_SKILLS, skill } from '../src/data/skills.ts';
@@ -2833,7 +2834,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const onlinePane = dialogHtml.match(/<section class="set-pane"[^>]*id="set-pane-online"[\s\S]*?<\/section>/)?.[0] ?? '';
     assert.equal(text(onlinePane), '联机代号 修改代号', 'online codename setting row has control name and button only');
     const visible = text(dialogHtml.replace(onlinePane, ''));
-    assert.equal(visible, '设置 × 通用 操控 训练场 音频 联机 外观 主题 大厅模式 自动 开 关 名册 名册显示 直接排开 按乐队分组 名册卡面 全身 头像 印章色条 显示隐藏角色 存档 导入存档 导出存档 资源 预载全部资源 键位方案 基础 进阶 空白处手势 自定义布局 恢复默认 编辑布局 技能 无技能冷却 无限大招 木桩 一直格挡 连段后回满血 音量 音乐 音效 播放 开打换曲 ? 只在随机播放时生效，其他时候不能改。', 'settings dialog keeps control names and option names, plus the fight-shuffle tip (the online pane exempted)');
+    assert.equal(visible, '设置 × 通用 操控 训练场 音频 联机 外观 主题 大厅模式 自动 开 关 名册 名册显示 直接排开 按乐队分组 名册卡面 全身 头像 印章色条 显示隐藏角色 对战 必杀演出 报幕 特写 存档 导入存档 导出存档 资源 预载全部资源 键位方案 基础 进阶 空白处手势 自定义布局 恢复默认 编辑布局 技能 无技能冷却 无限大招 木桩 一直格挡 连段后回满血 音量 音乐 音效 播放 开打换曲 ? 只在随机播放时生效，其他时候不能改。', 'settings dialog keeps control names and option names, plus the fight-shuffle tip (the online pane exempted)');
     // 二值项是开关，两三个选项是分段按钮，页签切页：设置弹窗里不再有下拉。
     assert.ok(!dialogHtml.includes('pick-btn') && (dialogHtml.match(/role="switch"/g) ?? []).length === 10, 'settings on/off rows are switches, not dropdowns');
     assert.ok(['暗色', '亮色', '跟随系统'].every(n => dialogHtml.includes(`aria-label="${n}"`)), 'theme icons keep their names for screen readers');
@@ -12360,4 +12361,16 @@ for (const order of [[2, 3], [3, 2]]) {
 }
 
 await checkHub();
+// 全身立绘（docs/portraits.md）：清单、产物、名册三者对得上；必杀演出的定格默认关（测试和「报幕」按原时序跑）。
+{
+  const ids = Object.keys(PORTRAITS);
+  const files = process.getBuiltinModule('fs').readdirSync('public/portraits', { recursive: true }).filter(f => f.endsWith('.webp')).map(f => f.slice(0, -5));
+  assert.deepEqual([...files].sort(), [...ids].sort(), 'public/portraits holds exactly the portraits listed in portraits.gen.ts (run npm run portraits)');
+  const known = new Set(ROSTER.map(c => c.id));
+  assert.ok(ids.every(id => known.has(id)), 'every portrait id is a roster character');
+  assert.ok(PLAYABLE.filter(c => !c.hidden).every(c => PORTRAITS[c.id]), 'every public playable character has a portrait');
+  assert.ok(ids.every(id => /^[0-9a-f]{8}$/.test(PORTRAITS[id].h) && PORTRAITS[id].face.every(v => v > 0 && v < 1)), 'portrait fingerprints and face positions are well-formed');
+  const g = new FightGame([ROSTER[0], ROSTER[1]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: { play() {} } });
+  assert.ok(!g.options.ultFreeze, 'the L freeze is opt-in');
+}
 console.log('selfcheck ok');

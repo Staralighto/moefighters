@@ -77,6 +77,8 @@ function inputLocked(f: Fighter): boolean {
 const DODGE_TIME = .28, DODGE_INVULN = .16, DODGE_CD = 1.2;
 /** Back-dodge covers 35% of the stage, enough to clear key skills. */
 const DODGE_SPEED = (X_MAX - X_MIN) * .35 / DODGE_TIME;
+/** 必杀演出「特写」：主角色放 L 时全场冻住这么久，画面上演 ui/ultCut.ts。走 hitstop，联机随状态同步。 */
+export const ULT_FREEZE = .6;
 /** 狂化连招: three ground jabs inside the window arm the next press as the heavy, so mashing J keeps looping. */
 const FRENZY_CHAIN_JABS = 3;
 const FRENZY_CHAIN_WINDOW = .6;
@@ -205,6 +207,9 @@ export interface GameOptions {
   netRole?: 'host' | 'guest' | 'lock';
   /** 终幕门槛：返回 false 的角色用 L 终结时不播终幕。缺省全部放行（联机两端必须一致，联机不传）。 */
   finaleOk?(charId: string): boolean;
+  /** 必杀演出「特写」：主角色放 L 时全场冻住 ULT_FREEZE 秒并省掉 L 横幅（画面由 ui/ultCut.ts 演）。
+   *  关着就是「报幕」：不停顿，照旧挂横幅。main.ts 按设置传入，联机按双方协商（两端必须一致）；缺省关。 */
+  ultFreeze?: boolean;
   onHUD?(g: FightGame): void;
   onBanner?(title: string, sub: string): void;
   onEnd?(title: string, stats: string): void;
@@ -664,7 +669,9 @@ export class FightGame {
       this.flash = .15;
       this.shake = 5;
       this.audio.play('super', f.id);
-      this.setBanner(skill.name, f.data.name + ' · SUPER', 1.0);
+      // 特写：主角色的 L 定格并由快切演招式名，不挂横幅；报幕、召唤物、残响照旧挂横幅。
+      if (this.options.ultFreeze && !f.minion && !f.echo && this.phase === 'fight') this.hitstop = Math.max(this.hitstop, ULT_FREEZE);
+      else this.setBanner(skill.name, f.data.name + ' · SUPER', 1.0);
       if (!SCRIPTS[skill.fx]?.noSuperFx) this.effect('super', f.x, f.y - 80, f.data.color, .8, { radius: 160 });
     } else {
       this.audio.play(slot === 0 ? 'light' : slot === 1 ? 'heavy' : 'cast', f.id);

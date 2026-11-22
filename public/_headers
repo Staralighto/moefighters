@@ -28,6 +28,10 @@
 /frames/*
   Cache-Control: public, max-age=86400, stale-while-revalidate=604800
 
+# 全身立绘：文件名不带版本，URL 上的 ?v= 是指纹（src/data/portraits.gen.ts），换图即换地址。
+/portraits/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
 /albums/*
   Cache-Control: public, max-age=86400, stale-while-revalidate=604800
 
