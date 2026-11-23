@@ -11,7 +11,7 @@ import { reducedMotion } from '../ui/motion.ts';
 import { hubOpen, type HubPage } from '../ui/hub.ts';
 import { registerLayer } from '../ui/layerBack.ts';
 import { cue, refuse } from '../ui/mobile.ts';
-import { CHAPTERS, HEROES, goalText, stageById, type StoryStage } from './chapters.ts';
+import { BOSS_TAKEN, CHAPTERS, FORMAT_BASE, HEROES, PERKS, goalText, stageById, type StoryStage } from './chapters.ts';
 import { chapterProgress, cleared, goalMask, markSeen, nextStage, setLead, starCount, storyProgress, unlocked } from './progress.ts';
 
 const esc = (t: string) => t.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -38,6 +38,27 @@ let S = 1;
 let X0 = 0;
 let GAP = 150;
 let onPlay: (id: string) => void = () => {};
+
+let onRules: () => void = () => {};
+/** main.ts 接上角落「?」：打开剧情战斗说明弹窗。 */
+export function setStoryRules(fn: () => void): void { onRules = fn; }
+
+/** 剧情战斗说明（难度标准）。数值直接取 chapters.ts，改标准时这里跟着变。 */
+export function storyRulesHtml(): string {
+  const x = (v: number) => `×${+v.toFixed(2)}`;
+  const base = Object.values(FORMAT_BASE).map(b => `<li><b>${b.label}</b> 体力 ${x(b.hp)} · 伤害 ${x(b.damage)}</li>`).join('');
+  const perks = Object.values(PERKS).map(p => `<li><b>${p.label}</b> ${Object.values(p.mods).map(v => x(v as number)).join(' ')}</li>`).join('');
+  return `
+    <h3>对局</h3>
+    <ul><li>每场战斗一局定胜负，限时 99 秒。</li>
+      <li>第 1 章普通战斗为<b>标准</b>人机；BOSS 和第 2 章起为<b>大师</b>人机。我方队友始终是大师。</li></ul>
+    <h3>对手基础加强</h3>
+    <ul>${base}<li>一打二时两名对手各自按上面的倍率。</li></ul>
+    <h3>额外规则</h3>
+    <ul><li>部分关卡在此基础上再加一项（关卡详情里写明）：</li>${perks}
+      <li><b>BOSS</b> 受到的伤害 ${x(BOSS_TAKEN)}。</li>
+      <li>个别关卡（如生存关）使用独立规则，以关卡详情为准。</li></ul>`;
+}
 
 /** main.ts 接上「开演」。 */
 export function setStoryPlay(fn: (id: string) => void): void { onPlay = fn; }
@@ -340,12 +361,13 @@ export const storyPage: HubPage = {
   en: 'STORY',
   loading: { line: '舞台布景中', en: 'SETTING THE STAGE' },
   mount(host) {
-    host.innerHTML = '<div class="sm" data-scheme="dark"><canvas class="sm-bg" aria-hidden="true"></canvas><div class="sm-map"><div class="sm-world"></div></div><aside class="sm-detail" aria-live="polite"></aside></div>';
+    host.innerHTML = '<div class="sm" data-scheme="dark"><canvas class="sm-bg" aria-hidden="true"></canvas><div class="sm-map"><div class="sm-world"></div></div><button type="button" class="sm-info" aria-label="剧情战斗说明" title="剧情战斗说明">?</button><aside class="sm-detail" aria-live="polite"></aside></div>';
     root = host.querySelector('.sm')!;
     bg = root.querySelector('.sm-bg')!;
     mapEl = root.querySelector('.sm-map')!;
     world = root.querySelector('.sm-world')!;
     detail = root.querySelector('.sm-detail')!;
+    root.querySelector<HTMLButtonElement>('.sm-info')!.onclick = () => { cue('tab'); onRules(); };
     mapEl.addEventListener('scroll', () => { if (!raf) drawBg(4); }, { passive: true });
     // 点地图空白处（不是关卡节点）：收回面板。拖动地图后的那次点击已在下面拦掉。
     mapEl.addEventListener('click', e => { if (!(e.target as HTMLElement).closest('.sm-node') && deselect()) cue('back'); });

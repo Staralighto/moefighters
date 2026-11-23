@@ -576,6 +576,12 @@
   <div class="sb-shot" id="stamp-shot" hidden><img id="stamp-shot-img" alt="印章册海报"><p>长按图片保存</p><button type="button" id="stamp-shot-close">返回</button></div>
 </dialog>
 
+<!-- 剧情选关地图角落「?」打开：剧情战斗的难度标准（内容由 story/map.ts storyRulesHtml 按 chapters.ts 的数值生成）。 -->
+<dialog id="story-rules-dialog" aria-labelledby="story-rules-title">
+  <div class="dialog-head"><h2 id="story-rules-title">剧情战斗说明</h2><button id="close-story-rules" aria-label="关闭">×</button></div>
+  <div class="help-body" id="story-rules-body"></div>
+</dialog>
+
 <!-- 剧情演出（src/story/theatre.ts）：1280×720 的舞台画布，盖在后台页和战斗上面。 -->
 <section id="story-theatre" class="story-theatre" data-scheme="dark" hidden aria-label="剧情演出">
   <canvas id="st-canvas" width="1280" height="720" aria-hidden="true"></canvas>

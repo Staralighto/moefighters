@@ -6,7 +6,7 @@
    `extra` = files only fetched on demand (lite sheets, PNG twins): the worker keeps them, the downloader skips them.
    A png that has a webp twin is listed as the webp (that is what production requests, and the Toy pack
    drops the png). -lite.webp is skipped: only a slow link asks for it, and the full sheet replaces it.
-   scripts/pack-toy.py rewrites the bgm sizes after it re-encodes them. */
+   scripts/pack-toy.py rewrites bgm and portrait size/hash after it re-encodes those zip entries. */
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';

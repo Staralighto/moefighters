@@ -265,6 +265,8 @@ export interface ChallengeMods {
   seal?: boolean;
   /** 剧情闯关：开场的气（超过上限就是满气）。不写是平常的 20。 */
   startEnergy?: number;
+  /** 剧情闯关 BOSS：受到伤害的倍率（0.9 = 减伤 10%，替代霸体）。 */
+  takenMul?: number;
   /** 剧情闯关的梦魇（复制体）：压暗偏紫 + 紫描边 + 更深的地面影子，血条名字前加「梦魇」。 */
   nightmare?: boolean;
 }
@@ -442,6 +444,7 @@ export class FightGame {
       f.vainEnergy = m?.vainEnergy ?? 0;
       f.sealed = !!m?.seal;
       f.nightmare = !!m?.nightmare;
+      f.takenMul = m?.takenMul ?? 1;
       return f;
     });
     this.projectiles = [];
@@ -680,7 +683,7 @@ export class FightGame {
     f.cooldowns[slot] = skill.cd * f.cdMul * cdBoost;
     if (slot === 5) {
       if (!f.minion && !f.echo) this.ults[f.team]++;
-      // The bar covers the cost: cap == cost for every current character, so this spends it whole.
+      // The bar covers the cost. Only 山田凉's is bigger (meterMax); her super's cast hook spends the rest.
       f.energy = clamp(f.energy - (skill.cost ?? 100), 0, f.energyMax);
       f.invuln = .64;
       // 直接无限大: the cast already spent the bar. Lock gains through the windup and the bill window

@@ -29,6 +29,11 @@ import { HIMARI_BACK, HIMARI_SCREEN_BACK, HIMARI_SCREEN_FRONT } from './himariFx
 import { TOMOE_BACK, TOMOE_SCREEN_BACK, TOMOE_SCREEN_FRONT } from './tomoeFx.ts';
 import { TSUGUMI_BACK, TSUGUMI_SCREEN_BACK } from './tsugumiFx.ts';
 import { NIJIKA_SCREEN_BACK, drawNijikaRollBack } from './nijikaFx.ts';
+import { KITA_BACK, KITA_SCREEN_BACK, KITA_SCREEN_FRONT } from './kitaFx.ts';
+import { RYO_BACK, RYO_SCREEN_BACK } from './ryoFx.ts';
+import { NINA_BACK, NINA_SCREEN_BACK, drawNinaBack } from './ninaFx.ts';
+import { MOMOKA_BACK, MOMOKA_SCREEN_BACK } from './momokaFx.ts';
+import { SUBARU_BACK, SUBARU_SCREEN_FRONT } from './subaruFx.ts';
 import { KAORU_BACK, KAORU_SCREEN_BACK } from './kaoruFx.ts';
 import { HAGUMI_BACK, HAGUMI_SCREEN_BACK } from './hagumiFx.ts';
 import { drawTokoSoloLight, TOKO_BACK } from './tokoFx.ts';
@@ -64,10 +69,10 @@ const NIGHTMARE_RIM = '#9a5cff';
 const NIGHTMARE_TINT = '#170a2c';
 const NIGHTMARE_DIM = .42;
 /** Effects painted under every body: 和泉朋花's coffin and her spotlights. */
-const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK, ...MIZUHO_BACK, ...MIKU_BACK, ...SHIZUKU_BACK, ...CHIERI_BACK, ...YOMOGI_BACK, ...MASKING_BACK, ...TAE_BACK, ...SAAYA_BACK, ...HIMARI_BACK, ...TOMOE_BACK, ...TSUGUMI_BACK, ...KAORU_BACK, ...HAGUMI_BACK, ...TOKO_BACK, ...RUI_BACK, ...NANAMI_BACK, ...CHISATO_BACK, ...MAYA_BACK, ...BOCCHI_BACK, ...LOCK_BACK, ...KANON_BACK, ...AKO_BACK, ...RINKO_BACK, ...RIMI_BACK, ...ANON_BACK, ...UMIRI_BACK]);
+const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK, ...MIZUHO_BACK, ...MIKU_BACK, ...SHIZUKU_BACK, ...CHIERI_BACK, ...YOMOGI_BACK, ...MASKING_BACK, ...TAE_BACK, ...SAAYA_BACK, ...HIMARI_BACK, ...TOMOE_BACK, ...TSUGUMI_BACK, ...KAORU_BACK, ...HAGUMI_BACK, ...TOKO_BACK, ...RUI_BACK, ...NANAMI_BACK, ...CHISATO_BACK, ...MAYA_BACK, ...BOCCHI_BACK, ...LOCK_BACK, ...KANON_BACK, ...AKO_BACK, ...RINKO_BACK, ...RIMI_BACK, ...ANON_BACK, ...UMIRI_BACK, ...NINA_BACK, ...MOMOKA_BACK, ...SUBARU_BACK, ...KITA_BACK, ...RYO_BACK]);
 /** Screen-space layers that ignore the body zoom: behind every body, and in front of them. */
-const SCREEN_BACK = new Set(['encore-stage', 'family-dim', ...SAKIKO_SCREEN_BACK, ...MIZUHO_SCREEN_BACK, ...MIKU_SCREEN_BACK, ...YOMOGI_SCREEN_BACK, ...MASKING_SCREEN_BACK, ...TAE_SCREEN_BACK, ...SAAYA_SCREEN_BACK, ...HIMARI_SCREEN_BACK, ...TOMOE_SCREEN_BACK, ...TSUGUMI_SCREEN_BACK, ...NIJIKA_SCREEN_BACK, ...KAORU_SCREEN_BACK, ...HAGUMI_SCREEN_BACK, ...CHISATO_SCREEN_BACK, ...MAYA_SCREEN_BACK, ...BOCCHI_SCREEN_BACK, ...LOCK_SCREEN_BACK, ...KANON_SCREEN_BACK, ...AKO_SCREEN_BACK, ...RINKO_SCREEN_BACK]);
-const SCREEN_FRONT = new Set(['encore-rain', 'encore-crowd', 'encore-call', 'slap-flash', ...CHIERI_SCREEN_FRONT, ...YOMOGI_SCREEN_FRONT, ...HIMARI_SCREEN_FRONT, ...TOMOE_SCREEN_FRONT, ...CHISATO_SCREEN_FRONT, ...MAYA_SCREEN_FRONT, ...AKO_SCREEN_FRONT, ...RINKO_SCREEN_FRONT, ...PAREO_SCREEN_FRONT, ...PAREO_SCREEN_FRONT]);
+const SCREEN_BACK = new Set(['encore-stage', 'family-dim', ...SAKIKO_SCREEN_BACK, ...MIZUHO_SCREEN_BACK, ...MIKU_SCREEN_BACK, ...YOMOGI_SCREEN_BACK, ...MASKING_SCREEN_BACK, ...TAE_SCREEN_BACK, ...SAAYA_SCREEN_BACK, ...HIMARI_SCREEN_BACK, ...TOMOE_SCREEN_BACK, ...TSUGUMI_SCREEN_BACK, ...NIJIKA_SCREEN_BACK, ...KITA_SCREEN_BACK, ...RYO_SCREEN_BACK, ...NINA_SCREEN_BACK, ...MOMOKA_SCREEN_BACK, ...KAORU_SCREEN_BACK, ...HAGUMI_SCREEN_BACK, ...CHISATO_SCREEN_BACK, ...MAYA_SCREEN_BACK, ...BOCCHI_SCREEN_BACK, ...LOCK_SCREEN_BACK, ...KANON_SCREEN_BACK, ...AKO_SCREEN_BACK, ...RINKO_SCREEN_BACK]);
+const SCREEN_FRONT = new Set(['encore-rain', 'encore-crowd', 'encore-call', 'slap-flash', ...CHIERI_SCREEN_FRONT, ...YOMOGI_SCREEN_FRONT, ...HIMARI_SCREEN_FRONT, ...TOMOE_SCREEN_FRONT, ...CHISATO_SCREEN_FRONT, ...MAYA_SCREEN_FRONT, ...AKO_SCREEN_FRONT, ...RINKO_SCREEN_FRONT, ...PAREO_SCREEN_FRONT, ...PAREO_SCREEN_FRONT, ...KITA_SCREEN_FRONT, ...SUBARU_SCREEN_FRONT]);
 /** 安可是主唱的: the eye line on the 175 px body, measured up from the feet. */
 const ENCORE_EYE_Y = 152;
 
@@ -323,6 +328,8 @@ export class Renderer {
         if (f.data.heart) drawHeartBack(c, f, g.age, lite);
         // 虹色神速滚奏: the rainbow halo and the extra arms sit behind her own body.
         if (f.attack?.skill.fx === 'nijika-roll' && f.hp > 0) drawNijikaRollBack(c, f, view, footY, alpha, lite);
+        // 正义之刺: her body splits red / cyan for a beat behind itself.
+        if (f.attack?.skill.fx === 'nina-thorns') drawNinaBack(c, f, view, footY, alpha, lite);
         view.draw(c, f, f.x, footY, alpha, undefined, look?.outline ?? outline);
         // 梦魇：整身压一层深紫，像本人被抽走了光。状态异常的着色照常叠在上面。
         if (f.nightmare) view.draw(c, f, f.x, footY, alpha * NIGHTMARE_DIM, NIGHTMARE_TINT);

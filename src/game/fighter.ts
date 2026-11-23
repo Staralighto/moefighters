@@ -216,6 +216,8 @@ export interface Fighter {
   /** 我会保护小睦: multiplier on hitstun taken, and the combo count that frees the victim. */
   stunMul: number;
   escapeCombo: number;
+  /** 剧情闯关 BOSS 的减伤：受到伤害的倍率，1 是不减。 */
+  takenMul: number;
   /** 想成为人类: cheat-death charges left this round. 0 is neutral. */
   deathSave: number;
   /** 因为我爱慕虚荣: damage/energy bonus armed by the next kill; cleared once it fires. 0 is neutral. */
@@ -265,7 +267,7 @@ export function isInvulnerable(f: Fighter, minTime = 0): boolean {
 
 /** Meter cap for a character: the super's cost, but never below the arcade 100. Two forms: the dearer one. */
 export function meterCap(data: CharacterData): number {
-  return Math.max(100, data.skills[5]?.cost ?? 100, data.forms?.alt.skills[5]?.cost ?? 100);
+  return Math.max(100, data.meterMax ?? 0, data.skills[5]?.cost ?? 100, data.forms?.alt.skills[5]?.cost ?? 100);
 }
 
 /** 一人二役: the six moves of the form that is up. Every kernel read of a character's list goes through here. */
@@ -318,7 +320,7 @@ export function makeFighter(
     critChance: 0, comboTimeBonus: 0, comboDecay: COMBO_DECAY, energyMul: 1,
     moveMul: 1, dodgeCdMul: 1, cdMul: 1,
     lowHpDmg: 0, executeDmg: 0, lifesteal: 0, thorns: 0, rose: 0, roseBase: 0, shout: 0,
-    stunMul: 1, escapeCombo: COMBO_ESCAPE, deathSave: 0, vainDmg: 0, vainEnergy: 0, sealed: false, nightmare: false,
+    stunMul: 1, escapeCombo: COMBO_ESCAPE, takenMul: 1, deathSave: 0, vainDmg: 0, vainEnergy: 0, sealed: false, nightmare: false,
     recLeft: 0, recTape: [], recMove: 0,
     gauge: 0,
     heartPhase: 0, heartBeats: 0, heartRest: 0, shadowRig: 0,
@@ -331,9 +333,9 @@ export function makeFighter(
 /** Every energy gain funnels through here so card multipliers apply once; drains stay raw.
  *  禁回: while the lock holds the fighter cannot gain energy at all. */
 export function gainEnergy(f: Fighter, amount: number, stolen = false): void {
-  // One pass over the (short) mod list, every step: 禁回 stops it, 独占欢呼 (千樱梨登场) sends it to the thief
-  // (with the thief's own multiplier). Stolen energy is never stolen again: two 千樱梨 who took each other's
-  // cheers would otherwise hand the same point back and forth forever (a stack overflow in the mirror match).
+  // 禁回 stops it. 独占欢呼 (千樱梨登场) sends the whole gain to the thief (with the thief's own multiplier).
+  // Stolen energy is never stolen again: two 千樱梨 who took each other's cheers would otherwise hand the same
+  // point back and forth forever (a stack overflow in the mirror match).
   let cheer: Mod | undefined;
   for (const m of f.mods) {
     if (m.left <= 0) continue;
@@ -345,6 +347,23 @@ export function gainEnergy(f: Fighter, amount: number, stolen = false): void {
     cheer!.acc = (cheer!.acc ?? 0) + amount;
     gainEnergy(thief, amount, true);
     return;
+  }
+  // 下次一定还 (山田凉): every live IOU skims its share of this gain. Two notes split the original amount;
+  // a lender who is already down is skipped and the rest stays with the body that earned it.
+  if (amount > 0 && !stolen) {
+    let left = amount;
+    for (const m of f.mods) {
+      if (left <= 0) break;
+      if (m.left <= 0 || m.kind !== 'skim') continue;
+      const skimmer = cheerThief.get(m);
+      if (!skimmer || skimmer === f || skimmer.hp <= 0) continue;
+      const cut = Math.min(left, amount * (m.v ?? .5));
+      if (!(cut > 0)) continue;
+      m.acc = (m.acc ?? 0) + cut;
+      gainEnergy(skimmer, cut, true);
+      left -= cut;
+    }
+    amount = left;
   }
   f.energy = clamp(f.energy + amount * f.energyMul, 0, f.energyMax);
 }

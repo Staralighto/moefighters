@@ -20,6 +20,11 @@ import { drawHimariFx, drawHimariShot } from './himariFx.ts';
 import { drawTomoeFx } from './tomoeFx.ts';
 import { drawTsugumiFx, drawTsugumiShot } from './tsugumiFx.ts';
 import { drawNijikaFx, drawNijikaShot } from './nijikaFx.ts';
+import { drawKitaFx, drawKitaShot } from './kitaFx.ts';
+import { drawRyoFx } from './ryoFx.ts';
+import { drawNinaFx, drawNinaShot } from './ninaFx.ts';
+import { drawMomokaFx, drawMomokaShot } from './momokaFx.ts';
+import { drawSubaruFx } from './subaruFx.ts';
 import { drawKaoruFx, drawKaoruShot } from './kaoruFx.ts';
 import { drawHagumiFx, drawHagumiShot } from './hagumiFx.ts';
 import { drawTokoFx, drawTokoShot } from './tokoFx.ts';
@@ -1036,6 +1041,12 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
   // 羽泽鸫 too.
   if (drawTsugumiFx(ctx, e, liteFx, images)) return;
   if (drawNijikaFx(ctx, e, liteFx)) return;
+  // 喜多郁代 too.
+  if (drawKitaFx(ctx, e, liteFx, images)) return;
+  if (drawRyoFx(ctx, e, liteFx)) return;
+  if (drawNinaFx(ctx, e, liteFx, images)) return;
+  if (drawMomokaFx(ctx, e, liteFx, images)) return;
+  if (drawSubaruFx(ctx, e, liteFx)) return;
   if (drawKaoruFx(ctx, e, liteFx, images)) return;
   // 北泽育美 too.
   if (drawHagumiFx(ctx, e, liteFx, images)) return;
@@ -6225,6 +6236,9 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   if (drawHimariShot(ctx, p, liteFx)) return;
   if (drawTsugumiShot(ctx, p, liteFx, images)) return;
   if (drawNijikaShot(ctx, p, liteFx)) return;
+  if (drawKitaShot(ctx, p, liteFx)) return;
+  if (drawNinaShot(ctx, p, liteFx, images)) return;
+  if (drawMomokaShot(ctx, p, liteFx, images)) return;
   if (drawKaoruShot(ctx, p, liteFx)) return;
   if (drawTokoShot(ctx, p, liteFx)) return;
   if (drawRuiShot(ctx, p, liteFx)) return;

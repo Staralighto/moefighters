@@ -7,10 +7,11 @@ export type BandId =
   | 'mygo' | 'ave-mujica' | 'sumimi' | 'yumemita' | 'pastel-palettes'
   | 'poppin-party' | 'afterglow' | 'roselia' | 'hello-happy' | 'raise-a-suilen' | 'morfonica'
   | 'millsage' | 'ikka-dumb-rock'
-  | 'kessoku-band';
+  | 'kessoku-band'
+  | 'togenashi-togeari';
 
 /** 作品（IP）。选人界面先按作品排，再按乐队排：BanG Dream! → 孤独摇滚！ → 轻音少女 → Girls Band Cry。
- *  后两个还没有角色，先把顺序定在这里；新作品的角色进名册时按这个顺序接在后面。 */
+ *  轻音少女还没有角色，先把顺序定在这里；新作品的角色进名册时按这个顺序接在后面。 */
 export type IpId = 'bang-dream' | 'bocchi-the-rock' | 'k-on' | 'girls-band-cry';
 export const IPS: readonly IpId[] = ['bang-dream', 'bocchi-the-rock', 'k-on', 'girls-band-cry'];
 
@@ -47,6 +48,8 @@ export const BANDS: readonly BandData[] = [
   { id: 'ikka-dumb-rock', name: '一家Dumb Rock!', color: '#FFAA33' },
   // 孤独摇滚！：结束乐队（結束バンド），乐队色取波奇粉。
   { id: 'kessoku-band', name: '结束乐队', color: '#F5A9C0', ip: 'bocchi-the-rock' },
+  // Girls Band Cry：TOGENASHI TOGEARI（无刺有刺），乐队色取井芹仁菜的代表色。
+  { id: 'togenashi-togeari', name: 'TOGENASHI TOGEARI', color: '#D90E2C', ip: 'girls-band-cry' },
 ];
 
 export const BAND_BY_ID: ReadonlyMap<BandId, BandData> = new Map(BANDS.map(b => [b.id, b]));

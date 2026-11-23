@@ -80,6 +80,8 @@ export interface MoveScript {
    *  here; shots, grabs and supers never reach it. `a` is her own attack. */
   /** Return false to let the hit land. Anything else eats it and the script takes the swing. */
   counter?: (g: FightGame, f: Fighter, attacker: Fighter, a: Attack) => void | false;
+  /** 手刀架挡: a shot that meets the same act is knocked away instead of landing (no counter for it). */
+  parryShot?: (g: FightGame, f: Fighter, attacker: Fighter, a: Attack) => void;
   /** Outbound half passes through bodies, then the shot turns around. */
   boomerang?: boolean;
   /** Vertical overlap against the chest. Unset keeps the stock 72. */

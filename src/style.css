@@ -2020,14 +2020,15 @@ dialog { border-radius: 18px; }
 .vs-cut.in .vs-side.right.art-ok .vs-art-mate { animation: vs-slide-r .5s cubic-bezier(.16, 1, .3, 1) .14s both; }
 @keyframes vs-slide-l { from { translate: calc(-50% + var(--out, 0%) - 60vw) 0; } to { translate: calc(-50% + var(--out, 0%)) 0; } }
 @keyframes vs-slide-r { from { translate: calc(-50% + var(--out, 0%) + 60vw) 0; } to { translate: calc(-50% + var(--out, 0%)) 0; } }
-/* 半身：每张立绘只取头顶到大腿（整张图的 5%–62%），框按这个比例裁，底边往下渐隐，人物贴着半边的底。 */
-.vs-art > i { position: absolute; bottom: 0; height: 90%; aspect-ratio: 1.17; left: 50%; translate: calc(-50% + var(--out, 0%)) 0; overflow: hidden; -webkit-mask-image: linear-gradient(#000 80%, transparent); mask-image: linear-gradient(#000 80%, transparent); }
+/* 半身：每张立绘只取头顶到大腿（整张图的 5%–62%），框按这个比例裁，底边往下渐隐，人物贴着半边的底。
+   --hd：框往上多留的头顶空间（框高 × hd，宽不变），举过头顶的手、发饰不再被框顶硬切；多出的这段从上往下渐隐。 */
+.vs-art > i { --hd: 1.11; position: absolute; bottom: 0; height: calc(90% * var(--hd)); aspect-ratio: calc(1.17 / var(--hd)); left: 50%; translate: calc(-50% + var(--out, 0%)) 0; overflow: hidden; -webkit-mask-image: linear-gradient(transparent, #000 13%, #000 82%, transparent); mask-image: linear-gradient(transparent, #000 13%, #000 82%, transparent); }
 .vs-side.left .vs-art > i { --out: -8%; }
 .vs-side.right .vs-art > i { --out: 8%; }
 /* 脸对齐：立绘高 = 框高 × 1.17 × 1.5 = 175.5%；脸心落在框高 17.7%（原先 top: -8.8% 时中位数脸的位置），高矮不同的人头在同一高度。 */
-.vs-art img { position: absolute; left: 0; top: calc(17.7% - var(--fy, .151) * 175.5%); width: 100%; height: auto; aspect-ratio: 2 / 3; opacity: 0; transition: opacity .2s ease-out; filter: drop-shadow(0 0 2px rgb(0 0 0 / 55%)); -webkit-user-drag: none; user-select: none; }
+.vs-art img { position: absolute; left: 0; top: calc((17.7% - var(--fy, .151) * 175.5%) / var(--hd, 1) + (1 - 1 / var(--hd, 1)) * 100%); width: 100%; height: auto; aspect-ratio: 2 / 3; opacity: 0; transition: opacity .2s ease-out; filter: drop-shadow(0 0 2px rgb(0 0 0 / 55%)); -webkit-user-drag: none; user-select: none; }
 .vs-side.art-ok .vs-art img { opacity: 1; }
-.vs-art .vs-art-mate { height: 74%; z-index: 0; }
+.vs-art .vs-art-mate { height: calc(74% * var(--hd)); z-index: 0; }
 .vs-side.left .vs-art .vs-art-mate { --out: -52%; }
 .vs-side.right .vs-art .vs-art-mate { --out: 52%; }
 .vs-art .vs-art-mate img { filter: brightness(.55) saturate(.8); }
@@ -2108,7 +2109,7 @@ dialog { border-radius: 18px; }
   .vs-side.left .vs-art > i { --out: -22%; }
   .vs-side.right .vs-art > i { --out: 22%; }
   /* 下半边的人物收在底部那行场景名上面，不压字。 */
-  .vs-side.right .vs-art > i { bottom: 13%; height: 80%; }
+  .vs-side.right .vs-art > i { --hd: 1.08; bottom: 13%; height: calc(80% * var(--hd)); }
   .vs-side.art .vs-cast { bottom: 12%; }
   .vs-side.left.art .vs-cast { right: 6%; }
   .vs-side.right.art .vs-cast { left: 6%; }
@@ -3483,7 +3484,7 @@ html.hub-covered .page-deco * { animation-play-state: paused; }
   :where(html.ph-land) { --dlg-gx: max(64px, 7.5vw, calc(env(safe-area-inset-left, 0px) + 28px), calc(env(safe-area-inset-right, 0px) + 28px)); --dlg-gy: max(20px, calc(env(safe-area-inset-bottom, 0px) + 6px)); --dlg-top: max(50px, calc(env(safe-area-inset-top, 0px) + 50px)); --dlg-h: calc(var(--app-h, 100vh) - var(--dlg-top) - var(--dlg-gy)); }
   /* 居中只在导航带以下、底边空白以上这一段里：frame / gift 用 top + translate，其余模态弹窗用 inset + margin: auto。 */
   :where(html.ph-land) .frame-dialog, :where(html.ph-land) .gift-dialog { top: calc(var(--app-top, 0px) + var(--dlg-top) + var(--dlg-h) / 2); }
-  :where(html.ph-land) :is(#stamp-dialog, #settings-dialog, #help-dialog, #save-dialog, #res-dialog, #codename-dialog, #quit-dialog, #net-join-dialog, #net-connection-dialog) { inset: calc(var(--app-top, 0px) + var(--dlg-top)) 0 var(--dlg-gy); margin: auto; }
+  :where(html.ph-land) :is(#stamp-dialog, #settings-dialog, #help-dialog, #story-rules-dialog, #save-dialog, #res-dialog, #codename-dialog, #quit-dialog, #net-join-dialog, #net-connection-dialog) { inset: calc(var(--app-top, 0px) + var(--dlg-top)) 0 var(--dlg-gy); margin: auto; }
   :where(html.ph-land) .frame-dialog, :where(html.ph-land) #stamp-dialog, :where(html.ph-land) .gift-dialog { width: calc(100% - 2 * var(--dlg-gx)); max-height: var(--dlg-h); }
   :where(html.ph-land) .frame-dialog .fv-grid { grid-template-columns: minmax(0, calc((var(--dlg-h) - 8px) * 16 / 9)) minmax(220px, 1fr); }
   :where(html.ph-land) .frame-dialog .fv-side { max-height: var(--dlg-h); padding: 16px 14px 12px; }
@@ -3491,7 +3492,7 @@ html.hub-covered .page-deco * { animation-play-state: paused; }
   :where(html.ph-land) .album-dialog { top: calc(var(--app-top, 0px) + var(--dlg-top)); width: calc(100% - 2 * var(--dlg-gx)); height: var(--dlg-h); }
   :where(html.ph-land) .gf-art { height: clamp(56px, calc(var(--dlg-h) - 176px), 220px); }
   :where(html.ph-land) .gift-dialog { padding: 10px 16px; }
-  :where(html.ph-land) :is(#help-dialog, #save-dialog, #res-dialog, #codename-dialog, #quit-dialog, #net-join-dialog, #net-connection-dialog) { max-width: min(560px, calc(100% - 2 * var(--dlg-gx))); max-height: var(--dlg-h); }
+  :where(html.ph-land) :is(#help-dialog, #story-rules-dialog, #save-dialog, #res-dialog, #codename-dialog, #quit-dialog, #net-join-dialog, #net-connection-dialog) { max-width: min(560px, calc(100% - 2 * var(--dlg-gx))); max-height: var(--dlg-h); }
 
   /* 专辑背面：左列收窄，曲目行一屏看到 6 条左右（原来 17 / 14 号字、87 高一行，只看得到 4 条半）。 */
   :where(html.ph-land) .album-dialog .ab-grid { grid-template-columns: clamp(150px, 26%, 204px) minmax(0, 1fr); }
@@ -4137,6 +4138,10 @@ body:not(.touch) .sm-node:not(.locked):hover .card { translate: 0 -2px; }
 .sm-title { font: 900 calc(20px * var(--s))/1.15 var(--font-head); letter-spacing: .05em; margin-top: calc(-4px * var(--s)); }
 .sm-teaser { font: 500 calc(11.5px * var(--s))/1.5 var(--font); color: var(--muted); margin: 0; }
 .sm-rule { margin: 0; font: 700 calc(10.5px * var(--s))/1.3 var(--font); color: var(--brand-ink); letter-spacing: .04em; }
+/* 角落的「?」：剧情战斗说明（难度标准）。压在详情面板下面，竖屏选关时被面板盖住。 */
+.sm-info { position: absolute; z-index: 1; left: max(calc(14px * var(--s)), env(safe-area-inset-left, 0px)); bottom: max(calc(14px * var(--s)), env(safe-area-inset-bottom, 0px)); width: calc(30px * var(--s)); height: calc(30px * var(--s)); padding: 0; border: 0; border-radius: 50%;
+  display: grid; place-items: center; background: rgb(7 9 18 / 70%); box-shadow: inset 0 0 0 1.5px rgb(238 240 250 / 28%); color: var(--muted); font: 800 calc(14px * var(--s))/1 var(--font-num); cursor: pointer; transition: color .15s ease, box-shadow .15s ease; }
+.sm-info:hover, .sm-info:focus-visible { color: var(--text); box-shadow: inset 0 0 0 1.5px var(--brand-ink); }
 .sm-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .sm-label { font: 600 calc(9px * var(--s))/1 var(--font-display); letter-spacing: .16em; color: var(--muted); }
 .sm-cast { display: flex; align-items: center; gap: 6px; }

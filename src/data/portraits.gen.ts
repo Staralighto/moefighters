@@ -330,5 +330,30 @@ export const PORTRAITS: Record<string, { v: string; h: string; face: readonly [n
     "v": "v1",
     "h": "d9513fe1",
     "face": [0.397, 0.15]
+  },
+  "kita": {
+    "v": "v1",
+    "h": "0ff51c22",
+    "face": [0.49, 0.151]
+  },
+  "ryo": {
+    "v": "v1",
+    "h": "a39317e4",
+    "face": [0.507, 0.15]
+  },
+  "nina": {
+    "v": "v1",
+    "h": "8837c639",
+    "face": [0.486, 0.15]
+  },
+  "momoka": {
+    "v": "v1",
+    "h": "c18127b8",
+    "face": [0.445, 0.151]
+  },
+  "subaru": {
+    "v": "v2",
+    "h": "e65bd357",
+    "face": [0.521, 0.151]
   }
 };

@@ -58,7 +58,7 @@ import { bindFramePreview, setFramePreviewOpener } from './ui/framePreview.ts';
 import { bindFinalePreview, setFinalePreviewHooks } from './ui/finalePreview.ts';
 import { bindItemPreview, setItemPreviewOpener } from './ui/itemPreview.ts';
 import { Rng } from './net/lock.ts';
-import { progressLine, refreshStoryMap, selectStage, setStoryPlay, storyPage } from './story/map.ts';
+import { progressLine, refreshStoryMap, selectStage, setStoryPlay, setStoryRules, storyPage, storyRulesHtml } from './story/map.ts';
 import { afterWin, bindStory, leaveStory, playStage, storyFight } from './story/run.ts';
 import { hasNew, nextStage, onStory } from './story/progress.ts';
 import { ALL_STAGES, stageById } from './story/chapters.ts';
@@ -1471,6 +1471,9 @@ function paintStoryEntry(): void {
 }
 registerHubPage('story', storyPage);
 setStoryPlay(id => { sfx.unlock(); void playStage(id); });
+const storyRulesDialog = $('story-rules-dialog') as HTMLDialogElement;
+setStoryRules(() => { $('story-rules-body').innerHTML = storyRulesHtml(); openDialog(storyRulesDialog); });
+$('close-story-rules').onclick = () => storyRulesDialog.close();
 setTheatreSound((k, o) => sfx.story(k, o));
 bindStory({ fight: setup => startGame(setup), back: backToStory });
 onStory(paintStoryEntry);

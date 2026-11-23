@@ -1152,6 +1152,108 @@ export const NIJIKA_STARRY = {
   strike: .95,
 } as const;
 
+/* ---- 喜多郁代: shared by src/game/kita.ts, the cell picks below and render/kitaFx.ts ---- */
+/** 阳角光环: seconds the aura stays up, the gap between burns, and its reach from her. */
+export const KITA_AURA = { time: 2.4, every: .6, reach: 150 } as const;
+/** 逃跑的吉他手 on the attack clock after the start: `run` seconds backing off `back` px; then a `wait` for the second
+ *  press; the rush back runs at most `rush` seconds; `recover` is the tail after the rush or after nobody pressed. */
+export const KITA_FLEE = { run: .26, back: 210, wait: .55, rush: .3, recover: .22 } as const;
+/** a.mode of 逃跑的吉他手. */
+export const FLEE = { start: 0, run: 1, wait: 2, rush: 3, done: 4 } as const;
+/** 撑住舞台的即兴: five waves on the attack clock, the finale burst, the cell changes, and when 一里 shows up. */
+export const KITA_SOLO = {
+  waves: [.48, .72, .96, 1.2, 1.44] as readonly number[],
+  burst: 2.02,
+  play: .4, cheer: 1.9,
+  duo: 1.5,
+  reach: 380, burstReach: 460,
+} as const;
+/** The 彩蛋: 一里 behind her for the last bars, drawn from her own special sheet (L column, the solo cell). */
+export const KITA_DUO_SRC = '/sprites/bocchi/special.png';
+
+/* ---- 山田凉: shared by src/game/ryo.ts, the cell picks below and render/ryoFx.ts ---- */
+/** 路边的野草 on the attack clock: the weed is out of the ground at `pluck`; she chews until `chew`, when the meal pays
+ *  `heal` hp (under `poor` 气 she is broke: `poorHeal` and `regen` hp/s for `regenTime` s). The `meals`-th meal inside
+ *  `mealWindow` s makes her sick: half the heal and `sick` s of 减速 instead of the extra. */
+export const RYO_GRASS = { pluck: .28, chew: .98, poor: 30, heal: 60, poorHeal: 120, regen: 10, regenTime: 3, meals: 3, mealWindow: 10, sick: 2 } as const;
+/** 下次一定还: a.mode — reaching out (a short step of `lunge` s), holding them while the coins fly (`hold` s; the money
+ *  changes hands at `take`), done, nobody caught. She borrows `sum` 气 for good (`bocchi` from 后藤一里) and leaves an IOU
+ *  for `iou` s that sends her `skim` of every 气 they gain. Only 伊地知虹夏 collects: her clean hit on 凉 lands × `nijika`
+ *  and takes the loan back. */
+export const BORROW = { reach: 0, held: 1, done: 2, whiff: 3 } as const;
+export const RYO_BORROW = { lunge: .16, step: 300, hold: .7, take: .38, tail: .3, sum: 25, bocchi: 40, iou: 6, skim: .5, nijika: 1.3 } as const;
+/** 怪人是夸奖: a.mode — the pose (the window is the skill's start), the chop after a hit, done. The chop comes `strike` s
+ *  after the hit; then `buff` s of swings at × `atk`. */
+export const WEIRD = { wait: 0, strike: 1, done: 2 } as const;
+export const RYO_WEIRD = { strike: .14, recover: .36, buff: 3, atk: 1.15, invuln: .3 } as const;
+/** 倾家荡产的低音 on the attack clock: the coins go up from `toss`; four low waves at `waves` reach `reach`; the drop at
+ *  `finale` reaches `burstReach`; the pockets come out at `broke`. Every 气 past the cost (up to `extra`) adds a share
+ *  of `bonus` to the damage. */
+export const RYO_BROKE = {
+  toss: .3,
+  waves: [.8, 1.05, 1.3, 1.55] as readonly number[],
+  pluck: 1.75, finale: 1.95, broke: 2.2,
+  reach: 360, burstReach: 420,
+  extra: 50, bonus: .35,
+} as const;
+
+/* ---- 井芹仁菜: shared by src/game/nina.ts, the cell picks below and render/ninaFx.ts ---- */
+/** 吸顶灯乱舞: the two swings land at `swings` on the attack clock, `reach` ahead of her; the throw is the skill's start. */
+export const NINA_LAMP = { swings: [.14, .3] as readonly number[], reach: 112, damage: 8 } as const;
+export const NINA_LAMP_SRC = '/sprites/nina/lamp.png';
+/** 正义之刺: `time` seconds of the hedgehog; the reflect at each of the three levels; how close a swinger has to be to
+ *  get pricked back; `low` is the share of max health under which 不认输 starts her at the top level. */
+export const NINA_THORNS = { time: 5, levels: [.3, .4, .5] as readonly number[], prick: 170, push: 380, low: .3 } as const;
+/** 绝不低头: a.mode — standing it out, the slap after a hit, the cold slap when nobody came. The lunge takes `lunge`
+ *  seconds; the earned slap grows by up to `rage` with the health she has lost; the cold one hits at `cold`. */
+export const NINA_STAND = { wait: 0, slap: 1, cold: 2 } as const;
+export const NINA_STAND_TIME = { lunge: .12, half: .5, rage: .5, cold: .5, recover: .5 } as const;
+/** 雨夜嘶吼 on the attack clock: she has the mic at `grab`; the three screams leave her at `waves[i]` and their light
+ *  crosses the stage at `speed`; the light tide (the finale) leaves at `tide` and sweeps the same way at `tideSpeed`;
+ *  the little finger from `pinky`. */
+export const NINA_SCREAM = {
+  grab: .46,
+  waves: [.62, .98, 1.34] as readonly number[],
+  speed: 1300,
+  tide: 1.76,
+  tideSpeed: 1700,
+  pinky: 2.02,
+} as const;
+
+/* ---- 河原木桃香: shared by src/game/momoka.ts, the cell picks below and render/momokaFx.ts ---- */
+/** 又想逃了？: she turns and is off at `start`, backing `back` px over `run` seconds (invulnerable). The past she leaves
+ *  stands `fuse` seconds at most; from `arm` on, a foe within `near` breaks it; the stardust catches anyone within `blast`. */
+export const MOMOKA_PAST = { back: 230, run: .2, fuse: 2, near: 70, blast: 140, arm: .15, tag: 41 } as const;
+/** 快拿去扔掉！: three cans leave at `throws` (attack clock), landing about `lands[i]` ahead (± `jitter`) after `flight`
+ *  seconds; each puddle lasts `foam` seconds over `puddle` px. */
+export const MOMOKA_CANS = { throws: [.34, .42, .5] as readonly number[], lands: [150, 250, 350] as readonly number[], jitter: 30, flight: .6, foam: 1.6, puddle: 58 } as const;
+export const MOMOKA_BEER_SRC = '/sprites/momoka/beer.png';
+/** 微醺醉拳: `time` seconds drunk; one sway is ready every `beat` seconds; J/K deal `bonus` more; the hangover after. */
+export const MOMOKA_DRUNK = { time: 6, beat: 1.5, bonus: .1, hangover: .5 } as const;
+/** 空之箱 on the attack clock: the box closes at `box` round the nearest grounded foe within `reach`; three songs at
+ *  `songs`; it breaks at `burst`; the bow from `bow`. */
+export const MOMOKA_BOX = { box: .42, reach: 520, songs: [.8, 1.15, 1.5] as readonly number[], burst: 1.95, bow: 2.15, size: 150 } as const;
+
+/* ---- 安和昴: shared by src/game/subaru.ts, the cell picks below and render/subaruFx.ts ---- */
+/** 别想走 a.mode: the crane stance until `start`, the pounce, the arm lock, the long sprawl of a miss. */
+export const SUBARU_CATCH = { stance: 0, lunge: 1, lock: 2, whiff: 3 } as const;
+/** 别想走: the pounce covers `reach` (or `flee` on a foe backing off or turned away) in `run` seconds; the lock drags
+ *  `drag` px back over `hold` seconds, then the throw; `grip` is how close the hands must come; `recover` after a throw. */
+export const SUBARU_GRAB = { reach: 200, flee: 260, run: .22, grip: 72, hold: .45, drag: 50, recover: .32 } as const;
+/** 笑容满面 on the attack clock: the stomp at `stomp` (`reach` ahead, grounded only), the elbow at `elbow`. */
+export const SUBARU_SMILE = { stomp: .2, elbow: .38, reach: 112, root: .8 } as const;
+/** 手刀架挡 a.mode: the guard up, the chops after a parry, the hands lowered when nothing came. */
+export const SUBARU_GUARD = { wait: 0, chop: 1, idle: 2 } as const;
+/** 手刀架挡: the chops land `chops` seconds after the parry (from `tossAt`); `total` is the whole answer, recovery included. */
+export const SUBARU_CHOP = { chops: [.08, .2, .34] as readonly number[], damage: [12, 12, 30] as readonly number[], freeze: .5, total: .62, reach: 130 } as const;
+/** 找到想做的事了 on the attack clock: the film holds until the frame catches them at `frame`, the script is torn at
+ *  `tear`, colour floods out from `flood` (`flow` seconds to cover the screen) while she closes in, six beats at
+ *  `beats`, the seven stars light from `stars`, the burst at `burst`, the smile back from `bow`. */
+export const SUBARU_FILM = {
+  frame: .5, reach: 520, tear: .6, flood: .8, flow: .45, dash: .16,
+  beats: [1, 1.15, 1.29, 1.41, 1.52, 1.62] as readonly number[], stars: 1.72, burst: 1.98, bow: 2.2,
+} as const;
+
 /* ---- 濑田薰: shared by src/game/kaoru.ts, the cell picks below and render/kaoruFx.ts ---- */
 /** 高空微笑坠落: a.mode — the crouch, the leap (KAORU_RISE, up KAORU_APEX), the faint at the top (KAORU_HANG), the drop
  *  (KAORU_DROP), lying where she landed (KAORU_LIE, her opening), then back up in a pose. */
@@ -1520,6 +1622,79 @@ export function clipFor(f: Fighter): Clip {
     if (f.attack.skill.fx === 'nijika-star') {
       const t = f.attack.t, S = NIJIKA_STARRY;
       return at('special', f.attack.index - 2, t < S.strike ? 0 : t < S.big + S.bigFall ? 1 : 2);
+    }
+    // 阳角光环 / 变好吃的咒语: the default three phases. 逃跑的吉他手: running off; the rush back; the sheepish laugh
+    // (held through the wait and after). 撑住舞台的即兴: the guitar held in the spotlight; the solo; the arm up at the burst.
+    if (f.attack.skill.fx === 'kita-flee') {
+      const a = f.attack, mode = a.mode ?? FLEE.start;
+      return at('special', a.index - 2, mode === FLEE.rush ? 1 : mode === FLEE.wait || mode === FLEE.done ? 2 : 0);
+    }
+    if (f.attack.skill.fx === 'kita-solo') {
+      const t = f.attack.t, S = KITA_SOLO;
+      return at('special', f.attack.index - 2, t < S.play ? 0 : t < S.cheer ? 1 : 2);
+    }
+    // 路边的野草: squatting to pull the weed; chewing it; the bitter swallow. 下次一定还: hands together, asking; the palm
+    // out, taking it; pocketing it. 怪人是夸奖: arms folded, aloof; the chop; the pleased little smile after.
+    // 倾家荡产的低音: head down on the bass; the big pluck; pockets turned out.
+    if (f.attack.skill.fx === 'ryo-grass') {
+      const t = f.attack.t;
+      return at('special', 0, t < RYO_GRASS.pluck ? 0 : t < RYO_GRASS.chew ? 1 : 2);
+    }
+    if (f.attack.skill.fx === 'ryo-borrow') {
+      const mode = f.attack.mode ?? BORROW.reach;
+      return at('special', 1, mode === BORROW.reach ? 0 : mode === BORROW.held ? 1 : 2);
+    }
+    if (f.attack.skill.fx === 'ryo-weird') {
+      const mode = f.attack.mode ?? WEIRD.wait;
+      return at('special', 2, mode === WEIRD.wait ? 0 : mode === WEIRD.strike ? 1 : 2);
+    }
+    if (f.attack.skill.fx === 'ryo-broke') {
+      const t = f.attack.t, S = RYO_BROKE;
+      return at('special', 3, t < S.pluck ? 0 : t < S.broke ? 1 : 2);
+    }
+    // 又想逃了？: turning away and off; the look back; standing. 快拿去扔掉！ / 微醺醉拳: the default three phases.
+    // 空之箱: holding the guitar; singing; the bow.
+    if (f.attack.skill.fx === 'momoka-past') {
+      const a = f.attack, s = f.attack.skill;
+      return at('special', a.index - 2, a.t < s.start + MOMOKA_PAST.run ? 0 : a.t < s.duration - .12 ? 1 : 2);
+    }
+    if (f.attack.skill.fx === 'momoka-box') {
+      const t = f.attack.t, S = MOMOKA_BOX;
+      return at('special', f.attack.index - 2, t < S.box ? 0 : t < S.bow ? 1 : 2);
+    }
+    // 别想走: the crane stance; the pounce and the lock; the throw (or the sprawl of a miss). 笑容满面: the closed-eye
+    // smile over the stomp; the elbow; the smile after. 手刀架挡: the crossed guard; the chops; the hands lowered.
+    // 找到想做的事了: the script held up in the film; the beats; the look back.
+    if (f.attack.skill.fx === 'subaru-catch') {
+      const a = f.attack, mode = a.mode ?? SUBARU_CATCH.stance;
+      if (mode === SUBARU_CATCH.stance) return at('special', a.index - 2, 0);
+      if (mode === SUBARU_CATCH.whiff) return at('special', a.index - 2, 1);
+      return at('special', a.index - 2, mode === SUBARU_CATCH.lock && a.shots === 0 ? 1 : 2);
+    }
+    if (f.attack.skill.fx === 'subaru-smile') {
+      const t = f.attack.t, S = SUBARU_SMILE;
+      return at('special', f.attack.index - 2, t < S.elbow ? 0 : t < S.elbow + .22 ? 1 : 2);
+    }
+    if (f.attack.skill.fx === 'subaru-guard') {
+      const a = f.attack, mode = a.mode ?? SUBARU_GUARD.wait;
+      if (mode === SUBARU_GUARD.wait) return at('special', a.index - 2, 0);
+      if (mode === SUBARU_GUARD.idle) return at('special', a.index - 2, 2);
+      return at('special', a.index - 2, a.t < a.tossAt + SUBARU_CHOP.chops[2] + .12 ? 1 : 2);
+    }
+    if (f.attack.skill.fx === 'subaru-film') {
+      const t = f.attack.t, S = SUBARU_FILM;
+      return at('special', f.attack.index - 2, t < S.flood ? 0 : t < S.bow ? 1 : 2);
+    }
+    // 吸顶灯乱舞 / 正义之刺: the default three phases. 绝不低头: chest out and glaring; the slap (or the shove); the
+    // shake of the hand after. 雨夜嘶吼: both hands on the mic; leaning into the scream; the little finger up.
+    if (f.attack.skill.fx === 'nina-stand') {
+      const a = f.attack, mode = a.mode ?? NINA_STAND.wait;
+      if (mode === NINA_STAND.wait) return at('special', a.index - 2, 0);
+      return at('special', a.index - 2, a.t < a.tossAt + NINA_STAND_TIME.lunge + .18 ? 1 : 2);
+    }
+    if (f.attack.skill.fx === 'nina-scream') {
+      const t = f.attack.t, S = NINA_SCREAM;
+      return at('special', f.attack.index - 2, t < S.grab ? 0 : t < S.pinky ? 1 : 2);
     }
     // 吉他英雄: alternate both guitar frames until the stage dive takes over.
     if (f.attack.skill.fx === 'bocchi-hero') {

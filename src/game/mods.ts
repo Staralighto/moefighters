@@ -28,6 +28,9 @@ export type ModKind =
   /** 独占欢呼 (千樱梨登场): every bit of energy this body would gain goes to `thief` instead. acc collects
    *  what was taken since the last pulse, for the graphic. */
   | 'cheer'
+  /** 下次一定还 (山田凉): share v of every bit of energy this body gains goes to the thief (cheerThief); acc collects
+   *  what was taken since the last graphic (game/ryo.ts). */
+  | 'skim'
   /** 银猫扑脸: the cat clinging to this face. from is who sent it, acc its seconds left, v the scratches so far (game/lisa.ts). */
   | 'cling'
   /** 不用说我也懂: on her, acc its seconds left. The first U / I / O a foe starts while it holds is cut off (game/lisa.ts). */
@@ -71,7 +74,12 @@ export type ModKind =
   /** 似懂非懂的名言: hit again while still 混乱 from her — acc counts down to the finger snap; from is 濑田薰 (game/kaoru.ts). */
   | 'snap'
   /** 进攻姿态: on 伊地知虹夏, one per U / I / O cast inside the window (tag nijika-2/3/4); all three live → the burst (game/nijika.ts). */
-  | 'offense';
+  | 'offense'
+  /** 阳角光环: on 喜多郁代 while the aura is up; acc counts down to the next burn (game/kita.ts). */
+  | 'aura'
+  /** 微醺醉拳: on 河原木桃香 while drunk; v 1 while a sway is ready. The next hit (no grab, super or tick) slides off her
+   *  (combat.ts hit() → game/momoka.ts swayOff); the beat pulse readies the next. */
+  | 'sway';
 
 /**
  * One running buff.

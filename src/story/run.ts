@@ -8,7 +8,7 @@ import type { FightGame } from '../game/game.ts';
 import type { MatchSetup } from '../ui/select.ts';
 import { earn } from '../save/wallet.ts';
 import { toast } from '../ui/toast.ts';
-import { ALL_STAGES, HEROES, chapterOf, stageById, type Goal, type StoryStage } from './chapters.ts';
+import { ALL_STAGES, HEROES, chapterOf, difficultyOf, stageById, storyFoes, type Goal, type StoryStage } from './chapters.ts';
 import { recordClear, starCount, storyProgress } from './progress.ts';
 import { idOf, loadScript, type Script } from './script.ts';
 import { chineseNo, closeTheatre, play } from './theatre.ts';
@@ -39,17 +39,19 @@ export function setupFor(s: StoryStage): MatchSetup {
   const lead = storyProgress().lead;
   const ids = b.us ?? (lead ? [HEROES[1], HEROES[0]] : [...HEROES]);
   const us = ids.map(id => ROSTER_BY_ID.get(id)!);
-  const foes = b.foes.map(f => { const c = ROSTER_BY_ID.get(f.id)!; return f.hp ? { ...c, hp: Math.round(c.hp * f.hp) } : c; });
+  // 对面的体力、伤害、词条按剧情难度标准（chapters.ts storyFoes）。
+  const std = storyFoes(s);
+  const foes = std.map(f => { const c = ROSTER_BY_ID.get(f.id)!; return f.hp !== 1 ? { ...c, hp: Math.round(c.hp * f.hp) } : c; });
   const scene = STAGES.find(x => x.id === s.scene) ?? STAGES[0];
   // 一对一走普通对局（标准 1V1 站位和头像血条），人多走 team（二打一 / 一打二 / 二打二）。
   const duo = us.length + foes.length === 2;
   return {
     characters: [...us, ...foes],
     mode: duo ? 'cpu' : 'team',
-    difficulty: b.difficulty,
+    difficulty: difficultyOf(s),
     controllers: [0, ...us.slice(1).map(() => null), ...foes.map(() => null)],
     stage: scene,
-    mods: [b.usMods ?? {}, ...us.slice(1).map(() => ({})), ...b.foes.map(f => ({ ...f.mods, nightmare: f.nightmare }))],
+    mods: [b.usMods ?? {}, ...us.slice(1).map(() => ({})), ...std.map(f => f.mods)],
     story: s.id,
     allies: duo ? undefined : us.length,
     survive: b.survive,

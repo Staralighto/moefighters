@@ -165,7 +165,8 @@ export function updateHUD(g: FightGame): void {
     const mp = $m('mp' + n);
     const mpPct = f.energy / f.energyMax * 100 + '%';
     if (mp.style.width !== mpPct) mp.style.width = mpPct;
-    const full = f.energy >= f.energyMax;
+    // A bar larger than the super's cost (山田凉) glows once the super is ready, not only when it is brim-full.
+    const full = f.energy >= Math.min(f.energyMax, skillsOf(f)[5]?.cost ?? f.energyMax);
     const barBox = mp.parentElement;
     if (barBox && barBox.classList.contains('full') !== full) barBox.classList.toggle('full', full);
     if (score) setText($m('score' + n), g.mode === 'training' ? '' : '●'.repeat(g.wins[f.team]) + '○'.repeat(Math.max(0, g.roundsToWin - g.wins[f.team])));

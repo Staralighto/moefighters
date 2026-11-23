@@ -2927,8 +2927,6 @@ export const ROSTER: CharacterData[] = [
     // I 震开、O 贴身爆发、U 远处牵制。全部空手，I / O / L 的必杀格手持鼓棒；呆毛、声浪、镲片、星空全部由代码绘制。
     // 被动「进攻姿态」（「攻めの姿勢で行こうよ〜」）：6 秒内 U / I / O 都用过，4 秒加速。
     id: 'nijika', name: '伊地知虹夏', title: '鼓手 / 大天使', quote: '我想看小孤独的摇滚！', color: '#F9D648',
-    // 成图与全身立绘到位前先不进公开名册（立绘缺失会让开打过场退回空白）。
-    hidden: true,
     bands: ['kessoku-band'],
     ...stats('beat'),
     passive: ['进攻姿态', '6 秒内 U、I、O 都用过：4 秒移速 +20%、出手速度 +20%'],
@@ -2967,6 +2965,251 @@ export const ROSTER: CharacterData[] = [
         finale: { damage: 130, knock: 380, react: { kind: 'knockdown', vy: -320, knocked: 1 } },
         brief: '霸体起拍，流星按拍砸落，大星击倒；可挡，走开可躲',
         detail: '霸体鼓棒四下起拍后，五颗流星按拍落向对手当时的位置各 12 伤害，最后大星 130 伤害并击倒；落点锁定，走开可躲；可格挡，第四段破防',
+      }),
+    ],
+  },
+  {
+    // 喜多郁代 (game/kita.ts, render/kitaFx.ts): 孤独摇滚！结束乐队的吉他手兼主唱，阳角到会发光的现充。光芒压制型：
+    // U 的阳角光环晒化靠近的人，I 逃走又被抓回来（再按一次 I 冲回去），O 用蛋包饭咒语把人萌晕，L 是第 12 话断弦救场的即兴。
+    // 梗：阳角光芒（Kita aura，连虹夏都觉得耀眼）、喜多喜多 / 来了！去了！（归去来兮女士）、逃跑的吉他手、文化祭女仆咖啡厅的
+    // 「变得好吃的咒语」、断弦时即兴撑场、「我会成为能支撑你的吉他手」。全部空手；L 的三格挂着借来的蓝色 Les Paul Junior。
+    // 光芒、爱心、声浪、追光全部由代码绘制；L 收尾时一里的剪影借她自己 special.png 的 L 列（彩蛋）。
+    id: 'kita', name: '喜多郁代', title: '吉他 / 喜多喜多', quote: '我会成为能支撑你的吉他手！', color: '#E4524E',
+    bands: ['kessoku-band'],
+    ...stats('rush'),
+    view: { kind: 'sprite', common: '/sprites/kita/common.png', special: '/sprites/kita/special.png', height: 181, lift: 5, specialScale: 0.95,
+      extras: ['/sprites/bocchi/special.png'] },
+    skills: [
+      // 喜多（きた）= 来た：「来了！」
+      skill(0, 'light', '来了！'),
+      // 郁代（いくよ）= 行くよ：「去了！」（J、K 连起来就是网友说的「归去来兮」）
+      skill(1, 'heavy', '去了！'),
+      // 阳角光环（阳角力高到像在发光，连下北泽大天使都觉得耀眼；一里被照到就会晒化）
+      skill(2, 'endure', '阳角光环', {
+        damage: 7, range: 150, start: .2, duration: .5, cd: 9, fx: 'kita-aura', knock: 0, gain: 3,
+        react: { kind: 'none' }, guardDmg: 3,
+        slow: 1, slowMul: .7, slowJump: .85, slowAtk: .85, slowMark: 'kita-sun',
+        brief: '亮起光环跟着走，光里的对手持续受伤并减速；可挡',
+        detail: '身上亮起阳角光环 2.4 秒，跟着她走；每 0.6 秒灼一下身边 150 内的对手 7 伤害并减速 1 秒（移速 −30%）；可格挡',
+      }),
+      // 逃跑的吉他手（谎称会弹吉他入队后逃走，在学校被一里找到、又被抓回乐队）
+      skill(3, 'dash', '逃跑的吉他手', {
+        damage: 48, range: 104, start: .1, duration: 1.45, cd: 7, speed: 980, knock: 320, fx: 'kita-flee', invuln: 0,
+        react: { kind: 'knockdown', vy: -280, knocked: .75 },
+        brief: '无敌后撤，再按一次冲回来撞倒；可挡',
+        detail: '转身逃跑，后撤一大段并无敌；之后 0.55 秒内再按 I 冲回来（逃跑中提前按也算），撞中 48 伤害并击倒；不按就站着尴尬地笑；可格挡',
+      }),
+      // 变好吃的咒语（文化祭女仆咖啡厅：教一里给蛋包饭施「变得好吃的咒语」，双手比心）
+      skill(4, 'projectile', '变好吃的咒语', {
+        damage: 26, speed: 540, size: 52, life: 1.6, start: .44, duration: .82, cd: 8, knock: 70, fx: 'kita-spell',
+        react: { kind: 'stand', stun: .3 },
+        status: [{ kind: 'confuse', time: 1.2, mark: 'kita-heart' }],
+        brief: '比心推出爱心，命中混乱；可挡可跳',
+        detail: '在空中一笔画出粉色爱心再推出，命中 26 伤害并混乱 1.2 秒（左右颠倒）；可格挡，跳起可躲',
+      }),
+      // 撑住舞台的即兴（第 12 话文化祭：一里断弦，她即兴独奏撑住场面；「我会成为能支撑你的吉他手」）
+      skill(5, 'endure', '撑住舞台的即兴', {
+        damage: 14, range: 380, start: .3, duration: 2.75, knock: 0, gain: 2, fx: 'kita-solo', superArmor: true, holdEndure: true,
+        react: { kind: 'stand', stun: .4 },
+        guardPlan: [8, 12, 20, 28, 40],
+        finale: { damage: 130, knock: 420, react: { kind: 'knockdown', vy: -340, knocked: 1 } },
+        brief: '霸体独奏，五道声浪后光芒炸开击倒；可挡',
+        detail: '霸体，舞台暗下、追光落在她身上；即兴独奏五道声浪推过身前 380 各 14 伤害，最后阳角光芒全开 130 伤害并击倒（身前 460）；可格挡，第五段破防',
+      }),
+    ],
+  },
+  {
+    // 山田凉 (game/ryo.ts, render/ryoFx.ts): 孤独摇滚！结束乐队的贝斯手兼作曲，「世界的山田」。穷富循环型：气就是她的钱包。
+    // I 找对手借钱（借走气就不还，再留一张借条：一阵子里对方涨的气被她抽走一半），L 把钱全花在乐器上
+    // （花得越多越痛，放完身无分文），穷了就 U 吃路边的野草回血（越穷回得越多，吃多了会中毒），O 被当成怪人反而高兴。
+    // 梗：家里开医院却把积蓄全花在乐器上、没钱就吃野菜杂草、找波奇借钱（凉乞钞）、被叫怪人会高兴、吃草吃中毒（B 站二创）、
+    // 「一旦舍弃了个性，就跟死了没区别」。全部空手；U 的格子里画着拔出来的草，L 的三格挂着贝斯（画进精灵）。
+    // 草叶、硬币、借条、低音声浪全部由代码绘制。彩蛋：向一里借得更多；只有虹夏能把钱讨回来。
+    id: 'ryo', name: '山田凉', title: '贝斯 / 世界的山田', quote: '各种不同性格的人聚在一起，做出同一首音乐，这才是结束乐队的底色啊。', color: '#3D5DAF',
+    bands: ['kessoku-band'],
+    ...stats('focus'),
+    // 倾家荡产的低音 casts at 100 and spends everything on the bar; the bar holds 150 so a loan can make it hurt more.
+    meterMax: 150,
+    view: { kind: 'sprite', common: '/sprites/ryo/common.png', special: '/sprites/ryo/special.png', height: 174, lift: 5, specialScale: 1.03 },
+    skills: [
+      // 无口前辈（平常沉默寡言）
+      skill(0, 'light', '无口拍击'),
+      // 冷酷而孤高（官方介绍）
+      skill(1, 'heavy', '孤高之踢'),
+      // 路边的野草（第 3 话：乐器太花钱，「只能吃草充饥了」，众人以为是玩笑，她真的吃了；B 站二创「吃草吃中毒的山田凉」）
+      skill(2, 'endure', '路边的野草', {
+        damage: 0, range: 0, start: .98, duration: 1.3, cd: 10, fx: 'ryo-grass', knock: 0, gain: 0,
+        react: { kind: 'none' },
+        brief: '吃草回血，越穷回得越多；挨打噎住，连吃会中毒',
+        detail: '拔起路边的野草嚼掉，回 60 血；气不足 30 时算穷，回 120 血并再 3 秒每秒回 10；嚼的时候被打中就噎住，什么也回不了；10 秒内吃到第 3 次会吃中毒：只回一半，减速 2 秒',
+      }),
+      // 下次一定还（凉乞钞：家里有钱，积蓄却全花在乐器上，没钱就找波奇借）
+      skill(3, 'grab', '下次一定还', {
+        damage: 30, range: 74, speed: 300, start: .16, duration: 1.3, cd: 9, fx: 'ryo-borrow', knock: 0, gain: 0, holdEndure: true,
+        react: { kind: 'pin', stun: .8, holdStill: true },
+        brief: '霸体抓取借走气不还；借条期间对方涨的气被抽走一半',
+        detail: '霸体，双手合十再伸手讨钱，抓住身前对手 30 伤害并借走 25 气，不还（对方不够就有多少借多少）；对方身上留 6 秒借条：这期间对方每获得一次气，一半归她；不可格挡，跳起可躲',
+      }),
+      // 怪人是夸奖（官方介绍：有着远离尘世的兴趣，被称作怪人的话会感到高兴）
+      skill(4, 'endure', '怪人是夸奖', {
+        damage: 0, range: 130, start: .5, duration: .95, cd: 4, fx: 'ryo-weird', knock: 0, holdEndure: true,
+        react: { kind: 'stand', stun: .3 },
+        finale: { damage: 40, knock: 460, react: { kind: 'launch', vy: -380, knocked: .8 } },
+        brief: '霸体抱臂，挨近身打免伤并打飞加速；飞弹照常中',
+        detail: '霸体，抱臂摆架子 0.5 秒：期间被近身攻击打中不受伤害，脸一红随即一记手刀 40 伤害并打飞，之后 3 秒出手速度 ×1.15；飞弹照常命中；没人来打就收势',
+      }),
+      // 倾家荡产的低音（积蓄全部花在乐器上；「一旦舍弃了个性，就跟死了没区别」）
+      skill(5, 'endure', '倾家荡产的低音', {
+        damage: 14, range: 360, start: .3, duration: 2.75, knock: 0, gain: 0, fx: 'ryo-broke', superArmor: true, holdEndure: true,
+        react: { kind: 'stand', stun: .42 },
+        guardPlan: [8, 12, 20, 30, 40],
+        finale: { damage: 120, knock: 420, react: { kind: 'knockdown', vy: -320, knocked: 1 } },
+        brief: '霸体花光气，四道低音波后重拨击倒；越富越痛，可挡',
+        detail: '100 气起放，霸体把身上所有的气全部花掉：撒出的钱化成四道贴地低音波推过身前 360 各 14 伤害，最后一记重拨 120 伤害并击倒（身前 420）；超过 100 的气每多 1 点伤害多 0.7%（最多 +35%）；放完身无分文；可格挡，第五段破防',
+      }),
+    ],
+  },
+  {
+    // 井芹仁菜 (game/nina.ts, render/ninaFx.ts): Girls Band Cry / TOGENASHI TOGEARI 的主唱，「小孩姐」。刺猬反击型：
+    // I 的刺逼对手别贴脸，U 中距离骚扰，O 读时机正面顶回去。全部空手，只有 U 拎着吸顶灯（lamp.png）、L 握立麦（画进精灵格）；
+    // 刺（红光划痕 + 黑色乱涂排线 + 暗底颗粒）、雨、彩光、耳光全部由代码绘制。梗：第 2 话抡吸顶灯、情绪爆发时画面里的刺
+    // （雏：「正义的刺」）、「我没有错」、第 8 话扇桃香耳光、第 1 话雨夜车站抢麦、五人第一次合奏的棱镜光、感谢中指 → 小指。
+    // 被动「不认输」：低血时正义之刺直接满三级，刺猬状态内受击不硬直。
+    id: 'nina', name: '井芹仁菜', title: '主唱 / 小孩姐', quote: '我……没有错！', color: '#D90E2C',
+    bands: ['togenashi-togeari'],
+    ...stats('armor'),
+    passive: ['不认输', '血量低于 30% 时放正义之刺：刺直接满三级，且刺猬状态内受击不硬直'],
+    view: { kind: 'sprite', common: '/sprites/nina/common.png', special: '/sprites/nina/special.png', height: 181, lift: 5, specialScale: 1.05,
+      extras: ['/sprites/nina/lamp.png'] },
+    skills: [
+      // 感谢中指 → 和桃香约好改竖小指，成了乐队手势
+      skill(0, 'light', '小指致谢'),
+      // 熊本出身，急了会冒方言；「正论怪物」
+      skill(1, 'heavy', '熊本腔正论'),
+      // 吸顶灯乱舞（第 2 话：路边大哭后被醉酒上班族吼「吵死了」，抡起刚拿到的吸顶灯，还扔了好几次）
+      skill(2, 'projectile', '吸顶灯乱舞', {
+        damage: 18, speed: 620, size: 54, life: 1, start: .46, duration: .78, cd: 7, knock: 120, fx: 'nina-lamp',
+        react: { kind: 'stand', stun: .32 },
+        brief: '抡两圈吸顶灯再砸出去；可挡可跳',
+        detail: '原地抡两圈吸顶灯，贴身两段各 8 伤害，第三下脱手砸出 18 伤害；可格挡，跳起可躲',
+      }),
+      // 正义之刺（情绪发作时冒出的红白尖刺；雏：「正義のトゲ出して」；花田：「刺比预想的还多」）
+      skill(3, 'endure', '正义之刺', {
+        damage: 30, range: 116, start: .28, duration: .72, cd: 12, fx: 'nina-thorns', holdEndure: true, breakout: true,
+        knock: 300, react: { kind: 'stand', stun: .35 },
+        brief: '霸体解控，爆刺弹开，再 5 秒刺猬反伤',
+        detail: '霸体全身炸出尖刺，受控中也能放出（解控）：身周 30 伤害并弹开；之后 5 秒刺猬状态，吃到近身攻击时反伤并把对手弹开，每挨一下刺长一级（反伤 30% → 40% → 50%）；可格挡',
+      }),
+      // 绝不低头（「我没有错」；第 8 话扇桃香的那记耳光）
+      skill(4, 'endure', '绝不低头', {
+        damage: 0, range: 130, start: .5, duration: 1.02, cd: 9, fx: 'nina-stand', knock: 0,
+        react: { kind: 'stand', stun: .3 },
+        finale: { damage: 40, knock: 460, react: { kind: 'launch', vy: -380, knocked: .8 } },
+        brief: '挺胸站定，挨打减半并回敬耳光',
+        detail: '挺胸站定 0.5 秒：期间被近身攻击打中只受一半伤害，随即踏前一记耳光 40 伤害并打飞，不能格挡，已损失血量越多伤害越高（最多 +50%）；飞弹照常命中；没人来打也会照样踏前扇出，但只有 20 伤害且没有加成',
+      }),
+      // 雨夜嘶吼（第 1 话雨夜车站抢过别家乐队的麦克风喊话；五人第一次合奏时涌出的棱镜光；收招竖小指）
+      skill(5, 'endure', '雨夜嘶吼', {
+        damage: 14, range: 460, start: .3, duration: 2.6, knock: 60, gain: 2, fx: 'nina-scream', superArmor: true, holdEndure: true, noSparks: true,
+        react: { kind: 'stand', stun: .42 },
+        guardPlan: [8, 14, 24, 60],
+        finale: { damage: 130, knock: 360, react: { kind: 'launch', vy: -560, knocked: 1 } },
+        brief: '霸体嘶吼，三道彩光扫过，光潮击飞；可挡',
+        detail: '霸体，雨夜里刺的风暴包围着她，抓过立麦嘶吼：三声各放出一道彩光横扫向前各 14 伤害，雨渐渐被光冲散；最后一道光潮横扫全场 130 伤害并打飞，雨停；可格挡，第四段破防',
+      }),
+    ],
+  },
+  {
+    // 河原木桃香 (game/momoka.ts, render/momokaFx.ts): Girls Band Cry / TOGENASHI TOGEARI 的吉他手，「脱退之人」。进退无常型：
+    // U 撤退时留下替身，I 乱扔东西铺减速，O 醉拳按节奏晃开一击，L 把对手关进空之箱。全部空手，只有 I / O 的啤酒罐是
+    // beer.png、L 抱吉他（画进精灵格）；残影、星尘、蛇、泡沫、立方体、第 1 话的蓝光全部由代码绘制。
+    // 梗：「脱退のひと」与高中马尾时代的自己、怕蛇（少主）扔啤酒罐喊「快拿去扔掉」、酒品差醉了记不得、《空之箱》路演。
+    id: 'momoka', name: '河原木桃香', title: '吉他 / 脱退之人', quote: '我想看看——由我的歌造就的，我的歌。', color: '#85C9DC',
+    bands: ['togenashi-togeari'],
+    ...stats('rush'),
+    view: { kind: 'sprite', common: '/sprites/momoka/common.png', special: '/sprites/momoka/special.png', height: 181, lift: 5, specialScale: 1.05,
+      extras: ['/sprites/momoka/beer.png'] },
+    skills: [
+      // 姐御：「运动社团里值得依靠的前辈」
+      skill(0, 'light', '姐御直拳'),
+      // 北海道旭川出身
+      skill(1, 'heavy', '旭川回旋踢'),
+      // 又想逃了？（「脱退のひと」：退出钻石星尘、又说要退队、见到前队友就想逃；留在原地的是高中扎马尾的自己）
+      skill(2, 'dash', '又想逃了？', {
+        damage: 32, range: 140, start: .12, duration: .6, cd: 8, knock: 260, invuln: .34, fx: 'momoka-past',
+        react: { kind: 'stand', stun: .4 },
+        status: [{ kind: 'chill', time: 1.5, mark: 'momoka-dust', move: .6, jump: .75, atk: .8 }],
+        brief: '无敌后撤，原地残影碰到即碎，星尘冻僵；可挡',
+        detail: '转身后撤一大段，后撤时无敌；原地留下高中时代的残影，对手靠近或 2 秒后碎成钻石星尘：周围 32 伤害并冻僵 1.5 秒；可格挡',
+      }),
+      // 快拿去扔掉！（怕蛇：见到智养的蛇「少主」会尖叫着扔啤酒罐，躲进厕所喊「捨ててこい」）
+      skill(3, 'projectile', '快拿去扔掉！', {
+        damage: 12, speed: 0, size: 34, life: 1, count: 3, start: .34, duration: .78, cd: 10, knock: 90, fx: 'momoka-snake',
+        react: { kind: 'stand', stun: .3 },
+        brief: '见蛇乱扔三罐，落地泡沫冻僵；可挡可跳',
+        detail: '脚边冒出小蛇，吓得朝前方乱扔三个啤酒罐，砸中各 12 伤害；罐子落地成泡沫水洼 1.6 秒，站进去的对手冻僵 1.2 秒；可格挡，跳起可躲',
+      }),
+      // 微醺醉拳（酒品差、喝醉后什么都记不得；凌晨四点买了 12 瓶 800 圆的矿泉水）
+      skill(4, 'endure', '微醺醉拳', {
+        damage: 0, range: 0, start: .36, duration: .62, cd: 14, knock: 0, fx: 'momoka-drunk',
+        brief: '醉 6 秒，每 1.5 秒晃开一击，增伤',
+        detail: '仰头喝一口，醉 6 秒：每 1.5 秒按节奏补满一次「晃」，补满时被打中的那一下直接晃开（抓投、必杀照常命中），伤害 +10%；醒来记不得了：清掉身上的冻僵、烧焦、混乱、沉默和定身，随后宿醉晕 0.5 秒',
+      }),
+      // 空之箱（仁菜的「主题曲」，两人相遇的那首歌；第 1 话路演时铺满画面的蓝色光）
+      skill(5, 'endure', '空之箱', {
+        damage: 14, range: 520, start: .42, duration: 2.5, knock: 0, gain: 2, fx: 'momoka-box', superArmor: true, holdEndure: true, noSparks: true,
+        react: { kind: 'stand', stun: .42 },
+        guardPlan: [6, 10, 12, 14, 60],
+        finale: { damage: 135, knock: 380, react: { kind: 'launch', vy: -560, knocked: 1 } },
+        brief: '霸体关进空之箱唱三声，箱碎打飞；可挡可跳',
+        detail: '霸体，第 1 话的蓝光铺满画面：前方最近的地面对手被关进光之立方体（6 伤害并定身 2 秒），三声歌声在箱中回荡各 14 伤害，最后箱子碎开 135 伤害并打飞；封箱瞬间跳起可整套躲开；可格挡，最后一段破防',
+      }),
+    ],
+  },
+  {
+    // 安和昴 (game/subaru.ts, render/subaruFx.ts): Girls Band Cry / TOGENASHI TOGEARI 的鼓手，「大骗子」。笑面缠斗型：
+    // U 扑上去擒拿，I 笑着踩脚肘击，O 手刀架挡反打，L 在祖母的老电影里撕掉剧本打鼓。全部空手；
+    // 星、花、纸片、胶片和「脸色发青」全部由代码绘制。
+    // 梗：B 站「安和昴格斗技」三连（擒拿术、踩脚加肘击组合技、手刀与手刀格挡）、被仁菜叫「骗子」、
+    // 祖母安和天童与同名电影《すばる。》、拒绝试镜「找到了想做的事」。
+    id: 'subaru', name: '安和昴', title: '鼓手 / 大骗子', quote: '愤怒也好、喜悦也好、悲伤也好，全都能砸进去——这就是乐队的好地方！', color: '#76BD53',
+    bands: ['togenashi-togeari'],
+    ...stats('beat'),
+    view: { kind: 'sprite', common: '/sprites/subaru/common.png', special: '/sprites/subaru/special.png', height: 181, lift: 5, specialScale: 1 },
+    skills: [
+      // 学友和祖母面前的大小姐口调
+      skill(0, 'light', '大小姐的问候'),
+      // 鼓手的双手
+      skill(1, 'heavy', '双连鼓点掌'),
+      // 别想走（擒拿术：自家玄关摆出鹤形架势，一把扑住要走的仁菜）
+      skill(2, 'grab', '别想走', {
+        damage: 75, range: 80, start: .25, duration: 1.3, cd: 9, knock: 380, fx: 'subaru-catch',
+        react: { kind: 'knockdown', vy: -420, knocked: .72, stun: .5, clearRoot: true },
+        brief: '扑出抓投，背对或后退时更远；扑空收招长',
+        detail: '摆出鹤形架势后向前扑出，抓住地面对手锁臂拖回再甩倒，75 伤害并击倒，不能格挡；对手正在后退或背对她时扑击距离 260（平时 200）；跳起可躲，扑空趴地收招长',
+      }),
+      // 笑容满面（踩脚加肘击组合技：闭眼大笑，桌下踩脚、肘击，桃香脸色发青）
+      skill(3, 'heavy', '笑容满面', {
+        damage: 40, range: 112, start: .2, duration: .78, cd: 8, knock: 220, fx: 'subaru-smile',
+        react: { kind: 'stand', stun: .35 },
+        brief: '踩脚定身接肘击，挡住也照出；跳起躲踩脚',
+        detail: '闭眼营业笑：先踩脚 10 伤害并定身 0.8 秒（只踩地面对手，跳起可躲），紧跟肘击 40 伤害并击退；两段都可格挡，第一段被挡住第二段照样打出',
+      }),
+      // 手刀架挡（手刀与手刀格挡：夜晚月台和仁菜互劈手刀，「你是笨蛋吗」）
+      skill(4, 'endure', '手刀架挡', {
+        damage: 30, range: 130, start: .45, duration: 1.1, cd: 10, knock: 260, fx: 'subaru-guard',
+        react: { kind: 'stand', stun: .45 },
+        brief: '架挡近身回敬三连劈，末段不可挡；架掉飞弹',
+        detail: '手刀交叉架挡 0.45 秒：被近身攻击打中不掉血不硬直，回敬三连手刀 12 / 12 / 30，最后一下不能格挡；窗口内的飞弹被架掉（不反击）；抓投和必杀照常命中；没接到招收手有破绽',
+      }),
+      // 找到想做的事了（祖母的成名作《すばる。》；演员学校、拒绝试镜，选了鼓；名字 = 昴星团）
+      skill(5, 'endure', '找到想做的事了', {
+        damage: 9, range: 520, start: .5, duration: 2.55, knock: 40, gain: 2, fx: 'subaru-film', superArmor: true, holdEndure: true, noSparks: true,
+        react: { kind: 'stand', stun: .3 },
+        guardPlan: [6, 10, 10, 12, 12, 14, 14, 60],
+        finale: { damage: 130, knock: 380, react: { kind: 'launch', vy: -560, knocked: 1 } },
+        brief: '霸体定格对手，六连打后昴星团打飞；可挡可跳',
+        detail: '霸体，画面变成祖母的老电影：前方最近的地面对手被定格（6 伤害并定身 2 秒），她撕掉剧本，颜色从脚下冲回画面，冲上去六连打各 9 伤害，最后昴星团七星炸开 130 伤害并打飞；定格瞬间跳起可整套躲开；可格挡，最后一段破防',
       }),
     ],
   },

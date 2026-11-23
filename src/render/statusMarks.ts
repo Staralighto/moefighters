@@ -17,11 +17,14 @@ import { applyMayaGearhead, applyMayaShiver, auraMayaGearhead, auraMayaShiver } 
 import { applyMaze, applyZap, auraMaze, auraZap } from './kanonFx.ts';
 import { applyHypno, auraHypno } from './akoFx.ts';
 import { applyTomoeHeart, auraTomoeHeart } from './tomoeFx.ts';
+import { applyKitaHeart, applyKitaSun, auraKitaHeart, auraKitaSun } from './kitaFx.ts';
+import { RYO_SICK_BODY, auraRyoIou, auraRyoSick } from './ryoFx.ts';
 import { applyNanamiFright, applyNanamiWeird, auraNanamiFright, auraNanamiGenius, auraNanamiTell, auraNanamiWeird } from './nanamiFx.ts';
 import { applyRinkoHush, auraRinkoHush } from './rinkoFx.ts';
 import { applyRuiSeal, auraRuiSeal } from './ruiFx.ts';
 import { auraPareoWig, auraPareoWigFail } from './pareoFx.ts';
 import { applyRimiChoco, applyRimiHands, auraRimiChoco, auraRimiHands } from './rimiFx.ts';
+import { applyBeerFoam, applyMomokaDust, auraBeerFoam, auraMomokaDust } from './momokaFx.ts';
 import { applyAnonLight, auraAnonLight, expireAnonLight } from './anonFx.ts';
 import { auraUmiriQuote } from './umiriFx.ts';
 import { applyKaoruQuote, auraKaoruQuote } from './kaoruFx.ts';
@@ -950,6 +953,12 @@ export const STATUS_MARKS: Record<string, MarkDrawer> = {
   'pareo-wig': { aura: (ctx, f, left, t) => auraPareoWig(ctx, f, bodyH(f), left, t, isLiteFx()) },
   'pareo-wig-fail': { aura: (ctx, f, left, t) => auraPareoWigFail(ctx, f, bodyH(f), left, t) },
   'chisato-doodle': { aura: auraDoodle, apply: applyDoodle },
+  // 喜多郁代: melting in the light of 阳角光环 (减速), muddled by the ketchup heart of 变好吃的咒语 (混乱). Drawn in kitaFx.ts.
+  'kita-sun': { aura: (ctx, f, left, t) => auraKitaSun(ctx, f, bodyH(f), left, t, isLiteFx()), apply: applyKitaSun },
+  'kita-heart': { aura: (ctx, f, left, t) => auraKitaHeart(ctx, f, bodyH(f), left, t, isLiteFx()), apply: applyKitaHeart },
+  // 山田凉: the IOU over whoever lent her money (a look), and the meal that was one too many (减速 on her). Drawn in ryoFx.ts.
+  'ryo-iou': { aura: (ctx, f, left, t) => auraRyoIou(ctx, f, bodyH(f), left, t) },
+  'ryo-sick': { aura: (ctx, f, left, t) => auraRyoSick(ctx, f, bodyH(f), left, t, isLiteFx()), body: RYO_SICK_BODY },
   // 大和麻弥: the shiver of 呼嘿嘿 (定身) and the smoking head after 器材宅讲座 (沉默). Drawn in mayaFx.ts.
   'maya-shiver': { aura: (ctx, f, left, t) => auraMayaShiver(ctx, f, bodyH(f), left, t), apply: applyMayaShiver },
   'maya-gearhead': { aura: (ctx, f, left, t) => auraMayaGearhead(ctx, f, bodyH(f), left, t), apply: applyMayaGearhead },
@@ -972,6 +981,9 @@ export const STATUS_MARKS: Record<string, MarkDrawer> = {
   // 千早爱音: wrapped in the heart bubble of 多夸夸我嘛 (定身); it cracks on the first shake-off hit. Drawn in anonFx.ts.
   // 濑田薰: muddled by a quote nobody understood (混乱). Drawn in kaoruFx.ts.
   'kaoru-quote': { aura: (ctx, f, left, t) => auraKaoruQuote(ctx, f, bodyH(f), left, t, isLiteFx()), apply: applyKaoruQuote },
+  // 河原木桃香: diamond dust off the past she ran from, and beer foam round the ankles (both 冻僵). Drawn in momokaFx.ts.
+  'momoka-dust': { aura: (ctx, f, left, t) => auraMomokaDust(ctx, f, bodyH(f), left, t), apply: applyMomokaDust },
+  'beer-foam': { aura: (ctx, f, left, t) => auraBeerFoam(ctx, f, bodyH(f), left, t), apply: applyBeerFoam },
   'anon-light': { aura: (ctx, f, left, t) => auraAnonLight(ctx, f, left, t, isLiteFx()), apply: applyAnonLight, expire: expireAnonLight },
 };
 

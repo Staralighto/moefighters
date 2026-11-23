@@ -63,6 +63,7 @@ const FRAME_NAMES: Record<string, string> = {
   millsage: '幸福乐章',
   'ikka-dumb-rock': '一家团圆',
   'kessoku-band': '结束之绳',
+  'togenashi-togeari': '竖起小指',
   best: '金色唱片',
 };
 

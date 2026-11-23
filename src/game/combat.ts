@@ -18,6 +18,11 @@ import './himari.ts';
 import './tomoe.ts';
 import './tsugumi.ts';
 import './nijika.ts';
+import './kita.ts';
+import './ryo.ts';
+import './nina.ts';
+import './subaru.ts';
+import { swayOff } from './momoka.ts';
 import './kaoru.ts';
 import './hagumi.ts';
 import './toko.ts';
@@ -490,6 +495,11 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     g.text('打空', defender.x, defender.y - 170, '#efe8ff', .4, 16);
     return false;
   }
+  // 微醺醉拳: a ready sway leans the whole hit off her — no damage, no flinch. Grabs, supers and ticks still land.
+  if (g.isEnemy(attacker, defender) && skill.type !== 'grab' && !skill.super && !skill.dot && swayOff(g, defender, attacker)) {
+    source.hit.add(defender.id);
+    return false;
+  }
   source.hit.add(defender.id);
   // 铁壁 (ai.ts): a mashed jab meets a guard that should not be up yet. Out of hitstun, turned
   // to face it, guard topped so it cannot break; mid-counter it is a silent armour instead (below).
@@ -523,6 +533,11 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   // left the act). A shot catches her for real: the act is dropped and it lands.
   const feint = armour && armour.t < armour.skill.start && (armour.mode ?? 0) === 0 ? defendingMove?.counter : undefined;
   if (feint && g.isEnemy(attacker, defender) && !isGrab && !skill.super && !skill.dot && !blocked && !cuts(source, defender)) {
+    if (skill.type === 'projectile' && defendingMove?.parryShot) {
+      defendingMove.parryShot(g, defender, attacker, armour!);
+      if ('life' in source) (source as { life: number }).life = 0;
+      return false;
+    }
     if (skill.type === 'projectile') armour!.endure = 0;
     else if (feint(g, defender, attacker, armour!) !== false) return false;
   }
@@ -565,7 +580,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     && ((brace != null && defender.frenzy > 0) || howling);
   let damage = skill.damage * attacker.data.power * (defender.data.trait === 'armor' ? .95 : 1)
     * dmgTakenMul(defender, { grab: isGrab, superHit: !!skill.super, superBrace, brace, fallback: BRACED_DAMAGE })
-    * incomingMul(defender, attacker.id)
+    * incomingMul(defender, attacker.id) * defender.takenMul
     * (defender.ban > 0 ? BAN_DAMAGE : 1) * attacker.baseDmgMul * attacker.dmgMul * dmgDealtMul(attacker)
     * (defender.frail > 0 ? 1 + defender.frailBonus : 1)
     // 一人二役: the form that is up on either side.

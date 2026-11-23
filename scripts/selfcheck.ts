@@ -38,6 +38,12 @@ import { drawTsugumiFx, drawTsugumiShot } from '../src/render/tsugumiFx.ts';
 import { effortOf } from '../src/game/tsugumi.ts';
 import { drawNijikaFx, drawNijikaShot, drawNijikaRollBack } from '../src/render/nijikaFx.ts';
 import { attackStance } from '../src/game/nijika.ts';
+import { drawKitaFx, drawKitaShot } from '../src/render/kitaFx.ts';
+import { auraRyoIou, auraRyoSick, drawRyoFx } from '../src/render/ryoFx.ts';
+import { drawNinaFx, drawNinaShot } from '../src/render/ninaFx.ts';
+import { thornLevel } from '../src/game/nina.ts';
+import { drawMomokaFx, drawMomokaShot } from '../src/render/momokaFx.ts';
+import { drawSubaruFx } from '../src/render/subaruFx.ts';
 import { drawKaoruFx, drawKaoruShot } from '../src/render/kaoruFx.ts';
 import { drawHagumiFx, drawHagumiShot } from '../src/render/hagumiFx.ts';
 import { AKO_CHANT } from '../src/game/akoPath.ts';
@@ -176,7 +182,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const g = groupOf(c);
     if (runs[runs.length - 1] !== g) runs.push(g);
   }
-  assert.deepEqual(runs, ['ave-mujica', 'mygo', 'yumemita', 'poppin-party', 'roselia', 'hello-happy', 'sumimi', 'pastel-palettes', 'afterglow', 'raise-a-suilen', 'morfonica', 'millsage', 'ikka-dumb-rock', 'none:bang-dream', 'kessoku-band', 'none:bang-dream'], 'roster order is the select-screen group order');
+  assert.deepEqual(runs, ['ave-mujica', 'mygo', 'yumemita', 'poppin-party', 'roselia', 'hello-happy', 'sumimi', 'pastel-palettes', 'afterglow', 'raise-a-suilen', 'morfonica', 'millsage', 'ikka-dumb-rock', 'none:bang-dream', 'kessoku-band', 'togenashi-togeari', 'none:bang-dream'], 'roster order is the select-screen group order');
   {
     // On the select screen: works in IPS order, never revisited; inside a work the bandless come last.
     const works: string[] = [];
@@ -208,11 +214,11 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const breaksAt: Record<string, number> = {
     nyamu: 4, sakiko: 10, anon: 5, rana: 10, soyo: 3, kokoro: 3, miyako: 5,
-    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5, toko: 4, rui: 5, nanami: 5, kanon: 7, ako: 9, rinko: 6, rimi: 5, hagumi: 6, nijika: 4,
+    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5, toko: 4, rui: 5, nanami: 5, kanon: 7, ako: 9, rinko: 6, rimi: 5, hagumi: 6, nijika: 4, kita: 5, ryo: 5, nina: 4, momoka: 5, subaru: 8,
   };
   const segments: Record<string, number> = {
     nyamu: 4, sakiko: 16, anon: 6, rana: 22, soyo: 3, kokoro: 3, miyako: 6,
-    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7, toko: 5, rui: 6, nanami: 5, kanon: 13, ako: 9, rinko: 7, rimi: 6, hagumi: 9, nijika: 6,
+    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7, toko: 5, rui: 6, nanami: 5, kanon: 13, ako: 9, rinko: 7, rimi: 6, hagumi: 9, nijika: 6, kita: 6, ryo: 5, nina: 4, momoka: 5, subaru: 8,
   };
   for (const [id, breakAt] of Object.entries(breaksAt)) {
     const s = ROSTER[at(id)].skills[5];
@@ -2760,6 +2766,8 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(packToy.includes('TOY_BGM_BITRATE = "64k"'), 'the toy zip re-encodes bgm to 64 kbps');
   assert.ok(packToy.includes('rel.startswith("bgm/") and rel.endswith(".m4a")'), '64 kbps applies only to bgm m4a');
   assert.ok(packToy.includes('z.write(tmp, rel)'), 'the 64 kbps encode is a zip entry and does not replace dist');
+  assert.ok(packToy.includes('TOY_PORTRAIT_Q = 1') && packToy.includes('alphaQuality: 100'), 'the toy zip recompresses portraits at webp quality 1 and keeps the alpha edge');
+  assert.ok(packToy.includes('elif rel in portrait_zip') && !packToy.includes('copyfile'), 'portrait recompression is a zip entry and does not replace dist');
   assert.equal(liteSrc('/sprites/aya/common.png', true), '/sprites/aya/common-lite.webp', 'a sheet has a half-size lite copy');
   assert.equal(liteSrc('/sprites/aya/common.png', false), '/sprites/aya/common.png', 'dev has no lite copy');
   assert.equal(liteSrc('/stages/ring.png', true), '/stages/ring.png', 'stages use the thumb, not a lite copy');
@@ -10576,6 +10584,923 @@ for (const order of [[2, 3], [3, 2]]) {
   }
 }
 
+// kita: 喜多郁代。U lights the aura (it follows her; burns and slows whoever stands in it, a jump clears it); I runs off
+// invulnerable, and a second press in the window rushes back and knocks down (pressed early counts; no press, she just
+// laughs it off; the CPU comes back when chased); O is the ketchup heart (confuse); L (100 气) is the improvised solo:
+// five waves under 霸体 and the aura going off at the end, with 一里 behind her for the last bars.
+{
+  const kt = at('kita');
+  const data = ROSTER[kt];
+  assert.ok(kt === at('nijika') + 1, '喜多郁代 sits with 结束乐队, after 虹夏');
+  assert.equal(data.trait, 'rush');
+  assert.deepEqual(data.bands, ['kessoku-band']);
+  assert.ok(!data.hidden, 'the main band is public');
+  assert.equal(SHORT_NAMES.kita, '郁代');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/bocchi/special.png'), '一里 for the 彩蛋 is preloaded');
+  const fresh = (p2x = 520) => {
+    const g = newGame(kt, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  // U: the light follows her and burns whoever is in it
+  {
+    const { g, p1, p2 } = fresh(400);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    let slowed = false;
+    for (let i = 0; i < 360; i++) { g.step(STEP); if (p2.mods.some(m => m.kind === 'slow' && m.left > 0 && m.mark === 'kita-sun')) slowed = true; }
+    assert.ok(slowed, 'the aura slows them');
+    assert.ok(hp - p2.hp >= 24 && hp - p2.hp <= 35, 'four or five burns land: ' + (hp - p2.hp).toFixed(1));
+    assert.ok(!p1.mods.some(m => m.kind === 'aura' && m.left > 0), 'the aura runs out');
+  }
+  {
+    const { g, p1, p2 } = fresh(700);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    run(g, 3);
+    assert.equal(hp, p2.hp, 'out of the light nothing burns');
+  }
+  // I: runs off invulnerable; no press → no hit, the move ends early
+  {
+    const { g, p1, p2 } = fresh(400);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    run(g, .25);
+    assert.ok(p1.invuln > 0 && p1.x < 300, 'she backs off invulnerable');
+    run(g, 1.6);
+    assert.ok(p1.x < 150 && p1.x > 60, 'about 210 back: ' + p1.x.toFixed(0));
+    assert.equal(hp, p2.hp, 'running off hits nobody');
+    assert.equal(p1.attack, null, 'the move is over');
+  }
+  // I: a second press in the window rushes back and knocks down
+  {
+    const { g, p1, p2 } = fresh(340);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    run(g, .45);
+    assert.equal(p1.attack?.mode, 2, 'waiting for the second press');
+    p1.queue.push({ index: 3, ttl: .2 });
+    let down = false;
+    for (let i = 0; i < 90; i++) { g.step(STEP); if (p2.knocked > 0) down = true; }
+    assert.ok(down && hp - p2.hp > 40, 'pulled back in, she knocks them down: ' + (hp - p2.hp).toFixed(1));
+  }
+  // I: pressed during the run, she comes back as soon as it ends
+  {
+    const { g, p1, p2 } = fresh(340);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    run(g, .2);
+    p1.queue.push({ index: 3, ttl: .2 });
+    run(g, .25);
+    assert.equal(p1.attack?.mode, 3, 'an early press rushes at once');
+    run(g, 1);
+    assert.ok(hp - p2.hp > 40, 'and it lands');
+  }
+  // I: backed into the wall behind her, the rush still comes out (only the wall ahead stops it)
+  {
+    const { g, p1, p2 } = fresh(260);
+    p1.x = 120;
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    run(g, .45);
+    assert.ok(p1.x <= 60, 'she ran into the wall: ' + p1.x.toFixed(0));
+    p1.queue.push({ index: 3, ttl: .2 });
+    run(g, .6);
+    assert.ok(p1.x > 120 && hp - p2.hp > 40, 'and rushes back out of it: ' + p1.x.toFixed(0) + ' / ' + (hp - p2.hp).toFixed(1));
+  }
+  // U: a recast replaces the light instead of stacking it; going down puts it out
+  {
+    const { g, p1 } = fresh(700);
+    g.attack(p1, 2);
+    run(g, .8);
+    p1.cooldowns[2] = 0;
+    g.attack(p1, 2);
+    run(g, .4);
+    assert.equal(g.effects.filter(e => e.type === 'kita-aura' && e.life > .2).length, 1, 'one light after a recast');
+    p1.hp = 0;
+    g.step(STEP);
+    const left = g.effects.filter(e => e.type === 'kita-aura').map(e => e.life);
+    assert.ok(left.every(l => l <= .3) && !p1.mods.some(m => m.kind === 'aura' && m.left > 0), 'the light goes out with her: ' + left.join(','));
+  }
+  // I: the CPU comes back when chased
+  {
+    const { g, p1, p2 } = fresh(340);
+    p1.controller = null;
+    g.attack(p1, 3);
+    let rushed = false;
+    for (let i = 0; i < 120; i++) { g.step(STEP); if (p1.attack?.mode === 3) rushed = true; }
+    assert.ok(rushed, 'the CPU rushes back at someone close');
+    void p2;
+  }
+  // O: the heart muddles
+  {
+    const { g, p1, p2 } = fresh(520);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    let confused = false;
+    for (let i = 0; i < 120; i++) { g.step(STEP); if (p2.mods.some(m => m.kind === 'confuse' && m.left > 0 && m.mark === 'kita-heart')) confused = true; }
+    assert.ok(confused && hp - p2.hp > 20, 'the heart lands and muddles: ' + (hp - p2.hp).toFixed(1));
+  }
+  // L: five waves and the burst knock down; 一里 shows up
+  {
+    const { g, p1, p2 } = fresh();
+    p1.energy = p1.energyMax;
+    const hp = p2.hp;
+    assert.equal(g.attack(p1, 5), true, '撑住舞台的即兴 casts');
+    let down = false, duo = false;
+    const waves = new Set<object>();
+    for (let i = 0; i < 360; i++) {
+      g.step(STEP);
+      if (p2.knocked > 0) down = true;
+      for (const e of g.effects) if (e.type === 'kita-wave') waves.add(e);
+      if (g.effects.some(e => e.type === 'kita-duo')) duo = true;
+    }
+    assert.equal(waves.size, 5, 'five waves');
+    assert.ok(duo, '一里 behind her');
+    assert.ok(down && hp - p2.hp > 120, 'the waves and the burst land: ' + (hp - p2.hp).toFixed(1));
+  }
+  // Every picture draws and restores the canvas.
+  {
+    let depth = 0;
+    const methods = new Map<string, (...args: unknown[]) => unknown>();
+    const ctx = new Proxy({ globalAlpha: 1 } as Record<string, unknown>, {
+      get(o, key: string) {
+        if (key in o) return o[key];
+        if (!methods.has(key)) methods.set(key, (...args: unknown[]) => {
+          for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value), `Kita ${key} stays finite`);
+          if (key === 'save') depth++;
+          if (key === 'restore') depth--;
+          if (key === 'arc') assert.ok(Number(args[2]) >= 0, 'Kita arc radius');
+          if (key === 'ellipse') assert.ok(Number(args[2]) >= 0 && Number(args[3]) >= 0, 'Kita ellipse radii');
+          if (key === 'createLinearGradient' || key === 'createRadialGradient') return { addColorStop() {} };
+        });
+        return methods.get(key);
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    const seen = new Set<string>();
+    for (const slot of [2, 3, 4, 5]) {
+      const { g, p1 } = fresh(slot === 3 ? 340 : slot === 2 ? 400 : 520);
+      p1.energy = 200;
+      g.attack(p1, slot);
+      for (let i = 0; i < 360; i++) {
+        if (slot === 3 && i === 30) p1.queue.push({ index: 3, ttl: .2 });
+        g.step(STEP);
+        // 'kita-heart@apply' and friends are status looks; statusMarks.ts draws those.
+        for (const e of g.effects) if (e.type.startsWith('kita-') && !e.type.includes('@')) seen.add(e.type);
+        for (const p of g.projectiles) if (p.fx === 'kita-spell') { assert.ok(drawKitaShot(ctx, p, false), 'the heart draws'); assert.equal(depth, 0); }
+      }
+    }
+    for (const type of ['aura', 'aura-glint', 'shine', 'burn', 'dust', 'rejoin', 'hug', 'spell-cast', 'heart-pop', 'stage', 'stage-front', 'wave', 'duo', 'finale']) {
+      assert.ok(seen.has('kita-' + type), 'her moves spawn kita-' + type);
+    }
+    seen.add('kita-sweat');
+    for (const lite of [false, true]) for (const dir of [-1, 1]) for (const type of seen) {
+      for (let i = 0; i <= 24; i++) {
+        const e = { type, x: 450, y: FLOOR, color: '#E4524E', max: 1.3, life: 1.3 - i * 1.3 / 24, age: i * .05, radius: 181, dir, n: i % 5, hit: i % 2 === 0, t0: .3 };
+        assert.ok(drawKitaFx(ctx, e, lite), `Kita draws ${type}`);
+        assert.equal(depth, 0, 'Kita restores the canvas after ' + type);
+      }
+    }
+  }
+}
+
+// ryo: 山田凉。Her 气 is her wallet. U eats the weed by the road (60; broke under 30 气: 120 and a little regen; a hit while
+// she chews chokes it off; the third meal in 10 s makes her sick: half, and 减速); I borrows 25 气 for good (40 from 一里)
+// and its IOU skims half of every 气 the lender gains for 6 s (only 虹夏 can take it back); O shrugs a melee hit off in the window and chops back, then swings faster; L (100 气, the bar holds 150) spends
+// everything: four low waves and the drop, harder for every 气 past the cost.
+{
+  const ry = at('ryo');
+  const data = ROSTER[ry];
+  assert.ok(ry === at('kita') + 1, '山田凉 sits with 结束乐队, after 喜多');
+  assert.equal(data.trait, 'focus');
+  assert.deepEqual(data.bands, ['kessoku-band']);
+  assert.ok(!data.hidden, 'the main band is public');
+  assert.equal(SHORT_NAMES.ryo, '凉');
+  assert.equal(data.meterMax, 150);
+  const fresh = (p2x = 520, foe = 'boulder') => {
+    const g = newGame(ry, at(foe)); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  const swingAt = (g: FightGame, p2: Fighter) => { p2.cooldowns[1] = 0; p2.stun = 0; p2.attack = null; g.attack(p2, 1); };
+  assert.equal(fresh().p1.energyMax, 150, 'her bar holds 150');
+  // U: a meal heals; broke, it heals more and keeps healing; the third one makes her sick
+  {
+    const { g, p1 } = fresh(800);
+    p1.hp = 500; p1.energy = 60;
+    g.attack(p1, 2);
+    run(g, 1.4);
+    assert.equal(p1.hp, 560, 'a meal heals 60');
+    p1.energy = 0; p1.cooldowns[2] = 0;
+    g.attack(p1, 2);
+    run(g, 4.4);
+    assert.ok(p1.hp >= 705 && p1.hp <= 712, 'broke, it heals 120 and 30 more over time: ' + p1.hp.toFixed(1));
+    p1.cooldowns[2] = 0;
+    g.attack(p1, 2);
+    run(g, 1.1);
+    assert.ok(p1.mods.some(m => m.kind === 'slow' && m.left > 0 && m.mark === 'ryo-sick'), 'the third meal makes her sick');
+    assert.ok(p1.hp >= 765 && p1.hp <= 775, 'and pays half: ' + p1.hp.toFixed(1));
+  }
+  // U: a hit while she chews chokes it off — no armour, no heal
+  {
+    const { g, p1, p2 } = fresh(380);
+    p1.hp = 500;
+    g.attack(p1, 2);
+    run(g, .4);
+    swingAt(g, p2);
+    run(g, 1.2);
+    assert.ok(p1.hp < 500, 'the hit landed and nothing was eaten: ' + p1.hp.toFixed(1));
+  }
+  // I: 30 and 25 气 for good; the IOU skims half of every 气 they gain for 6 s, and a hit on her takes nothing back
+  {
+    const { g, p1, p2 } = fresh(380);
+    p1.energy = 0; p2.energy = 60;
+    const hp = p2.hp;
+    assert.equal(g.attack(p1, 3), true, '下次一定还 casts');
+    run(g, 1.4);
+    assert.ok(hp - p2.hp >= 28, 'the catch hurts: ' + (hp - p2.hp).toFixed(1));
+    assert.ok(p1.energy >= 25, 'she has the 25: ' + p1.energy.toFixed(1));
+    assert.ok(p2.mods.some(m => m.kind === 'skim' && m.left > 0) && p2.mods.some(m => m.kind === 'look' && m.mark === 'ryo-iou' && m.left > 0), 'the IOU is on the lender');
+    const mine = p1.energy, theirs = p2.energy;
+    gainEnergy(p2, 20);
+    assert.ok(Math.abs(p2.energy - theirs - 10) < .01 && Math.abs(p1.energy - mine - 10) < .01, 'half of what they gain is hers');
+    const hp1 = p1.hp, had = p1.energy;
+    p2.x = p1.x + 70;
+    swingAt(g, p2);
+    run(g, 1);
+    assert.ok(hp1 - p1.hp < 60 && p1.energy >= had, 'a hit on her takes nothing back: ' + (hp1 - p1.hp).toFixed(1));
+  }
+  // I: the IOU runs out after 6 s and the slip tears away
+  {
+    const { g, p1, p2 } = fresh(380);
+    p2.energy = 60;
+    g.attack(p1, 3);
+    let gone = false;
+    for (let i = 0; i < Math.round(8 / STEP); i++) { g.step(STEP); if (g.effects.some(e => e.type === 'ryo-default')) gone = true; }
+    assert.ok(gone && !p2.mods.some(m => m.kind === 'skim' && m.left > 0), 'the note tears away');
+    const before = p1.energy;
+    gainEnergy(p2, 20);
+    assert.equal(p1.energy, before, 'and the skim stops');
+  }
+  // I: an empty foe lends nothing; 彩蛋: 一里 lends 40, 虹夏 is the only one who collects
+  {
+    const { g, p1, p2 } = fresh(380);
+    p2.energy = 0;
+    const had = p1.energy;
+    g.attack(p1, 3);
+    run(g, 1.4);
+    assert.ok(p1.energy - had < 5, 'nothing to borrow');
+  }
+  {
+    const { g, p1, p2 } = fresh(380, 'bocchi');
+    p1.energy = 0; p2.energy = 80;
+    g.attack(p1, 3);
+    run(g, 1.4);
+    assert.ok(p1.energy >= 40, '一里 lends her more: ' + p1.energy.toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(380, 'nijika');
+    p1.energy = 0; p2.energy = 80;
+    g.attack(p1, 3);
+    run(g, 1.4);
+    const had = p2.energy;
+    p2.x = p1.x + 70;
+    swingAt(g, p2);
+    run(g, 1);
+    assert.ok(p2.energy >= had + 25, '虹夏 takes it back: ' + p2.energy.toFixed(1));
+    assert.ok(!p2.mods.some(m => m.kind === 'skim' && m.left > 0), 'and tears the note up');
+  }
+  // I: a grab — the guard does not stop it, a whiff ends early
+  {
+    const { g, p1, p2 } = fresh(380);
+    p2.energy = 60; p2.blocking = true;
+    g.attack(p1, 3);
+    run(g, 1.4);
+    assert.ok(p2.mods.some(m => m.kind === 'skim'), 'borrowed through the guard');
+  }
+  {
+    const { g, p1 } = fresh(800);
+    g.attack(p1, 3);
+    run(g, 1.2);
+    assert.equal(p1.attack, null, 'nobody to ask, the move is over');
+  }
+  // I and O wear 霸体: a jab into the reach does not stop the loan; O is back in 4 s
+  {
+    const { g, p1, p2 } = fresh(380);
+    p2.energy = 60;
+    p2.cooldowns[0] = 0; p2.stun = 0; p2.attack = null; g.attack(p2, 0);
+    for (let i = 0; i < 6; i++) g.step(STEP);
+    g.attack(p1, 3);
+    run(g, 1.4);
+    assert.ok(p2.mods.some(m => m.kind === 'skim' && m.left > 0), 'the jab does not stop her asking');
+    assert.equal(data.skills[3].holdEndure, true);
+    assert.equal(data.skills[4].holdEndure, true);
+    assert.equal(data.skills[4].cd, 4, '怪人是夸奖 comes back in 4 s');
+  }
+  // O: a melee hit in the window does nothing; she chops back and swings faster
+  {
+    const { g, p1, p2 } = fresh(380);
+    const hp1 = p1.hp, hp2 = p2.hp;
+    g.attack(p1, 4);
+    run(g, .15);
+    swingAt(g, p2);
+    run(g, 1.2);
+    assert.equal(p1.hp, hp1, 'the weirdo takes it as a compliment');
+    assert.ok(hp2 - p2.hp > 30, 'and chops back: ' + (hp2 - p2.hp).toFixed(1));
+    assert.ok(p1.mods.some(m => m.kind === 'speed' && m.tag === 'ryo-weird' && m.left > 0), 'then swings faster');
+  }
+  {
+    const { g, p1 } = fresh(800);
+    g.attack(p1, 4);
+    run(g, 1.1);
+    assert.equal(p1.attack, null, 'nobody came, she drops the pose');
+    assert.ok(!p1.mods.some(m => m.kind === 'speed' && m.tag === 'ryo-weird'), 'and gets nothing for it');
+  }
+  // L: casts at 100 and spends the whole bar; four waves and the drop knock down; more 气, more damage
+  {
+    const dealt: number[] = [];
+    for (const bar of [100, 150]) {
+      const { g, p1, p2 } = fresh(520);
+      p1.energy = bar;
+      const hp = p2.hp;
+      assert.equal(g.attack(p1, 5), true, '倾家荡产的低音 casts at ' + bar);
+      assert.equal(p1.energy, 0, 'every 气 is spent');
+      let down = false;
+      const waves = new Set<object>();
+      for (let i = 0; i < 360; i++) {
+        g.step(STEP);
+        if (p2.knocked > 0) down = true;
+        for (const e of g.effects) if (e.type === 'ryo-wave') waves.add(e);
+      }
+      assert.equal(waves.size, 4, 'four waves');
+      assert.ok(down, 'the drop knocks down');
+      dealt.push(hp - p2.hp);
+    }
+    assert.ok(dealt[0] > 110, 'it lands: ' + dealt[0].toFixed(1));
+    assert.ok(dealt[1] > dealt[0] * 1.25, 'a full wallet hurts more: ' + dealt.map(d => d.toFixed(1)).join(' / '));
+  }
+  {
+    const { g, p1 } = fresh();
+    p1.energy = 99;
+    assert.equal(g.attack(p1, 5), false, 'under 100 it does not come out');
+  }
+  // Every picture draws and restores the canvas.
+  {
+    let depth = 0;
+    const methods = new Map<string, (...args: unknown[]) => unknown>();
+    const ctx = new Proxy({ globalAlpha: 1 } as Record<string, unknown>, {
+      get(o, key: string) {
+        if (key in o) return o[key];
+        if (!methods.has(key)) methods.set(key, (...args: unknown[]) => {
+          for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value), `Ryo ${key} stays finite`);
+          if (key === 'save') depth++;
+          if (key === 'restore') depth--;
+          if (key === 'arc') assert.ok(Number(args[2]) >= 0, 'Ryo arc radius');
+          if (key === 'ellipse') assert.ok(Number(args[2]) >= 0 && Number(args[3]) >= 0, 'Ryo ellipse radii');
+          if (key === 'createLinearGradient' || key === 'createRadialGradient') return { addColorStop() {} };
+        });
+        return methods.get(key);
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    const seen = new Set<string>();
+    const watch = (g: FightGame) => { for (const e of g.effects) if (e.type.startsWith('ryo-') && !e.type.includes('@')) seen.add(e.type); };
+    for (const slot of [2, 3, 4, 5]) {
+      const { g, p1, p2 } = fresh(slot === 5 ? 520 : 380, slot === 3 ? 'bocchi' : 'boulder');
+      p1.energy = slot === 2 ? 0 : 150; p2.energy = 80;
+      g.attack(p1, slot);
+      for (let i = 0; i < 360; i++) {
+        if (slot === 4 && i === 18) swingAt(g, p2);
+        g.step(STEP);
+        watch(g);
+      }
+      if (slot === 3) { for (let i = 0; i < Math.round(8 / STEP); i++) { g.step(STEP); watch(g); } }
+    }
+    {
+      const { g, p1, p2 } = fresh(380, 'nijika');
+      p2.energy = 80;
+      g.attack(p1, 3);
+      run(g, 1.4);
+      p2.x = p1.x + 70;
+      swingAt(g, p2);
+      for (let i = 0; i < 120; i++) { g.step(STEP); watch(g); }
+    }
+    {
+      const { g, p1, p2 } = fresh(380);
+      p2.energy = 0;
+      g.attack(p1, 3);
+      for (let i = 0; i < 200; i++) { g.step(STEP); watch(g); }
+      p1.cooldowns[2] = 0; p1.attack = null;
+      for (let k = 0; k < 3; k++) { p1.cooldowns[2] = 0; g.attack(p1, 2); for (let i = 0; i < 170; i++) { g.step(STEP); watch(g); } }
+    }
+    for (const type of ['pluck', 'chew', 'bitter', 'heal', 'sick', 'ask', 'coins', 'repay', 'iou-stick', 'default', 'pocket', 'empty', 'bocchi', 'nijika',
+      'aloof', 'blush', 'chop', 'pleased', 'sub', 'spend', 'wave', 'drop', 'leaf']) {
+      assert.ok(seen.has('ryo-' + type), 'her moves spawn ryo-' + type);
+    }
+    for (const lite of [false, true]) for (const dir of [-1, 1]) for (const type of seen) {
+      for (let i = 0; i <= 24; i++) {
+        const e = { type, x: 450, y: FLOOR, color: '#3D5DAF', max: 1.3, life: 1.3 - i * 1.3 / 24, age: i * .05, radius: 181, dir, n: i % 5, hit: i % 2 === 0, tx: -120, ty: 10 };
+        assert.ok(drawRyoFx(ctx, e, lite), `Ryo draws ${type}`);
+        assert.equal(depth, 0, 'Ryo restores the canvas after ' + type);
+      }
+    }
+    const f = fresh().p1;
+    for (let k = 0; k <= 10; k++) {
+      auraRyoIou(ctx, f, 181, 8 - k * .8, k * .3);
+      auraRyoSick(ctx, f, 181, 2 - k * .2, k * .3, k % 2 === 0);
+      assert.equal(depth, 0, 'the status looks restore the canvas');
+    }
+    assert.equal(drawRyoFx(ctx, { type: 'kita-aura', x: 0, y: 0, color: '', max: 1, life: 1 }), false, 'only her own');
+  }
+}
+
+// nina: 井芹仁菜。U swings the ceiling light twice up close and throws it; I bursts spikes (霸体, breakout) and leaves
+// 5 s of hedgehog: a melee swing at her is pricked back and every hit grows the spikes a level (30% → 40% → 50%);
+// 不认输: under 30% health the hedgehog starts at the top level and does not flinch. O stands it out: a melee hit in
+// the window costs half and earns the slap (grows with the health she has lost); nobody comes and she slaps anyway at half.
+// L (100 气): alone in the rain, then the practice-room light: three screams of colour sweep forward and a light tide launches.
+{
+  const ni = at('nina');
+  const data = ROSTER[ni];
+  assert.ok(ni === at('ryo') + 1, '井芹仁菜 opens Girls Band Cry, after the 孤独摇滚！ cast');
+  assert.equal(data.trait, 'armor');
+  assert.deepEqual(data.bands, ['togenashi-togeari']);
+  assert.equal(SHORT_NAMES.nina, '仁菜');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/nina/lamp.png'), 'the lamp is preloaded');
+  const fresh = (p2x = 520) => {
+    const g = newGame(ni, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  const swingAt = (g: FightGame, p2: Fighter) => { p2.cooldowns[1] = 0; p2.stun = 0; p2.attack = null; g.attack(p2, 1); };
+  // U: two swings up close, then the throw
+  {
+    const { g, p1, p2 } = fresh(390);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    run(g, 1);
+    assert.ok(hp - p2.hp > 24, 'both swings and the lamp land up close: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(700);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    run(g, 1.4);
+    assert.ok(hp - p2.hp > 12 && hp - p2.hp < 22, 'from range only the thrown lamp lands: ' + (hp - p2.hp).toFixed(1));
+  }
+  // I: the burst, then the hedgehog pricks a swinger back and grows
+  {
+    const { g, p1, p2 } = fresh(390);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    run(g, .5);
+    assert.ok(hp - p2.hp > 20, 'the burst lands: ' + (hp - p2.hp).toFixed(1));
+    assert.equal(thornLevel(p1), 1, 'the hedgehog starts at level one');
+    run(g, .4);
+    p2.x = p1.x + 80;
+    const before = p2.hp;
+    swingAt(g, p2);
+    run(g, .5);
+    assert.ok(before - p2.hp > 5, 'a swing at the hedgehog is paid back: ' + (before - p2.hp).toFixed(1));
+    assert.equal(thornLevel(p1), 2, 'the hit grew the spikes');
+    run(g, 5);
+    assert.equal(thornLevel(p1), 0, 'the hedgehog wears off');
+    assert.equal(p1.thorns, 0, 'and the thorns go back to nothing');
+  }
+  {
+    const { g, p1 } = fresh(520);
+    p1.stun = .8;
+    assert.equal(g.attack(p1, 3), true, '正义之刺 breaks out of hitstun');
+    assert.equal(p1.attack?.skill.fx, 'nina-thorns');
+  }
+  // 不认输
+  {
+    const { g, p1, p2 } = fresh(520);
+    p1.hp = p1.data.hp * .2;
+    g.attack(p1, 3);
+    run(g, .9);
+    assert.equal(thornLevel(p1), 3, 'low on health the spikes start at the top');
+    p2.x = p1.x + 80;
+    swingAt(g, p2);
+    let flinched = false;
+    for (let i = 0; i < 60; i++) { g.step(STEP); if (p1.stun > 0) flinched = true; }
+    assert.ok(!flinched, '不认输: the hedgehog does not flinch');
+  }
+  // O: the counter slap, and the shove when nobody comes
+  {
+    const { g, p1, p2 } = fresh(380);
+    const h1 = p1.hp, h2 = p2.hp;
+    g.attack(p1, 4);
+    run(g, .2);
+    swingAt(g, p2);
+    let up = false;
+    for (let i = 0; i < 150; i++) { g.step(STEP); if (p2.y < FLOOR - 20) up = true; }
+    assert.ok(h1 - p1.hp > 0, 'she takes some of it');
+    assert.ok(h2 - p2.hp > 30 && up, 'and the slap launches: ' + (h2 - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(380);
+    p1.hp = p1.data.hp * .3;
+    const h2 = p2.hp;
+    g.attack(p1, 4);
+    run(g, .2);
+    swingAt(g, p2);
+    run(g, 1.2);
+    assert.ok(h2 - p2.hp > 45, 'the slap grows with what she has lost: ' + (h2 - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(370);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    run(g, 1.2);
+    assert.ok(hp - p2.hp > 12 && hp - p2.hp < 25, 'nobody came: she slaps anyway, at half: ' + (hp - p2.hp).toFixed(1));
+  }
+  // L: three sweeps of light and the tide; the tide only goes forward
+  {
+    const { g, p1, p2 } = fresh();
+    p1.energy = p1.energyMax;
+    const hp = p2.hp;
+    assert.equal(g.attack(p1, 5), true, '雨夜嘶吼 casts');
+    let up = false, waves = 0, prisms = 0;
+    for (let i = 0; i < 360; i++) {
+      g.step(STEP);
+      if (p2.y < FLOOR - 40) up = true;
+      waves += g.effects.filter(e => e.type === 'nina-wave' && e.life === e.max).length;
+      prisms += g.effects.filter(e => e.type === 'nina-prism' && e.life === e.max).length;
+    }
+    assert.equal(waves, 3, 'three sweeps of light');
+    assert.equal(prisms, 4, 'a prism for each scream and the tide');
+    assert.ok(up && hp - p2.hp > 100, 'the sweeps and the tide land: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(200);
+    p1.energy = p1.energyMax;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    run(g, 2.8);
+    assert.equal(hp, p2.hp, 'behind her the light never reaches');
+  }
+  // Every picture draws and restores the canvas.
+  {
+    let depth = 0;
+    const methods = new Map<string, (...args: unknown[]) => unknown>();
+    const ctx = new Proxy({ globalAlpha: 1 } as Record<string, unknown>, {
+      get(o, key: string) {
+        if (key in o) return o[key];
+        if (!methods.has(key)) methods.set(key, (...args: unknown[]) => {
+          for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value), `Nina ${key} stays finite`);
+          if (key === 'save') depth++;
+          if (key === 'restore') depth--;
+          if (key === 'arc') assert.ok(Number(args[2]) >= 0, 'Nina arc radius');
+          if (key === 'ellipse') assert.ok(Number(args[2]) >= 0 && Number(args[3]) >= 0, 'Nina ellipse radii');
+          if (key === 'createLinearGradient' || key === 'createRadialGradient') return { addColorStop() {} };
+        });
+        return methods.get(key);
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    const seen = new Set<string>();
+    for (const slot of [2, 3, 4, 5]) {
+      const { g, p1, p2 } = fresh(slot === 2 || slot === 4 ? 390 : 520);
+      p1.energy = 200;
+      g.attack(p1, slot);
+      for (let i = 0; i < 400; i++) {
+        if (i === 30 && slot === 4) swingAt(g, p2);
+        if (i === 120 && slot === 3) { p2.x = p1.x + 80; swingAt(g, p2); }
+        g.step(STEP);
+        for (const e of g.effects) if (e.type.startsWith('nina-')) seen.add(e.type);
+        for (const p of g.projectiles) if (p.fx === 'nina-lamp') { assert.ok(drawNinaShot(ctx, p, false), 'the lamp draws'); assert.equal(depth, 0); }
+      }
+    }
+    for (const type of ['swing', 'flicker', 'lamp-break', 'spines', 'grow', 'prick', 'burst', 'glare', 'unbowed', 'slap', 'rain', 'spot', 'prism', 'wave', 'tide', 'pinky']) {
+      assert.ok(seen.has('nina-' + type), 'her moves spawn nina-' + type);
+    }
+    seen.add('nina-shove');
+    for (const lite of [false, true]) for (const dir of [-1, 1]) for (const type of seen) {
+      for (let i = 0; i <= 24; i++) {
+        const e = { type, x: 450, y: FLOOR, color: '#D90E2C', max: 1.3, life: 1.3 - i * 1.3 / 24, age: i * .05, radius: 181, dir, n: i % 3, hit: i % 2 === 0, t0: .4 };
+        assert.ok(drawNinaFx(ctx, e, lite), `Nina draws ${type}`);
+        assert.equal(depth, 0, 'Nina restores the canvas after ' + type);
+      }
+    }
+  }
+}
+
+// momoka: 河原木桃香。U backs off untouchable and leaves the girl she was standing there; a foe who comes near (or the
+// fuse) breaks it into diamond dust that chills. I: a snake at her feet, three beer cans thrown in a panic; where they
+// land the foam chills. O: drunk for 6 s — one hit every 1.5 s slides off her; then she forgets (statuses gone, a short
+// hangover). L (100 气): the blue light of episode 1, the nearest grounded foe shut in a box of light, three songs, the
+// box breaks and launches; a foe in the air when it closes is not in it.
+{
+  const mo = at('momoka');
+  const data = ROSTER[mo];
+  assert.ok(mo === at('nina') + 1, '河原木桃香 follows 井芹仁菜');
+  assert.equal(data.trait, 'rush');
+  assert.deepEqual(data.bands, ['togenashi-togeari']);
+  assert.equal(SHORT_NAMES.momoka, '桃香');
+  assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/momoka/beer.png'), 'the can is preloaded');
+  const fresh = (p2x = 520) => {
+    const g = newGame(mo, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 400; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  const jab = (g: FightGame, p2: Fighter) => { p2.cooldowns[0] = 0; p2.stun = 0; p2.attack = null; g.attack(p2, 0); };
+  // U: away untouched; the past waits, then breaks on whoever walks into it
+  {
+    const { g, p1, p2 } = fresh(700);
+    const x0 = p1.x;
+    g.attack(p1, 2);
+    run(g, .4);
+    assert.ok(x0 - p1.x > 180, 'she backs off: ' + (x0 - p1.x).toFixed(0));
+    assert.equal(g.projectiles.filter(p => p.fx === 'momoka-past').length, 1, 'the past stays behind');
+    const hp = p2.hp;
+    p2.x = x0 + 40;
+    run(g, .3);
+    assert.ok(hp - p2.hp > 20, 'walking into it breaks it: ' + (hp - p2.hp).toFixed(1));
+    assert.ok(p2.slow > 0, 'the diamond dust chills');
+    assert.equal(g.projectiles.filter(p => p.fx === 'momoka-past').length, 0, 'and it is gone');
+  }
+  {
+    const { g, p1, p2 } = fresh(700);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    run(g, 2.5);
+    assert.equal(hp, p2.hp, 'nobody near: it breaks on its own and reaches no one far off');
+    assert.equal(g.projectiles.filter(p => p.fx === 'momoka-past').length, 0);
+  }
+  // I: three cans, foam on the floor
+  {
+    const { g, p1, p2 } = fresh(640);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    let cans = 0;
+    for (let i = 0; i < 240; i++) {
+      g.step(STEP);
+      cans = Math.max(cans, g.projectiles.filter(p => p.fx === 'momoka-snake').length);
+    }
+    assert.equal(cans, 3, 'three cans');
+    assert.ok(hp - p2.hp > 6, 'a can lands on them: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(900);
+    g.attack(p1, 3);
+    run(g, 1.1);
+    const puddles = g.projectiles.filter(p => p.fx === 'momoka-snake' && p.settled);
+    assert.equal(puddles.length, 3, 'every can leaves a puddle');
+    p2.x = puddles[1].x;
+    run(g, .1);
+    assert.ok(p2.slow > 0, 'standing in the foam chills');
+  }
+  // O: one hit per beat slides off; then she forgets
+  {
+    const { g, p1, p2 } = fresh(470);
+    g.attack(p1, 4);
+    run(g, .7);
+    const hp = p1.hp;
+    jab(g, p2);
+    run(g, .5);
+    assert.equal(p1.hp, hp, 'the first hit sways off her');
+    jab(g, p2);
+    run(g, .5);
+    assert.ok(p1.hp < hp, 'the next one inside the beat lands');
+    p1.root = 1;
+    run(g, 6);
+    assert.ok(!p1.mods.some(m => m.kind === 'sway' && m.left > 0), 'sober again');
+    assert.equal(p1.root, 0, 'and whatever held her is forgotten');
+  }
+  // L: the box closes, three songs, it breaks and launches; a jumper is not in it
+  {
+    const { g, p1, p2 } = fresh(700);
+    p1.energy = p1.energyMax;
+    const hp = p2.hp;
+    assert.equal(g.attack(p1, 5), true, '空之箱 casts');
+    let up = false;
+    const songs = new Set<object>();
+    for (let i = 0; i < 360; i++) {
+      g.step(STEP);
+      if (p2.y < FLOOR - 40) up = true;
+      for (const e of g.effects) if (e.type === 'momoka-song') songs.add(e);
+    }
+    assert.equal(songs.size, 3, 'three songs');
+    assert.ok(up && hp - p2.hp > 100, 'the box and the songs land: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(700);
+    p1.energy = p1.energyMax;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    run(g, .36);
+    p2.y = FLOOR - 160; p2.vy = -200;
+    run(g, 2.4);
+    assert.equal(hp, p2.hp, 'in the air when it closes: not in the box');
+  }
+  {
+    const { g, p1, p2 } = fresh(200);
+    p1.energy = p1.energyMax;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    run(g, 2.6);
+    assert.equal(hp, p2.hp, 'the box only closes ahead of her');
+  }
+  // Every picture draws and restores the canvas.
+  {
+    let depth = 0;
+    const methods = new Map<string, (...args: unknown[]) => unknown>();
+    const ctx = new Proxy({ globalAlpha: 1 } as Record<string, unknown>, {
+      get(o, key: string) {
+        if (key in o) return o[key];
+        if (!methods.has(key)) methods.set(key, (...args: unknown[]) => {
+          for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value), `Momoka ${key} stays finite`);
+          if (key === 'save') depth++;
+          if (key === 'restore') depth--;
+          if (key === 'arc') assert.ok(Number(args[2]) >= 0, 'Momoka arc radius');
+          if (key === 'ellipse') assert.ok(Number(args[2]) >= 0 && Number(args[3]) >= 0, 'Momoka ellipse radii');
+          if (key === 'roundRect') assert.ok(Number(args[2]) >= 0 && Number(args[3]) >= 0, 'Momoka roundRect size');
+          if (key === 'createLinearGradient' || key === 'createRadialGradient') return { addColorStop() {} };
+        });
+        return methods.get(key);
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    const seen = new Set<string>();
+    for (const slot of [2, 3, 4, 5]) {
+      const { g, p1, p2 } = fresh(slot === 2 ? 700 : 560);
+      p1.energy = 200;
+      g.attack(p1, slot);
+      for (let i = 0; i < 1000; i++) {
+        if (slot === 2 && i === 60) p2.x = p1.x + 260;
+        if (slot === 4 && i === 90) { p2.x = p1.x + 70; jab(g, p2); }
+        g.step(STEP);
+        for (const e of g.effects) if (e.type.startsWith('momoka-')) seen.add(e.type);
+        for (const p of g.projectiles) if (p.fx.startsWith('momoka-')) { assert.ok(drawMomokaShot(ctx, p, false), 'her shots draw'); assert.equal(depth, 0); }
+      }
+    }
+    for (const type of ['past', 'flee', 'dust', 'snake', 'shriek', 'foam', 'gulp', 'drunk', 'sway', 'hangover', 'night', 'column', 'box', 'song', 'voice', 'burst']) {
+      assert.ok(seen.has('momoka-' + type), 'her moves spawn momoka-' + type);
+    }
+    seen.add('momoka-can-hit'); seen.add('momoka-beat');
+    for (const lite of [false, true]) for (const dir of [-1, 1]) for (const type of seen) {
+      for (let i = 0; i <= 24; i++) {
+        const e = { type, x: 450, y: FLOOR, color: '#85C9DC', max: 1.3, life: 1.3 - i * 1.3 / 24, age: i * .05, radius: 181, dir, n: i % 3 };
+        assert.ok(drawMomokaFx(ctx, e, lite), `Momoka draws ${type}`);
+        assert.equal(depth, 0, 'Momoka restores the canvas after ' + type);
+      }
+    }
+  }
+}
+
+// subaru: 安和昴。U: the crane stance, then a pounce into a grab (unblockable, knockdown) that reaches further on someone
+// backing off or turned away; a miss sprawls. I: the smile — a stomp that roots (grounded only) and an elbow that comes
+// either way. O: a chop guard — a melee swing in the window is parried (no damage) and answered with three chops; a shot
+// is knocked away. L (100 气): the old film, the frame roots the nearest grounded foe, six beats, the Pleiades launch.
+{
+  const su = at('subaru');
+  const data = ROSTER[su];
+  assert.ok(su === at('momoka') + 1, '安和昴 follows 河原木桃香');
+  assert.equal(data.trait, 'beat');
+  assert.deepEqual(data.bands, ['togenashi-togeari']);
+  assert.ok(!data.hidden, 'a main-band member is public');
+  assert.equal(SHORT_NAMES.subaru, '昴');
+  const fresh = (p2x = 520) => {
+    const g = newGame(su, at('boulder')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 400; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  const jab = (g: FightGame, p2: Fighter) => { p2.cooldowns[0] = 0; p2.stun = 0; p2.attack = null; g.attack(p2, 0); };
+  // U: the pounce catches at 200 and throws; facing away it reaches 260; a blocker is still caught; a miss sprawls long
+  {
+    const { g, p1, p2 } = fresh(580);
+    p2.blocking = true;
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    run(g, 1.4);
+    assert.ok(hp - p2.hp > 60, 'caught and thrown through a guard: ' + (hp - p2.hp).toFixed(1));
+    assert.ok(p2.knocked > 0 || p2.y < FLOOR - 1 || p2.stun > 0, 'thrown down');
+  }
+  {
+    const { g, p1, p2 } = fresh(700);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    run(g, 1.4);
+    assert.equal(hp, p2.hp, '300 away and facing her: out of reach');
+  }
+  {
+    const { g, p1, p2 } = fresh(700);
+    p2.facing = 1;
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    run(g, 1.4);
+    assert.ok(hp - p2.hp > 60, 'back turned: the pounce goes further: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(900);
+    g.attack(p1, 2);
+    run(g, .9);
+    assert.ok(p1.attack, 'a miss stays down a long beat');
+  }
+  // I: the stomp roots and the elbow follows; jumping clears the stomp
+  {
+    const { g, p1, p2 } = fresh(480);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    run(g, .26);
+    assert.ok(p2.root > 0, 'the stomp roots');
+    assert.ok(g.effects.some(e => e.type === 'subaru-pale'), 'and they go pale');
+    run(g, .4);
+    assert.ok(hp - p2.hp > 40, 'stomp and elbow: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(480);
+    g.attack(p1, 3);
+    run(g, .12);
+    p2.y = FLOOR - 120; p2.vy = -300;
+    run(g, .12);
+    assert.equal(p2.root, 0, 'a stomp cannot reach the air');
+  }
+  // O: a jab in the window is parried and answered; nothing came, nothing happens
+  {
+    const { g, p1, p2 } = fresh(470);
+    g.attack(p1, 4);
+    run(g, .1);
+    const mine = p1.hp, theirs = p2.hp;
+    jab(g, p2);
+    run(g, .9);
+    assert.equal(p1.hp, mine, 'the jab is parried');
+    assert.ok(theirs - p2.hp > 40, 'three chops come back: ' + (theirs - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(470);
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    run(g, 1.3);
+    assert.equal(hp, p2.hp, 'nobody swings: no chops');
+  }
+  // L: the frame roots, six beats and the burst; a jumper is not in the frame
+  {
+    const { g, p1, p2 } = fresh(760);
+    p1.energy = p1.energyMax;
+    const hp = p2.hp;
+    assert.equal(g.attack(p1, 5), true, '找到想做的事了 casts');
+    let up = false;
+    const beats = new Set<object>();
+    for (let i = 0; i < 380; i++) {
+      g.step(STEP);
+      if (p2.y < FLOOR - 40) up = true;
+      for (const e of g.effects) if (e.type === 'subaru-beat') beats.add(e);
+    }
+    assert.equal(beats.size, 6, 'six beats');
+    assert.ok(up && hp - p2.hp > 110, 'the whole super lands: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(700);
+    p1.energy = p1.energyMax;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    run(g, .44);
+    p2.y = FLOOR - 160; p2.vy = -200;
+    run(g, 2.4);
+    assert.equal(hp, p2.hp, 'in the air when the frame closes: not in the film');
+  }
+  // Every picture draws and restores the canvas.
+  {
+    let depth = 0;
+    const methods = new Map<string, (...args: unknown[]) => unknown>();
+    const ctx = new Proxy({ globalAlpha: 1 } as Record<string, unknown>, {
+      get(o, key: string) {
+        if (key in o) return o[key];
+        if (!methods.has(key)) methods.set(key, (...args: unknown[]) => {
+          for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value), `Subaru ${key} stays finite`);
+          if (key === 'save') depth++;
+          if (key === 'restore') depth--;
+          if (key === 'arc') assert.ok(Number(args[2]) >= 0, 'Subaru arc radius');
+          if (key === 'ellipse') assert.ok(Number(args[2]) >= 0 && Number(args[3]) >= 0, 'Subaru ellipse radii');
+          if (key === 'createLinearGradient' || key === 'createRadialGradient') return { addColorStop() {} };
+        });
+        return methods.get(key);
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    const seen = new Set<string>();
+    for (const slot of [2, 3, 4, 5]) {
+      const { g, p1, p2 } = fresh(slot === 2 ? 900 : slot === 5 ? 700 : 480);
+      p1.energy = 200;
+      g.attack(p1, slot);
+      for (let i = 0; i < 400; i++) {
+        if (slot === 4 && i === 10) jab(g, p2);
+        g.step(STEP);
+        for (const e of g.effects) if (e.type.startsWith('subaru-')) seen.add(e.type);
+      }
+    }
+    for (const type of ['crane', 'pounce', 'sprawl', 'beam', 'stomp', 'pale', 'elbow', 'guard', 'clash', 'chop', 'film', 'script', 'tear', 'frame', 'flood', 'beat', 'stars', 'burst']) {
+      assert.ok(seen.has('subaru-' + type), 'her moves spawn subaru-' + type);
+    }
+    seen.add('subaru-lock'); seen.add('subaru-throw');
+    for (const lite of [false, true]) for (const dir of [-1, 1]) for (const type of seen) {
+      for (let i = 0; i <= 24; i++) {
+        const e = { type, x: 450, y: FLOOR, color: '#76BD53', max: 2.6, life: 2.6 - i * 2.6 / 24, age: i * .1, radius: 181, dir, n: i % 3 };
+        assert.ok(drawSubaruFx(ctx, e, lite), `Subaru draws ${type}`);
+        assert.equal(depth, 0, 'Subaru restores the canvas after ' + type);
+      }
+    }
+  }
+}
+
 // kaoru: 濑田薰。U leaps at the spot chosen at take-off, faints at the top and drops on it (knockdown; walking out of
 // the shadow clears it); I is a slow petal vortex that leaves 混乱, and a second one while still muddled adds a finger
 // snap; O is a counter (a melee swing at her is taken by her fans, who stampede the swinger; nobody swings and they
@@ -12574,7 +13499,10 @@ await checkHub();
   assert.deepEqual([...files].sort(), [...ids].sort(), 'public/portraits holds exactly the portraits listed in portraits.gen.ts (run npm run portraits)');
   const known = new Set(ROSTER.map(c => c.id));
   assert.ok(ids.every(id => known.has(id)), 'every portrait id is a roster character');
-  assert.ok(PLAYABLE.filter(c => !c.hidden).every(c => PORTRAITS[c.id]), 'every public playable character has a portrait');
+  // 主乐队的角色立绘没到位也公开（过场和特写会退回无人物版）：这里列着、等立绘；到了就从表里删掉。
+  const portraitPending = new Set(['nina', 'momoka', 'subaru', 'kita', 'ryo']);
+  assert.ok([...portraitPending].every(id => !PORTRAITS[id]), 'a pending portrait that has arrived comes off the pending list');
+  assert.ok(PLAYABLE.filter(c => !c.hidden && !portraitPending.has(c.id)).every(c => PORTRAITS[c.id]), 'every public playable character has a portrait');
   assert.ok(ids.every(id => /^[0-9a-f]{8}$/.test(PORTRAITS[id].h) && PORTRAITS[id].face.every(v => v > 0 && v < 1)), 'portrait fingerprints and face positions are well-formed');
   const g = new FightGame([ROSTER[0], ROSTER[1]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: { play() {} } });
   assert.ok(!g.options.ultFreeze, 'the L freeze is opt-in');

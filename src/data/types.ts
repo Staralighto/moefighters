@@ -380,6 +380,8 @@ export interface CharacterData {
   passive: [string, string];
   /** Exactly six: J K U I O L. */
   skills: Skill[];
+  /** Energy bar size when it is larger than the super's cost (山田凉: the super spends whatever is on it). Unset: the cost. */
+  meterMax?: number;
   view: ViewSpec;
   /** Key of the while-rooted status effect shown at the torso. Unset draws the default pink heart. */
   rootFx?: string;
