@@ -13500,7 +13500,7 @@ await checkHub();
   const known = new Set(ROSTER.map(c => c.id));
   assert.ok(ids.every(id => known.has(id)), 'every portrait id is a roster character');
   // 主乐队的角色立绘没到位也公开（过场和特写会退回无人物版）：这里列着、等立绘；到了就从表里删掉。
-  const portraitPending = new Set(['nina', 'momoka', 'subaru', 'kita', 'ryo']);
+  const portraitPending = new Set<string>([]);
   assert.ok([...portraitPending].every(id => !PORTRAITS[id]), 'a pending portrait that has arrived comes off the pending list');
   assert.ok(PLAYABLE.filter(c => !c.hidden && !portraitPending.has(c.id)).every(c => PORTRAITS[c.id]), 'every public playable character has a portrait');
   assert.ok(ids.every(id => /^[0-9a-f]{8}$/.test(PORTRAITS[id].h) && PORTRAITS[id].face.every(v => v > 0 && v < 1)), 'portrait fingerprints and face positions are well-formed');
