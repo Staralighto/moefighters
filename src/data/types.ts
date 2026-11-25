@@ -368,8 +368,7 @@ export interface CharacterData {
   /** The work a bandless character is from (bands.ts IPS); with a band it follows the band. Unset is
    *  BanG Dream!. The bandless sit at the end of their own work on the select screen. */
   ip?: IpId;
-  /** False keeps the entry off the select screen: headless-check dummies (gale, ember,
-   *  boulder). Unset means playable — new characters need no roster of ids to join. */
+  /** False keeps the entry off the select screen. Unset means playable. */
   playable?: boolean;
   /** Opt-in roster pick, excluded from public pools and progression. */
   hidden?: boolean;

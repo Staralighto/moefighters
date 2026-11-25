@@ -19,7 +19,7 @@ export function atkIcon(heavy: boolean): string {
 }
 
 /** Fighters with their own ultimate drawing. Anyone else gets the shared mark. */
-const ultArt = new Set(['gale', 'ember', 'boulder', 'sakiko', 'mutsumi', 'uika', 'umiri', 'nyamu', 'anon']);
+const ultArt = new Set(['sakiko', 'mutsumi', 'uika', 'umiri', 'nyamu', 'anon']);
 
 /** Phosphor fill lightning, MIT. public/icons/ult.svg */
 export const DEFAULT_ULT_ICON = '/icons/ult.svg';

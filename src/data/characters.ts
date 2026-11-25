@@ -4,9 +4,7 @@ import { skill } from './skills.ts';
 
 /* Roster order is work order, then band order (see bands.ts IPS and BANDS): members sit together, and the
    select screen walks this array emitting a group header whenever the group changes. The bandless of a work
-   (薇欧拉) close that work's run, ahead of the next work's bands. gale, ember and boulder
-   are the original placeholder cast (~7.3-head colour-block girls until img2img lands) —
-   playable: false keeps them off the select screen while selfcheck still drills on them. */
+   (薇欧拉) close that work's run, ahead of the next work's bands. */
 
 const passives: Record<Trait, [string, string]> = {
   rush: ['追击节奏', '每第 3 次命中额外获得 14 气'],
@@ -3213,52 +3211,9 @@ export const ROSTER: CharacterData[] = [
       }),
     ],
   },
-  {
-    id: 'gale', name: '疾风', title: '快攻 / 连击', quote: '跟上我的速度。', color: '#7ee0ff',
-    playable: false,
-    ...stats('rush'),
-    view: { kind: 'sprite', common: '/sprites/gale/common.png', special: '/sprites/gale/special.png', height: 181 },
-    skills: [
-      skill(0, 'light', '快拳'),
-      skill(1, 'heavy', '回旋踢'),
-      skill(2, 'dash', '疾步突进'),
-      skill(3, 'upper', '旋风升龙'),
-      skill(4, 'grab', '缠抱摔'),
-      skill(5, 'dash', '风暴穿刺'),
-    ],
-  },
-  {
-    id: 'ember', name: '星火', title: '远程 / 牵制', quote: '保持距离，慢慢烧。', color: '#ffb35c',
-    playable: false,
-    ...stats('focus'),
-    view: { kind: 'sprite', common: '/sprites/ember/common.png', special: '/sprites/ember/special.png', height: 181 },
-    skills: [
-      skill(0, 'light', '拨火'),
-      skill(1, 'heavy', '重杖'),
-      skill(2, 'projectile', '火球'),
-      skill(3, 'launch', '焰柱上挑'),
-      skill(4, 'dash', '焰步', { damage: 44, brief: '短距离突进', detail: '短距离突进' }),
-      skill(5, 'projectile', '三连星火'),
-    ],
-  },
-  {
-    id: 'boulder', name: '磐石', title: '重装 / 压制', quote: '站稳了再说。', color: '#b7ff6e',
-    playable: false,
-    ...stats('armor'),
-    view: { kind: 'sprite', common: '/sprites/boulder/common.png', special: '/sprites/boulder/special.png', height: 181 },
-    skills: [
-      skill(0, 'light', '重拳'),
-      skill(1, 'heavy', '砸拳'),
-      skill(2, 'grab', '熊抱'),
-      skill(3, 'endure', '磐石冲肩'),
-      skill(4, 'sweep', '地裂扫腿'),
-      skill(5, 'grab', '大地抱摔'),
-    ],
-  },
 ];
 
-/** Select screen. playable: false holds the headless dummies (gale, ember, boulder) out;
- *  everyone else plays, band or not (薇欧拉 has no band). */
+/** Selectable characters, including hidden ones that can be unlocked. */
 export const PLAYABLE = ROSTER.filter(c => c.playable !== false);
 export const PLAYABLE_BY_ID = new Map(PLAYABLE.map(c => [c.id, c]));
 export const PUBLIC_ROSTER = PLAYABLE.filter(c => !c.hidden);
