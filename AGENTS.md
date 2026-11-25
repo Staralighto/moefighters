@@ -32,6 +32,10 @@
 
 - 安全、性能或仓库清洁排查先看本地 `docs/SECURITY_AUDIT.md` 的「已接受的开发取舍」，跳过其中的四项。
 
+`npm run build` 和 CI（`.github/workflows/check.yml`）不跑 `npm run check`、不跑 `tsc`，不要加回去：自检只在本地手动跑，任何时候都不能拦构建或部署。改了 `public/` 下的 png 后跑 `npm run assets`，把 `asset-cache/` 和图一起提交；改 `scripts/compress-images.ts` 的压缩参数时把 `RECIPE` 加一。
+
 用户没要求就不要 commit、不要 push。战斗或选人逻辑改完跑 `npm run check`。
+
+往 `scripts/selfcheck.ts` 加检查只加「行为」：跑一段对局或调纯函数，看结果对不对。不要加一次性的数值复述（`assert.equal(data.skills[5].cost, 200)`、角色名 / 称号 / 台词 / 词条原样对一遍、常量等于某个数）和源码片段锁（`readFileSync(...).includes('某行代码')`）：它们只在改的那一刻有用，之后每次调数值、重构都会误报。设备适配、配色、设置弹窗文字、联机安全这几类有意保留的规则锁除外。
 
 文档默认不进 git：`docs/` 只有 `docs/public/` 可公开，其余一律留本地。新文档先放本地，明确可公开才移入 `docs/public/`；公开文件不引用本地文档。

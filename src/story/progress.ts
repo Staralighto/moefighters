@@ -74,7 +74,12 @@ registerSection<StoryProgress>({
     return { done, lead: a.lead, seen: Math.max(a.seen, b.seen) };
   },
   // 导入存档后首页进度卡、地图要跟着刷新。
-  write: v => { if (writeJson(KEY, v)) { cache = v; for (const f of listeners) f(); } },
+  write: v => {
+    if (!writeJson(KEY, v)) return false;
+    cache = v;
+    for (const f of listeners) f();
+    return true;
+  },
   isEmpty: v => Object.keys(v.done).length === 0,
   summary: v => {
     const n = Object.keys(v.done).length;

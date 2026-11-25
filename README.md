@@ -34,7 +34,9 @@ npm run dev
 ```bash
 npm run dev      # 本地开发，改完刷新页面即可
 npm run check    # 无头规则与精灵表检查
-npm run build    # 类型检查并构建 dist/
+npm run build    # 构建 dist/（不跑自检和类型检查）
+npm run typecheck # 类型检查
+npm run assets   # 改图后跑：预压缩 WebP 到 asset-cache/，和图一起提交
 ```
 
 开发面板：战斗中按 **Shift+P** 开关「部件」面板，「键位」面板只在触屏手柄上出现；两者都可直接拖改，松手写回数据文件。

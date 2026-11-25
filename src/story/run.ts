@@ -3,7 +3,6 @@
 
 import { ROSTER_BY_ID } from '../data/characters.ts';
 import { STAGES } from '../data/stages.ts';
-import { skillsOf } from '../game/fighter.ts';
 import type { FightGame } from '../game/game.ts';
 import type { MatchSetup } from '../ui/select.ts';
 import { earn } from '../save/wallet.ts';
@@ -67,12 +66,10 @@ function goalMet(g: Goal, game: FightGame, s: StoryStage): boolean {
     case 'hp': return me.hp > 0 && me.hp / me.data.hp * 100 >= g.v;
     case 'ally': return ours.every(f => f.hp > 0);
     case 'time': return (s.battle?.survive ?? STORY_TIME) - game.time <= g.v;
-    case 'finL': {
-      const fin = game.roundLog[game.roundLog.length - 1]?.fin ?? '';
-      return !!fin && ours.some(f => skillsOf(f)[5]?.name === fin);
-    }
+    // 必杀状态里打出的最后一下（ult.ts）：状态类、变身类、召唤类的 L 也判得到。
+    case 'finL': return !!game.roundLog[game.roundLog.length - 1]?.ult;
     case 'combo': return ours.some(f => (game.maxCombo[f.id] ?? 0) >= g.v);
-    case 'noL': return game.ults[0] === 0;
+    case 'useL': return (game.ultsBy[me.id] ?? 0) > 0;
   }
 }
 
@@ -109,7 +106,16 @@ export async function playStage(id: string, preview = false): Promise<void> {
   try {
     const script = await loadScript(id);
     if (!script) { toast('这一关的剧本还没有导入'); return; }
-    await play(script, script.pre, { copies: copiesOf(s), toBattle: !!s.battle, idOf, label: label(s), ...cardsOf(s) });
+    // 预览跳行：?story=3-01&at=27 从定稿第 27 行开演（之前的瞬间演完）；行号落在战后段就不打，直接演战后。
+    const at = preview ? Number(new URLSearchParams(location.search).get('at')) || 0 : 0;
+    const postFrom = script.post[0]?.ln;
+    if (at && postFrom !== undefined && at >= postFrom) {
+      await play(script, script.post, { copies: copiesOf(s), warm: script.pre, idOf, label: label(s), at });
+      closeTheatre();
+      hooks.back(nextOf(id));
+      return;
+    }
+    await play(script, script.pre, { copies: copiesOf(s), toBattle: !!s.battle, idOf, label: label(s), at, ...cardsOf(s) });
     if (!s.battle) {
       reward(s, 7, preview);
       closeTheatre();

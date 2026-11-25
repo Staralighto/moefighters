@@ -11,7 +11,7 @@ import { reducedMotion } from '../ui/motion.ts';
 import { hubOpen, type HubPage } from '../ui/hub.ts';
 import { registerLayer } from '../ui/layerBack.ts';
 import { cue, refuse } from '../ui/mobile.ts';
-import { BOSS_TAKEN, CHAPTERS, FORMAT_BASE, HEROES, PERKS, goalText, stageById, type StoryStage } from './chapters.ts';
+import { ALL_STAGES, BOSS_TAKEN, CHAPTERS, FORMAT_BASE, HEROES, PERKS, goalText, stageById, type StoryStage } from './chapters.ts';
 import { chapterProgress, cleared, goalMask, markSeen, nextStage, setLead, starCount, storyProgress, unlocked } from './progress.ts';
 
 const esc = (t: string) => t.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -261,6 +261,13 @@ const DECO = [
   { k: 'dots', at: 11.3, y: .82, r: 54, z: 1.9, col: '255,59,127', a: .16 },
   { k: 'tri', at: .4, y: .16, r: 20, rot: -20, z: 2.6, col: '255,59,127', a: .3 },
 ];
+/** 装饰按 13 关一段循环铺满整张地图（章节越加越长，背景不能到后面就空了）。 */
+const DECO_PERIOD = 13;
+const tiled = <T extends { at: number }>(list: T[]): T[] => {
+  const reps = Math.ceil((ALL_STAGES.length + 2 * CHAPTERS.length) / DECO_PERIOD) + 1;
+  return Array.from({ length: reps }, (_, k) => list.map(d => ({ ...d, at: d.at + k * DECO_PERIOD }))).flat();
+};
+let decoAll: typeof DECO | null = null, solidsAll: typeof SOLIDS | null = null;
 function rot([x, y, z]: V3, a: number, b: number): V3 {
   const ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b);
   const x1 = x * ca - z * sa, z1 = x * sa + z * ca;
@@ -311,8 +318,11 @@ function drawBg(t: number): void {
   const fg = cx.createLinearGradient(0, hz, 0, MH); fg.addColorStop(0, 'rgba(255,59,127,0)'); fg.addColorStop(1, 'rgba(255,59,127,.16)');
   cx.strokeStyle = fg; cx.lineWidth = 1;
   const sp = 46 * S, off = -(scroll * .9) % sp;
-  for (let k = -40; k <= 40; k++) { cx.beginPath(); cx.moveTo(vx + (k * sp + off) * .05, hz); cx.lineTo(vx + (k * sp + off) * 4, MH + 20); cx.stroke(); }
-  for (let j = 1; j < 12; j++) { const yy = hz + Math.pow(j / 11, 2.2) * (MH - hz + 10); cx.beginPath(); cx.moveTo(0, yy); cx.lineTo(W, yy); cx.stroke(); }
+  // 透视地网：九十多条线同一种描边，合成一条路径一次画完（这张背景每帧都重画）。
+  cx.beginPath();
+  for (let k = -40; k <= 40; k++) { cx.moveTo(vx + (k * sp + off) * .05, hz); cx.lineTo(vx + (k * sp + off) * 4, MH + 20); }
+  for (let j = 1; j < 12; j++) { const yy = hz + Math.pow(j / 11, 2.2) * (MH - hz + 10); cx.moveTo(0, yy); cx.lineTo(W, yy); }
+  cx.stroke();
   cx.restore();
   g = cx.createLinearGradient(0, 0, W, 0); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(.42, 'rgba(255,255,255,.14)'); g.addColorStop(1, 'rgba(255,255,255,0)');
   cx.fillStyle = g; cx.fillRect(0, hz, W, 1);
@@ -322,24 +332,28 @@ function drawBg(t: number): void {
   }
   const staffY = MH * .5 - 40 * S;
   cx.strokeStyle = 'rgba(255,255,255,.045)'; cx.lineWidth = 1;
-  for (let k = 0; k < 5; k++) { cx.beginPath(); cx.moveTo(0, staffY + k * 9 * S); cx.lineTo(W, staffY + k * 9 * S); cx.stroke(); }
+  cx.beginPath();
+  for (let k = 0; k < 5; k++) { cx.moveTo(0, staffY + k * 9 * S); cx.lineTo(W, staffY + k * 9 * S); }
+  cx.stroke();
   const wx = (at: number) => X0 + at * GAP;
   const px = (at: number, z: number) => (wx(at) - scroll) / z + (W - dw) * (1 - 1 / z) * .5;
-  for (const d of DECO) {
+  for (const d of (decoAll ??= tiled(DECO))) {
     const x = px(d.at, d.z), y = MH * d.y + Math.sin(t * .4 + d.at) * 4 * S;
     if (x < -300 || x > W + 300) continue;
     cx.save(); cx.translate(x, y); cx.rotate((d.rot ?? 0) * Math.PI / 180); cx.globalAlpha = d.a;
     if (d.k === 'stripes') {
       const w = d.w! * S, h = d.h! * S; cx.beginPath(); cx.roundRect(-w / 2, -h / 2, w, h, h / 2); cx.clip();
-      cx.strokeStyle = `rgb(${d.col})`; cx.lineWidth = 7 * S; for (let s = -w; s < w; s += 16 * S) { cx.beginPath(); cx.moveTo(s, h); cx.lineTo(s + h * 2, -h); cx.stroke(); }
+      cx.strokeStyle = `rgb(${d.col})`; cx.lineWidth = 7 * S; cx.beginPath(); for (let s = -w; s < w; s += 16 * S) { cx.moveTo(s, h); cx.lineTo(s + h * 2, -h); } cx.stroke();
     } else if (d.k === 'dots') {
       const rr = d.r! * S; cx.fillStyle = `rgb(${d.col})`;
-      for (let yy = -rr; yy <= rr; yy += 12 * S) for (let xx = -rr; xx <= rr; xx += 12 * S) if (xx * xx + yy * yy < rr * rr) { cx.beginPath(); cx.arc(xx, yy, 2 * S, 0, 7); cx.fill(); }
+      cx.beginPath();
+      for (let yy = -rr; yy <= rr; yy += 12 * S) for (let xx = -rr; xx <= rr; xx += 12 * S) if (xx * xx + yy * yy < rr * rr) { cx.moveTo(xx + 2 * S, yy); cx.arc(xx, yy, 2 * S, 0, 7); }
+      cx.fill();
     } else if (d.k === 'ring') { cx.strokeStyle = `rgb(${d.col})`; cx.lineWidth = 10 * S; cx.beginPath(); cx.arc(0, 0, d.r! * S, 0, 7); cx.stroke(); }
     else { const rr = d.r! * S; cx.strokeStyle = `rgb(${d.col})`; cx.lineWidth = 4 * S; cx.lineJoin = 'round'; cx.beginPath(); cx.moveTo(0, -rr); cx.lineTo(rr * .87, rr * .5); cx.lineTo(-rr * .87, rr * .5); cx.closePath(); cx.stroke(); }
     cx.restore();
   }
-  for (const o of SOLIDS) {
+  for (const o of (solidsAll ??= tiled(SOLIDS))) {
     const x = px(o.at, o.z), y = MH * o.y, R = o.size * S;
     if (x < -R * 2 || x > W + R * 2) continue;
     const a = t * o.spin[0] + o.at, b = t * o.spin[1] + .5;

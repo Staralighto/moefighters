@@ -10,6 +10,7 @@ import type { Fighter } from './fighter.ts';
 import type { FightGame } from './game.ts';
 import { addMod, clearMod, has } from './mods.ts';
 import { hit } from './combat.ts';
+import { holdUlt, inUlt } from './ult.ts';
 
 /** The look a status wears when the move names none. Neutral on purpose: anyone may lay these. */
 export const DEFAULT_MARK: Readonly<Record<StatusKind, string>> = {
@@ -135,7 +136,10 @@ export function applyStatus(g: FightGame, attacker: Fighter, defender: Fighter, 
   const upgrades = list.filter(st => st.ifHas && hasStatus(defender, st.ifHas));
   const chosen = upgrades.length ? upgrades : list.filter(st => !st.ifHas);
   let froze = false, word = 0;
+  // 必杀状态：L 挂上的异常（烧焦跳伤这类）持续期间，窗口一直开着，跳死对手也算必杀收尾。
+  const ult = skill.super || inUlt(attacker);
   for (const st of chosen) {
+    if (ult) holdUlt(attacker, st.time);
     const fresh = !hasStatus(defender, st.kind);
     if (layStatus(g, attacker, defender, st, skill.fx, word)) froze = true;
     if (fresh) word++;

@@ -1171,6 +1171,39 @@ export const KITA_SOLO = {
 /** The 彩蛋: 一里 behind her for the last bars, drawn from her own special sheet (L column, the solo cell). */
 export const KITA_DUO_SRC = '/sprites/bocchi/special.png';
 
+/* ---- 香农栞: shared by src/game/shiori.ts, the cell picks below and render/shioriFx.ts ---- */
+/** 封缄之印: the sigil goes down under the nearest foe `reach` px ahead (or `miss` px ahead if nobody is there) and
+ *  closes at the skill's start; whoever still stands inside `radius` of it and below `tall` is sealed. Attacking
+ *  while it is being read (触犯戒律) gets the long seal. */
+export const SHIORI_SEAL = { reach: 320, miss: 240, radius: 74, tall: 170 } as const;
+/** 恕难从命: a.mode — the pages are up (the window is the skill's start), a melee hit was refused, done. The push
+ *  lands `push` s after the refusal; the recovery after it is `tail` s. A shot is sent back as one page. */
+export const REFUSE = { wait: 0, push: 1, done: 2 } as const;
+export const SHIORI_REFUSE = { push: .08, tail: .34 } as const;
+/** 三重祷言: a.mode — praying, then the stage that was let go. Praying `sonnet` s reaches 颂诗, `tome` s reaches 巨典
+ *  (let go by itself there). Shots: 俳句 three petals `haikuGap` apart; 颂诗 fourteen pages over `sonnetSpan` s,
+ *  fanned from `fanUp` (up) to `fanDown` rad; 巨典 falls for `fall` s onto `aim` px ahead or the foe within `seek`,
+ *  and lands on whoever is inside `radius`. */
+export const PRAYER = { pray: 0, haiku: 1, sonnet: 2, tome: 3 } as const;
+export const SHIORI_PRAYER = {
+  sonnet: .6, tome: 1.2,
+  haikuGap: .1, haiku: [15, 21, 15] as readonly number[],
+  pages: 14, sonnetSpan: .28, fanUp: -.24, fanDown: .1,
+  fall: .32, aim: 260, seek: 520, radius: 96,
+  tail: .42,
+} as const;
+/** 圣典裁决 on the attack clock: the charter goes up until `raise`; four acolytes strike at `strikes` (each shows up
+ *  `appear` s before it and crosses in `cross` s, starting `side` px out on alternating sides); they rise and gather
+ *  over the foe from `gather`; the verdict's pillar is aimed at `aim` and lands at `verdict`; the book closes at `close`. */
+export const SHIORI_CHARTER = {
+  raise: .55,
+  strikes: [.8, 1.0, 1.2, 1.4] as readonly number[],
+  appear: .22, cross: .14, side: [230, 200, 250, 180] as readonly number[],
+  gather: 1.5, aim: 1.62, verdict: 1.92, close: 2.35,
+} as const;
+/** The acolytes are her own art: the common light-attack hit cell under a gold wash. */
+export const SHIORI_ACOLYTE = { col: 3, row: 1 } as const;
+
 /* ---- 山田凉: shared by src/game/ryo.ts, the cell picks below and render/ryoFx.ts ---- */
 /** 路边的野草 on the attack clock: the weed is out of the ground at `pluck`; she chews until `chew`, when the meal pays
  *  `heal` hp (under `poor` 气 she is broke: `poorHeal` and `regen` hp/s for `regenTime` s). The `meals`-th meal inside
@@ -1622,6 +1655,22 @@ export function clipFor(f: Fighter): Clip {
     if (f.attack.skill.fx === 'nijika-star') {
       const t = f.attack.t, S = NIJIKA_STARRY;
       return at('special', f.attack.index - 2, t < S.strike ? 0 : t < S.big + S.bigFall ? 1 : 2);
+    }
+    // 封缄之印: the default three phases. 恕难从命: the open book through the window; the refusal; the book lowered.
+    // 三重祷言: hands together while she prays; the release; settling. 圣典裁决: the charter raised; commanding; closing it.
+    if (f.attack.skill.fx === 'shiori-refuse') {
+      const a = f.attack, mode = a.mode ?? REFUSE.wait;
+      if (mode === REFUSE.push) return at('special', a.index - 2, 1);
+      return at('special', a.index - 2, mode === REFUSE.wait && a.t < a.skill.start ? 0 : 2);
+    }
+    if (f.attack.skill.fx === 'shiori-prayer') {
+      const a = f.attack, mode = a.mode ?? PRAYER.pray;
+      if (mode === PRAYER.pray) return at('special', a.index - 2, 0);
+      return at('special', a.index - 2, a.t < a.skill.start + (mode === PRAYER.tome ? SHIORI_PRAYER.fall + .1 : .28) ? 1 : 2);
+    }
+    if (f.attack.skill.fx === 'shiori-charter') {
+      const t = f.attack.t, S = SHIORI_CHARTER;
+      return at('special', f.attack.index - 2, t < S.raise ? 0 : t < S.close ? 1 : 2);
     }
     // 阳角光环 / 变好吃的咒语: the default three phases. 逃跑的吉他手: running off; the rush back; the sheepish laugh
     // (held through the wait and after). 撑住舞台的即兴: the guitar held in the spotlight; the solo; the arm up at the burst.
@@ -2130,6 +2179,11 @@ export function clipFor(f: Fighter): Clip {
   // 狂化 stance while she is otherwise just standing around. The king/box sheet uses the common idle cell.
   const crowned = f.data.view.kind === 'sprite' && (!!f.data.view.king || !!f.data.view.box);
   if (f.frenzy > 0 && !crowned && state === 'idle') return at('frenzy', 0, 2);
+  // 悬浮 (view.hover): she never walks — the glide holds the first walk cell and the body just slides; a jump keeps
+  // her resting pose and the whole body rises, untouched (the space around her moves instead, see her hover look).
+  const hovering = f.data.view.kind === 'sprite' && !!f.data.view.hover;
+  if (hovering && state === 'run') return loco('run0');
+  if (hovering && state === 'jump') return loco('idle');
   // 4 frames at 8 Hz: one stride is 0.5s.
   if (state === 'run') return loco(RUN_FRAMES[Math.floor(f.animTime * 8) % 4]);
   if (state === 'ko' || state === 'down' || state === 'hurt' || state === 'dodge' || state === 'block' || state === 'jump') return loco(state);

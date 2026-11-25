@@ -58,7 +58,7 @@ registerSection<Inventory>({
   read: () => inv,
   parse: raw => isRecord(raw) ? parse(raw) : null,
   merge: (a, b) => ({ owned: [...new Set([...a.owned, ...b.owned])], equipped: { ...b.equipped }, flags: [...new Set([...a.flags, ...b.flags])] }),
-  write: v => { commit(v); },
+  write: commit,
   isEmpty: v => !v.owned.length && !v.flags.length,
   summary: v => v.owned.length ? [{ label: '仓库物品', value: `${v.owned.length} 件` }] : [],
   dump: v => v.owned.length || Object.keys(v.equipped).length || v.flags.length ? v : undefined,

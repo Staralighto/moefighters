@@ -4,6 +4,8 @@
  *   recv   从剪贴板读取 Gemini 的输出 → 拆成每关文件（原稿 + 定稿）→ 检查 → 不通过就把修正提示词放进剪贴板
  *   check  检查某章全部定稿：npm run story -- check 1
  *   cards  为某章生成 / 补全角色卡骨架：npm run story -- cards 1
+ *   seal   演出审定后盖章：npm run story -- seal 3-01（文字再改动，check 会提示需要重新审定）
+ *   rehearse 排练：按指令走一遍，打出每一步的站位和朝向、标出走位问题：npm run story -- rehearse 3（或 3-01，加 --issues 只看问题）
  *
  * 目录约定见 story/README.md。剧本格式见 story/gemini-skill/剧本格式与演出指令.md，本脚本的检查规则与它一一对应。
  * 测试用：设环境变量 STORY_CLIP=某文件，则剪贴板读写改为读写该文件；STORY_YES=1 自动确认。 */
@@ -18,6 +20,9 @@ import { ROSTER } from '../src/data/characters.ts';
 import { SHORT_NAMES } from '../src/data/shortNames.ts';
 import { STAGES } from '../src/data/stages.ts';
 import { BANDS } from '../src/data/bands.ts';
+import { rehearseArg } from './rehearse.ts';
+import { PROPS, PROP_VERBS } from '../src/story/props.ts';
+import { FX_NAMES, FX_NEED_ACTOR, FX_NEED_ARG, FX_LASTING } from '../src/story/fx.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const S = path.join(ROOT, 'story');
@@ -39,7 +44,9 @@ const SKILL_UPLOADS: [string, string][] = [['世界观设定.md', 'skill-world.t
 export const TYPES = ['剧情', '战斗', 'Boss', '章末'] as const;
 export const POSES: Record<string, string> = { 平常: 'idle', 开心: 'jump', 吃惊: 'hurt', 防备: 'block', 倒地: 'down' };
 export const SLOTS = ['左', '中左', '中', '中右', '右'];
-export const ACTOR_VERBS = ['走入', '走到', '退场', '转身', '靠近', '后退', '跳', '倒下', '起身', '发抖', '换', '复制体翻面'];
+export const ACTOR_VERBS = ['走入', '走到', '退场', '转身', '背对', '面向', '靠近', '后退', '跳', '倒下', '起身', '发抖', '换', '消散', '虚化', '复制体翻面'];
+/** 墨提斯：睦的分身，只能做演出指令（上台是光点汇聚成形）。 */
+const PHANTOM = '墨提斯';
 export const STAGE_VERBS = ['震屏', '暗场', '亮场', '闪回开始', '闪回结束', '立绘', '停顿'];
 const EXTRA_SPEAKERS = ['旁白', '织萌', '？？？'];
 const SPEAKER_TAGS = ['广播', '心声', '伪装'];
@@ -69,7 +76,7 @@ for (const c of ROSTER) {
 }
 /** 已经现身的梦魇写「梦魇 + 简称」（梦魇海铃），上台是暗紫纸板。 */
 const nightmareOf = (n: string) => n.startsWith('梦魇') && NAME_TO_ID.has(n.slice(2)) ? n.slice(2) : null;
-const isSpeaker = (n: string) => NAME_TO_ID.has(n) || EXTRA_SPEAKERS.includes(n) || !!nightmareOf(n);
+const isSpeaker = (n: string) => NAME_TO_ID.has(n) || EXTRA_SPEAKERS.includes(n) || !!nightmareOf(n) || n === PHANTOM;
 const shortOf = (id: string) => SHORT_NAMES[id] ?? ROSTER.find(c => c.id === id)?.name ?? id;
 const stageByKey = (k: string) => STAGES.find(s => s.id === k || s.name === k || s.name.replace(/\s/g, '') === k.replace(/\s/g, ''));
 
@@ -186,9 +193,11 @@ export function checkStage(text: string, plan?: PlanNode): Stage {
   const enter = (ln: number, name: string, slot: string) => {
     if (!SLOTS.includes(slot)) err(ln, `位置「${slot}」不在 ${SLOTS.join('/')} 里`);
     if (cast.has(name)) warn(ln, `${name} 已经在场`);
-    for (const [n, s] of cast) if (s === slot && n !== name) warn(ln, `${name} 和 ${n} 站在同一个位置「${slot}」`);
+    // 6 人时站位不够分，游戏里会自动均匀铺开，同位不再提醒。
+    if (cast.size < 5) for (const [n, s] of cast) if (s === slot && n !== name) warn(ln, `${name} 和 ${n} 站在同一个位置「${slot}」`);
     cast.set(name, slot);
-    if (cast.size > 4) err(ln, `同屏超过 4 人（${[...cast.keys()].join('、')}）`);
+    // 墨提斯是睦的分身，不算进 6 人上限。
+    if ([...cast.keys()].filter(n => n !== PHANTOM).length > 6) err(ln, `同屏超过 6 人（${[...cast.keys()].join('、')}）`);
   };
   const checkName = (ln: number, n: string) => { if (!isSpeaker(n)) err(ln, `不认识的角色名「${n}」（请用角色卡里的简称）`); };
 
@@ -224,11 +233,35 @@ export function checkStage(text: string, plan?: PlanNode): Stage {
         hasBattle = true; phase = 'battle';
         if (!/我方.+\|.*对手.+\|.*意图[:：].+/.test(v)) err(ln, '@战斗 应写成「@战斗 我方 祥子 | 对手 初华 | 意图: ……」');
         if (/\d+\s*(%|秒|点|伤害|血)/.test(v)) err(ln, '@战斗 只写意图，不写数值');
+      } else if (k === '审定') {
+        // @审定 日期 #哈希：演出审定后盖的章（npm run story -- seal 3-01）。文字再被改动，哈希对不上就要重新审定。
+        const m2 = v.match(/^(\d{4}-\d{2}-\d{2})\s+#([0-9a-f]{8,})$/);
+        if (!m2) err(ln, '@审定 应写成「@审定 2026-11-24 #哈希」（用 npm run story -- seal 编号 生成）');
+        else if (m2[2] !== sealHash(text)) warn(ln, `审定（${m2[1]}）之后改过，需要重新审定演出`);
       } else err(ln, `不认识的标记「@${k}」`);
       return;
     }
     if (l.startsWith('>')) {
       const tok = l.slice(1).trim().split(/\s+/);
+      if (tok[0] === '道具') {
+        if (!PROPS[tok[1] ?? '']) err(ln, `道具「${tok[1] ?? ''}」不存在（可用：${Object.keys(PROPS).join('、')}）`);
+        else if (!PROP_VERBS.includes(tok[2] ?? '')) err(ln, `道具动作「${tok[2] ?? ''}」应为 ${PROP_VERBS.join(' / ')}`);
+        return;
+      }
+      if (tok[0] === '特效') {
+        // > 特效 名字 [参数] / > 特效 收 名字（src/story/fx.ts）
+        const [, name, arg] = tok;
+        if (name === '收') { if (!FX_LASTING.includes(arg ?? '')) err(ln, `「特效 收」后面写要收掉的特效：${FX_LASTING.join(' / ')}`); return; }
+        if (!FX_NAMES.includes(name ?? '')) { err(ln, `特效「${name ?? ''}」不存在（可用：${FX_NAMES.join('、')}）`); return; }
+        if (FX_NEED_ARG.includes(name) && !arg) { err(ln, `特效「${name}」后面要写${FX_NEED_ACTOR.includes(name) ? '角色' : '角色或位置'}`); return; }
+        if (arg) {
+          if (FX_NEED_ACTOR.includes(name) || !SLOTS.includes(arg)) {
+            if (name === '裂隙') err(ln, `「裂隙」后面只能写位置（${SLOTS.join('/')}）`);
+            else if (!cast.has(arg)) err(ln, `特效「${name}」的对象 ${arg} 不在场${FX_NEED_ACTOR.includes(name) ? '' : `（也可以写位置 ${SLOTS.join('/')}）`}`);
+          }
+        }
+        return;
+      }
       if (STAGE_VERBS.includes(tok[0])) {
         if (tok[0] === '立绘') { if (!tok[1]) err(ln, '「立绘」后面要写角色名'); else checkName(ln, tok[1]); }
         return;
@@ -244,10 +277,12 @@ export function checkStage(text: string, plan?: PlanNode): Stage {
       }
       // 梦魇被打倒会自己化光消散，之后算下台。
       else if (verb === '倒下' && nightmareOf(who) && cast.has(who)) cast.delete(who);
+      else if (verb === '消散') { if (!cast.delete(who)) err(ln, `${who} 不在场，不能「消散」`); }
       else {
         if (!cast.has(who)) err(ln, `${who} 不在场，不能「${verb}」（先「走入」或写进 @开场）`);
         if (verb === '走到') { if (!SLOTS.includes(arg ?? '')) err(ln, `「走到」后面要写位置（${SLOTS.join('/')}）`); else cast.set(who, arg); }
-        if (verb === '靠近' && arg && !cast.has(arg)) err(ln, `靠近的对象 ${arg} 不在场`);
+        if ((verb === '靠近' || verb === '背对' || verb === '面向') && arg && !cast.has(arg)) err(ln, `${verb}的对象 ${arg} 不在场`);
+        if (verb === '面向' && !arg) err(ln, '「面向」后面要写对着谁');
         if (verb === '换' && !(arg in POSES)) err(ln, `表情「${arg ?? ''}」应为 ${Object.keys(POSES).join(' / ')}`);
       }
       return;
@@ -278,8 +313,8 @@ export function checkStage(text: string, plan?: PlanNode): Stage {
   const b = budgetOf(st.id)[st.type];
   if (b) {
     const judge = (n: number, [lo, hi]: [number, number], what: string) => {
-      if (n < lo * .5 || n > hi * 1.5) err(1, `${what} ${n} 句，严重偏离预算 ${lo}–${hi}`);
-      else if (n < lo || n > hi) warn(1, `${what} ${n} 句，预算 ${lo}–${hi}`);
+      // 预算只作参考：偏离多少都只提醒，不拦接收。
+      if (n < lo || n > hi) warn(1, `${what} ${n} 句，预算 ${lo}–${hi}${n < lo * .5 || n > hi * 1.5 ? '（偏离较多）' : ''}`);
     };
     judge(pre, b.pre, fight ? '战前' : '全关');
     if (b.post && hasBattle) judge(post, b.post, '战后');
@@ -339,6 +374,22 @@ const skillHash = () => {
   for (const f of fs.readdirSync(P.skill).sort()) h.update(f).update(read(path.join(P.skill, f)));
   return h.digest('hex').slice(0, 12);
 };
+/** 审定哈希：整关文字（去掉 @审定 行本身）。 */
+const sealHash = (t: string) => hashOf(norm(t).split('\n').filter(l => !l.trim().startsWith('@审定')).join('\n')).slice(0, 10);
+/** 给一关盖审定章（写在标题行下面；已有就更新）。 */
+function seal(id: string) {
+  const f = finalFile(Number(id.split('-')[0]), id);
+  if (!fs.existsSync(f)) { console.log(C.r(`找不到 ${rel(f)}`)); return; }
+  const raw = fs.readFileSync(f, 'utf8');
+  const nl = raw.includes('\r\n') ? '\r\n' : '\n';
+  const lines = raw.replace(/\r\n/g, '\n').split('\n').filter(l => !l.trim().startsWith('@审定'));
+  const d = new Date();
+  const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const at = lines.findIndex(l => l.trim().startsWith('## '));
+  lines.splice(at + 1, 0, `@审定 ${date} #${sealHash(lines.join('\n'))}`);
+  fs.writeFileSync(f, lines.join(nl), 'utf8');
+  console.log(C.g(`已审定 ${id}（${date}）`));
+}
 const hashOf = (t: string) => crypto.createHash('sha1').update(norm(t)).digest('hex').slice(0, 12);
 /** 你改过、且改过之后还没发给 Gemini 的定稿（和 Gemini 最新原稿不同，也和上次附上的版本不同）。 */
 function editedFinals(n: number, ids: string[], st: State) {
@@ -429,7 +480,7 @@ async function send() {
       `- 整章只有一条主线（大纲里写的核心问题或目标），每一关都要推动它；每关从上一关结尾接着发生（写进「承接」），结尾留一个引出下一关的钩子（写进「钩子」）；不写和主线无关的偶遇；\n` +
       `- 节奏参考：约 4 个剧情关、4–5 个战斗关、1 个 Boss 关、1 个章末关，可按大纲调整；\n` +
       `- 新登场的乐队控制在 1–2 支、人数宁少勿多，不为刷脸让角色出场；已经登场的人要有变化和后续；\n` +
-      `- 每个战斗关都要由主线冲突逼出来，有“为什么非打不可”的理由；同屏不超过 4 人；每支乐队一次只出一部分人；\n` +
+      `- 每个战斗关都要由主线冲突逼出来，有“为什么非打不可”的理由；同屏不超过 6 人；每支乐队一次只出一部分人；\n` +
       `- 不要写台词。\n` +
       `整份关卡表放在一个代码块里，代码块第一行必须是「# 第 ${n} 章 · 关卡表」，代码块外不要写别的。`;
     write(path.join(P.send, '提示词.txt'), prompt); clipSet(prompt); reveal(packFile);
@@ -698,7 +749,9 @@ function overview(n: number): string {
 /* ---------------- 入口 ---------------- */
 const [cmd, arg] = process.argv.slice(2);
 const main = async () => {
-  if (cmd === 'send') await send();
+  if (cmd === 'seal') { for (const id of process.argv.slice(3).filter(x => /^\d+-\d+$/.test(x))) seal(id); }
+  else if (cmd === 'rehearse') rehearseArg(arg ?? '1', process.argv.includes('--issues'));
+  else if (cmd === 'send') await send();
   else if (cmd === 'recv') await recv();
   else if (cmd === 'check') {
     const file = arg && fs.existsSync(arg) ? arg : '';
@@ -722,6 +775,6 @@ const main = async () => {
     const f = path.join(P.ch(n), `第${n}章-总览.md`);
     write(f, overview(n));
     console.log(C.g(`已生成 ${rel(f)}`)); reveal(f);
-  } else console.log('用法：story.ts send | recv | check [章号或文件] | cards [章号] | overview [章号]');
+  } else console.log('用法：story.ts send | recv | check [章号或文件] | cards [章号] | overview [章号] | rehearse 章号或编号 [--issues] | seal 编号…');
 };
 main().catch(e => { console.error(C.r(String(e?.stack ?? e))); process.exitCode = 1; });

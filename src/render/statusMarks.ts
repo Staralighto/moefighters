@@ -18,6 +18,7 @@ import { applyMaze, applyZap, auraMaze, auraZap } from './kanonFx.ts';
 import { applyHypno, auraHypno } from './akoFx.ts';
 import { applyTomoeHeart, auraTomoeHeart } from './tomoeFx.ts';
 import { applyKitaHeart, applyKitaSun, auraKitaHeart, auraKitaSun } from './kitaFx.ts';
+import { applyShioriSeal, auraShioriSeal } from './shioriFx.ts';
 import { RYO_SICK_BODY, auraRyoIou, auraRyoSick } from './ryoFx.ts';
 import { applyNanamiFright, applyNanamiWeird, auraNanamiFright, auraNanamiGenius, auraNanamiTell, auraNanamiWeird } from './nanamiFx.ts';
 import { applyRinkoHush, auraRinkoHush } from './rinkoFx.ts';
@@ -956,6 +957,8 @@ export const STATUS_MARKS: Record<string, MarkDrawer> = {
   // 喜多郁代: melting in the light of 阳角光环 (减速), muddled by the ketchup heart of 变好吃的咒语 (混乱). Drawn in kitaFx.ts.
   'kita-sun': { aura: (ctx, f, left, t) => auraKitaSun(ctx, f, bodyH(f), left, t, isLiteFx()), apply: applyKitaSun },
   'kita-heart': { aura: (ctx, f, left, t) => auraKitaHeart(ctx, f, bodyH(f), left, t, isLiteFx()), apply: applyKitaHeart },
+  // 香农栞: the gold flower seal over a silenced head (封缄之印 / 圣典裁决). Drawn in shioriFx.ts.
+  'shiori-seal': { aura: (ctx, f, left, t) => auraShioriSeal(ctx, f, bodyH(f), left, t, isLiteFx()), apply: applyShioriSeal },
   // 山田凉: the IOU over whoever lent her money (a look), and the meal that was one too many (减速 on her). Drawn in ryoFx.ts.
   'ryo-iou': { aura: (ctx, f, left, t) => auraRyoIou(ctx, f, bodyH(f), left, t) },
   'ryo-sick': { aura: (ctx, f, left, t) => auraRyoSick(ctx, f, bodyH(f), left, t, isLiteFx()), body: RYO_SICK_BODY },

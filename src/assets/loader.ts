@@ -108,6 +108,8 @@ function linkEntries(): Timed[] {
  */
 export function slowLink(prod = import.meta.env.PROD): boolean {
   if (!prod || typeof performance === 'undefined') return false;
+  // Toy 包（scripts/pack-toy.py 往 index.html 加 <meta name="mf-toy">）不带 lite 图，国内访问也不考虑慢网：一律按快网走。
+  if (typeof document !== 'undefined' && document.querySelector('meta[name="mf-toy"]')) return false;
   const net = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
   if (net?.saveData) return true;
   let rate = linkRate(linkEntries());

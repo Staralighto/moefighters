@@ -24,7 +24,7 @@ export interface SaveSection<T> {
   /** 文件里的那段，宽松解析；整段不可用返回 null。 */
   parse(raw: unknown, version: number): T | null;
   merge(local: T, incoming: T): T;
-  write(v: T): void;
+  write(v: T): boolean;
   /** 是否还是全新设备的默认状态。 */
   isEmpty(v: T): boolean;
   /** 确认表里的行。返回空数组表示这段不上表。 */
@@ -80,7 +80,8 @@ export interface ImportPlan {
   /** 文件里坏掉而被跳过的段。 */
   broken: number;
   savedAt: string | null;
-  apply(): void;
+  /** 写入失败的段落名称。 */
+  apply(): string[];
 }
 
 export type ImportError = 'not-json' | 'not-save';
@@ -122,8 +123,12 @@ export function planImport(text: string): ImportPlan | ImportError {
     broken,
     savedAt: typeof file.savedAt === 'string' ? file.savedAt : null,
     apply() {
-      for (const { s, v } of merged) s.write(v);
-      if (Object.keys(unknown).length) writeJson(FOREIGN_KEY, { ...foreign(), ...unknown });
+      const failed: string[] = [];
+      for (const { s, v } of merged) {
+        if (!s.write(v)) failed.push(s.optional ?? s.summary(v)[0]?.label ?? s.id);
+      }
+      if (Object.keys(unknown).length && !writeJson(FOREIGN_KEY, { ...foreign(), ...unknown })) failed.push('新版存档数据');
+      return failed;
     },
   };
 }

@@ -79,6 +79,10 @@ export interface Fighter {
   knocked: number; downTime: number;
   /** The last hit that connected was a super. Lets 恐湖 break that combo. */
   hitBySuper: boolean;
+  /** 必杀状态（ult.ts）：L 带来的效果还剩多少秒；这期间造成的伤害都算必杀攻击。 */
+  ultLeft: number;
+  /** 必杀状态：L 期间召出来的队友，存在期间打出的伤害都算必杀攻击。 */
+  ultSpawn?: boolean;
   /** 超恢复: seconds of hp regen and a lock on J/K. The brace timer is separate. */
   feast: number;
   /** 无敌仓库大王: seconds left of the box form. Halves damage taken (grabs and supers
@@ -258,7 +262,7 @@ export interface Fighter {
   dmgLog: { t: number; dmg: number }[];
 }
 
-export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braceFx', 'ban', 'frail', 'recLeft', 'rainbowCd', 'parry', 'parryLock', 'parryOrbCd'] as const;
+export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braceFx', 'ban', 'frail', 'recLeft', 'rainbowCd', 'parry', 'parryLock', 'parryOrbCd', 'ultLeft'] as const;
 
 /** Full-cast protection follows the live attack and ends with it. */
 export function isInvulnerable(f: Fighter, minTime = 0): boolean {
@@ -307,7 +311,7 @@ export function makeFighter(
     x: init.x, y: FLOOR, vx: 0, vy: 0, facing: init.facing,
     hp: data.hp, energy: Math.min(init.energy, cap), energyMax: cap, guard: 100, blocking: false,
     stun: 0, invuln: 0, comboTime: 0, hitFlash: 0, landing: 0, guardBroken: 0,
-    knocked: 0, downTime: 0, hitBySuper: false, root: 0, rootHits: 0, rootBreak: 0, rootFx: '', rootMark: '', rootLevel: 'move', ban: 0, beatStacks: 0, frenzy: 0,
+    knocked: 0, downTime: 0, hitBySuper: false, ultLeft: 0, root: 0, rootHits: 0, rootBreak: 0, rootFx: '', rootMark: '', rootLevel: 'move', ban: 0, beatStacks: 0, frenzy: 0,
     jabChain: 0, jabChainClock: 0, braced: 0, braceFx: 0, noGain: 0, muscle: 0, sprint: 0, slow: 0, poise: 0, purge: 0, frail: 0, frailBonus: 0, feast: 0, box: 0,
     dodge: 0, dodgeCd: 0, dodgeRequest: false, dodgeBuffer: 0, blockTap: -1, blockBuffer: 0, blockLeft: 0, parry: 0, parryLock: 0, parryOrbCd: 0, parried: 0,
     debt: 0, debtDmg: 0, rainbowCd: 0, wheatFrom: 0,

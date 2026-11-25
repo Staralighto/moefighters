@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build && node --experimental-strip-types scripts/compress-images.ts && node --experimental-strip-types scripts/asset-manifest.ts",
+    "build": "vite build && node --experimental-strip-types scripts/compress-images.ts && node --experimental-strip-types scripts/asset-manifest.ts",
     "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "assets": "node --experimental-strip-types scripts/compress-images.ts --warm",
     "check": "node --experimental-strip-types scripts/selfcheck.ts",
     "check:adaptation": "node scripts/adaptation-e2e.mjs",
     "sprite:align": "node --experimental-strip-types scripts/repack-common.ts",

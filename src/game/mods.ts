@@ -1,5 +1,6 @@
 import type { Fighter } from './fighter.ts';
 import type { FightGame } from './game.ts';
+import { castingUlt, holdUlt } from './ult.ts';
 
 /** Scalar buffs. root, ban, frenzy and king stay on the fighter: they stop clocks and swap moves. */
 export type ModKind =
@@ -134,6 +135,8 @@ export function addMod(f: Fighter, kind: ModKind, time: number, opt: Partial<Mod
   if (opt.from != null) m.from = opt.from;
   if (opt.every != null) m.every = opt.every;
   if (opt.thief) cheerThief.set(m, opt.thief);
+  // 必杀状态：自己的 L 正在播时给自己加的状态（脚本直接加的也算），窗口拉到它结束。别人挂上来的（带 from）不算。
+  if (opt.from == null && castingUlt(f)) holdUlt(f, m.left);
   project(f);
   return m;
 }

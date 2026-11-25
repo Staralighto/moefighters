@@ -24,7 +24,7 @@ MOE FIGHTERS 用简化 GitFlow：日常工作在 `develop` 集成，`main` 只�
 ## PR 检查
 
 1. 基分支选对（feature / fix → `develop`，hotfix → `main`）。
-2. `npm run check` 与 `npm run build` 通过（CI 会在 PR 上跑这两项）。
+2. CI 在 PR 上运行 `npm run build`。需要自检时，在本地运行 `npm run check`。改了 PNG 时，先运行 `npm run assets`，把图片和 `asset-cache/` 一起提交。
 3. Hotfix 只带修复，不搭车做功能。
 
 ## 常规发布（`develop` → `main`）

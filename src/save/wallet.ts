@@ -77,7 +77,11 @@ registerSection<Wallet>({
   read: () => cache,
   parse: raw => isRecord(raw) ? parse(raw) : null,
   merge: (a, b) => ({ shards: Math.max(a.shards, b.shards), earned: Math.max(a.earned, b.earned) }),
-  write: v => { if (writeJson(KEY, v)) cache = v; },
+  write: v => {
+    if (!writeJson(KEY, v)) return false;
+    cache = v;
+    return true;
+  },
   isEmpty: v => v.shards === 0 && v.earned === 0,
   summary: v => [{ label: '星之碎片', value: v.shards.toLocaleString('en-US') }],
   dump: v => v.shards || v.earned ? v : undefined,

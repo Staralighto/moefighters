@@ -13,11 +13,15 @@ import { ROSTER_BY_ID } from '../data/characters.ts';
 import { STAGES } from '../data/stages.ts';
 import { portraitOf } from '../data/portraits.ts';
 import { loadImage } from '../assets/loader.ts';
+import { setMusicPausedForTheatre } from '../audio/bgm.ts';
 import type { StorySound } from '../audio/sfx.ts';
 import { registerLayer } from '../ui/layerBack.ts';
 import { reducedMotion } from '../ui/motion.ts';
 import { bakeCard, CARD_SIZE, PAD, type Card } from './cards.ts';
-import { SLOT_X, isNightmare, type Cmd, type Pose, type Script } from './script.ts';
+import { isNightmare, isPhantom, type Cmd, type Pose, type Script } from './script.ts';
+import { SLOT_X, ahead, block, enter, faceIn, openStage, reaim as reaimCast } from './stage.ts';
+import { drawProps, propCmd, propSrc, resetProps, setPropImage, snapProps, stepProps, type PropEnv } from './props.ts';
+import { FX_LASTING, drawFx, fxCmd, fxDissolve, fxGather, fxImpact, resetFx, snapFx, stepFx, type FxEnv } from './fx.ts';
 
 const W = 1280, H = 720, FLOOR = 578, CELL = 256;
 /** 纸板只比战斗时略大：战斗里格子画成 view.height（960×540 场地），这里 ×(720/540)×1.1。 */
@@ -105,6 +109,11 @@ interface Actor {
   nightmare: boolean;
   /** 梦魇被打倒后化光消散的倒计时（秒）。 */
   fade: number;
+  fadeMax: number;
+  /** 墨提斯（睦的分身）：半透明冷色、浮在地上。 */
+  phantom: boolean;
+  /** 「虚化」：身体变得透明、一闪一闪。 */
+  ghostly: boolean;
 }
 const FADE = 1;
 
@@ -131,6 +140,8 @@ export interface PlayOptions {
   card?: { kicker: string; title: string };
   /** 落幕后大幕上的字（章末关）。 */
   endCard?: { kicker: string; title: string };
+  /** 预览跳行（?story=3-01&at=27）：剧本第 at 行之前的指令瞬间演完，从这一行开始正常演。审定截图用。 */
+  at?: number;
 }
 
 let built = false;
@@ -160,7 +171,99 @@ const heightOf = (id: string): number => {
   const v = ROSTER_BY_ID.get(id)?.view;
   return v && v.kind === 'sprite' ? v.height : 180;
 };
-const colorOf = (id: string | null, who: string | null): string => id ? ROSTER_BY_ID.get(id)?.color ?? '#97a1c3' : who === '薇欧拉' ? VIOLA : '#97a1c3';
+const colorOf = (id: string | null, who: string | null): string => id ? ROSTER_BY_ID.get(id)?.color ?? '#97a1c3' : who === '薇欧拉' ? VIOLA : who === ZHIMENG ? ZHIMENG_COLOR : '#97a1c3';
+
+/* ---- 织萌：结局前只以「星空剪影」出现 ----
+   完整的织萌留到结局。游戏里只放她的剪影蒙版（public/story/zhimeng-silhouette.webp，只有轮廓的 alpha，
+   没有任何颜色和细节），在这里填成深紫黑、描一圈淡粉白的光、里面闪着星点，半透明地飘在舞台中后方。
+   她第一次开口时由星点汇聚成形，暗场时跟着暗下去。 */
+const ZHIMENG = '织萌';
+const ZHIMENG_COLOR = '#ffc8e6';
+const GHOST_SRC = '/story/zhimeng-silhouette.webp';
+const GHOST_H = 430;
+let ghostMask: HTMLImageElement | null = null;
+let ghostBody: HTMLCanvasElement | null = null;
+let ghostGlow: HTMLCanvasElement | null = null;
+let ghostTmp: HTMLCanvasElement | null = null;
+let ghost = 0, ghostTo = 0;
+/** 剪影里的星点：位置固定（0–1），各自按自己的相位闪。 */
+const GHOST_STARS = Array.from({ length: 46 }, (_, i) => {
+  const r = (k: number) => { const x = Math.sin(i * 127.1 + k * 311.7) * 43758.5453; return x - Math.floor(x); };
+  return { x: r(1), y: r(2), s: .8 + r(3) * 1.8, ph: r(4) * 6.28, sp: 1.2 + r(5) * 2.2 };
+});
+
+function bakeGhost(mask: HTMLImageElement): void {
+  const h = GHOST_H, w = Math.round(h * mask.naturalWidth / mask.naturalHeight), pad = 28;
+  const make = () => { const c = document.createElement('canvas'); c.width = w + pad * 2; c.height = h + pad * 2; return c; };
+  // 本体：深紫黑，上浅下深一点，像夜空。
+  ghostBody = make();
+  let g = ghostBody.getContext('2d')!;
+  g.drawImage(mask, pad, pad, w, h);
+  g.globalCompositeOperation = 'source-in';
+  const grad = g.createLinearGradient(0, pad, 0, pad + h);
+  grad.addColorStop(0, '#2a1a44'); grad.addColorStop(.55, '#180f2c'); grad.addColorStop(1, '#0d0818');
+  g.fillStyle = grad; g.fillRect(0, 0, ghostBody.width, ghostBody.height);
+  // 光晕：同一个轮廓染成淡粉白再糊开，垫在本体后面，就是一圈边光。
+  ghostGlow = make();
+  g = ghostGlow.getContext('2d')!;
+  g.filter = 'blur(7px)';
+  g.drawImage(mask, pad, pad, w, h);
+  g.filter = 'none';
+  g.globalCompositeOperation = 'source-in';
+  g.fillStyle = '#ffd9ef'; g.fillRect(0, 0, ghostGlow.width, ghostGlow.height);
+  ghostTmp = make();
+}
+
+function drawGhost(): void {
+  if (ghost < .01 || !ghostBody || !ghostGlow || !ghostTmp) return;
+  const bw = ghostBody.width, bh = ghostBody.height;
+  const cx = W / 2, cy = 292 + Math.sin(clock * 1.1) * 9;
+  const x = cx - bw / 2, y = cy - bh / 2;
+  // 信号不稳：偶尔闪一下。别人说话时退后一点。
+  const flicker = reducedMotion() ? 1 : Math.sin(clock * 13) * Math.sin(clock * 3.7) > .82 ? .6 : 1;
+  const listening = line && line.who !== ZHIMENG ? .78 : 1;
+  const a = ease(ghost) * flicker * listening;
+  // 星点在本体里闪：先把本体铺到临时画布，再只在轮廓内画星。
+  const t = ghostTmp.getContext('2d')!;
+  t.globalCompositeOperation = 'source-over';
+  t.clearRect(0, 0, bw, bh);
+  t.drawImage(ghostBody, 0, 0);
+  t.globalCompositeOperation = 'source-atop';
+  const band = t.createLinearGradient(0, 0, 0, bh);
+  // 一道微光从上往下扫过。色标必须落在 0–1，越界 addColorStop 会抛错。
+  const k = (clock * .18) % 1.4 - .2;
+  const c01 = (v: number) => Math.min(1, Math.max(0, v));
+  band.addColorStop(c01(k - .12), 'rgba(255,200,236,0)');
+  band.addColorStop(c01(k), 'rgba(255,200,236,.13)');
+  band.addColorStop(c01(k + .12), 'rgba(255,200,236,0)');
+  t.fillStyle = band; t.fillRect(0, 0, bw, bh);
+  for (const st of GHOST_STARS) {
+    const tw = .35 + .65 * Math.max(0, Math.sin(clock * st.sp + st.ph));
+    // 成形时星点先亮：ghost 小时星多、身体淡。
+    const al = Math.min(1, tw * (.55 + .45 * (1 - ghost)) + (1 - ghost) * .4);
+    t.fillStyle = `rgba(255,238,250,${al})`;
+    t.beginPath(); t.arc(st.x * bw, st.y * bh, st.s, 0, 7); t.fill();
+  }
+  ctx.save();
+  ctx.globalAlpha = a * .75;
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.drawImage(ghostGlow, x, y);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = a * .82;
+  ctx.drawImage(ghostTmp, x, y);
+  // 身边慢慢升起的光点。
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 14; i++) {
+    const s = GHOST_STARS[i];
+    const life = (clock * .22 + s.ph / 6.28) % 1;
+    const px = cx + (s.x - .5) * bw * 1.25 + Math.sin(clock * .8 + s.ph) * 10;
+    const py = cy + bh * .45 - life * bh * 1.05;
+    ctx.globalAlpha = a * Math.sin(life * Math.PI) * .7;
+    ctx.fillStyle = '#ffe3f4';
+    ctx.beginPath(); ctx.arc(px, py, s.s + .6, 0, 7); ctx.fill();
+  }
+  ctx.restore();
+}
 
 /** 这一段要用到的所有人、场景都下完、纸板都烘好。 */
 async function prepare(s: Script, cmds: Cmd[]): Promise<void> {
@@ -169,7 +272,7 @@ async function prepare(s: Script, cmds: Cmd[]): Promise<void> {
   const onStage = new Set<string>();
   for (const o of s.opening) { const id = idOfName(o.who); if (id) { ids.add(id); onStage.add(id); } }
   for (const c of cmds) {
-    if (c.k !== 'stage' && c.id) ids.add(c.id);
+    if ((c.k === 'act' || c.k === 'line') && c.id) ids.add(c.id);
     if (c.k === 'act' && c.id) onStage.add(c.id);
     if (c.k === 'stage' && c.verb === '立绘' && c.arg) { const id = idOfName(c.arg); if (id) port.add(id); }
   }
@@ -185,13 +288,21 @@ async function prepare(s: Script, cmds: Cmd[]): Promise<void> {
     get(avatars, id, `/avatars/${id}.png`);
   }
   for (const id of port) { const p = portraitOf(id); if (p) get(portraits, id, p.src); }
+  if (cmds.some(c => c.k === 'line' && c.who === ZHIMENG) && !ghostMask) {
+    jobs.push(loadImage(GHOST_SRC).then(im => { ghostMask = im; try { bakeGhost(im); } catch (e) { console.warn('织萌剪影烘焙失败', e); } }, () => {}));
+  }
+  for (const c of cmds) if (c.k === 'prop') { const src = propSrc(c.name); if (src) jobs.push(loadImage(src).then(im => setPropImage(c.name, im), () => {})); }
   backdrop = null;
   if (stage?.image) jobs.push(loadImage(stage.image).then(im => { backdrop = im; }, () => {}));
-  await Promise.all(jobs);
+  // 网络卡住（请求既不成功也不报错）时不能让玩家一直停在「下载中」的大幕上：最多等 PREPARE_WAIT 毫秒，
+  // 没到的图按缺图演（纸板、背景、道具各自有缺图退路），晚到的照样记进缓存，下一句就用上。
+  await Promise.race([Promise.all(jobs), new Promise(r => setTimeout(r, PREPARE_WAIT))]);
   // 纸板在这里烘：烘一格十几毫秒，放进下载等待里，演出中途不卡。只烘会上台的人（广播的声音不用纸板）。
   for (const id of onStage) for (const p of ['idle', 'jump', 'hurt', 'block', 'down'] as Pose[]) { try { cardOf(id, p); } catch (e) { console.warn('纸板烘焙失败', id, p, e); } }
 }
 let idOfName: (n: string) => string | null = () => null;
+/** 开演前最多等素材这么久（毫秒）。 */
+const PREPARE_WAIT = 15000;
 
 /* ---- 舞台状态 ---- */
 let actors: Actor[] = [];
@@ -229,53 +340,25 @@ function settle(): void {
 }
 
 const find = (name: string) => actors.find(a => a.name === name && !a.leaving);
-const faceIn = (x: number) => x < W / 2 ? 1 : -1;
-
-/* ---- 朝向：剧本只写站位，朝谁看由这里推断 ----
-   原则：身前至少有一个人就不动（中间的人夹在两人之间时随说话对象转）；身前一个人都没有（背对全场）就转向最近的人；
-   说话时如果上一位说话的人在身后，转过去对着她。剧本写了「转身」的人锁住朝向，直到她再移动。 */
+/* 走位规则（朝向、让位、铺开）在 stage.ts，和排练脚本共用；这里只把它接到台上的人和翻面动画上。 */
 const present = () => actors.filter(o => !o.leaving);
-const ahead = (a: Actor, o: Actor) => (o.x - a.x) * a.face > 0;
 function turnTo(a: Actor, dir: number): void {
   if (a.face === dir || a.lock || a.revealed || a.leaving || a.pose === 'down') return;
   if (skipping) { a.face = dir; a.flip = null; return; }
   if (a.flip) return;
   a.flip = { t: 0, dur: .3, from: a.face, to: dir };
 }
-function nearest(a: Actor): Actor | undefined {
-  let best: Actor | undefined;
-  for (const o of present()) if (o !== a && Math.abs(o.x - a.x) > 1 && (!best || Math.abs(o.x - a.x) < Math.abs(best.x - a.x))) best = o;
-  return best;
-}
-/** 背对全场的人转向最近的人。 */
-function reaim(): void {
-  for (const a of present()) {
-    if (a.flip || Math.abs(a.x - a.to) > 1) continue;
-    const others = present().filter(o => o !== a && Math.abs(o.x - a.x) > 1);
-    if (!others.length || others.some(o => ahead(a, o))) continue;
-    const n = nearest(a);
-    if (n) turnTo(a, Math.sign(n.x - a.x));
-  }
-}
-/** 走到 / 靠近的落点离别人太近（会叠在一起）：先到的人往外让一步。 */
-function makeRoom(a: Actor): void {
-  for (const o of present()) {
-    if (o === a || Math.abs(o.to - a.to) >= 130) continue;
-    const side = Math.sign(o.to - a.x) || (o.to < W / 2 ? -1 : 1);
-    const to = a.to + side * 150;
-    o.to = to < 120 || to > W - 120 ? a.to - side * 150 : to;
-    o.face = Math.sign(o.to - o.x) || o.face;
-    o.lock = false;
-  }
-}
+const reaim = () => reaimCast(present(), turnTo);
 let lastSpeaker: string | null = null;
+/** 这一段已经有人开口了（开场的「背对」直接站好，不演转身）。 */
+let spokeAny = false;
 
 function place(name: string, id: string | null, slot: string, copies: Record<string, string>): Actor {
   const x = SLOT_X[slot] ?? W / 2;
   const nightmare = isNightmare(name);
   const deep = copies[name] === 'always' || nightmare ? 1 : 0;
   const a: Actor = {
-    name, id, x, to: x, face: faceIn(x), pose: 'idle', alpha: 1, leaving: false, flip: null, revealed: false, copy: name in copies || nightmare, nightmare, fade: 0,
+    name, id, x, to: x, face: faceIn(x), pose: 'idle', alpha: 1, leaving: false, flip: null, revealed: false, copy: name in copies || nightmare, nightmare, fade: 0, fadeMax: FADE, phantom: isPhantom(name), ghostly: false,
     deep, deepTo: deep, hop: 0, hopH: 60, shake: 0, pop: 0, startle: 0, happy: 0, nod: 0, headShake: 0, stomp: 0, recoil: 0, stepPh: 0, mark: null, lock: false,
   };
   actors = actors.filter(o => o.name !== name).concat(a);
@@ -295,6 +378,8 @@ function snap(): void {
   }
   for (const a of actors) a.fade = 0;
   actors = actors.filter(a => !a.leaving);
+  snapProps();
+  snapFx();
   dark = darkTo; fold = foldTo; sepia = sepiaTo; curtain = curtainTo; plateA = plateTo; shake = 0; flash = 0; pop = null;
 }
 
@@ -305,51 +390,46 @@ function mark(a: Actor, kind: Mark, life = 1.5): void {
 }
 function startle(a: Actor): void { a.startle = .34; sfx('boing'); }
 
+/** 化作光点散去（消散、墨提斯退场）。 */
+function dissolve(a: Actor, dur: number): void {
+  a.leaving = true; a.to = a.x; a.fade = a.fadeMax = dur;
+  if (a.id && !skipping) fxDissolve(a.x, heightOf(a.id) * BIG * zoom, zoom, a.phantom ? 'cold' : 'gold', dur, a.pose === 'down');
+  sfx('sparkle');
+}
+
 function act(c: Extract<Cmd, { k: 'act' }>, copies: Record<string, string>, prev?: Cmd): void {
-  let a = find(c.who);
   if (c.verb === '走入') {
-    const x = SLOT_X[c.arg ?? ''] ?? W / 2;
-    a = place(c.who, c.id, c.arg ?? '中', copies);
-    a.x = x < W / 2 ? -180 : W + 180;
-    a.to = x;
-    a.face = faceIn(x);
-    makeRoom(a);
+    const a = place(c.who, c.id, c.arg ?? '中', copies);
+    enter(present(), a, c.arg);
+    // 墨提斯不是走上来的：在站位上由光点汇聚成形。
+    if (a.phantom) {
+      a.x = a.to; a.alpha = 0;
+      if (a.id && !skipping) fxGather(a.x, heightOf(a.id) * BIG * zoom, zoom);
+      sfx('sparkle');
+    }
     return;
   }
+  const a = find(c.who);
   if (!a) return;
-  if (['走到', '靠近', '后退'].includes(c.verb)) a.lock = false;
+  // 墨提斯「退场」不写方向 = 化光散去；写了左 / 右就是护送别人一起走下台。
+  if (c.verb === '消散' || (c.verb === '退场' && a.phantom && !c.arg)) { dissolve(a, a.phantom ? .9 : 1.6); return; }
+  const turn = block(present(), a, c.verb, c.arg, {
+    target: (c.verb === '靠近' || c.verb === '背对' || c.verb === '面向') && c.arg ? find(c.arg) : undefined,
+    afterEnter: prev?.k === 'act' && prev.who === c.who && prev.verb === '走入',
+    instant: !spokeAny,
+  });
+  if (turn) { a.flip = { t: turn.t0, dur: .45, from: turn.from, to: turn.to }; sfx('flip'); }
   switch (c.verb) {
-    case '走到': a.to = SLOT_X[c.arg ?? ''] ?? a.to; a.face = Math.sign(a.to - a.x) || a.face; makeRoom(a); break;
-    // 「退场 左 / 右」指定从哪一侧下台；不写就从近的一侧。
-    case '退场': a.leaving = true; a.to = c.arg === '左' ? -200 : c.arg === '右' ? W + 200 : a.x < W / 2 ? -200 : W + 200; a.face = Math.sign(a.to - a.x) || a.face; break;
-    case '转身': {
-      // 「走入」紧跟「转身」：剧本的意思是她本来就背对大家站在那里，然后回过身来。
-      // 直接出现在位置上、背对全场，再转回来面向大家。
-      if (prev?.k === 'act' && prev.who === c.who && prev.verb === '走入') {
-        a.x = a.to;
-        const n = nearest(a);
-        const toward = n ? Math.sign(n.x - a.x) : faceIn(a.x);
-        a.face = -toward;
-        a.flip = { t: -.35, dur: .45, from: a.face, to: toward };
-      } else {
-        a.flip = { t: 0, dur: .45, from: a.face, to: -a.face };
-        a.lock = true;
-      }
-      sfx('flip');
-      break;
-    }
-    case '靠近': {
-      const b = c.arg ? find(c.arg) : undefined;
-      if (b) { const side = Math.sign(a.x - b.x) || 1; a.to = Math.max(120, Math.min(W - 120, b.x + side * 150)); a.face = -side; makeRoom(a); }
-      break;
-    }
     // 真被吓退：短暂换成受击格往后滑一步，带汗。
-    case '后退': a.to = Math.max(120, Math.min(W - 120, a.x - a.face * 100)); a.recoil = .45; mark(a, 'sweat', 1); break;
+    case '后退': a.recoil = .45; mark(a, 'sweat', 1); break;
     case '跳': a.hop = .5; a.hopH = 60; sfx('boing'); break;
     case '倒下':
       a.pose = 'down'; a.pop = .25; sfx('stomp');
       // 梦魇被打倒不会躺在台上：化作光点消散（剧情设定：被击败后暂时消散）。
-      if (a.nightmare) { a.leaving = true; a.fade = FADE; mark(a, 'star', FADE); }
+      if (a.nightmare) {
+        a.leaving = true; a.fade = a.fadeMax = FADE; mark(a, 'star', FADE);
+        if (a.id && !skipping) fxDissolve(a.x, heightOf(a.id) * BIG * zoom, zoom, 'night', FADE, true);
+      }
       break;
     case '起身': a.pose = 'idle'; a.pop = .25; sfx('nod'); break;
     case '发抖': a.shake = .7; mark(a, 'gloom', 1.1); break;
@@ -361,15 +441,18 @@ function act(c: Extract<Cmd, { k: 'act' }>, copies: Record<string, string>, prev
       break;
     }
     case '复制体翻面': a.flip = { t: 0, dur: 1.1, from: a.face, to: 'back' }; a.copy = true; a.deepTo = 1; sfx('glitch'); break;
+    case '虚化': a.ghostly = true; sfx('glitch'); break;
   }
 }
+/** 开场前可以直接做好的状态类指令（见 run）。 */
+const PRESET = ['换', '背对', '面向', '倒下', '虚化'];
 const POSE_OF: Record<string, Pose> = { 平常: 'idle', 开心: 'jump', 吃惊: 'hurt', 防备: 'block', 倒地: 'down' };
 
 async function stageCmd(c: Extract<Cmd, { k: 'stage' }>): Promise<void> {
   switch (c.verb) {
     case '暗场': darkTo = 1; await wait(.6); break;
     case '亮场': darkTo = 0; await wait(.5); break;
-    case '震屏': shake = .5; sfx('thud'); await wait(.35); break;
+    case '震屏': shake = .5; sfx('thud'); fxImpact(); await wait(.35); break;
     case '停顿': await wait(.9); break;
     case '闪回开始': sepiaTo = 1; sfx('flip'); await wait(.5); break;
     case '闪回结束': sepiaTo = 0; sfx('flip'); await wait(.5); break;
@@ -420,11 +503,18 @@ function react(a: Actor, c: Extract<Cmd, { k: 'line' }>): void {
 
 async function say(c: Extract<Cmd, { k: 'line' }>): Promise<void> {
   const a = c.who && !c.tag ? find(c.who) : undefined;
+  spokeAny = true;
   // 说话时对着上一位说话的人：她在身后就转过去。
   if (a) {
     const prev = lastSpeaker && lastSpeaker !== a.name ? find(lastSpeaker) : undefined;
     if (prev && !ahead(a, prev) && Math.abs(prev.x - a.x) > 1) turnTo(a, Math.sign(prev.x - a.x));
     lastSpeaker = a.name;
+  }
+  // 织萌第一次开口：星点汇聚成形。
+  if (c.who === ZHIMENG && !c.tag && ghostTo === 0) {
+    ghostTo = 1;
+    if (skipping) ghost = 1;
+    else { sfx('sparkle'); flash = Math.max(flash, .35); }
   }
   if (a) { a.pop = .22; if (!skipping) react(a, c); else if (c.pose && c.pose !== 'hurt' && c.pose !== 'jump') a.pose = c.pose; }
   for (const cue of copyCues) if (c.text.includes(cue.cue)) { const t = find(cue.name); if (t) t.deepTo = 1; }
@@ -451,22 +541,37 @@ async function run(s: Script, cmds: Cmd[], o: PlayOptions): Promise<void> {
   const copies = o.copies ?? {};
   copyCues = Object.entries(copies).filter(([, v]) => v !== 'always').map(([name, cue]) => ({ name, cue }));
   actors = [];
+  resetProps();
+  resetFx();
+  spokeAny = false;
   for (const p of s.opening) place(p.who, idOfName(p.who), p.slot, copies);
-  // 开场站位：面向最近的人（同在左半边的两人不能都朝右，后面那个只能看见前面那个的后脑勺）。
-  for (const a of actors) { const n = nearest(a); if (n) a.face = Math.sign(n.x - a.x); }
+  openStage(actors);
   lastSpeaker = null;
-  dark = darkTo = 0; sepia = sepiaTo = 0; fold = foldTo = 0; line = null; plate = null; plateA = plateTo = 0;
+  dark = darkTo = 0; sepia = sepiaTo = 0; fold = foldTo = 0; line = null; plate = null; plateA = plateTo = 0; ghost = ghostTo = 0;
+  let pre = 0;
   if (o.warm?.length) {
     skipping = true;
-    for (const [i, c] of o.warm.entries()) { if (c.k === 'act') { act(c, copies, o.warm[i - 1]); snap(); reaim(); } else if (c.k === 'stage') await stageCmd(c); else await say(c); }
+    for (const [i, c] of o.warm.entries()) { if (c.k === 'act') { act(c, copies, o.warm[i - 1]); snap(); reaim(); } else if (c.k === 'stage') await stageCmd(c); else if (c.k === 'prop') { propCmd(c.name, c.verb, c.arg, propEnv()); snapProps(); } else if (c.k === 'fx') { fxCmd(c.verb, c.arg, fxEnv()); snapFx(); } else await say(c); }
     curtainTo = 0;
-    snap(); line = null; skipping = false;
+    snap(); line = null; skipping = false; spokeAny = false;
     // 战后从亮处开始：战前段多半以暗场收尾。
     dark = darkTo = 0;
     fold = 1; foldTo = 0; flash = .6;
     sfx('flip');
     await wait(.45);
+  } else if (o.at) {
+    curtain = curtainTo = 0;
   } else {
+    // 幕开之前就该是这样的：开头连着的「换 / 背对 / 倒下 / 虚化」、摆道具、开持续特效，在大幕后面直接做好（幕一拉开她就已经倒在地上、背着身）。
+    skipping = true;
+    for (; pre < cmds.length; pre++) {
+      const c = cmds[pre];
+      if (c.k === 'act' && PRESET.includes(c.verb)) { act(c, copies, cmds[pre - 1]); snap(); }
+      else if (c.k === 'prop' && c.verb === '摆') { propCmd(c.name, c.verb, c.arg, propEnv()); snapProps(); }
+      else if (c.k === 'fx' && FX_LASTING.includes(c.verb)) { fxCmd(c.verb, c.arg, fxEnv()); snapFx(); }
+      else break;
+    }
+    skipping = false;
     // 开场：大幕合着，幕上打关卡标题，开场铃，然后拉幕。
     curtain = curtainTo = 1;
     if (o.card) {
@@ -480,13 +585,22 @@ async function run(s: Script, cmds: Cmd[], o: PlayOptions): Promise<void> {
     sfx('curtain');
     await wait(.8);
   }
-  for (let i = 0; i < cmds.length; i++) {
+  let jumping = !!o.at;
+  if (jumping) skipping = true;
+  for (let i = pre; i < cmds.length; i++) {
     const c = cmds[i];
+    if (jumping && (c.ln ?? 0) >= o.at!) { snap(); reaim(); skipping = false; jumping = false; }
     if (c.k === 'act') {
       act(c, copies, cmds[i - 1]);
       if (cmds[i + 1]?.k !== 'act') { await settleActors(); reaim(); }
     } else if (c.k === 'stage') {
       await stageCmd(c);
+    } else if (c.k === 'prop') {
+      const t = propCmd(c.name, c.verb, c.arg, propEnv());
+      if (skipping) snapProps(); else await wait(t);
+    } else if (c.k === 'fx') {
+      const t = fxCmd(c.verb, c.arg, fxEnv());
+      if (skipping) snapFx(); else await wait(t);
     } else {
       await say(c);
     }
@@ -770,8 +884,11 @@ function drawActor(a: Actor, dim: boolean): void {
   bob *= z; dx *= z;
   const pp = a.pop > 0 ? 1 + Math.sin((1 - a.pop / .25) * Math.PI) * .05 : 1;
   const unfold = 1 - ease(fold);
+  // 墨提斯：半透明、离地浮着轻轻上下；虚化：透明并一闪一闪。
+  if (a.phantom) bob += (-10 + Math.sin(clock * 2.1) * 4) * z;
+  const see = a.phantom ? .8 : a.ghostly ? .5 + .12 * Math.sin(clock * 5) + (Math.sin(clock * 17) > .93 ? -.18 : 0) : 1;
   ctx.save();
-  ctx.globalAlpha = a.alpha;
+  ctx.globalAlpha = a.alpha * see;
   // 投影：复制体的影子更深，深到几乎看不清地面（观众能察觉的伏笔）。
   ctx.save();
   ctx.translate(a.x + dx, FLOOR + 2); ctx.scale(z, .2 * z);
@@ -783,7 +900,7 @@ function drawActor(a: Actor, dim: boolean): void {
   ctx.fillStyle = sh; ctx.beginPath(); ctx.arc(0, 0, 95, 0, 7); ctx.fill();
   ctx.restore();
   if (card) {
-    const img = back ? (a.revealed || (a.flip?.to === 'back') ? card.copyBack : card.back) : a.nightmare ? nightmareCard(card) : card.front;
+    const img = back ? (a.revealed || (a.flip?.to === 'back') ? card.copyBack : card.back) : a.nightmare ? nightmareCard(card) : a.phantom ? phantomCard(card) : card.front;
     ctx.save();
     ctx.translate(a.x + dx, FLOOR + bob);
     ctx.rotate(rot);
@@ -865,6 +982,34 @@ function nightmareCard(card: Card): HTMLCanvasElement {
   og.globalAlpha = 1;
   og.drawImage(body, 0, 0);
   nightCache.set(card.front, out);
+  c = out;
+  return c;
+}
+/** 墨提斯纸板：整张染成冷蓝、外圈一道淡青的光，像投影出来的分身。 */
+const phantomCache = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
+function phantomCard(card: Card): HTMLCanvasElement {
+  let c = phantomCache.get(card.front);
+  if (c) return c;
+  const w = card.front.width, h = card.front.height;
+  const mk = () => { const x = document.createElement('canvas'); x.width = w; x.height = h; return [x, x.getContext('2d')!] as const; };
+  const [body, bg] = mk();
+  bg.filter = 'grayscale(.6) brightness(1.05)';
+  bg.drawImage(card.front, 0, 0);
+  bg.filter = 'none';
+  bg.globalCompositeOperation = 'source-atop';
+  bg.fillStyle = 'rgba(90,150,255,.42)';
+  bg.fillRect(0, 0, w, h);
+  const [rim, rg] = mk();
+  rg.drawImage(card.sil, 0, 0, w, h);
+  rg.globalCompositeOperation = 'source-in';
+  rg.fillStyle = '#9fd4ff';
+  rg.fillRect(0, 0, w, h);
+  const [out, og] = mk();
+  og.filter = 'blur(7px)';
+  og.drawImage(rim, 0, 0);
+  og.filter = 'none';
+  og.drawImage(body, 0, 0);
+  phantomCache.set(card.front, out);
   c = out;
   return c;
 }
@@ -964,11 +1109,12 @@ function drawPortrait(): void {
 }
 
 function frame(now: number): void {
+  // 先排好下一帧：这一帧哪里抛错，演出也不会整个停住（等待、点击推进都靠 step 在跑）。
+  raf = requestAnimationFrame(frame);
   const dt = Math.min(.05, (now - (last || now)) / 1000);
   last = now;
   step(dt);
   draw();
-  raf = requestAnimationFrame(frame);
 }
 let last = 0;
 
@@ -980,6 +1126,7 @@ function step(dt: number): void {
   curtain = Math.abs(curtainTo - curtain) < .005 ? curtainTo : app(curtain, curtainTo, 4.2);
   plateA = Math.abs(plateTo - plateA) < .01 ? plateTo : app(plateA, plateTo, 7);
   sepia = app(sepia, sepiaTo, 6);
+  ghost = Math.abs(ghostTo - ghost) < .005 ? ghostTo : app(ghost, ghostTo, 1.4);
   shake = Math.max(0, shake - dt);
   flash = Math.max(0, flash - dt * 2.2);
   if (pop) pop.t += dt;
@@ -1003,10 +1150,13 @@ function step(dt: number): void {
     a.recoil = Math.max(0, a.recoil - dt);
     if (a.mark) { a.mark.t += dt; if (a.mark.t >= a.mark.life) a.mark = null; }
     a.deep = app(a.deep, a.deepTo, 1.2);
-    if (a.fade > 0) { a.fade = Math.max(0, a.fade - dt); a.alpha = a.fade / FADE; }
+    if (a.fade > 0) { a.fade = Math.max(0, a.fade - dt); a.alpha = a.fade / a.fadeMax; }
+    else if (a.phantom && !a.leaving && a.alpha < 1) a.alpha = Math.min(1, a.alpha + dt * 2.2);
     else if (a.leaving && a.x === a.to) a.alpha = 0;
   }
   actors = actors.filter(a => !(a.leaving && a.alpha <= 0));
+  stepProps(dt);
+  stepFx(dt, fxEnv());
   const l = line;
   if (l) {
     l.t += dt;
@@ -1025,14 +1175,41 @@ function step(dt: number): void {
   if (due.length) { waits = waits.filter(w => w.until > clock); for (const w of due) w.done(); }
 }
 
+/** 道具模块要的舞台信息（props.ts）。 */
+function propEnv(): PropEnv {
+  return {
+    ctx, clock, zoom, fold: ease(fold),
+    xOf: n => find(n)?.x ?? null,
+    heightOf: n => { const a = find(n); return a?.id ? heightOf(a.id) * BIG * zoom : 240; },
+    sfx: k => sfx(k),
+  };
+}
+/** 特效模块要的舞台信息（fx.ts）。 */
+function fxEnv(): FxEnv {
+  return {
+    ctx, clock, zoom, fold: ease(fold),
+    xOf: n => find(n)?.x ?? null,
+    heightOf: n => { const a = find(n); return a?.id ? heightOf(a.id) * BIG * zoom : 240; },
+    faceOf: n => find(n)?.face ?? 1,
+    sfx: k => sfx(k),
+    shake: v => { shake = Math.max(shake, v); },
+    flash: v => { flash = Math.max(flash, v); },
+  };
+}
 function draw(): void {
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
   ctx.save();
   if (shake > 0 && !reducedMotion()) ctx.translate(Math.sin(clock * 80) * 8 * shake, Math.cos(clock * 66) * 5 * shake);
   drawBackdrop();
+  // 装饰层出错只丢这一层，不能拖停整场演出。
+  try { drawGhost(); } catch (e) { console.warn('织萌剪影绘制失败', e); ghostTo = ghost = 0; }
   const speaker = line?.who ? find(line.who) : undefined;
+  try { drawProps('back', propEnv()); } catch (e) { console.warn('道具绘制失败', e); }
+  try { drawFx('back', fxEnv()); } catch (e) { console.warn('特效绘制失败', e); }
   for (const a of actors) drawSpot(a.x, speaker ? (a === speaker ? 1 : .25) : line ? .15 : .3);
   for (const a of [...actors].sort((p, q) => (p === speaker ? 1 : 0) - (q === speaker ? 1 : 0))) drawActor(a, !!line && a !== speaker);
+  try { drawProps('front', propEnv()); } catch (e) { console.warn('道具绘制失败', e); }
+  try { drawFx('front', fxEnv()); } catch (e) { console.warn('特效绘制失败', e); }
   if (sepia > .01) { ctx.fillStyle = `rgba(112,82,40,${sepia * .22})`; ctx.fillRect(0, 0, W, H); }
   drawMainCurtain();
   drawCurtains();
@@ -1120,6 +1297,7 @@ export async function play(s: Script, cmds: Cmd[], o: PlayOptions & { idOf: (n: 
   $('st-label').textContent = o.label;
   $('st-loading').hidden = false;
   el.hidden = false;
+  setMusicPausedForTheatre(true);
   document.documentElement.classList.add('story-on');
   fit();
   // 下载期间：大幕合着（战后段是暗场）。
@@ -1144,6 +1322,7 @@ export function closeTheatre(): void {
   cancelAnimationFrame(raf);
   raf = 0;
   if (built) $('story-theatre').hidden = true;
+  setMusicPausedForTheatre(false);
   document.documentElement.classList.remove('story-on');
   line = null;
   // 纸板和背景留着：同一章反复进出不用重烘。换章时换一批人，自然重烘新的。

@@ -1,5 +1,6 @@
 import type { CharacterData, FinaleSpec, Skill, StageData } from '../data/types.ts';
 import type { Attack, Fighter } from './fighter.ts';
+import { holdUlt, inUlt } from './ult.ts';
 import { DECAY_TIMERS, dropForm, formTune, gainEnergy, makeFighter, meterCap, skillsOf } from './fighter.ts';
 import { AIR_SKILLS } from '../data/skills.ts';
 import { bandMembers, ROSTER_BY_ID } from '../data/characters.ts';
@@ -324,10 +325,17 @@ export class FightGame {
   /** Result screen, per team for the whole match: hp taken off the other team, and supers cast. */
   dealt = [0, 0];
   ults = [0, 0];
-  /** Result screen: one entry per decided round, in order. `fin` is the finishing move, '' when unknown. */
-  roundLog: { winner: number; fin: string }[] = [];
+  /** 每个人（fighter id）这场放了几次 L。剧情「使用 L 必杀获胜」看玩家自己的。 */
+  ultsBy: number[] = [];
+  /** Result screen: one entry per decided round, in order. `fin` is the finishing move, '' when unknown.
+   *  `ult`: that blow came out of the winner's 必杀状态 (ult.ts) — the robust 「L 收尾」 check. */
+  roundLog: { winner: number; fin: string; ult: boolean }[] = [];
   /** Move that eliminated each team's last body this round; empty for unattributed deaths. */
   roundFin = ['', ''];
+  /** 必杀收尾：上面那一下是不是必杀状态里打出来的。 */
+  roundFinUlt = [false, false];
+  /** 必杀收尾是谁的 L（fighter id，召唤物已换成本人）；不是必杀收尾为 -1。终幕特写看它。 */
+  roundFinBy = [-1, -1];
   winnerTeam = -1;
   /** 终幕: the fighter whose L finished the round while the cut-in plays, and the `age` it began at. */
   finaleBy: number | null = null;
@@ -406,6 +414,8 @@ export class FightGame {
   /* ---- round lifecycle ---- */
   resetRound(): void {
     this.roundFin = ['', ''];
+    this.roundFinUlt = [false, false];
+    this.roundFinBy = [-1, -1];
     this.finaleBy = null;
     this.finaleHint = 0;
     this.finaleFlight = false;
@@ -683,6 +693,9 @@ export class FightGame {
     f.cooldowns[slot] = skill.cd * f.cdMul * cdBoost;
     if (slot === 5) {
       if (!f.minion && !f.echo) this.ults[f.team]++;
+      this.ultsBy[f.id] = (this.ultsBy[f.id] ?? 0) + 1;
+      // 必杀状态：至少覆盖这一招本身；L 带来的状态、变身、异常、召唤再往后延（ult.ts）。
+      holdUlt(f, skill.duration);
       // The bar covers the cost. Only 山田凉's is bigger (meterMax); her super's cast hook spends the rest.
       f.energy = clamp(f.energy - (skill.cost ?? 100), 0, f.energyMax);
       f.invuln = .64;
@@ -884,7 +897,7 @@ export class FightGame {
     const winner = survived || health[0] > health[1] ? 0 : 1;
     const draw = !survived && Math.abs(health[0] - health[1]) < .00001;
     if (!draw) this.wins[winner]++;
-    if (!draw) this.roundLog.push({ winner, fin: this.time <= 0 ? '' : this.roundFin[1 - winner] });
+    if (!draw) this.roundLog.push({ winner, fin: this.time <= 0 ? '' : this.roundFin[1 - winner], ult: this.time > 0 && this.roundFinUlt[1 - winner] });
     this.phase = 'roundend';
     // The deciding round hands over to the result screen sooner: the K.O. still reads, the wait does not drag.
     this.phaseTime = this.wins.some(n => n >= this.roundsToWin) ? 1.5 : 2.4;
@@ -906,11 +919,13 @@ export class FightGame {
     this.koBanner(draw, winner);
   }
 
-  /** 终幕: a winner whose L made the kill, when that character has a cut-in. */
+  /** 终幕: a winner whose L made the kill, when that character has a cut-in. 「L 打的」按必杀状态判（ult.ts），
+   *  和剧情星标、任务是同一套：变身后的 J / K、L 召唤的队友、L 挂的异常、领域里的击败都算。 */
   private finaleFinisher(winner: number): Fighter | undefined {
-    const fin = this.roundFin[1 - winner];
-    if (!fin) return undefined;
-    return this.fighters.find(f => f.team === winner && !f.minion && !f.echo && f.data.finale && skillsOf(f)[5]?.name === fin && (this.options.finaleOk?.(f.data.id) ?? true));
+    if (!this.roundFinUlt[1 - winner]) return undefined;
+    const f = this.fighterById(this.roundFinBy[1 - winner]);
+    if (!f || f.team !== winner || f.minion || f.echo || !f.data.finale) return undefined;
+    return (this.options.finaleOk?.(f.data.id) ?? true) ? f : undefined;
   }
 
   /** 终幕 over (played out or skipped): back on the arena, the losers are thrown, then the normal K.O. */
@@ -1035,6 +1050,7 @@ export class FightGame {
   private lockUltSummon(owner: Fighter, m: Fighter): void {
     if (!owner.attack?.skill.super) return;
     m.summoner = owner.id;
+    m.ultSpawn = true;
     // ponytail: not a real duration. dismissMinion clears the tag. Ceiling: a minion that
     // leaves without dismissMinion holds the lock for about twelve days.
     addMod(owner, 'noGain', 1e6, { tag: 'summon' });
@@ -1059,6 +1075,7 @@ export class FightGame {
     m.basic = true;
     m.dmgMul = .3;
     m.life = 6;
+    if (inUlt(owner)) m.ultSpawn = true;
     addMod(m, 'noGain', 6);
     while (this.totalHits.length <= m.id) { this.totalHits.push(0); this.maxCombo.push(0); }
     this.fighters.push(m);
@@ -1090,6 +1107,7 @@ export class FightGame {
     m.summoner = owner.id;
     m.dmgMul = .3;
     m.life = APPARATUS_FOREVER;
+    if (inUlt(owner)) m.ultSpawn = true;
     addMod(owner, 'veil', 1e6, { tag: 'apparatus' });
     while (this.totalHits.length <= m.id) { this.totalHits.push(0); this.maxCombo.push(0); }
     this.fighters.push(m);
@@ -1434,7 +1452,13 @@ export class FightGame {
     if (!(f.root > 0 && f.rootLevel === 'freeze')) f.vy += GRAVITY * (juggled ? .6 : 1) * dt;
     f.y += f.vy * dt;
     if (f.y > FLOOR) {
-      if (f.vy > 350) { f.landing = .12; this.effect('dust', f.x, FLOOR, '#afa1c1', .3, { radius: 25 }); }
+      if (f.vy > 350) {
+        f.landing = .12;
+        // 悬浮: a floating body settles in light instead of kicking up dust — unless it was knocked down onto the floor.
+        const hover = f.data.view.kind === 'sprite' ? f.data.view.hover : undefined;
+        if (hover?.aura && f.knocked <= 0 && f.hp > 0) this.effect(`${hover.aura}-land`, f.x, FLOOR, f.data.color, .45);
+        else this.effect('dust', f.x, FLOOR, '#afa1c1', .3, { radius: 25 });
+      }
       f.y = FLOOR;
       f.vy = 0;
       if (f.attack?.skill.air) f.attack = null;

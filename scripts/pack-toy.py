@@ -2,10 +2,14 @@
 
 BGM m4a is re-encoded to 64 kbps AAC, and portrait webp gets a second lossy pass,
 only as zip entries. public/ and dist/ are left alone.
+Sprite -lite.webp (slow-link stand-ins) are left out: index.html gets <meta name="mf-toy">, and
+slowLink() in src/assets/loader.ts treats the page as a fast link, so nothing asks for them.
+Both re-encodes are cached in 素材/.toy-cache/ (gitignored, local only), keyed by the source bytes plus
+the setting, so a repack only re-encodes files that changed. Entries this pack did not use are deleted.
 Run from the repo root: python -P scripts/pack-toy.py
 """
 import hashlib
-import json, os, re, subprocess, tempfile, zipfile
+import json, os, re, subprocess, zipfile
 
 root, cap = "dist", 50 * 1024 * 1024
 out = os.path.join("\u7d20\u6750", "moefighters-toy.zip")
@@ -14,6 +18,13 @@ TOY_BGM_BITRATE = "64k"
 # Most aggressive libwebp quality. Alpha stays lossless so the cutout edge does not fringe.
 TOY_PORTRAIT_Q = 1
 PNG_WEBP = ("sprites/", "stages/", "avatars/", "finale/")
+TOY_CACHE = os.path.join("\u7d20\u6750", ".toy-cache")
+
+def cache_path(path, recipe, ext):
+    h = hashlib.sha1(recipe.encode() + b"\0")
+    with open(path, "rb") as fh:
+        h.update(fh.read())
+    return os.path.join(TOY_CACHE, h.hexdigest() + ext)
 
 def encode_bgm(src, dst):
     subprocess.check_call([
@@ -59,6 +70,8 @@ def main():
         start = i + 8
     if not ok:
         raise SystemExit("assetUrl default base is not ./")
+    if 'meta[name="mf-toy"]' not in bundle:
+        raise SystemExit("dist predates the mf-toy switch in loader.ts: run npm run build")
     for needle in ("/fonts/ma-shan-zheng-kuji.woff2", "/bgm/garupa-pico-instrumental.m4a", "/sfx/ship-horn.mp3"):
         if needle not in bundle:
             raise SystemExit("missing " + needle)
@@ -71,21 +84,31 @@ def main():
                 portraits.append((p, rel))
     portrait_zip = {}
     portrait_from = portrait_to = 0
-    tmp_dir = tempfile.mkdtemp()
+    os.makedirs(TOY_CACHE, exist_ok=True)
+    used = set()
+    hits = misses = 0
+    done = False
     try:
         jobs = []
         for p, rel in portraits:
-            dst = os.path.join(tmp_dir, rel.replace("/", "__"))
-            jobs.append([p, dst])
+            dst = cache_path(p, "portrait-q" + str(TOY_PORTRAIT_Q), ".webp")
+            used.add(os.path.basename(dst))
+            if os.path.exists(dst):
+                hits += 1
+            else:
+                misses += 1
+                jobs.append([p, dst[:-5] + ".part.webp"])
             portrait_zip[rel] = dst
             portrait_from += os.path.getsize(p)
         if jobs:
             encode_portraits(jobs)
+            for _src, part in jobs:
+                os.replace(part, part[:-len(".part.webp")] + ".webp")
         rewritten = {}
         for rel, dst in portrait_zip.items():
             rewritten[rel] = file_stat(dst)
             portrait_to += rewritten[rel][0]
-        n = dropped = 0
+        n = dropped = lite_dropped = 0
         bgm_from = bgm_to = 0
         with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as z:
             for dp, _dirs, fns in os.walk(root):
@@ -94,21 +117,34 @@ def main():
                     rel = os.path.relpath(p, root).replace("\\", "/")
                     if rel == "asset-manifest.json":
                         continue
+                    if rel.startswith("sprites/") and rel.endswith("-lite.webp"):
+                        lite_dropped += 1
+                        continue
+                    if rel == "index.html":
+                        page = open(p, encoding="utf-8").read()
+                        if "<head>" not in page:
+                            raise SystemExit("index.html has no <head>")
+                        z.writestr(rel, page.replace("<head>", '<head>\n    <meta name="mf-toy" content="1">', 1))
+                        n += 1
+                        continue
                     if f.endswith(".png") and rel.startswith(PNG_WEBP) and os.path.exists(p[:-4] + ".webp"):
                         dropped += 1
                         continue
                     if rel.startswith("bgm/") and rel.endswith(".m4a"):
                         # ponytail: always re-encodes, so a master already at 64k takes another lossy pass.
-                        fd, tmp = tempfile.mkstemp(suffix=".m4a")
-                        os.close(fd)
-                        try:
-                            encode_bgm(p, tmp)
-                            z.write(tmp, rel)
-                            bgm_from += os.path.getsize(p)
-                            bgm_to += os.path.getsize(tmp)
-                            rewritten[rel] = file_stat(tmp)
-                        finally:
-                            os.remove(tmp)
+                        cached = cache_path(p, "bgm-aac-" + TOY_BGM_BITRATE, ".m4a")
+                        used.add(os.path.basename(cached))
+                        if os.path.exists(cached):
+                            hits += 1
+                        else:
+                            misses += 1
+                            part = cached[:-4] + ".part.m4a"
+                            encode_bgm(p, part)
+                            os.replace(part, cached)
+                        z.write(cached, rel)
+                        bgm_from += os.path.getsize(p)
+                        bgm_to += os.path.getsize(cached)
+                        rewritten[rel] = file_stat(cached)
                     elif rel in portrait_zip:
                         z.write(portrait_zip[rel], rel)
                     else:
@@ -124,6 +160,8 @@ def main():
                     out_entries = []
                     for entry in entries:
                         base = entry[0].split("?", 1)[0]
+                        if base.startswith("sprites/") and base.endswith("-lite.webp"):
+                            continue
                         out_entries.append([entry[0], *rewritten[base]] if base in rewritten else entry)
                     return out_entries
                 manifest["files"] = apply(manifest.get("files") or [])
@@ -133,20 +171,27 @@ def main():
                 z.writestr("asset-manifest.json", json.dumps(manifest, separators=(",", ":")))
                 n += 1
             names = set(z.namelist())
+        done = True
     finally:
-        for name in os.listdir(tmp_dir):
-            os.remove(os.path.join(tmp_dir, name))
-        os.rmdir(tmp_dir)
+        # Only after a full pass: a crash halfway has not marked everything it needs yet.
+        # Removes stale entries (art or music since replaced) and parts left by an interrupted encode.
+        if done:
+            for name in os.listdir(TOY_CACHE):
+                if name not in used:
+                    os.remove(os.path.join(TOY_CACHE, name))
     if "index.html" not in names or any(name.startswith(("/", "dist/")) for name in names):
         raise SystemExit("zip layout")
     if any(name.endswith(".png") and name[:-4] + ".webp" in names and name.startswith(PNG_WEBP) for name in names):
         raise SystemExit("png with webp still packed")
     if any(name.startswith("finale/") and name.endswith(".png") for name in names):
         raise SystemExit("finale png packed")
+    if any(name.endswith("-lite.webp") for name in names):
+        raise SystemExit("lite sheet packed")
     size = os.path.getsize(out)
     if size >= cap:
         raise SystemExit("over 50MiB: " + str(size))
     print(n, dropped, size, bgm_from, bgm_to, portrait_from, portrait_to)
+    print("toy cache:", hits, "hit /", misses, "encoded; lite sheets left out:", lite_dropped)
 
 if __name__ == "__main__":
     main()

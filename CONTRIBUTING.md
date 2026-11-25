@@ -4,7 +4,7 @@
 
 1. Fork 仓库，在自己的分支修改。
 2. `npm install` 后 `npm run dev` 启动本地页面。
-3. 提交前运行 `npm run check` 与 `npm run build`。
+3. 提交前建议运行 `npm run check`、`npm run typecheck`（不拦构建和部署）。改了图片先跑 `npm run assets`，把 `asset-cache/` 一起提交。
 4. Pull Request 写明问题、修改后的行为、如何验证；分支策略见 [docs/public/BRANCHING.md](docs/public/BRANCHING.md)。
 
 手机布局和触控修改应说明是否做过真机验证。新增素材须提供来源与使用许可说明，不要把网站链接当作授权证明。

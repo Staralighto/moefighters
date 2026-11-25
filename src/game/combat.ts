@@ -6,6 +6,7 @@ import { CONTROLS, FLOOR, GRAVITY, H, SIDE, W, X_MAX, X_MIN, clamp } from './con
 import { attackPhase } from './animState.ts';
 import { BUSHIDO_TAIL, clipFor, DRUM_SLUMP, drumRow, PAW, PAW_FAIL, PAW_HITS, pawRow, pawTime, ROLL, ROLL_BEATS, ROLL_MAX, ROLL_MIN, ROLL_SLUMP, ROLL_THROW, rollGap, SELFIE, SELFIE_HOLD, SELFIE_LUNGE, SELFIE_SNAP, SELFIE_TAIL, IAIDO_DECIDE, IAIDO_GAP, IAIDO_HITS, IAIDO_PHASE, IAIDO_RECOVER, IAIDO_WAVE_GAP, iaidoCharge, RIOT_GAP, RIOT_HITS, ROOFTOP_DIVE, TEA_PHASE, TEA_RECOVER, FEIGN_TAIL, COFFIN_OUT, COFFIN_TIP, RING_BIG, RING_FIRST, RING_GAP, RING_SMALL, RING_SMALLS, PRACTICE_HITS, practiceBeat, SKIP_HOP, SKIP_MAX, SKIP_MIN, SKIP_TAIL, MINE_FUSE, ENCORE, ENCORE_FACE, ENCORE_GONE, BURDEN_Y, UNBOWED_STEP, UNBOWED_MAX, PIGGY, PIGGY_DASH, PIGGY_CARRY, PIGGY_TAIL, PIGGY_BACK_X, PIGGY_BACK_Y, HUG, HUG_LUNGE, HUG_FIRST, HUG_GAP, HUG_TAIL, MEAL_GRACE, FAMILY, FAMILY_MEMBERS, FAMILY_LUNGE, FAMILY_FINALE, FAMILY_ZONE_AHEAD, FAMILY_ZONE_R, FAMILY_TAIL, familyLife, BLOOD, OBLIVION, TWIN_MOON, TWIN_PHASE, PUFF, PUFF_BLINK, PUFF_ARRIVE, PUFF_REACH, PUFF_STOP, PUFF_HOP, PUFF_BEAT, PUFF_CUT, PUFF_TAIL, EAR, EAR_DECIDE, EAR_PALM_HITS, EAR_PALM_GAP, EAR_PALM, EAR_KNEE, EAR_TAIL, EAR_GLINT, MIKU_EYE, PLAY, PLAY_DASH, PLAY_PASS, PLAY_THROUGH, PLAY_SLASHES, PLAY_BYE, PLAY_THOUGHT, PLAY_EAR_AT, PLAY_EAR_HOLD, PLAY_FIGURES, PLAY_CURTAIN, WIDE, WIDE_DASH, WIDE_DROPS, WIDE_BLAST, WIDE_POP, WIDE_TAIL, WIDE_APPLIANCE_LIFE, WIDE_SLOT, WIDE_ZONE_AHEAD, WIDE_ZONE_R, ENTRANCE, ENTRANCE_VY, ENTRANCE_REACH, ENTRANCE_HOP, ENTRANCE_TAIL, ENTRANCE_CHEER, CHERRY_MAX, CHERRY_R0, CHERRY_R_STEP, CHERRY_HOLD_MAX, CHERRY_TAIL, CHIERI_BUN, ASSEMBLE, ASSEMBLE_PULL, ASSEMBLE_BEAT, ASSEMBLE_FINALE, ASSEMBLE_STOP, ASSEMBLE_TAIL, ASSEMBLE_WHIFF, LEAGUE_BOARD_Y, HEART_TIERS, HEART_GAP, heartTier, YOMOGI_CHEST, YOMOGI_EYE, HIDE, HIDE_REACH, HIDE_GAP, HIDE_HOP, HIDE_TRAVEL, HIDE_WAIT, HIDE_PUNCH, HIDE_TAIL, PALM_FIST, RADAR, RADAR_WAIT, RADAR_BURST, RADAR_TAIL, SHADOW, SHADOW_SCARE, SHADOW_DASH, SHADOW_BEATS, SHADOW_PAUSE, SHADOW_TAIL, SHADOW_SCALE, SHADOW_OFF, SHADOW_GAP, SHADOW_LET, SHADOW_POSE, FLIGHT, FLIGHT_CARRY, FLIGHT_WHIFF, FLIGHT_TAIL, FLIGHT_RISE, FLIGHT_TRAVEL, FLIGHT_HOP, WITHDRAW, WITHDRAW_LUNGE, WITHDRAW_FIRST, WITHDRAW_GAP, WITHDRAW_YANKS, WITHDRAW_TAIL, SUITS_REVEAL } from '../render/clips.ts';
 import { SCRIPTS } from './scripts.ts';
+import { holdUlt, ultSource } from './ult.ts';
 import { noteJab, walled } from './ai.ts';
 // MASKING's four moves register themselves on SCRIPTS (after scripts.ts, which this line follows).
 import './masking.ts';
@@ -19,6 +20,7 @@ import './tomoe.ts';
 import './tsugumi.ts';
 import './nijika.ts';
 import './kita.ts';
+import './shiori.ts';
 import './ryo.ts';
 import './nina.ts';
 import './subaru.ts';
@@ -42,6 +44,7 @@ import './rimi.ts';
 import './umiri.ts';
 import { RINKO_TENT } from './rinkoPath.ts';
 import { applyStatus, applyStatusBlocked, extendStatus, isRecruit, statusMask } from './status.ts';
+import { bodyLift } from './hoverBody.ts';
 
 /* Every damage source (melee swing, projectile) funnels through hit(). Guard, combo and energy rules live here once. */
 
@@ -412,10 +415,16 @@ function veilMiss(g: FightGame, defender: Fighter, skill: Skill): boolean {
 const APPARATUS_SHARE = .8;
 
 /** Result-screen ledger: actual enemy hp loss, and the hit that eliminated the team. */
-function noteBlow(g: FightGame, attacker: Fighter, defender: Fighter, move: string, lost: number): void {
+function noteBlow(g: FightGame, attacker: Fighter, defender: Fighter, move: string, lost: number, skill?: Skill): void {
   if (lost <= 0 || !g.isEnemy(attacker, defender)) return;
   g.dealt[attacker.team] = (g.dealt[attacker.team] ?? 0) + lost;
-  if (defender.hp <= 0 && !defender.minion && !defender.echo && !g.teamAlive(defender.team)) g.roundFin[defender.team] = move;
+  if (defender.hp <= 0 && !defender.minion && !defender.echo && !g.teamAlive(defender.team)) {
+    g.roundFin[defender.team] = move;
+    // 必杀收尾：不看招式名，看这一下是不是必杀状态里打出来的（ult.ts）。
+    const by = ultSource(g, attacker, skill);
+    g.roundFinUlt[defender.team] = !!by;
+    g.roundFinBy[defender.team] = by?.id ?? -1;
+  }
 }
 
 /** 状态不好，这次不算！: one line in the ledger. Only hit() calls it, so the refund sees every source once. */
@@ -480,8 +489,8 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     const effLen = g.effects.length;
     g.audio.play(skill.super ? 'super' : 'hit', attacker.id);
     if (!skill.noSparks) {
-      g.sparks(defender.x - dir * 20, defender.y - 85, attacker.data.color, 8, .65);
-      g.effect('hit', defender.x - dir * 20, defender.y - 85, attacker.data.color, .18, { radius: 36 });
+      g.sparks(defender.x - dir * 20, defender.y - bodyLift(defender) - 85, attacker.data.color, 8, .65);
+      g.effect('hit', defender.x - dir * 20, defender.y - bodyLift(defender) - 85, attacker.data.color, .18, { radius: 36 });
     }
     for (let i = effLen; i < g.effects.length; i++) g.effects[i].local = true;
     g.hitstop = skill.react?.kind === 'none' ? 0 : .025;
@@ -646,12 +655,12 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
           attacker.parried = Math.max(attacker.parried, PARRY_STAGGER * attacker.stunMul);
         }
       }
-      g.effect('parry', defender.x + defender.facing * 28, defender.y - 80, '#8fe6ff', .3, { radius: 58 });
-      g.sparks(defender.x + defender.facing * 34, defender.y - 85, '#bff4ff', 10, .8);
+      g.effect('parry', defender.x + defender.facing * 28, defender.y - bodyLift(defender) - 80, '#8fe6ff', .3, { radius: 58 });
+      g.sparks(defender.x + defender.facing * 34, defender.y - bodyLift(defender) - 85, '#bff4ff', 10, .8);
       g.audio.play('parry', attacker.id);
       g.text('完美格挡', defender.x, defender.y - 175, '#bff4ff', .5, 20);
     } else {
-      g.effect('shield', defender.x - dir * 30, defender.y - 78, '#8df0ff', .22, { radius: 65 });
+      guardFlash(g, defender, defender.x - dir * 30, -dir);
       // 蝶变: the slow sticks through a block. 花道·缠 leaves the flag unset.
       if (skill.slowOnBlock) applySlow(defender, skill);
       // 异常 a guard only shortens (StatusApply.onBlock). A perfect block never reaches this branch.
@@ -830,8 +839,8 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     g.audio.play('hit', attacker.id);
     g.text('-' + Math.round(damage), defender.x + dir * 15, defender.y - 160, skill.super ? SIDE[attacker.team] : '#fff', .65, (skill.super ? 30 : 23) + (crit ? 6 : 0));
     if (!skill.noSparks) {
-      g.sparks(defender.x - dir * 23, defender.y - 85, attacker.data.color, skill.super ? 36 : 18, skill.super ? 1.6 : 1);
-      g.effect('hit', defender.x - dir * 23, defender.y - 85, attacker.data.color, .25, { radius: skill.super ? 90 : 48 });
+      g.sparks(defender.x - dir * 23, defender.y - bodyLift(defender) - 85, attacker.data.color, skill.super ? 36 : 18, skill.super ? 1.6 : 1);
+      g.effect('hit', defender.x - dir * 23, defender.y - bodyLift(defender) - 85, attacker.data.color, .25, { radius: skill.super ? 90 : 48 });
     }
     if (skill.frail) {
       const fresh = defender.frail <= 0;
@@ -874,7 +883,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     if (owner && owner.hp > 0) {
       const before = owner.hp;
       owner.hp = clamp(owner.hp - damage * APPARATUS_SHARE, 0, owner.data.hp);
-      noteBlow(g, attacker, owner, skill.name, before - owner.hp);
+      noteBlow(g, attacker, owner, skill.name, before - owner.hp, skill);
       deviceHpLoss = damage * (1 - APPARATUS_SHARE);
     }
   }
@@ -901,7 +910,7 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     attacker.vainDmg = 0;
     attacker.vainEnergy = 0;
   }
-  noteBlow(g, attacker, defender, skill.name, hpBefore - defender.hp);
+  noteBlow(g, attacker, defender, skill.name, hpBefore - defender.hp, skill);
   // 潜在表明: a quiet cut of the damage dealt comes back as healing, capped at max health.
   // 起死开战: the window's lifesteal mod rides on top of the challenge-deck field.
   const steal = attacker.lifesteal + lifestealOf(attacker);
@@ -934,6 +943,14 @@ const hostMelee = new WeakMap<Attack, { t: number; skill: Skill; hit: Set<number
 export function claimableMelee(a: Attack): Skill | undefined {
   const attempt = hostMelee.get(a);
   return attempt && attempt.hit === a.hit && a.t >= attempt.t && a.t - attempt.t <= .10 ? attempt.skill : undefined;
+}
+
+/** A blocked hit: the generic cyan shield, or the defender's own guard look (aura.guard). `toward` points at the
+ *  attacker. Sits on her drawn body, so a floating defender's guard is not drawn at her knees. */
+function guardFlash(g: FightGame, d: Fighter, x: number, toward: number): void {
+  const own = d.data.aura?.guard;
+  if (own) g.effect(own, x, d.y - bodyLift(d) - 82, d.data.color, .42, { radius: 65, dir: toward });
+  else g.effect('shield', x, d.y - bodyLift(d) - 78, '#8df0ff', .22, { radius: 65 });
 }
 
 export function applyMelee(g: FightGame, f: Fighter, a: Attack): void {
@@ -1282,10 +1299,12 @@ function runOps(g: FightGame, f: Fighter, s: Skill, ops: Op[]): void {
   for (const op of ops) {
     if (op.op === 'form') {
       formTime = f.data.frenzy?.time ?? FRENZY_TIME;
+      if (s.super) holdUlt(f, formTime);
       f.frenzy = formTime;
       if (op.king) f.king = true;
     } else if (op.op === 'mod') {
       const time = op.time ?? formTime;
+      if (s.super) holdUlt(f, time);
       // v: the damage multiplier while braced; 1 is pure armour with no damage cut (狼王来了).
       if (op.kind === 'brace') addMod(f, 'brace', time, { v: op.v ?? BRACED_DAMAGE, max: !op.set });
       else if (op.kind === 'noGain') addMod(f, 'noGain', time, { max: !!op.max });
@@ -1552,7 +1571,7 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
       if (s.type !== 'upper') applyMelee(g, f, a);
       if (sc?.flash) sc.flash(g, f, a);
       // A form's swing graphic, or the character's own flourish, replaces the generic slash, so the two never stack.
-      else if (!swingFx && !flourish) g.effect(s.fx, f.x + f.facing * 65, f.y - (s.type === 'sweep' ? 22 : 83), f.data.color, .22, { dir: f.facing, radius: s.range * .5 });
+      else if (!swingFx && !flourish) g.effect(s.fx, f.x + f.facing * 65, f.y - bodyLift(f) - (s.type === 'sweep' ? 22 : 83), f.data.color, .22, { dir: f.facing, radius: s.range * .5 });
     }
     // 狂化 J / K: a form may stamp a graphic on every swing, hit or whiff (swingFx is data).
     if (swingFx) {
@@ -1563,7 +1582,7 @@ export function updateAttack(g: FightGame, f: Fighter, dt: number): void {
     }
     // The flourish itself, hit or whiff.
     if (flourish) {
-      g.effect(flourish, f.x + f.facing * s.range * .55, f.y - (s.air ? 100 : a.index === 1 ? 72 : 104), f.data.color, a.index === 1 ? .32 : .24, {
+      g.effect(flourish, f.x + f.facing * s.range * .55, f.y - bodyLift(f) - (s.air ? 100 : a.index === 1 ? 72 : 104), f.data.color, a.index === 1 ? .32 : .24, {
         dir: f.facing, heavy: a.index === 1, air: !!s.air, hit: a.hit.size > 0, radius: s.range * .45,
       });
     }
@@ -7334,7 +7353,7 @@ function step_smile(g: FightGame, f: Fighter, a: Attack): void {
     o.vx = f.facing * (s.knock ?? 220);
     const guarded = o.blocking && o.facing === -f.facing && o.guard > 0;
     if (guarded) {
-      g.effect('shield', o.x - f.facing * 30, o.y - 78, '#8df0ff', .22, { radius: 65 });
+      guardFlash(g, o, o.x - f.facing * 30, -f.facing);
       g.text('格挡', o.x, o.y - 170, '#91eaff', .35, 16);
       continue;
     }

@@ -6,6 +6,7 @@ import { toast } from './toast.ts';
 
 const $ = (id: string) => document.getElementById(id)!;
 const IMPORTED = 'mf.save.imported';
+const MAX_SAVE_BYTES = 5_000_000;
 const esc = (s: string) => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
 
 function table(rows: SummaryRow[], head: string): string {
@@ -89,7 +90,11 @@ export function bindSaveUi(openDialog: (d: HTMLDialogElement) => void): void {
     const broken = plan.broken ? `<p class="save-note">存档里有 ${plan.broken} 部分已损坏，已跳过，其余照常导入。</p>` : '';
     const fine = plan.fresh ? '' : '<p class="save-fine">如果不放心，可以先<button type="button" class="save-link" id="save-backup">导出</button>一份现在的进度备份，以便找回。</p>';
     show('导入存档', (when ? `<p class="save-when">存档时间 ${when}</p>` : '') + table(plan.rows, '导入后') + note + broken + fine, '确认导入', () => {
-      plan.apply();
+      const failed = plan.apply();
+      if (failed.length) {
+        show('导入存档', `<p class="save-note">${esc(failed.join('、'))}写入失败。已保存的内容会保留，可以重新选择存档重试。</p>`, null, null);
+        return;
+      }
       try { sessionStorage.setItem(IMPORTED, '1'); } catch { /* 只是少一条提示 */ }
       location.reload();
     });
@@ -101,9 +106,13 @@ export function bindSaveUi(openDialog: (d: HTMLDialogElement) => void): void {
   file.onchange = async () => {
     const f = file.files?.[0];
     if (!f) return;
+    if (f.size > MAX_SAVE_BYTES) {
+      show('导入存档', '<p class="save-note">存档文件超过 5 MB，无法导入。</p>', null, null);
+      return;
+    }
     let text = '';
     try { text = await f.text(); } catch { /* 读不了按坏文件处理 */ }
-    const plan = f.size > 5_000_000 ? 'not-save' : planImport(text);
+    const plan = planImport(text);
     if (plan === 'not-json') show('导入存档', '<p class="save-note">这个文件打不开，可能不是萌趣格斗的存档。</p>', null, null);
     else if (plan === 'not-save') show('导入存档', '<p class="save-note">这个文件不是萌趣格斗的存档。</p>', null, null);
     else if (!plan.used) show('导入存档', '<p class="save-note">这个存档里没有可以导入的进度。</p>', null, null);

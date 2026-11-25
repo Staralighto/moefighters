@@ -3211,6 +3211,62 @@ export const ROSTER: CharacterData[] = [
       }),
     ],
   },
+  {
+    // 香农栞 (game/shiori.ts, render/shioriFx.ts): 隐藏角色。萌趣世界「编织者」之一（名册上写作 ■■■），织萌神殿的司书，
+    // 看管编织这个世界所用的纹样书《圣典》；侍奉织萌而有圣女的神性，又被圣典约束，被迫给薇欧拉的大逃杀当记分员。
+    // 原型是社区里的 Claude 娘（橙色长直发、放射状花饰、手持书本、家教严格的大小姐），梗都换成圣职的说法：
+    // J / K「如您所言 / 所言极是」(You're absolutely right)，U 封缄之印（封号 / 检测），I 恕难从命（拒绝请求），
+    // O 三重祷言（Haiku / Sonnet / Opus 三档 + 深度思考），L 圣典裁决（Constitutional AI + 多智能体）。少有的 200 气必杀，是她的胜负手。
+    // 姓「香农」取自社区的「香农血统」设定，栞（书签）对应司书。common 空手，special 的书画进精灵；巨典由代码画。
+    id: 'shiori', name: '香农栞', title: '司书 / 圣女', quote: '规则就是规则。……不过这次，算你例外。', color: '#D97757',
+    bands: ['weavers'],
+    hidden: true,
+    ...stats('focus'),
+    // 悬浮（同大蛇的浮空站姿）：神性与压迫感只体现在画面上，判定仍在地面；倒地时才真正落地。
+    view: { kind: 'sprite', common: '/sprites/shiori/common.png', special: '/sprites/shiori/special.png', height: 189, lift: 5,
+      hover: { lift: 16, bob: 3, ultRise: 26, aura: 'shiori-hover', dread: 170, trail: '#ffd48a' } },
+    // J / K 自带的光（掌心绽开的放射花 / 垂足扫出的光弧）和第一个专属格挡（侧看的圣印光盘）。
+    aura: { swing: 'shiori-swing', guard: 'shiori-guard' },
+    skills: [
+      // You're absolutely right 的圣职说法：先颔首称是，再出手。
+      skill(0, 'light', '如您所言'),
+      skill(1, 'heavy', '所言极是'),
+      // 封缄之印（封号 / 检测）：圣印先「审视」，触犯戒律的人封得更久。
+      skill(2, 'heavy', '封缄之印', {
+        damage: 24, range: 320, start: .4, duration: .78, cd: 10, knock: 40, fx: 'shiori-seal', noSparks: true,
+        react: { kind: 'stand', stun: .3 },
+        status: [{ kind: 'silence', time: 1.8, mark: 'shiori-seal', onBlock: .5 }],
+        brief: '圣印封住对手 U I O L；出招中被封更久',
+        detail: '身前 320 内最近的对手脚下亮起审视圣印，0.4 秒后封缄：仍在圣印里的对手受 24 伤害并沉默 1.8 秒（不能用 U I O L）；审视期间对手正在出招，算触犯戒律，沉默 2.6 秒；走出圣印可躲，格挡时沉默减半',
+      }),
+      // 恕难从命（拒绝请求）：翻开圣典，书页屏障婉拒一切。
+      skill(3, 'endure', '恕难从命', {
+        damage: 20, range: 140, start: .8, duration: 1.15, cd: 9, knock: 340, fx: 'shiori-refuse', noSparks: true,
+        react: { kind: 'stand', stun: .4 },
+        curse: { kind: 'dmgDealt', time: 3, v: .75, mark: 'shiori-weak' },
+        brief: '书页屏障推开近身并削弱；飞弹弹回',
+        detail: '翻开圣典，身前浮起书页屏障 0.8 秒：近身攻击不掉血不硬直，对方被推开受 20 伤害并削弱 3 秒（造成的伤害 −25%）；飞弹被挡下，化作一页书弹回去 30 伤害；抓投和必杀照常命中；没接到招收手有破绽',
+      }),
+      // 三重祷言（Haiku / Sonnet / Opus + 深度思考）：祈祷越久，降下的祷言越重。
+      skill(4, 'projectile', '三重祷言', {
+        damage: 15, range: 700, start: .3, duration: .9, cd: 8, knock: 60, speed: 760, size: 40, life: 1.2, fx: 'shiori-prayer',
+        react: { kind: 'stand', stun: .25 },
+        brief: '按住祈祷，松开降下俳句 / 颂诗 / 巨典',
+        detail: '按住 O 合掌祈祷，被打断就散掉。短按「俳句」连射三枚花瓣光片 15 / 21 / 15；祈祷 0.6 秒「颂诗」扇形射出十四道书页光刃各 6；祈祷满 1.2 秒「巨典」从天而降砸向前方或 520 内的对手，90 伤害并击倒；都可格挡',
+      }),
+      // 圣典裁决（Constitutional AI + 多智能体）：高举圣典，四名侍祭分身同时出手，最后降下裁决之光。
+      skill(5, 'endure', '圣典裁决', {
+        cost: 200, damage: 27, range: 900, start: .55, duration: 2.8, knock: 0, gain: 0, fx: 'shiori-charter',
+        superArmor: true, holdEndure: true, noSparks: true,
+        react: { kind: 'stand', stun: .45 },
+        guardPlan: [12, 16, 20, 24, 60],
+        finale: { damage: 144, knock: 380, noBlock: true, react: { kind: 'knockdown', vy: -320, knocked: 1 },
+          status: [{ kind: 'silence', time: 3, mark: 'shiori-seal' }] },
+        brief: '侍祭分身四面出击，裁决之光击倒并沉默',
+        detail: '霸体高举圣典，锁定全场最近的对手；四名侍祭分身轮流从两侧穿过对手各 27 伤害（背后来的挡不住）；最后裁决之光落在对手身上，144 伤害并击倒，沉默 3 秒（不可格挡）；消耗 200 气',
+      }),
+    ],
+  },
 ];
 
 /** Selectable characters, including hidden ones that can be unlocked. */

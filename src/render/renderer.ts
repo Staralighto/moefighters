@@ -1,6 +1,7 @@
 import type { StageData } from '../data/types.ts';
-import type { FightGame } from '../game/game.ts';
+import type { Effect, FightGame } from '../game/game.ts';
 import type { FighterView } from './view.ts';
+import type { Fighter } from '../game/fighter.ts';
 import { stageThumbSrc, type ImageCache } from '../assets/loader.ts';
 import { FLOOR, H, SIDE, W } from '../game/constants.ts';
 import { comboAnchor } from '../ui/battleFrame.ts';
@@ -30,6 +31,8 @@ import { TOMOE_BACK, TOMOE_SCREEN_BACK, TOMOE_SCREEN_FRONT } from './tomoeFx.ts'
 import { TSUGUMI_BACK, TSUGUMI_SCREEN_BACK } from './tsugumiFx.ts';
 import { NIJIKA_SCREEN_BACK, drawNijikaRollBack } from './nijikaFx.ts';
 import { KITA_BACK, KITA_SCREEN_BACK, KITA_SCREEN_FRONT } from './kitaFx.ts';
+import { SHIORI_BACK, drawShioriHover } from './shioriFx.ts';
+import { hoverFull, hoverGlide, hoverLevel, hoverLift, hoverSpec, hoverTrailX, stepHover } from './hover.ts';
 import { RYO_BACK, RYO_SCREEN_BACK } from './ryoFx.ts';
 import { NINA_BACK, NINA_SCREEN_BACK, drawNinaBack } from './ninaFx.ts';
 import { MOMOKA_BACK, MOMOKA_SCREEN_BACK } from './momokaFx.ts';
@@ -69,7 +72,11 @@ const NIGHTMARE_RIM = '#9a5cff';
 const NIGHTMARE_TINT = '#170a2c';
 const NIGHTMARE_DIM = .42;
 /** Effects painted under every body: 和泉朋花's coffin and her spotlights. */
-const BACK_FX = new Set(['coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK, ...MIZUHO_BACK, ...MIKU_BACK, ...SHIZUKU_BACK, ...CHIERI_BACK, ...YOMOGI_BACK, ...MASKING_BACK, ...TAE_BACK, ...SAAYA_BACK, ...HIMARI_BACK, ...TOMOE_BACK, ...TSUGUMI_BACK, ...KAORU_BACK, ...HAGUMI_BACK, ...TOKO_BACK, ...RUI_BACK, ...NANAMI_BACK, ...CHISATO_BACK, ...MAYA_BACK, ...BOCCHI_BACK, ...LOCK_BACK, ...KANON_BACK, ...AKO_BACK, ...RINKO_BACK, ...RIMI_BACK, ...ANON_BACK, ...UMIRI_BACK, ...NINA_BACK, ...MOMOKA_BACK, ...SUBARU_BACK, ...KITA_BACK, ...RYO_BACK]);
+/** 悬浮 looks by view.hover.aura: drawn under the bodies every frame while she floats. */
+const HOVER_AURA: Record<string, (c: CanvasRenderingContext2D, f: Fighter, lift: number, level: number, age: number, lite: boolean) => void> = {
+  'shiori-hover': drawShioriHover,
+};
+const BACK_FX = new Set([...SHIORI_BACK, 'coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK, ...MIZUHO_BACK, ...MIKU_BACK, ...SHIZUKU_BACK, ...CHIERI_BACK, ...YOMOGI_BACK, ...MASKING_BACK, ...TAE_BACK, ...SAAYA_BACK, ...HIMARI_BACK, ...TOMOE_BACK, ...TSUGUMI_BACK, ...KAORU_BACK, ...HAGUMI_BACK, ...TOKO_BACK, ...RUI_BACK, ...NANAMI_BACK, ...CHISATO_BACK, ...MAYA_BACK, ...BOCCHI_BACK, ...LOCK_BACK, ...KANON_BACK, ...AKO_BACK, ...RINKO_BACK, ...RIMI_BACK, ...ANON_BACK, ...UMIRI_BACK, ...NINA_BACK, ...MOMOKA_BACK, ...SUBARU_BACK, ...KITA_BACK, ...RYO_BACK]);
 /** Screen-space layers that ignore the body zoom: behind every body, and in front of them. */
 const SCREEN_BACK = new Set(['encore-stage', 'family-dim', ...SAKIKO_SCREEN_BACK, ...MIZUHO_SCREEN_BACK, ...MIKU_SCREEN_BACK, ...YOMOGI_SCREEN_BACK, ...MASKING_SCREEN_BACK, ...TAE_SCREEN_BACK, ...SAAYA_SCREEN_BACK, ...HIMARI_SCREEN_BACK, ...TOMOE_SCREEN_BACK, ...TSUGUMI_SCREEN_BACK, ...NIJIKA_SCREEN_BACK, ...KITA_SCREEN_BACK, ...RYO_SCREEN_BACK, ...NINA_SCREEN_BACK, ...MOMOKA_SCREEN_BACK, ...KAORU_SCREEN_BACK, ...HAGUMI_SCREEN_BACK, ...CHISATO_SCREEN_BACK, ...MAYA_SCREEN_BACK, ...BOCCHI_SCREEN_BACK, ...LOCK_SCREEN_BACK, ...KANON_SCREEN_BACK, ...AKO_SCREEN_BACK, ...RINKO_SCREEN_BACK]);
 const SCREEN_FRONT = new Set(['encore-rain', 'encore-crowd', 'encore-call', 'slap-flash', ...CHIERI_SCREEN_FRONT, ...YOMOGI_SCREEN_FRONT, ...HIMARI_SCREEN_FRONT, ...TOMOE_SCREEN_FRONT, ...CHISATO_SCREEN_FRONT, ...MAYA_SCREEN_FRONT, ...AKO_SCREEN_FRONT, ...RINKO_SCREEN_FRONT, ...PAREO_SCREEN_FRONT, ...PAREO_SCREEN_FRONT, ...KITA_SCREEN_FRONT, ...SUBARU_SCREEN_FRONT]);
@@ -257,18 +264,54 @@ export class Renderer {
     this.drawStage();
 
     const bodyScale = portraitBodyScale(document.body.classList.contains('pad-split'));
+    // 悬浮 (hover.ts): an effect that follows a floating body rides up with her drawn body.
+    const fx = (e: Effect) => {
+      const who = e.follow != null ? g.fighterById(e.follow) : undefined;
+      const up = who ? hoverLift(who) : 0;
+      if (!up) { drawEffect(c, e, this.images); return; }
+      c.save();
+      c.translate(0, -up);
+      drawEffect(c, e, this.images);
+      c.restore();
+    };
 
     // 领域: the active field's backdrop sits under every body.
     this.drawDomains(c, g);
     // 圆形地面影子：跳得越高影越小；中心比脚线高 7px（FLOOR+3 再上移 10），对齐成图的实际脚线。
+    // 悬浮 (hover.ts): step the float once a frame on the game clock, before anything reads it.
+    // A KO win sends a floating winner up out of the frame.
+    const over = g.phase === 'roundend' || g.phase === 'finished';
+    for (const f of g.fighters) stepHover(f, g.age, over && f.hp > 0 && g.opponents(f).length === 0);
+    // 满气威压: a floating fighter with a full meter draws nearby foes' shadows toward her.
+    const pullOf = (f: Fighter): number => {
+      let dx = 0;
+      for (const h of g.fighters) {
+        const d = hoverSpec(h)?.dread;
+        if (!d || h.hp <= 0 || !g.isEnemy(f, h)) continue;
+        const full = hoverFull(h);
+        const gap = h.x - f.x, near = 1 - Math.abs(gap) / d;
+        if (full > .01 && near > 0) dx += Math.sign(gap) * full * Math.min(1, near * 1.6) * 18;
+      }
+      return dx;
+    };
     for (const f of g.fighters) {
       if (violetHidden(f)) continue;
       // 梦魇：影子深得几乎看不见地面（剧本里唯一的识别线索），也稍大一圈。
       const deep = f.nightmare && f.hp > 0;
-      c.fillStyle = deep ? '#020104d9' : '#05050c40';
+      // 悬浮：影子更淡更小，随浮动一起呼吸。
+      const hv = deep ? 0 : hoverLift(f);
+      c.fillStyle = deep ? '#020104d9' : hv > 1 ? '#05050c2a' : '#05050c40';
+      const pull = deep ? 0 : pullOf(f);
       c.beginPath();
-      c.ellipse(f.x, FLOOR - 7, Math.max(0, (deep ? 60 : 50) - (FLOOR - f.y) * .09) * bodyScale, (deep ? 12 : 9) * bodyScale, 0, 0, Math.PI * 2);
+      c.ellipse(f.x + pull * .5 * bodyScale, FLOOR - 7, Math.max(0, (deep ? 60 : 50) - (FLOOR - f.y) * .09 - hv * .35 + Math.abs(pull) * .6) * bodyScale, (deep ? 12 : 9) * bodyScale, 0, 0, Math.PI * 2);
       c.fill();
+    }
+    // 悬浮: her own look under her feet (a light pool on the floor, a few motes), behind every body.
+    for (const f of g.fighters) {
+      const aura = hoverSpec(f)?.aura;
+      if (!aura || violetHidden(f) || f.hp <= 0) continue;
+      const draw = HOVER_AURA[aura];
+      if (draw) zoomAbout(c, bodyScale, f.x, f.y, () => draw(c, f, hoverLift(f), hoverLevel(f), g.age, isLiteFx()));
     }
 
     // 狼王来了: the dark veil and the moon pillar sit under every body, so the fighters stay lit.
@@ -278,7 +321,7 @@ export class Renderer {
     // 安可是主唱的: the house lights go down and the stage beams sweep behind every body.
     for (const e of g.effects) if (SCREEN_BACK.has(e.type)) drawEffect(c, e, this.images);
     // 康乃馨盛开之日 / 请成为主角吧♡: the coffin stands behind her and the spotlight falls behind the body it lights.
-    for (const e of g.effects) if (BACK_FX.has(e.type)) zoomAbout(c, bodyScale, e.x, e.y, () => drawEffect(c, e, this.images));
+    for (const e of g.effects) if (BACK_FX.has(e.type)) zoomAbout(c, bodyScale, e.x, e.y, () => fx(e));
 
     const lite = isLiteFx();
     // 人和挂在身上的特效绕脚放大。命中、弹道、粒子绕各自的落点放大，战场贴图不动。
@@ -298,6 +341,19 @@ export class Renderer {
       if (e.type !== 'rainbow-pop' || e.fighter == null) continue;
       const f = g.fighterById(e.fighter);
       if (f) zoomAbout(c, bodyScale, f.x, f.y, () => drawRainbowBack(c, e, f));
+    }
+    // 滑行残影: a floating fighter gliding leaves two faint tinted copies of her glide cell where she just was.
+    for (const f of g.fighters) {
+      const tint = hoverSpec(f)?.trail;
+      const k = tint && f.hp > 0 && !violetHidden(f) ? hoverGlide(f) : 0;
+      if (k <= .02) continue;
+      const view = this.view(f.data.id);
+      const pose = { sheet: 'common', col: 1, row: 0, facing: f.facing };
+      for (const [ago, a] of [[.16, .14], [.08, .24]] as const) {
+        const x = hoverTrailX(f, ago);
+        if (Math.abs(x - f.x) < 8) continue;
+        zoomAbout(c, bodyScale, x, f.y, () => view.draw(c, f, x, f.y, a * k, tint, undefined, pose));
+      }
     }
     const order = [...g.fighters].sort((a, b) => Number(a.hp > 0) - Number(b.hp > 0) || a.y - b.y);
     const teamRim = teamGlowOn(g);
@@ -406,7 +462,12 @@ export class Renderer {
           drawEffect(c, { type: 'encore-eye', x: f.x + f.facing * 2, y: footY - ENCORE_EYE_Y, color: '#ffffff', life: 1, max: 1, dir: f.facing });
         }
         drawLayerBass(c, f, this.images, alpha);
-        if (f.blocking) drawEffect(c, { type: 'shield', x: f.x + f.facing * 28, y: f.y - 80, color: '#a6eeff', life: .14, max: .22, radius: 58 });
+        // Holding guard: the generic cyan shield, or her own guard look held steady (aura.guard, n: 1), on her drawn body.
+        if (f.blocking) {
+          const own = f.data.aura?.guard;
+          if (own) drawEffect(c, { type: own, x: f.x + f.facing * 28, y: f.y - hoverLift(f) - 82, color: f.data.color, life: 1, max: 1, radius: 58, dir: f.facing, n: 1, age: g.age });
+          else drawEffect(c, { type: 'shield', x: f.x + f.facing * 28, y: f.y - 80, color: '#a6eeff', life: .14, max: .22, radius: 58 });
+        }
         // 异常: every status wears its mark's drawing (statusMarks.ts). A slow or a root whose mark is not in
         // that table keeps the older look below.
         const marked = f.hp > 0 ? drawStatusAuras(c, f, g.age, this.images) : { slow: false, root: false };
@@ -431,6 +492,8 @@ export class Renderer {
           if (m.left <= 0) continue;
           if (m.mark === 'praise') drawEffect(c, { type: 'praise-aura', x: f.x, y: f.y - 182, color: '#ff8fd8', life: 1, max: 1, age: g.age });
           // 宇田川巴's 爱之深，责之切: a little grey cloud of drizzle over the scolded head.
+          // 香农栞's 恕难从命: two loose pages drifting down beside the weakened.
+          else if (m.mark === 'shiori-weak') drawEffect(c, { type: 'shiori-weak-aura', x: f.x, y: f.y, color: '#fff4dc', life: 1, max: 1, age: g.age });
           else if (m.mark === 'tomoe-scold') drawEffect(c, { type: 'tomoe-scold-aura', x: f.x, y: f.y - (f.data.view.kind === 'sprite' ? f.data.view.height : 181) - 30, color: '#9a9aa8', life: 1, max: 1, age: g.age });
           else if (m.mark === 'spotlight') drawEffect(c, { type: 'spot-aura', x: f.x, y: footY, color: '#fff2fb', life: 1, max: 1, age: g.age });
           // 马桥心玖's 珍稀动物认证: the tag over their head; the upgrade flips it over to 奇葩神兽.
@@ -484,7 +547,7 @@ export class Renderer {
       });
     }
     for (const f of g.fighters) if (f.ban > 0 && f.hp > 0) zoomAbout(c, bodyScale, f.x, f.y, () => drawBanSign(c, f));
-    for (const e of g.effects) if (e.type !== 'ghost' && e.type !== 'lifedraw-mark' && e.type !== 'petal-rain' && e.type !== 'rainbow-pop' && e.type !== 'apparatus' && e.type !== 'moonlight' && !SCREEN_FRONT.has(e.type) && !SCREEN_BACK.has(e.type) && !BACK_FX.has(e.type)) zoomAbout(c, bodyScale, e.x, e.y, () => drawEffect(c, e, this.images));
+    for (const e of g.effects) if (e.type !== 'ghost' && e.type !== 'lifedraw-mark' && e.type !== 'petal-rain' && e.type !== 'rainbow-pop' && e.type !== 'apparatus' && e.type !== 'moonlight' && !SCREEN_FRONT.has(e.type) && !SCREEN_BACK.has(e.type) && !BACK_FX.has(e.type)) zoomAbout(c, bodyScale, e.x, e.y, () => fx(e));
     // Screen-space effects: the petal rain, the floor-to-sky pillar and the encore crowd must not grow with the body.
     for (const e of g.effects) if (e.type === 'petal-rain' || e.type === 'apparatus' || SCREEN_FRONT.has(e.type)) drawEffect(c, e, this.images);
     for (const e of g.effects) if (e.type === 'moonlight') drawMoonlight(c, e, 'front');

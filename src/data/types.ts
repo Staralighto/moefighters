@@ -298,7 +298,25 @@ export type ViewSpec =
       /** World-sheet playback scale, pivoted on the foot line so the feet stay. */
       worldScale?: number;
       /** Pixels to draw the whole cell above the fighter origin. Positive is up. */
-      lift?: number };
+      lift?: number;
+      /** 悬浮 (render/hover.ts): drawn floating. Art only — the body stays on the floor for every hit and status. */
+      hover?: HoverSpec };
+
+/** 悬浮: how a floating character hangs in the air. The art keeps its toes on the shared foot line; this lifts it. */
+export interface HoverSpec {
+  /** Pixels between her lowest toe and the floor at rest. */
+  lift: number;
+  /** Bob amplitude in pixels; the bob stops while she swings so the hit frames read. */
+  bob: number;
+  /** Extra pixels she rises through her L. */
+  ultRise?: number;
+  /** Effect-type prefix of her own hover look: the aura under her feet and `${aura}-land` on landing. */
+  aura?: string;
+  /** 满气威压: with her meter full, foes within this many px of her have their shadows drawn toward her. */
+  dread?: number;
+  /** 滑行残影: tint of the two faint afterimages she leaves while gliding; unset leaves none. */
+  trail?: string;
+}
 
 /** 一人二役: how one of the two forms plays. Multipliers are 1 when unset. */
 export interface FormTune {
@@ -391,7 +409,7 @@ export interface CharacterData {
    *  every footfall of the walk (`step`) and on the active frame of every J / K, ground or air (`swing`,
    *  which replaces the generic slash).
    *  Data, so the kernel never reads a character id. Keep these quiet: they play all match long. */
-  aura?: { step?: string; swing?: string };
+  aura?: { step?: string; swing?: string; guard?: string };
   /** 终幕: the cut-in played when her L makes the round's kill. `fx` keys her own lead-in
    *  (render/finale.ts); `art` is the finished 16:9 illustration, unset draws a placeholder; `anchor` is
    *  the hand-off point in the art the lead-in lands on, as fractions of the art's width and height

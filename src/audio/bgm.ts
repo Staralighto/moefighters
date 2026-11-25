@@ -195,6 +195,7 @@ let src: AudioBufferSourceNode | null = null;
 let offset = 0;
 let startedAt = 0;
 let pageSuspended = typeof document !== 'undefined' && document.hidden;
+let theatreOpen = false;
 let unlocked = false;
 /* 静默开播还没成功时，选人页的点击不接音乐。开打或用户自己点开关才清掉。 */
 let waitForFight = enabled;
@@ -307,7 +308,7 @@ function scheduleWarm(): void {
 
 function tryWarm(): void {
   warmTimer = 0;
-  if (!enabled || pageSuspended || !buffer) return;
+  if (!enabled || pageSuspended || theatreOpen || !buffer) return;
   if (held || imagesBusy()) { scheduleWarm(); return; }
   if (!shouldWarmNext({ order, held: false, busy: false, slow: prefetchSlow(), haveBuffer: true })) return;
   const next = nextPlanned();
@@ -418,9 +419,9 @@ function cutTrack(): void {
   sync();
 }
 
-/* 唯一的状态汇合点：想让音乐出声 = 开关开着 && 页面在前台。幂等，差多少补多少。 */
+/* 唯一的状态汇合点：开关开着、页面在前台且剧场关闭时才放音乐。 */
 function sync(): void {
-  if (!enabled || pageSuspended) { stopSrc(); return; }
+  if (!enabled || pageSuspended || theatreOpen) { stopSrc(); return; }
   const c = ensureCtx();
   if (!c) return;
   void c.resume().catch(() => { /* 低电量模式等会把 ctx 挂起：借下一次手势的 pokeMusic 重试 */ });
@@ -530,6 +531,14 @@ export function setMusicSuspended(suspended: boolean): void {
   sync();
 }
 
+/** 剧场期间暂停背景音乐，收起后按当前设置续播。 */
+export function setMusicPausedForTheatre(open: boolean): void {
+  if (theatreOpen === open) return;
+  theatreOpen = open;
+  if (open) abortWarm();
+  sync();
+}
+
 function trySilent(): void {
   if (!enabled || ctx || ctxBroken || pending || typeof AudioContext === 'undefined') return;
   let c: AudioContext;
@@ -569,7 +578,7 @@ export function musicIndex(): number { return index; }
 /** 已经在出声（不是还在下载解码）。 */
 export function musicPlaying(): boolean { return !!src; }
 /** 开着但还没出声：在下载或解码。下载失败时为 false。 */
-export function musicLoading(): boolean { return enabled && !src && !bufferBroken && !pageSuspended; }
+export function musicLoading(): boolean { return enabled && !src && !bufferBroken && !pageSuspended && !theatreOpen; }
 
 /** 点列表里的某一首：换过去并保证音乐是开的。点正在放的那首不打断。 */
 export function playTrack(i: number): void {

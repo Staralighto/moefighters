@@ -20,8 +20,8 @@ export type Goal =
   | { k: 'finL' }
   /** 打出 v 连击。 */
   | { k: 'combo'; v: number }
-  /** 不用 L 必杀获胜。 */
-  | { k: 'noL' };
+  /** 玩家自己至少放过一次 L 必杀并获胜。（原「不用 L 获胜」劣势太大，换成这个。） */
+  | { k: 'useL' };
 
 export function goalText(g: Goal): string {
   switch (g.k) {
@@ -31,7 +31,7 @@ export function goalText(g: Goal): string {
     case 'time': return `${g.v} 秒内获胜`;
     case 'finL': return '用 L 必杀收尾';
     case 'combo': return `打出 ${g.v} 连击`;
-    case 'noL': return '不用 L 必杀获胜';
+    case 'useL': return '使用 L 必杀获胜';
   }
 }
 
@@ -157,7 +157,7 @@ export const CHAPTERS: Chapter[] = [{
       teaser: '校门边的那个人，好像听不见她们说话。',
       copies: { 睦: 'always' },
       battle: { foes: [{ id: 'mutsumi' }],
-        goals: [win, { k: 'hp', v: 15 }, { k: 'time', v: 45 }], rule: '二对一 · 对手体力加强' } },
+        goals: [win, { k: 'hp', v: 15 }, { k: 'time', v: 60 }], rule: '二对一 · 对手体力加强' } },
     { id: '1-03', title: '偶遇的迷途者', type: '剧情', scene: 'tsukinomori', row: 1, cast: ['sakiko', 'uika', 'soyo', 'anon'],
       teaser: '在校门外遇到了两个熟悉的身影——她们也不知道这里是哪里。' },
     { id: '1-04', title: '暴雨中的拦路客', type: '战斗', scene: 'lot-rain', row: 0, cast: [],
@@ -173,7 +173,7 @@ export const CHAPTERS: Chapter[] = [{
     { id: '1-07', title: '咖啡厅的戒备', type: '战斗', scene: 'ring-cafe', row: 0, cast: [],
       teaser: '咖啡厅的角落里，有人等着推门进来的人。',
       battle: { foes: [{ id: 'mitake' }, { id: 'moca' }], perk: 'cd',
-        goals: [win, { k: 'time', v: 40 }, { k: 'ally' }], rule: '二对二 · 对手攻势急促' } },
+        goals: [win, { k: 'time', v: 60 }, { k: 'ally' }], rule: '二对二 · 对手攻势急促' } },
     { id: '1-08', title: '星屑暴走之夜', type: '战斗', scene: 'asukayama', row: 1, cast: [],
       teaser: '飞鸟山的夜空亮得不正常，像有星星在坠落。',
       battle: { foes: [{ id: 'kasumi' }, { id: 'arisa' }], perk: 'energy',
@@ -186,7 +186,7 @@ export const CHAPTERS: Chapter[] = [{
       teaser: '回到约好的咖啡厅，熟悉的两个人已经在等了。',
       copies: { 爱音: 'always', 素世: 'always' },
       battle: { foes: [{ id: 'anon' }, { id: 'soyo' }], perk: 'poise',
-        goals: [win, { k: 'hp', v: 15 }, { k: 'time', v: 45 }], rule: '二对二 · 对手受击硬直缩短' } },
+        goals: [win, { k: 'hp', v: 15 }, { k: 'time', v: 60 }], rule: '二对二 · 对手受击硬直缩短' } },
     { id: '1-11', title: '虚空舞台的幻影', type: 'Boss', scene: 'yumemita', row: .5, cast: [],
       teaser: '空间裂开了。舞台中央站着的，是她们认识的人。',
       copies: { 睦: 'always' },
@@ -213,7 +213,7 @@ export const CHAPTERS: Chapter[] = [{
     { id: '2-04', title: '镜像的截击', type: '战斗', scene: 'lot-rain', row: 1, cast: [],
       teaser: '暴雨里拦路的那个人，有一张再熟悉不过的脸。',
       battle: { us: ['umiri'], foes: [{ id: 'umiri', nightmare: true }], perk: 'cd',
-        goals: [win, { k: 'hp', v: 15 }, { k: 'time', v: 45 }], rule: '镜像对局 · 梦魇攻势凌厉' } },
+        goals: [win, { k: 'hp', v: 15 }, { k: 'time', v: 60 }], rule: '镜像对局 · 梦魇攻势凌厉' } },
     { id: '2-05', title: '断后的抉择', type: '剧情', scene: 'ring', row: 0, cast: ['mutsumi', 'umiri', 'nyamu'],
       teaser: '夜晚的街区，追兵又近了。总得有人留下来。' },
     { id: '2-06', title: '刻意的分道', type: '剧情', scene: 'tsukinomori', row: 1, cast: ['sakiko', 'uika', 'mutsumi'],
@@ -222,7 +222,7 @@ export const CHAPTERS: Chapter[] = [{
     { id: '2-07', title: '失踪的疑云', type: '战斗', scene: 'ring-cafe', row: 0, cast: [],
       teaser: '咖啡厅里只有两个人。说好的第三个人去了哪里？',
       battle: { us: ['sakiko'], foes: [{ id: 'taki' }, { id: 'soyo' }],
-        goals: [win, { k: 'hp', v: 15 }, { k: 'noL' }], rule: '一对二' } },
+        goals: [win, { k: 'hp', v: 15 }, { k: 'useL' }], rule: '一对二' } },
     { id: '2-08', title: '孤身陷重围', type: '战斗', scene: 'ring', row: 1, cast: [],
       teaser: '跑得快是她的强项。可这一次，对面站着的是她认识的人。',
       copies: { 祥子: 'always', 喵梦: 'always' },
@@ -242,6 +242,68 @@ export const CHAPTERS: Chapter[] = [{
     { id: '2-11', title: '星光的真相', type: '章末', scene: 'tsukinomori', row: .5, cast: ['sakiko', 'uika', 'mutsumi', 'soyo'],
       teaser: '舞台塌了。有些话，终于到了要说出口的时候。',
       copies: { 初华: 'always' } },
+  ],
+}, {
+  no: 3,
+  name: '天球囚笼',
+  en: 'CHAPTER 03',
+  // 剧情里常是多人混战，实际战斗只演其中一块战场：1v1 是平衡的基准，2v2 只留给会合（3-11）和全队冲关（3-13）。
+  // 引擎最多 2v2：剧本里第三个梦魇只在舞台上露面，不进战斗。
+  stages: [
+    { id: '3-01', title: '废墟中的约定', type: '剧情', scene: 'tsukinomori', row: 0, cast: ['sakiko', 'mutsumi', 'soyo'],
+      teaser: '三个人重新出发。世界泡却在脚下震颤，远处传来了打斗声。' },
+    { id: '3-02', title: '失控的荆棘', type: '战斗', scene: 'lot-rain', row: 1, cast: [],
+      teaser: '暴雨里，有人正拼命护着同伴。对面的人浑身是刺。',
+      battle: { us: ['sakiko'], foes: [{ id: 'nina' }], perk: 'cd',
+        goals: [win, { k: 'hp', v: 15 }, { k: 'time', v: 60 }], rule: '一对一 · 失控的荆棘 · 对手技能冷却缩短' } },
+    { id: '3-03', title: '褪色的笑声', type: '剧情', scene: 'sanctuary', row: 0, cast: ['sakiko', 'mutsumi', 'soyo', 'bocchi', 'nijika'],
+      teaser: '音乐室里，她们终于讲起了在深处遇到的事。' },
+    { id: '3-04', title: '祭坛的断后', type: '战斗', scene: 'sanctuary', row: 1, cast: [],
+      teaser: '回忆里的祭坛前，总得有人留下来。',
+      // 生存关不套标准：星光被吸、回不了气（放不出 L），撑过 40 秒。对面是第 2 章起的大师人机，伤害不加成。
+      battle: { us: ['kita'], usMods: { energyMul: 0 }, survive: 40, custom: true, difficulty: 2,
+        foes: [{ id: 'sakiko', nightmare: true, mods: { damage: 1 } }],
+        goals: [{ k: 'win', label: '撑过 40 秒' }, { k: 'hp', v: 15 }, { k: 'combo', v: 6 }], rule: '闪回 · 一对一 · 星光被吸，无法充能 · 撑过 40 秒' } },
+    { id: '3-05', title: '生存者的悖论', type: '战斗', scene: 'ring', row: 0, cast: [],
+      teaser: 'RiNG 门前，有人带来了一个更可怕的说法。',
+      battle: { us: ['sakiko'], foes: [{ id: 'chuchu' }, { id: 'pareo' }],
+        goals: [win, { k: 'hp', v: 15 }, { k: 'useL' }], rule: '一打二' } },
+    { id: '3-06', title: '暗巷的清道夫', type: '战斗', scene: 'ring-cafe', row: 1, cast: [],
+      teaser: '想从咖啡厅侧门绕路。可阴影里早就有人等着了。',
+      battle: { us: ['sakiko'], foes: [{ id: 'taki', nightmare: true }], perk: 'cd',
+        goals: [win, { k: 'hp', v: 15 }, { k: 'combo', v: 8 }], rule: '一对一 · 梦魇攻势凌厉' } },
+    { id: '3-07', title: '拼图齐聚', type: '剧情', scene: 'ring', row: 0, cast: ['sakiko', 'mutsumi', 'soyo', 'anon', 'taki'],
+      teaser: '街角传来熟悉的破空声和吵嘴声。' },
+    { id: '3-08', title: '孤灯的守护者', type: '战斗', scene: 'asukayama', row: 1, cast: [],
+      teaser: '飞鸟山的石阶上，有人张开屏障，一步也不肯退。',
+      battle: { us: ['taki'], foes: [{ id: 'umiri', nightmare: true }], perk: 'poise',
+        goals: [win, { k: 'hp', v: 15 }, { k: 'finL' }], rule: '一对一 · 对手受击硬直缩短' } },
+    { id: '3-09', title: '荒野的乱入者', type: '战斗', scene: 'asukayama', row: 0, cast: [],
+      teaser: '树影里窜出一道小小的身影，抱着吉他就冲了过来。',
+      battle: { us: ['sakiko'], foes: [{ id: 'rana' }], perk: 'energy',
+        goals: [win, { k: 'time', v: 60 }, { k: 'combo', v: 10 }], rule: '一对一 · 对手充能加快' } },
+    { id: '3-10', title: '裂隙的哨兵', type: '战斗', scene: 'underwater', row: 1, cast: [],
+      teaser: '裂隙之后是水下回廊。拦路的面孔，一张比一张熟悉。',
+      battle: { us: ['mutsumi'], foes: [{ id: 'anon', nightmare: true }, { id: 'taki', nightmare: true }],
+        goals: [win, { k: 'hp', v: 15 }, { k: 'useL' }], rule: '一打二' } },
+    { id: '3-11', title: '孤狼的并肩', type: '战斗', scene: 'underwater', row: 0, cast: [],
+      teaser: '回廊尽头，有人背靠石柱，独自扛着围攻。',
+      battle: { us: ['umiri', 'sakiko'], foes: [{ id: 'sakiko', nightmare: true }, { id: 'mutsumi', nightmare: true }],
+        goals: [win, { k: 'ally' }, { k: 'hp', v: 15 }], rule: '二对二' } },
+    { id: '3-12', title: '失踪的鼓点', type: '战斗', scene: 'underwater', row: 1, cast: [],
+      teaser: '拐角后面，传来熟悉的叫喊和鼓棒声。',
+      battle: { us: ['umiri'], foes: [{ id: 'nyamu', nightmare: true }], perk: 'cd',
+        goals: [win, { k: 'hp', v: 15 }, { k: 'time', v: 60 }], rule: '一对一 · 强化梦魇 · 对手技能冷却缩短' } },
+    { id: '3-13', title: '天球的守门人', type: '战斗', scene: 'tenkyuu', row: 0, cast: [],
+      teaser: '通往舞台中央的阶梯上，站着的是她们自己。',
+      battle: { us: ['sakiko', 'umiri'], foes: [{ id: 'sakiko', nightmare: true }, { id: 'umiri', nightmare: true }], perk: 'energy',
+        goals: [win, { k: 'ally' }, { k: 'finL' }], rule: '二对二 · 对手充能加快' } },
+    { id: '3-14', title: '囚笼的守望者', type: 'Boss', scene: 'tenkyuu', row: .5, cast: [],
+      teaser: '透明的囚笼就在眼前。守在笼前的，是那张最熟悉的脸。',
+      battle: { us: ['sakiko'], foes: [{ id: 'uika', nightmare: true }], perk: 'cd',
+        goals: [win, { k: 'hp', v: 15 }, { k: 'finL' }], rule: 'BOSS · 一对一 · 对手技能冷却缩短' } },
+    { id: '3-15', title: '织萌的呼唤', type: '章末', scene: 'tenkyuu', row: .5, cast: ['sakiko', 'uika', 'soyo', 'umiri', 'nyamu', 'mutsumi'],
+      teaser: '星盘亮了。有一个声音，等这一刻等了很久。' },
   ],
 }];
 

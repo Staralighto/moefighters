@@ -149,7 +149,7 @@ registerSection<State>({
     for (const [k, v] of Object.entries(b.s)) s[k] = [...new Set([...(s[k] ?? []), ...v])];
     return { p, s, c: [...new Set([...a.c, ...b.c])], streak: Math.max(a.streak, b.streak) };
   },
-  write: v => { writeJson(KEY, v); },
+  write: v => writeJson(KEY, v),
   isEmpty: v => !Object.keys(v.p).length && !Object.keys(v.s).length && !v.c.length,
   summary: v => {
     const done = TASKS.filter(t => (t.distinct ? (v.s[t.id]?.length ?? 0) : (v.p[t.id] ?? 0)) >= t.goal || v.c.includes(t.id)).length;

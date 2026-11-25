@@ -20,6 +20,8 @@ export interface Domain {
   remaining: number;
   buffs: DomainBuff[];
   target: 'self' | 'team' | 'enemies';
+  /** L 开的领域：存在期间主人造成的伤害算必杀攻击（ult.ts）。 */
+  ult?: boolean;
 }
 
 /** Opens the field declared on `s`. A later call covers the current one without ending it. */
@@ -33,6 +35,7 @@ export function beginDomain(g: FightGame, f: Fighter, s: Skill): void {
     remaining: spec.time,
     buffs: spec.buffs.map(b => ({ ...b })),
     target: spec.target ?? 'self',
+    ult: s.super || s.key === 'L',
   });
   syncDomain(g);
 }

@@ -8,12 +8,14 @@ export type BandId =
   | 'poppin-party' | 'afterglow' | 'roselia' | 'hello-happy' | 'raise-a-suilen' | 'morfonica'
   | 'millsage' | 'ikka-dumb-rock'
   | 'kessoku-band'
-  | 'togenashi-togeari';
+  | 'togenashi-togeari'
+  | 'weavers';
 
 /** 作品（IP）。选人界面先按作品排，再按乐队排：BanG Dream! → 孤独摇滚！ → 轻音少女 → Girls Band Cry。
  *  轻音少女还没有角色，先把顺序定在这里；新作品的角色进名册时按这个顺序接在后面。 */
-export type IpId = 'bang-dream' | 'bocchi-the-rock' | 'k-on' | 'girls-band-cry';
-export const IPS: readonly IpId[] = ['bang-dream', 'bocchi-the-rock', 'k-on', 'girls-band-cry'];
+export type IpId = 'bang-dream' | 'bocchi-the-rock' | 'k-on' | 'girls-band-cry' | 'moe-world';
+/** moe-world: 萌趣世界本身（剧情闯关的世界观）原创的角色，排在所有作品之后。 */
+export const IPS: readonly IpId[] = ['bang-dream', 'bocchi-the-rock', 'k-on', 'girls-band-cry', 'moe-world'];
 
 export interface BandData {
   id: BandId;
@@ -23,6 +25,9 @@ export interface BandData {
   color: string;
   /** Which work the band is from. Unset is BanG Dream!. */
   ip?: IpId;
+  /** The name `name` stands in for while it is still a secret (编织者, shown as ■■■ until the story is cleared).
+   *  Nothing reveals it yet; it is kept here so the reveal only has to swap the label. */
+  trueName?: string;
 }
 
 export const BANDS: readonly BandData[] = [
@@ -50,6 +55,9 @@ export const BANDS: readonly BandData[] = [
   { id: 'kessoku-band', name: '结束乐队', color: '#F5A9C0', ip: 'bocchi-the-rock' },
   // Girls Band Cry：TOGENASHI TOGEARI（无刺有刺），乐队色取井芹仁菜的代表色。
   { id: 'togenashi-togeari', name: 'TOGENASHI TOGEARI', color: '#D90E2C', ip: 'girls-band-cry' },
+  // 萌趣世界：和织萌一起编织这个世界的「编织者」（参与本项目制作的 AI 各有一位，全是隐藏角色）。
+  // 真名剧情全通后才揭开，在那之前名册上只写三个黑方块（■ 是普通字符，和文字同色，不会变成彩色 emoji）。
+  { id: 'weavers', name: '■■■', trueName: '编织者', color: '#D97757', ip: 'moe-world' },
 ];
 
 export const BAND_BY_ID: ReadonlyMap<BandId, BandData> = new Map(BANDS.map(b => [b.id, b]));

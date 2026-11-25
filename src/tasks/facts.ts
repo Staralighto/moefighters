@@ -38,7 +38,9 @@ export function matchFacts(g: FightGame, report: MatchReport, opts: { online?: b
   const mine = side ? report[side].map(f => f.id) : [];
   const foes = side ? report[side === 'winners' ? 'losers' : 'winners'].map(f => f.id) : [];
   let finKey = '';
-  if (report.win === true && report.fin) {
+  // 必杀收尾按必杀状态判（状态类、召唤类、异常跳伤的 L 也算），招式名对不上也不要紧。
+  if (report.win === true && report.finL) finKey = 'L';
+  else if (report.win === true && report.fin) {
     const team = humanTeam(g);
     for (const f of g.fighters) {
       if (team != null && f.team !== team) continue;

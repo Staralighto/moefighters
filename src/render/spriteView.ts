@@ -1,3 +1,4 @@
+import { hoverLift } from './hover.ts';
 import type { FighterView, FrozenPose } from './view.ts';
 import { isInvulnerable, type Fighter } from '../game/fighter.ts';
 import { LITE_SCALE, liteSrc, missingImages, portraitSrc, type ImageCache } from '../assets/loader.ts';
@@ -237,7 +238,8 @@ export class SpriteView implements FighterView {
     if (!im || !im.naturalWidth) { this.fallback.draw(ctx, f, x, y, alpha, undefined, outline); return; }
     const k = im === lite ? LITE_SCALE : 1;
     const h = src === this.king ? this.height * this.kingScale : alt?.height ?? this.height;
-    const lift = alt?.lift ?? this.lift;
+    // 悬浮 (hover.ts): floating bodies draw higher; the fighter itself stays on the floor.
+    const lift = (alt?.lift ?? this.lift) + hoverLift(f);
     // Bake the cell at the resolution this canvas rasterises at (device pixels in the arena,
     // the portrait's own scale on the select screen), so the blit below is 1:1 instead of a
     // resample. hypot of the x basis is the scale under any entry rotation or skew; the entry

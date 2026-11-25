@@ -37,7 +37,7 @@ registerSection<Book>({
     }
     return out;
   },
-  write: v => { writeJson(STAMP_KEY, v); },
+  write: v => writeJson(STAMP_KEY, v),
   isEmpty: v => !Object.keys(v).length,
   summary: v => {
     const ids = Object.keys(v).filter(id => PLAYABLE_BY_ID.has(id));
@@ -56,7 +56,10 @@ registerSection<Best>({
   read: () => ({ climb: readBest('climb'), brawl: readBest('brawl') }),
   parse: raw => isRecord(raw) ? { climb: count(raw.climb, 0, 9999), brawl: count(raw.brawl, 0, 9999) } : null,
   merge: (a, b) => ({ climb: Math.max(a.climb, b.climb), brawl: Math.max(a.brawl, b.brawl) }),
-  write: v => { for (const k of KINDS) if (v[k] > readBest(k)) writeBest(k, v[k]); },
+  write: v => {
+    for (const k of KINDS) if (v[k] > readBest(k)) writeBest(k, v[k]);
+    return KINDS.every(k => readBest(k) >= v[k]);
+  },
   isEmpty: v => !v.climb && !v.brawl,
   summary: v => v.climb || v.brawl ? [{ label: '无尽纪录', value: `闯关 ${v.climb} 关 · 激战 ${v.brawl} 关` }] : [],
   dump: v => v.climb || v.brawl ? v : undefined,
@@ -72,7 +75,7 @@ registerSection<Record<string, unknown> | null>({
   read: () => { const v = readJson(CONTROLS_KEY); return isRecord(v) ? v : null; },
   parse: raw => isRecord(raw) ? raw : null,
   merge: (_local, incoming) => incoming,
-  write: v => { if (v) writeJson(CONTROLS_KEY, v); },
+  write: v => !v || writeJson(CONTROLS_KEY, v),
   isEmpty: v => !v,
   summary: v => v ? [{ label: '键位布局', value: '已包含' }] : [],
   dump: v => v ?? undefined,

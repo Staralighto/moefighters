@@ -53,3 +53,9 @@ skills/
 # 剧情写作流程的临时文件和本地进度，不进 git
 story/_send/
 story/state.json
+
+# 本机产出和临时排查目录（出图、对比图、备份、AI 草稿），不进 git
+outputs/
+Claude outputs/
+_tc/
+_to_delete/

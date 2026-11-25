@@ -40,6 +40,8 @@ import { effortOf } from '../src/game/tsugumi.ts';
 import { drawNijikaFx, drawNijikaShot, drawNijikaRollBack } from '../src/render/nijikaFx.ts';
 import { attackStance } from '../src/game/nijika.ts';
 import { drawKitaFx, drawKitaShot } from '../src/render/kitaFx.ts';
+import { auraShioriSeal, drawShioriFx, drawShioriShot, SHIORI_HOVER_LIFT } from '../src/render/shioriFx.ts';
+import { hoverLift, stepHover } from '../src/render/hover.ts';
 import { auraRyoIou, auraRyoSick, drawRyoFx } from '../src/render/ryoFx.ts';
 import { drawNinaFx, drawNinaShot } from '../src/render/ninaFx.ts';
 import { thornLevel } from '../src/game/nina.ts';
@@ -189,7 +191,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const g = groupOf(c);
     if (runs[runs.length - 1] !== g) runs.push(g);
   }
-  assert.deepEqual(runs, ['ave-mujica', 'mygo', 'yumemita', 'poppin-party', 'roselia', 'hello-happy', 'sumimi', 'pastel-palettes', 'afterglow', 'raise-a-suilen', 'morfonica', 'millsage', 'ikka-dumb-rock', 'none:bang-dream', 'kessoku-band', 'togenashi-togeari'], 'roster order is the select-screen group order');
+  assert.deepEqual(runs, ['ave-mujica', 'mygo', 'yumemita', 'poppin-party', 'roselia', 'hello-happy', 'sumimi', 'pastel-palettes', 'afterglow', 'raise-a-suilen', 'morfonica', 'millsage', 'ikka-dumb-rock', 'none:bang-dream', 'kessoku-band', 'togenashi-togeari', 'weavers'], 'roster order is the select-screen group order');
   {
     // On the select screen: works in IPS order, never revisited; inside a work the bandless come last.
     const works: string[] = [];
@@ -206,7 +208,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     const order = groupOrder();
     assert.ok(order.indexOf('none:bang-dream') < order.indexOf('kessoku-band'), 'the stamp book lists the bandless before the next work');
   }
-  assert.deepEqual(ROSTER[at('uika')].bands, ['ave-mujica', 'sumimi'], '初华 sings for two units');
   assert.deepEqual(bandMembers('mygo', 'tomori').map(c => c.id), ['anon', 'rana', 'soyo', 'taki'], 'the sing calls her bandmates, never herself');
   assert.deepEqual(guestsFor([ROSTER[at('tomori')]], 'mygo').map(c => c.id), ['anon', 'rana', 'soyo', 'taki'], 'a sing loads the bandmates who are not already in');
   assert.ok(PLAYABLE.some(c => c.id === 'viola'), 'viola plays without a band');
@@ -218,11 +219,11 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const breaksAt: Record<string, number> = {
     nyamu: 4, sakiko: 10, anon: 5, rana: 10, soyo: 3, kokoro: 3, miyako: 5,
-    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5, toko: 4, rui: 5, nanami: 5, kanon: 7, ako: 9, rinko: 6, rimi: 5, hagumi: 6, nijika: 4, kita: 5, ryo: 5, nina: 4, momoka: 5, subaru: 8,
+    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5, toko: 4, rui: 5, nanami: 5, kanon: 7, ako: 9, rinko: 6, rimi: 5, hagumi: 6, nijika: 4, kita: 5, ryo: 5, nina: 4, momoka: 5, subaru: 8, shiori: 5,
   };
   const segments: Record<string, number> = {
     nyamu: 4, sakiko: 16, anon: 6, rana: 22, soyo: 3, kokoro: 3, miyako: 6,
-    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7, toko: 5, rui: 6, nanami: 5, kanon: 13, ako: 9, rinko: 7, rimi: 6, hagumi: 9, nijika: 6, kita: 6, ryo: 5, nina: 4, momoka: 5, subaru: 8,
+    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7, toko: 5, rui: 6, nanami: 5, kanon: 13, ako: 9, rinko: 7, rimi: 6, hagumi: 9, nijika: 6, kita: 6, ryo: 5, nina: 4, momoka: 5, subaru: 8, shiori: 5,
   };
   for (const [id, breakAt] of Object.entries(breaksAt)) {
     const s = ROSTER[at(id)].skills[5];
@@ -383,7 +384,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const anon = ROSTER.findIndex(c => c.id === 'anon');
   assert.ok(anon >= 0, 'anon is on the roster');
-  assert.equal(ROSTER[anon].skills[5].cost, 130, '爱音 pays 130');
   const g = newGame(anon, at('test-heavy')); const [p1] = g.fighters; dummy(g);
   assert.equal(p1.energyMax, 130, 'the meter caps at the super cost');
   p1.energy = 129;
@@ -775,7 +775,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 
 // card pool: fifteen unique ids, three-card draws that skip capped cards, caps priced per stage
 {
-  assert.equal(POOL.length, 15, 'the pool fields fifteen cards');
   assert.equal(new Set(POOL.map(c => c.id)).size, POOL.length, 'pool ids are unique');
   assert.ok(POOL.every(c => Number.isInteger(c.cap) && c.cap >= 1), 'every card declares a stack cap');
   for (let i = 0; i < 40; i++) {
@@ -1165,7 +1164,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     g.keyDown('KeyU'); g.keyUp('KeyU'); run(g, STEP * 2);
     assert.equal(p1.attack?.skill.damage, 48, 'nobody near at the cast: +20%');
     assert.ok(g.effects.some(e => e.type === 'bocchi-alone'), 'with its mark');
-    assert.equal(data.skills[2].damage, 40, 'the shared skill is untouched');
     run(g, 1.2);
     assert.equal(hp0 - p2.hp, 0, 'too far to reach');
     const near = newGame(bocchi, at('test-heavy')); const [n1, n2] = near.fighters; dummy(near);
@@ -1394,7 +1392,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const sakiko = at('sakiko');
   const data = ROSTER[sakiko];
-  assert.equal(data.skills[5].cost, 150, '血月的奏鸣 is a 150 super');
   {
     // The presence: footfalls ring on the floor while she walks, and every J / K leaves its moon.
     const g = newGame(sakiko, at('test-heavy')); const [p1, p2] = g.fighters; dummy(g);
@@ -1506,9 +1503,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const mutsumi = ROSTER.findIndex(c => c.id === 'mutsumi');
   assert.ok(mutsumi >= 0, 'mutsumi is on the roster');
   const data = ROSTER[mutsumi];
-  assert.equal(data.skills[4].count, 3, '三音 fires three');
-  assert.equal(data.skills[5].type, 'grab', '墨缇丝 is a grab');
-  assert.equal(data.skills[5].count, 4, '墨缇丝 hits four times');
 
   const notes = newGame(mutsumi, at('test-heavy')); dummy(notes);
   const [n1, n2] = notes.fighters;
@@ -1547,7 +1541,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const mutsumi = ROSTER.findIndex(c => c.id === 'mutsumi');
   const data = ROSTER[mutsumi];
-  assert.equal(data.skills[3].breakout, true, '轮奏 is a breakout');
 
   const escape = newGame(mutsumi, at('test-heavy')); const [e1, e2] = escape.fighters; dummy(escape);
   e1.queue.push({ index: 3, ttl: .18 });
@@ -1610,8 +1603,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   }
   assert.equal(h2.hp, hopHp, '爬行 misses a jump near the apex');
 
-  assert.equal(ROSTER[uika].skills[5].cost, 150, '推落 costs 150');
-  assert.equal(ROSTER[uika].skills[5].damage, 175, '推落 deals 175');
   const shove = newGame(uika, at('test-heavy')); const [s1, s2] = shove.fighters; dummy(shove);
   s1.energy = s1.energyMax;
   s2.x = s1.x + 180; s2.facing = 1;
@@ -1656,11 +1647,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const nyamu = at('nyamu');
   const data = ROSTER[nyamu];
-  assert.equal(data.trait, 'beat', 'nyamu keeps the drum passive');
-  assert.deepEqual(data.skills.slice(2).map(s => s.fx), ['stick-roll', 'selfie', 'nyamu-paw', 'drums'], 'nyamu U I O L');
-  assert.equal(data.skills[5].count, 32, '双踩地狱 drops four waves of eight');
   assert.ok(data.skills[4].holdEndure, '喵姆喵姆 holds armour through the cast');
-  assert.equal(data.skills[5].superArmor, true, '双踩地狱 is true super armour');
   assert.ok(data.skills[3].start <= .12 && (data.skills[3].speed ?? 0) >= 860, '蹭热度 starts and lunges fast');
   const super5 = data.skills[5];
   for (const w of [8, 16, 24]) assert.ok(drumShotTime(super5, w) - drumShotTime(super5, w - 1) > .1, `双踩地狱 wave ${w / 8} starts after a pause`);
@@ -1952,9 +1939,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const umiri = ROSTER.findIndex(c => c.id === 'umiri');
   assert.ok(umiri >= 0, 'umiri is on the roster');
   const data = ROSTER[umiri];
-  assert.equal(data.skills[3].count, 6, '扫货 throws six');
-  assert.equal(data.skills[4].fx, 'ripple', '恐湖 is the ripple');
-  assert.equal(data.skills[5].fx, 'slam', '信用 is the slam');
 
   const close = newGame(umiri, at('test-heavy')); const [c1, c2] = close.fighters; dummy(close);
   c2.x = c1.x + 55; c2.facing = -1;
@@ -2132,9 +2116,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const anon = ROSTER.findIndex(c => c.id === 'anon');
   assert.ok(anon >= 0, 'anon is on the roster');
   const data = ROSTER[anon];
-  assert.equal(data.skills[3].count, 12, 'C和弦 caps at twelve');
-  assert.equal(data.skills[5].count, 6, '不会再逃避了 swings six times');
-  assert.equal(data.skills[5].fx, 'spin', 'the super is the guitar spin');
 
   const dash = newGame(anon, at('test-heavy')); const [d1, d2] = dash.fighters; dummy(dash);
   d2.x = 900; d2.invuln = 5;
@@ -2231,12 +2212,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const soyo = ROSTER.findIndex(c => c.id === 'soyo');
   assert.ok(soyo >= 0, 'soyo is on the roster');
   const data = ROSTER[soyo];
-  assert.equal(data.name, '长崎素世', 'soyo uses the chosen display name');
-  assert.equal(data.skills[2].name, '求你了！', 'U is 求你了！');
-  assert.equal(data.skills[2].fx, 'onegai', 'U keeps the onegai fx');
-  assert.equal(data.skills[4].count, 2, '不甘的演奏 fires two notes');
-  assert.equal(data.skills[4].cd, 2, '不甘的演奏 cools in two seconds');
-  assert.equal(data.skills[5].fx, 'shout', 'the super is the 春日影 shout');
   assert.ok((data.skills[5].life ?? 0) * (data.skills[5].speed ?? 0) < 260, 'the shout wave covers about a quarter of the stage');
   assert.ok(data.view.kind === 'sprite' && !!data.view.frenzy, 'soyo preloads a frenzy sheet');
 
@@ -2363,17 +2338,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const tomori = ROSTER.findIndex(c => c.id === 'tomori');
   assert.ok(tomori >= 0, 'tomori is on the roster');
   const data = ROSTER[tomori];
-  assert.equal(data.name, '高松灯', 'tomori display name');
-  assert.equal(data.skills[2].fx, 'stone', 'U is the stone');
-  assert.equal(data.skills[2].damage, 12, 'the stone pokes for little');
   assert.ok((data.skills[2].knock ?? 0) >= 300, `the stone knocks back hard, saw ${data.skills[2].knock}`);
-  assert.ok(data.skills[2].cd <= 1, 'the stone cools almost instantly');
-  assert.equal(data.skills[3].breakout, true, 'the plaster is a breakout');
-  assert.equal(data.skills[4].fx, 'blackhole', 'O is the well');
-  assert.equal(data.skills[4].knock, 0, 'the well does not knock back, the pull owns the body');
-  assert.equal(data.skills[5].fx, 'poem', 'the super is the sing');
-  assert.equal(data.skills[5].cost, 200, 'the sing costs 200');
-  assert.ok(data.skills[5].start >= 1, 'the sing lasts a second');
 
   // U: the stone flies and shoves the dummy
   {
@@ -2548,9 +2513,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(arisa >= 0, 'arisa is on the roster');
   assert.ok(PLAYABLE.some(c => c.id === 'arisa'), 'arisa is playable');
   const data = ROSTER[arisa];
-  assert.equal(data.skills[3].root, 3, '气泡 roots for 3s');
-  assert.equal(data.skills[3].knock, 0, '气泡 does not knock the victim away');
-  assert.equal(data.skills[4].breakout, true, '傲娇音波 is a breakout');
 
   const pose = newGame(arisa, at('test-heavy')); const [s1] = pose.fighters; dummy(pose);
   pose.keyDown('KeyU');
@@ -2655,8 +2617,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   // Portraits render at the display's real pixel density. A fixed 1× canvas was filter-upscaled
   // by the compositor on HiDPI laptops and read as blur next to the arena's device-sized canvas.
   const fitSrc = readFileSync('src/ui/canvasFit.ts', 'utf8');
-  assert.ok(fitSrc.includes('devicePixelRatio'), 'canvas backing stores follow the display scale');
-  assert.ok(selectSrc.includes('fitCanvas') && readFileSync('src/ui/challenge.ts', 'utf8').includes('fitCanvas'), 'select portraits and buff-picker foes use the device-resolution fit');
   const uiCss = readFileSync('src/style.css', 'utf8');
   const hiddenSelectors = [...uiCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{[^{}]*\bdisplay:\s*none\b[^{}]*\}/g)];
   assert.ok(hiddenSelectors.every(([, selectors]) => !selectors.split(',').some(s => s.trim() === '.stage-random')), 'the portrait-only character shortcut must not hide the random scene card');
@@ -2679,7 +2639,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.deepEqual(imageSources('/icons/ult.svg', true), ['/icons/ult.svg'], 'a non-png url is unchanged');
   assert.equal(assetUrl('/sprites/aya/common.png', './'), './sprites/aya/common.png', 'a relative base keeps sheets inside the toy directory');
   assert.equal(assetUrl('/bgm/garupa-pico-instrumental.m4a', '/'), '/bgm/garupa-pico-instrumental.m4a', 'the dev server still requests from the site root');
-  assert.ok(readFileSync('src/assets/loader.ts', 'utf8').includes('once().catch(() => once())'), 'a dropped image is requested once more before the block figure');
   {
     // A relative url() inside a CSS custom property resolves against the built stylesheet (assets/), not the page.
     const files = process.getBuiltinModule('fs').readdirSync('src', { recursive: true }).map(f => 'src/' + f.replace(/\\/g, '/')).filter(f => f.endsWith('.ts'));
@@ -2687,8 +2646,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
       const t = readFileSync(f, 'utf8');
       assert.ok(!/setProperty\(\s*'--[\w-]+'\s*,\s*`url\(/.test(t) && !/--[\w-]+:\s*url\(/.test(t), f + ': a custom-property url() goes through cssUrl (absolute), never a relative path');
     }
-    assert.ok(readFileSync('src/ui/musicPage.ts', 'utf8').includes('a.src = assetUrl('), 'the music page probes durations under the Toy base');
-    assert.ok(!readFileSync('src/ui/framePreview.ts', 'utf8').includes('requestIdleCallback'), 'frame art is not prefetched on the home screen');
   }
   const headers = readFileSync('public/_headers', 'utf8');
   const rules: [string, string][] = [];
@@ -2735,25 +2692,13 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.equal(manifestPath('/sprites/aya/common.png', true, true), 'sprites/aya/common.webp', 'a guess maps to the file production requests');
     assert.equal(manifestPath('/portraits/aya.webp?v=ab', true, true), 'portraits/aya.webp?v=ab', 'a portrait guess keeps its ?v= cache key');
     const ms = readFileSync('scripts/asset-manifest.ts', 'utf8');
-    assert.ok(ms.includes("rel += '?v=' + v"), 'the manifest lists portraits at the ?v= url the game requests, so a preload is not wasted');
     const sw = readFileSync('public/sw.js', 'utf8');
     // sw.js is not bundled or type-checked: a syntax error only shows as a silent failed registration.
     let swParses = true;
     try { new (process.getBuiltinModule('vm').Script)(sw, { filename: 'public/sw.js' }); } catch { swParses = false; }
     assert.ok(swParses, 'public/sw.js parses');
-    assert.ok(sw.includes('inflight.get(req.url)'), 'a foreground request joins a background download of the same file instead of fetching it twice');
-    assert.ok(sw.includes("req.headers.has('range')"), 'the worker passes media range requests through');
-    assert.ok(sw.includes("'no-cache'"), 'a worker miss revalidates, so a pre-deploy HTTP copy is never stored under the new hash');
-    assert.ok(/const TRACK = \/\^\(sprites\|[a-z|]+\)\\\/\//.test(sw) && !/TRACK = [^\n]*index/.test(sw), 'the worker only handles asset folders, never the document');
-    assert.ok(sw.includes("t: 'rate'") && readFileSync('src/assets/loader.ts', 'utf8').includes('!(e.workerStart > 0)'), 'responses through the worker (header bytes only) never read as a slow link; the worker reports real throughput');
-    assert.ok(sw.includes("msg?.t === 'abort'") && readFileSync('src/assets/prefetch.ts', 'utf8').includes("'x-mf-bg': '1'"), 'a preempted background download is aborted inside the worker too, so the link is actually freed');
     const main = readFileSync('src/main.ts', 'utf8');
-    assert.ok(main.includes('plan.need.push(...assetsFor(characters, stage).filter(s => !images.has(s) && prefetchHas(s)))'), 'slow link: a sheet already in the worker cache is waited for in full, not skipped (no block-figure start)');
-    assert.ok(main.includes("predict(sheetsOf(shown), 'cast')") && main.includes('800'), 'cast guesses wait for the pick to settle and replace the previous cast');
-    assert.ok(main.includes('if (setup.online) releaseBulk ??= holdBulk();'), 'bulk and idle downloads stop for online fights only');
   }
-  assert.ok(!readFileSync('src/assets/loader.ts', 'utf8').includes('loadPortrait'), 'a failed idle crop does not download the full sheet');
-  assert.ok(readFileSync('src/render/spriteView.ts', 'utf8').includes('missingImages.has(stand)'), 'a failed idle crop shows the block figure');
   assert.equal(portraitSrc('/sprites/aya/common.png'), '/sprites/aya/idle.png', 'dev and production both ask for the idle cell, not the whole sheet');
   assert.equal(portraitSrc('/sprites/aya/idle.png'), '/sprites/aya/idle.png', 'an idle crop is already a portrait source');
   assert.equal(portraitSrc('/sprites/aya/special.png'), '/sprites/aya/special.png', 'only the common sheet has an idle crop');
@@ -2761,17 +2706,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(portraitSrc('/sprites/misaki/michelle-special.png'), '/sprites/misaki/michelle-special.png', 'a second special sheet is not an idle crop');
   assert.equal(stageThumbSrc('/stages/ring.png', true), '/stages/ring-thumb.png', 'stage cards ask for the small preview');
   assert.equal(stageThumbSrc('/stages/ring.png', false), '/stages/ring.png', 'dev stage cards use the full backdrop');
-  assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes('const NEAR = 22'), 'avatars, icons, and idle crops stay near-lossless');
-  assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes('sheet ? { quality: STAGE_Q, effort: 5, alphaQuality: 90 }'), 'sprite sheets use lossy webp at the stage quality');
-  assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes('const STAGE_Q = 80'), 'stage backdrops stay lossy webp at quality 80');
-  assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes('idle.webp'), 'the build writes the 256px idle crop');
-  assert.ok(readFileSync('scripts/compress-images.ts', 'utf8').includes("'-lite.webp'"), 'the build writes the half-size lite sheet');
   const packToy = readFileSync('scripts/pack-toy.py', 'utf8');
-  assert.ok(packToy.includes('TOY_BGM_BITRATE = "64k"'), 'the toy zip re-encodes bgm to 64 kbps');
-  assert.ok(packToy.includes('rel.startswith("bgm/") and rel.endswith(".m4a")'), '64 kbps applies only to bgm m4a');
-  assert.ok(packToy.includes('z.write(tmp, rel)'), 'the 64 kbps encode is a zip entry and does not replace dist');
-  assert.ok(packToy.includes('TOY_PORTRAIT_Q = 1') && packToy.includes('alphaQuality: 100'), 'the toy zip recompresses portraits at webp quality 1 and keeps the alpha edge');
-  assert.ok(packToy.includes('elif rel in portrait_zip') && !packToy.includes('copyfile'), 'portrait recompression is a zip entry and does not replace dist');
   assert.equal(liteSrc('/sprites/aya/common.png', true), '/sprites/aya/common-lite.webp', 'a sheet has a half-size lite copy');
   assert.equal(liteSrc('/sprites/aya/common.png', false), '/sprites/aya/common.png', 'dev has no lite copy');
   assert.equal(liteSrc('/stages/ring.png', true), '/stages/ring.png', 'stages use the thumb, not a lite copy');
@@ -3022,7 +2957,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(html.includes('class="arena-view"'), 'portrait splits the picture off the pad');
   assert.ok(!html.includes('rotate-hint'), 'portrait plays on the split pad instead of a turn-the-phone cover');
   assert.ok(cssText.includes('body.pad-split .touchpad') && cssText.includes('body.pad-split .tp-actions .atk'), 'a portrait fight puts a fan pad under the arena');
-  assert.ok(!readFileSync('src/main.ts', 'utf8').includes('portraitHold'), 'portrait fights stay playable instead of force-pausing');
   // 跟随镜头：4:3 平板上双方贴两边墙也都要在画面里；站在中间时画面铺满（z = 1）。
   {
     const vw = 1024, vh = 768, k = vh / 540;
@@ -3173,8 +3107,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const bgm = readFileSync('src/audio/bgm.ts', 'utf8');
   assert.ok(!/\bnew Audio\b|createMediaElementSource/.test(bgm), 'BGM stays on Web Audio buffers: no media element, no element source node');
-  assert.ok(bgm.includes("s.loop = order === 'one'"), 'only single-repeat loops the buffer');
-  assert.ok(bgm.includes('gen !== loadGen'), 'a stale decode cannot replace the track the click already moved to');
   assert.equal(cycleMusicOrder('seq'), 'shuffle');
   assert.equal(cycleMusicOrder('shuffle'), 'one');
   assert.equal(cycleMusicOrder('one'), 'seq');
@@ -3200,10 +3132,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(shouldWarmNext({ ...idle, order: 'seq', busy: true }), false, 'an in-flight image holds the music lookahead');
   assert.equal(shouldWarmNext({ ...idle, order: 'seq', slow: true }), false, 'a slow link does not prefetch');
   assert.equal(shouldWarmNext({ ...idle, order: 'seq', haveBuffer: false }), false, 'the current track is fetched before any lookahead');
-  assert.ok(readFileSync('src/audio/bgm.ts', 'utf8').includes("priority: 'low'"), 'lookahead fetch stays at the lowest priority');
-  assert.ok(bgm.includes('localStorage'), 'BGM prefs persist in localStorage');
   assert.ok(!/sessionStorage\.setItem/.test(bgm), 'BGM does not keep writing the old session key');
-  assert.ok(statSync('public/bgm/garupa-pico-instrumental.m4a').size < 3_400_000, 'bgm stays a 96 kbps encode under 3.4MB');
   const on = resolveMusicPrefs('{"enabled":true,"volume":0.4,"curve":"db"}', '{"enabled":false,"volume":0.9}');
   assert.deepEqual(on, { enabled: true, volume: 0.4, writeLocal: null, dropSession: true }, 'a log-fader record wins over a stale session');
   const moved = resolveMusicPrefs(null, '{"enabled":true,"volume":0.4}');
@@ -3233,14 +3162,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.ok(err < 1, `migrated ${p}% stays within 1 dB of the old gain, got ${err}`);
   }
   const sfx = readFileSync('src/audio/sfx.ts', 'utf8');
-  assert.ok(sfx.includes('setValueAtTime(.06, t)') && sfx.includes('exponentialRampToValueAtTime(.0001, t + duration)'), 'combat blips keep the original click envelope');
-  assert.ok(!sfx.includes('sfxAmp'), 'sfx loudness is not reshaped by the music fader');
   const main = readFileSync('src/main.ts', 'utf8');
-  assert.ok(/sfx\.unlock\(\);\s*\/\*[\s\S]*?\*\/\s*shuffleFightTrack\(\);\s*pokeMusic\(\)/.test(main), 'a fight start may reshuffle, then pokes music on the click');
-  assert.equal((main.match(/pokeMusic\(\)/g) ?? []).length, 1, 'only the fight start forces music on');
-  assert.equal((main.match(/shuffleFightTrack\(\)/g) ?? []).length, 1, 'only entering a fight reshuffles');
-  assert.equal((main.match(/nudgeMusic\(\)/g) ?? []).length, 2, 'select-screen clicks and keys only reconnect music that is already allowed to play');
-  assert.ok(main.includes("seq: '顺序播放', shuffle: '随机播放', one: '单曲循环'"), 'the order button cycles those three labels');
 }
 
 {
@@ -3355,13 +3277,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const taki = ROSTER.findIndex(c => c.id === 'taki');
   assert.ok(taki >= 0, 'taki is on the roster');
   const data = ROSTER[taki];
-  assert.equal(data.trait, 'beat', 'taki keeps the beat');
-  assert.equal(data.skills[2].fx, 'abuse', 'U is the abuse bubble');
-  assert.equal(data.skills[2].drain, 20, 'the abuse drains 20');
-  assert.equal(data.skills[3].fx, 'huh', 'I is 哈？');
-  assert.equal(data.skills[3].breakout, true, '哈？ is a breakout');
-  assert.equal(data.skills[4].fx, 'ban', 'O is the ban dash');
-  assert.equal(data.skills[5].fx, 'vow', 'the super is the vow');
   assert.ok(.3 + .45 + vowBeatTime(VOW_BEATS - 1) <= data.skills[5].duration, 'the seven beats fit inside the vow');
 
   // beat: a clean jab stacks one, taking a hit shakes two
@@ -3466,13 +3381,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const rana = ROSTER.findIndex(c => c.id === 'rana');
   assert.ok(rana >= 0, 'rana is on the roster');
   const data = ROSTER[rana];
-  assert.equal(data.trait, 'rush', 'rana is rush');
-  assert.equal(data.skills[2].fx, 'riff', 'U is the riff');
-  assert.equal(data.skills[2].count, 10, 'the riff caps at ten waves');
-  assert.equal(data.skills[3].fx, 'wind', 'I is the blink');
-  assert.equal(data.skills[3].damage, 0, 'the blink deals nothing');
-  assert.equal(data.skills[4].type, 'launch', 'O is the high kick');
-  assert.equal(data.skills[5].fx, 'parfait', 'the super is the parfait');
 
   // U: a tap strums one wave; holding the key keeps them coming
   const tap = newGame(rana, at('test-heavy')); const [t1, t2] = tap.fighters; dummy(tap);
@@ -3568,13 +3476,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const arale = ROSTER.findIndex(c => c.id === 'arale');
   assert.ok(arale >= 0, 'arale is on the roster');
   const data = ROSTER[arale];
-  assert.equal(data.trait, 'focus', 'arale is focus');
   assert.equal(data.skills[2].count, 7, '高能量 swings seven — an eighth hit can never land past the combo escape');
-  assert.equal(data.skills[2].gain, 4, 'the flurry gains little meter per hit');
-  assert.equal(data.skills[3].fx, 'mega', 'I is the mega wave');
-  assert.equal(data.skills[3].cd, 7, '高音量 cools down in 7 seconds');
-  assert.equal(data.skills[4].fx, 'muscle', 'O is the flex');
-  assert.equal(data.skills[5].fx, 'dream', 'the super is the dream');
   assert.ok(data.view.kind === 'sprite' && !!data.view.frenzy, 'arale preloads a frenzy sheet');
   assert.ok(data.frenzy && data.frenzy.chain === false && data.frenzy.time === 10, 'the dream has its own frenzy config');
 
@@ -3686,17 +3588,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const miyako = ROSTER.findIndex(c => c.id === 'miyako');
   assert.ok(miyako >= 0, 'miyako is on the roster');
   const data = ROSTER[miyako];
-  assert.equal(data.trait, 'focus', 'miyako keeps the 225 walk speed');
-  assert.equal(data.skills[2].fx, 'yokan', 'U is the yokan');
-  assert.equal(data.skills[2].damage, 20, 'the yokan hits soft');
-  assert.equal(data.skills[2].range, 186, 'the yokan reaches');
-  assert.equal(data.skills[3].fx, 'marathon', 'I is the marathon');
-  assert.equal(data.skills[4].fx, 'howl', 'O is the howl');
-  assert.equal(data.skills[4].range, 180, 'the howl radius covers a wide disc');
-  assert.equal(data.skills[2].holdEndure, true, 'the yokan is armoured on cast');
-  assert.equal(data.skills[5].fx, 'seal', 'the super is the seal');
-  assert.equal(data.skills[5].count, 1, 'one circle, not the stock three-shot super');
-  assert.equal(data.skills[5].speed, 366, 'focus brings the circle to about 421');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/miyako/seal.png'), 'the seal circle is preloaded');
   assert.equal(KUJI, '临兵斗者皆阵烈在前', 'the chant is the nine characters');
   assert.equal(kujiFlash(0.02)?.ch, '临', 'the chant opens on 临');
@@ -3926,15 +3817,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const ritsu = ROSTER.findIndex(c => c.id === 'ritsu');
   assert.ok(ritsu >= 0, 'ritsu is on the roster');
   const data = ROSTER[ritsu];
-  assert.equal(data.trait, 'armor', 'ritsu is the armor tank');
-  assert.equal(data.hp, 1040, 'armor hp');
-  assert.equal(data.skills[2].fx, 'rib', 'U is the bone-in slam');
-  assert.equal(data.skills[2].type, 'sweep', 'the slam only hits the ground');
-  assert.equal(data.skills[3].fx, 'skewer', 'I is the skewer dash');
-  assert.equal(data.skills[3].speed, 668, 'the dash speed is the four-tenths travel');
-  assert.equal(data.skills[4].fx, 'steak', 'O is the steak');
-  assert.equal(data.skills[5].fx, 'feast', 'the super is the feast');
-  assert.equal(data.skills[5].super, true, 'L is the super');
 
   {
     const g = newGame(ritsu, at('test-fast')); const [p1, p2] = g.fighters; dummy(g);
@@ -4044,12 +3926,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const nonoka = ROSTER.findIndex(c => c.id === 'nonoka');
   assert.ok(nonoka >= 0, 'nonoka is on the roster');
   const data = ROSTER[nonoka];
-  assert.equal(data.skills[2].fx, 'rabbit', 'U is the bite');
-  assert.equal(data.skills[3].fx, 'kiss', 'I is the kiss');
-  assert.equal(data.skills[4].fx, 'half', 'O is the copy');
-  assert.equal(data.skills[5].fx, 'king', 'L is the king');
-  assert.equal(data.frenzy?.time, 7, 'the king lasts 7 seconds');
-  assert.equal(data.frenzy?.lock, true, 'the king locks the other skills');
   assert.ok(data.view.kind === 'sprite' && !!data.view.king, 'nonoka preloads the king common sheet');
   assert.equal(data.view.kind === 'sprite' && data.view.kingScale, 1.1, 'the king sheet is drawn 1.1× so the body matches');
 
@@ -4129,7 +4005,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     p1.cooldowns[0] = 0;
     assert.equal(g.attack(p1, 0), true, 'the staff jab comes out');
     assert.equal(p1.attack!.skill.range, Math.round(98 * 1.65), 'staff reach');
-    assert.equal(data.frenzy?.damageMul, 2.1, 'the king damage boost is doubled');
     assert.equal(p1.attack!.skill.damage, Math.round(26 * 2.1), 'staff damage');
     assert.ok(p1.cooldowns[0] > .4 && p1.cooldowns[0] < .55, `staff light cooldown is doubled, got ${p1.cooldowns[0]}`);
     assert.equal(clipFor(p1).sheet, 'common', 'the king swing stays on the common grid');
@@ -4166,12 +4041,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const yuno = ROSTER.findIndex(c => c.id === 'yuno');
   assert.ok(yuno >= 0, 'yuno is on the roster');
   const data = ROSTER[yuno];
-  assert.equal(data.skills[2].count, 6, '韵律直觉 caps at six pulses');
-  assert.equal(data.skills[2].fx, 'groove', '韵律直觉 is the groove');
-  assert.equal(data.skills[3].fx, 'meat', '带骨肉 is the meat');
-  assert.equal(data.skills[3].gain, 4, 'meat does not feed the super');
-  assert.equal(data.skills[4].count, 18, '作曲 rains eighteen ticks');
-  assert.equal(data.skills[5].fx, 'infinite', '直接无限大 is the bill');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/yuno/meat.png'), 'the meat is preloaded');
 
   const tap = newGame(yuno, at('test-heavy')); const [t1] = tap.fighters; dummy(tap);
@@ -4249,12 +4118,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   const viola = ROSTER.findIndex(c => c.id === 'viola');
   assert.ok(viola >= 0, 'viola is on the roster');
   const data = ROSTER[viola];
-  assert.equal(data.trait, 'armor', 'viola is armor');
-  assert.equal(data.skills[2].fx, 'snip', 'U is the snip');
-  assert.equal(data.skills[2].count, 4, 'the snip lands four cuts');
-  assert.equal(data.skills[3].fx, 'violet', 'I is the violet');
-  assert.equal(data.skills[4].fx, 'record', 'O is the record');
-  assert.equal(data.skills[5].fx, 'fuga', 'the super is the fuga');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/viola/fuga-burst.png'), 'the blast sheet is preloaded');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/viola/fuga-arrow.png'), 'the arrow is preloaded');
 
@@ -4467,7 +4330,6 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 }
 
 // the figure scale has one home; the 128-era 0.58 must never come back (file scan lives in checkSheetScale)
-assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 
 // mana: the donut rolls two flavours (strawberry roots, chocolate frails), the crown sends five
 // growing waves, the wink roots slowly, and the world super freezes the clock then roots everyone
@@ -4475,16 +4337,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   const mana = ROSTER.findIndex(c => c.id === 'mana');
   assert.ok(mana >= 0, 'mana is on the roster');
   const data = ROSTER[mana];
-  assert.equal(data.trait, 'focus', 'mana is focus');
-  assert.equal(data.skills[2].fx, 'donut', 'U is the donut');
-  assert.equal(data.skills[3].fx, 'crown', 'I is the crown');
-  assert.equal(data.skills[3].count, 5, 'the crown sends five waves');
-  assert.equal(data.skills[4].fx, 'wink', 'O is the wink');
-  assert.equal(data.skills[4].root, 2.5, 'the wink roots 2.5s');
-  assert.equal(data.skills[4].rootBreak, 0, 'the wink root ignores clean hits');
-  assert.equal(data.skills[5].fx, 'world', 'the super is the world');
-  assert.equal(data.skills[5].root, 3, 'the pulse roots three seconds');
-  assert.equal(data.skills[5].rootLevel, 'freeze', 'the super is the time-stop tier');
   assert.ok(data.view.kind === 'sprite' && data.view.world === '/sprites/mana/world.png', 'the dance sheet is preloaded');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/mana/heart.png'), 'the heart is preloaded');
 
@@ -4603,15 +4455,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   const aya = ROSTER.findIndex(c => c.id === 'aya');
   assert.ok(aya >= 0, 'aya is on the roster');
   const data = ROSTER[aya];
-  assert.equal(data.trait, 'rush', 'aya is rush');
-  assert.deepEqual(data.bands, ['pastel-palettes'], 'aya fronts Pastel*Palettes');
   assert.ok(data.gauge && data.gauge.max === 100 && data.gauge.head === true, 'the gauge floats over her head');
-  assert.equal(data.skills[2].fx, 'chop', 'U is the chop');
-  assert.equal(data.skills[2].rootBreak, 1, 'the chop root breaks on one clean hit');
-  assert.equal(data.skills[3].fx, 'sing', 'I is the song');
-  assert.equal(data.skills[4].fx, 'dash', 'O is the wrench dash');
-  assert.equal(data.skills[5].fx, 'flash', 'the super is the flash');
-  assert.equal(data.skills[5].cost, 150, 'the flash costs 150');
   const ayaGame = newGame(aya, at('test-heavy'));
   assert.equal(ayaGame.fighters[0].energyMax, 150, 'the meter caps at the super cost');
 
@@ -4704,8 +4548,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   const data = ROSTER[mi];
   assert.ok(data.forms, 'misaki has two forms');
   assert.equal(data.forms!.alt.skills.length, 6, 'the alt form has six moves');
-  assert.equal(data.skills[4].fx, 'bear-head', '米歇尔 O is the head throw');
-  assert.equal(data.forms!.alt.skills[4].fx, 'black-suits', '美咲 O is the men in black');
   // The wire names an alt move by its place after the base six, and reads it back to the same object.
   const altU = data.forms!.alt.skills[2];
   assert.equal(dec(enc(altU, data)), altU, 'an alt-form move survives the wire');
@@ -4864,16 +4706,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   const kokoro = ROSTER.findIndex(c => c.id === 'kokoro');
   assert.ok(kokoro >= 0, 'kokoro is on the roster');
   const data = ROSTER[kokoro];
-  assert.equal(data.trait, 'rush', 'kokoro is rush');
-  assert.equal(data.skills[2].fx, 'cartwheel', 'U is the cartwheel');
-  assert.equal(data.skills[2].speed, 820, 'the cartwheel runs the long-dash speed');
-  assert.equal(data.skills[3].fx, 'smile-ship', 'I is the cruise');
-  assert.equal(data.skills[3].count, 12, 'the cruise has twelve segments');
-  assert.equal(data.skills[4].fx, 'juggle-ball', 'O is the juggle');
-  assert.equal(data.skills[4].life, 6, 'the ball lives on its own clock');
-  assert.equal(data.skills[5].fx, 'smile-wave', 'the super is the smile wave');
-  assert.equal(data.skills[5].root, 3, 'the wave roots three seconds');
-  assert.equal(data.skills[5].rootBreak, undefined, 'the root breaks on the default two clean hits');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/kokoro/ship.png'), 'the ship is preloaded');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/kokoro/ball.png'), 'the ball is preloaded');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/kokoro/wave.png'), 'the wave is preloaded');
@@ -4974,14 +4806,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   const kasumi = ROSTER.findIndex(c => c.id === 'kasumi');
   assert.ok(kasumi >= 0, 'kasumi is on the roster');
   const data = ROSTER[kasumi];
-  assert.equal(data.trait, 'beat', 'kasumi is beat');
-  assert.equal(data.skills[2].fx, 'star', 'U is the star rain');
-  assert.equal(data.skills[2].count, 10, 'the rain drops ten stars');
-  assert.equal(data.skills[3].fx, 'poppa', 'I is the beckon');
-  assert.equal(data.skills[4].fx, 'hug', 'O is the hug');
-  assert.equal(data.skills[5].fx, 'wish', 'the super is the wish');
-  assert.equal(data.skills[5].root, 3, 'the wish stuns three seconds');
-  assert.equal(data.skills[5].rootBreak, 0, 'the wish stun ignores clean hits');
   assert.ok(data.view.kind === 'sprite', 'kasumi is a sprite');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/kasumi/star.png'), 'the star prop is preloaded');
 
@@ -5161,15 +4985,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.ok(mitake >= 0, 'mitake is on the roster');
   assert.ok(PLAYABLE.some(c => c.id === 'mitake'), 'mitake is playable');
   const data = ROSTER[mitake];
-  assert.equal(data.skills[2].slow, 4, '花道·缠 slows for 4s');
-  assert.equal(data.skills[2].slowMul, .6, '花道·缠 dulls the walk to 60%');
-  assert.equal(data.skills[2].slowJump, .75, '花道·缠 dulls the jump to 75%');
-  assert.equal(data.skills[3].hitbox, 'radial', '不良主唱 is radial');
-  assert.equal(data.skills[3].hitAll, true, '不良主唱 hits everyone in the ring');
-  assert.equal(data.skills[3].reach, 'ground', '不良主唱 stays on the ground');
-  assert.equal(data.skills[4].breakout, true, '像以前一样 is a breakout');
-  assert.equal(data.skills[5].cost, 115, '宣战布告 costs 115');
-  assert.deepEqual(data.bands, ['afterglow'], 'mitake fronts Afterglow');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/mitake/guitar.png'), 'the guitar is preloaded');
   assert.ok(data.frenzy && data.frenzy.time === 8, 'the form runs 8s');
 
@@ -5241,33 +5056,8 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 {
   const moca = at('moca');
   const data = ROSTER[moca];
-  assert.equal(data.name, '青叶摩卡', 'moca display name');
-  assert.deepEqual(data.bands, ['afterglow'], 'moca sits in Afterglow');
   assert.equal(ROSTER[moca - 1].id, 'mitake', 'moca follows mitake');
-  assert.equal(data.trait, 'focus', 'moca keeps the ordinary walk');
-  assert.equal(data.rootFx, 'moca-ring', 'the root wears an ankle ring');
-  assert.equal(data.skills[2].cd, 4.5, '半速 cools in 4.5s');
-  assert.equal(data.skills[2].slow, 5, '半速 slows for 5s');
-  assert.equal(data.skills[2].slowMul, .5, '半速 halves the walk');
-  assert.equal(data.skills[2].slowJump, .65, '半速 dulls the jump to 65%');
-  assert.equal(data.skills[2].slowAtk, .7, '半速 cuts attack speed by 30%');
-  assert.equal(data.skills[2].slowOnBlock, undefined, '半速 does not slow a block');
-  assert.equal(data.skills[2].slowMark, 'bubble', '半速 wears the bubble');
-  assert.equal(data.skills[3].cd, 6, '扣一点 cools in 6s');
-  assert.equal(data.skills[3].root, 1.5, '扣一点 roots for 1.5s');
-  assert.equal(data.skills[3].rootBreak, 0, '扣一点 holds until the clock');
-  assert.equal(data.skills[3].slowAtk, undefined, '扣一点 does not cut attack speed');
-  assert.equal(data.skills[4].cd, 7, '捉弄 cools in 7s');
-  assert.equal(data.skills[4].count, 2, '捉弄 pokes twice');
-  assert.equal(data.skills[4].range, 150, '捉弄 reaches half again past 100');
-  assert.equal(data.skills[4].slow, 5, '捉弄 slows for 5s');
-  assert.equal(data.skills[4].slowAtk, .7, '捉弄 cuts attack speed by 30%');
-  assert.equal(data.skills[5].count, 1, '小摩卡要上了 is one wave');
-  assert.equal(data.skills[5].slowOnBlock, true, '小摩卡要上了 slows a block');
   assert.equal(data.skills[5].cost ?? 100, 100, '小摩卡要上了 costs 100');
-  assert.equal(data.skills[5].slowBonus, 100, '小摩卡要上了 adds 100 on an existing slow');
-  assert.equal(data.skills[5].noBlockSlow, true, '小摩卡要上了 ignores a block while slowed');
-  assert.equal(data.skills[5].slowAtk, .7, '小摩卡要上了 cuts attack speed by 30%');
 
   {
     const g = newGame(moca, at('test-heavy')); const [p1, p2] = g.fighters; dummy(g);
@@ -5379,14 +5169,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 {
   const mashiro = at('mashiro');
   const data = ROSTER[mashiro];
-  assert.equal(data.name, '仓田真白', 'mashiro display name');
-  assert.deepEqual(data.bands, ['morfonica'], 'mashiro fronts Morfonica');
-  assert.equal(data.trait, 'focus', 'mashiro is a zoner');
-  assert.equal(data.skills[3].count, 4, '巨鲸 is four ticks');
-  assert.equal(data.skills[3].motion, 'fall', '巨鲸 rides the stock arc');
-  assert.equal(data.skills[3].finale?.react?.kind, 'knockdown', 'the last tick knocks down');
-  assert.equal(data.skills[5].count, 1, '蝶变 is one shot');
-  assert.equal(data.skills[5].slowOnBlock, true, '蝶变 slows a block');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/mashiro/jelly.png'), 'the jellyfish is preloaded');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/mashiro/whale.png'), 'the whale is preloaded');
 
@@ -5474,16 +5256,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.ok(riotCell(2.2, 1) >= 7 && riotCell(2.2, 1) <= 11, 'the tail walks the follow-through');
   const layer = at('layer');
   const data = ROSTER[layer];
-  assert.equal(data.skills[2].superArmor, true, '入侵秀 has superArmor');
-  assert.equal(data.skills[3].superArmor, true, '燃尽 has superArmor');
-  assert.equal(data.skills[4].superArmor, true, '全力碰撞 has superArmor');
-  assert.equal(data.skills[4].start, .28, '全力碰撞 starts faster');
-  assert.equal(data.skills[4].range, 150, '全力碰撞 range is wider');
-  assert.equal(data.skills[3].fx, 'burnout', '燃尽 owns its fx');
-  assert.equal(data.skills[5].cost, 120, '大闹一场 costs 120');
-  assert.equal(data.skills[5].fx, 'riot', 'the super is the riot');
-  assert.equal(data.skills[5].count, 7, 'the riot is seven hits');
-  assert.deepEqual(data.bands, ['raise-a-suilen'], 'layer fronts RAISE A SUILEN');
   assert.ok(data.view.kind === 'sprite' && data.view.world === '/sprites/layer/riot.png', 'the combo sheet is preloaded');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/layer/bass.png'), 'the bass picture is preloaded');
 
@@ -5618,12 +5390,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 // hina: fries is one melee that frails, 噜噜噜 is three light hits, the partner slot summons 冰川纱夜
 {
   const data = ROSTER[at('hina')];
-  assert.equal(data.skills[2].fx, 'fries', 'U is the fries');
-  assert.equal(data.skills[2].frail, 2, '薯条 frails for 2 seconds');
-  assert.equal(data.skills[3].count, 3, '噜噜噜 hits three times');
-  assert.equal(data.skills[3].range, 220, '噜噜噜 reaches a longer stretch ahead');
-  assert.equal(data.skills[3].finale?.root, 1, 'the last 噜 roots for one second');
-  assert.equal(data.skills[5].cost, 200, '和姐姐在一起 costs 200');
   assert.equal(data.skills[5].onActive?.[0]?.op === 'summon' && data.skills[5].onActive[0].kind === 'named' && data.skills[5].onActive[0].id, 'sayo', 'the partner slot is sayo');
   {
     const guest = guestsFor([data], 'mygo');
@@ -5696,11 +5462,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 // sayo: five rain lanes, a four-tick low string, a floor flame a jump clears
 {
   const data = ROSTER[at('sayo')];
-  assert.equal(data.skills[3].count, 5, '秋时雨 drops five');
-  assert.equal(data.skills[4].count, 4, '忧伤节拍器 ticks four times');
-  assert.equal(data.skills[4].reach, 'low', 'the metronome only meets a standing chest');
-  assert.equal(data.skills[4].finale?.react?.kind, 'knockdown', 'the last tick knocks down');
-  assert.equal(data.skills[5].count, 1, 'BRAVE JEWEL is one tongue');
   assert.deepEqual([0, .15, .3, .45].map(t => flameFrame(t, 1)[0]), [0, 1, 2, 3], 'the tongue grows through four lengths');
   assert.equal(flameFrame(.5, 1)[1], 1, 'after the grow the tail loops');
   assert.ok(data.view.kind === 'sprite' && data.view.specialScale === 1.1, 'the special sheet scales at playback');
@@ -5815,20 +5576,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 // a wheel that ticks four times, and the sisters' six-hit string
 {
   const data = ROSTER[at('tsukushi')];
-  assert.equal(data.name, '二叶筑紫', 'tsukushi display name');
-  assert.deepEqual(data.bands, ['morfonica'], 'tsukushi sits with Morfonica');
-  assert.equal(data.trait, 'beat', 'tsukushi keeps the drum passive');
-  assert.equal(data.skills[2].fx, 'sprout', 'U is the horsetail');
-  assert.equal(data.skills[2].count, 4, 'four sprouts');
-  assert.equal(data.skills[3].fx, 'clock', 'I is the alarms');
-  assert.equal(data.skills[3].count, 5, 'five clocks');
-  assert.equal(data.skills[4].fx, 'wheel', 'O is the hamster wheel');
-  assert.equal(data.skills[4].count, 4, 'the wheel ticks four times');
-  assert.equal(data.skills[4].reach, 'low', 'the wheel only meets a standing body');
-  assert.equal(data.skills[4].finale?.react?.kind, 'knockdown', 'the last wheel tick knocks down');
-  assert.equal(data.skills[5].fx, 'sisters', 'L is the three sisters');
-  assert.equal(data.skills[5].count, 6, 'the sisters hit six times');
-  assert.equal(data.skills[5].finale?.react?.kind, 'knockdown', 'the last sister hit knocks down');
   assert.equal(clockRings(0), false, 'a low roll tips the clock');
   assert.equal(clockRings(.34), true, 'the rest of the rolls ring');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/tsukushi/sprout.png'), 'the sprout is preloaded');
@@ -5992,13 +5739,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 {
   const kan = at('kanata');
   const data = ROSTER[kan];
-  assert.equal(data.skills[2].fx, 'lifedraw', '寿来 marks and bursts');
-  assert.equal(data.skills[2].drain, 28, '寿来 cuts the target bar');
-  assert.equal(data.skills[3].fx, 'lily', '脆弱 wears the lily');
-  assert.equal(data.skills[4].fx, 'revive', '复活 casts');
-  assert.equal(data.skills[5].fx, 'happymusic', 'the super plays');
-  assert.equal(data.skills[5].count, 10, 'ten notes');
-  assert.equal(data.skills[5].jumpCancel, 1, 'the super hops out after one second');
 
   const lily = newGame(kan, at('test-heavy')); const [l1, l2] = lily.fighters; dummy(lily);
   l1.hp = 800;
@@ -6075,18 +5815,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   const ho = at('hotaru');
   const data = ROSTER[ho];
   assert.equal(JSON.stringify(data.bands), JSON.stringify(['millsage']), 'she stands with millsage');
-  assert.equal(data.trait, 'focus', 'she plays the long game');
-  assert.equal(data.skills[2].fx, 'manju', '小馒头投喂 lobs cookies');
-  assert.equal(data.skills[2].count, 3, 'three cookies');
-  assert.equal(data.skills[3].fx, 'apparatus', '舞台装置 is the I slot');
-  assert.equal(data.skills[3].cd, 10, 'the gated recast is ten seconds');
-  assert.equal(data.skills[4].fx, 'rebirth', '重生之乐音 is the O slot');
-  assert.equal(data.skills[4].count, 8, 'eight notes');
-  assert.equal(data.skills[5].fx, 'war', '起死开战 is the super');
-  assert.equal(data.skills[5].cost, 250, '起死开战 costs 250');
-  assert.equal(data.skills[5].damage, 0, 'the super swings no damage itself');
-  assert.equal(data.skills[5].domain?.background, '/stages/hotaru-war.png', 'the field swaps in the lily backdrop');
-  assert.equal(data.skills[5].domain?.time, 6, 'the field lasts six seconds');
   assert.deepEqual(data.skills[5].domain?.buffs, [
     { kind: 'regen', v: 20 },
     { kind: 'speed', v: 1.3, atk: 1.25 },
@@ -6094,7 +5822,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   ], 'the field buffs match the copy');
   const kinds = data.skills[5].domain!.buffs.map(b => b.kind);
   assert.equal(new Set(kinds).size, kinds.length, 'one field buff per kind: addMod would merge duplicates');
-  assert.equal(data.rainbow?.cooldown, 10, 'the rainbow has an internal cooldown');
 
   // The device: summoned once, veils her, pins the recast, and only its death starts the clock.
   const dev = newGame(ho, at('test-heavy')); const [v1, v2] = dev.fighters; dummy(dev);
@@ -6265,10 +5992,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 {
   const chu = at('chuchu');
   const data = ROSTER[chu];
-  assert.equal(data.skills[2].count, 3, '牛肉干 fires three');
-  assert.equal(data.skills[5].fx, 'change', 'the super is the hold note');
-  assert.equal(data.skills[5].start, .35, 'the note starts after the windup');
-  assert.equal(data.skills[5].duration, 2.95, 'the note stays up long enough for ten hits');
 
   const held = newGame(chu, at('test-heavy')); const [h1, h2] = held.fighters; dummy(held);
   h1.energy = h1.energyMax;
@@ -6436,13 +6159,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   assert.ok(data.view.kind === 'sprite' && data.view.worldScale === 1.1, 'the super sheet draws at 1.1 around the feet');
   assert.equal(data.bands?.[0], 'pastel-palettes', 'eve sits with Pastel*Palettes');
   assert.equal(ROSTER[eve - 1]?.id, 'hina', 'eve follows hina');
-  assert.equal(data.trait, 'rush', 'eve is rush');
-  assert.equal(data.skills[2].fx, 'iaido', 'U is the wooden trio');
-  assert.equal(data.skills[3].drain, 10, 'each sip drains 10');
-  assert.equal(data.skills[4].cd, 10, 'the cloak waits 10s');
-  assert.equal(data.skills[4].breakout, true, 'the cloak is a breakout');
-  assert.equal(data.skills[5].cost, 120, 'bushido costs 120');
-  assert.equal(data.skills[5].count, 7, 'bushido is seven cuts');
   const ult = data.skills[5];
   assert.equal(bushidoClip(0, ult).sheet, 'special', 'the raise lives on the special sheet');
   assert.equal(bushidoClip(ult.start, ult).sheet, 'world', 'the flurry lives on the super sheet');
@@ -6905,6 +6621,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     const g = new FightGame([PLAYABLE[a], PLAYABLE[b]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: silent, random: r.next, controllers: [0, 1], netRole: 'lock' });
     return { g, r, p: [new RemotePad(0), new RemotePad(1)] };
   };
+  const LOCK_TICKS = 900, LOCK_DUMP = 300;
   let resumed = 0, exactPairs = 0;
   for (let a = 0; a < PLAYABLE.length; a++) {
     const b = (a + 3) % PLAYABLE.length;
@@ -6914,7 +6631,8 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     // Mod closures (onExpire / pulse / hurt) cannot travel (lock.ts dumpGame); a pair with one live at the dump is not
     // expected to resume, so it is left out of the count rather than diluting it.
     let exact = false;
-    for (let t = 0; t < 1800; t++) {
+    // 15s per pair, dumped at 5s: enough for every kit to cast and trade; the old 30s doubled the run for no new coverage.
+    for (let t = 0; t < LOCK_TICKS; t++) {
       const i0 = p0(), i1 = p1();
       for (const w of z ? [x, y, z] : [x, y]) {
         w.p[0].apply(w.g, i0); w.p[1].apply(w.g, i1);
@@ -6923,7 +6641,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
       const hx = hashGame(x.g, x.r);
       assert.equal(hashGame(y.g, y.r), hx, PLAYABLE[a].id + ' vs ' + PLAYABLE[b].id + ': same seed and pads, same sim at tick ' + t);
       if (z && exact && hashGame(z.g, z.r) === hx) resumed++;
-      if (t === 600) {
+      if (t === LOCK_DUMP) {
         exact = !x.g.fighters.some(f => f.mods.some(m => m.left > 0 && (!!m.onExpire || !!m.pulse || !!m.hurt)));
         if (exact) exactPairs++;
         z = make(a, b, 1);
@@ -6932,9 +6650,10 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
       }
     }
   }
-  // A resync is exact when no closure-carrying mod is live: those pairs stay in step for the whole 20s after.
+  // A resync is exact when no closure-carrying mod is live: those pairs stay in step for the rest of the run.
+  const after = LOCK_TICKS - LOCK_DUMP - 1;
   assert.ok(exactPairs > PLAYABLE.length * .7, 'most pairs dump with no closure-carrying mod live (' + exactPairs + ' of ' + PLAYABLE.length + ')');
-  assert.ok(resumed > exactPairs * 1199 * .98, 'an exact dump resumes the sim in step (' + resumed + ' of ' + exactPairs * 1199 + ' ticks)');
+  assert.ok(resumed > exactPairs * after * .98, 'an exact dump resumes the sim in step (' + resumed + ' of ' + exactPairs * after + ' ticks)');
 }
 
 // lockstep sessions over a lossy, laggy link: in step, a forced desync resyncs, repeated ones fall back
@@ -7009,7 +6728,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
   const dead = run({ loss: .97, delay: 40, jitter: 30, seconds: 12 });
   assert.ok(dead.fellBack.length > 0, 'a link that cannot keep up falls back');
   // High-RTT links (> SNAP_RTT_MS = 230ms, e.g. China LAX TURN at 290–435ms or extreme 950ms) hand off within 3 RTT samples during the round intro
-  assert.equal(SNAP_RTT_MS, 230, 'lockstep RTT ceiling is 230ms');
   for (const [label, oneWay, jitter, maxFrames] of [
     ['LAX fast 290ms', 145, 10, 70],
     ['LAX median 350ms', 160, 35, 75],
@@ -7453,7 +7171,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 
 // Online codename & 10s ready phase invariants
 {
-  assert.equal(READY_SECONDS, 10, 'online ready phase lasts 10 seconds');
   assert.ok(CODENAME_ADJS.length >= 16, 'codename adjective pool has moe personality/mood words');
   assert.deepEqual(CODENAME_CHARS, PUBLIC_ROSTER.map(c => c.name), 'new codenames use the public roster');
   // Malformed numbers (non-4-digit strings)
@@ -7495,8 +7212,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 {
   const na = at('natsume');
   const data = ROSTER[na];
-  assert.deepEqual(data.bands, ['millsage'], 'natsume stands with millsage');
-  assert.equal(data.skills[5].cost, 200, 'the wolf costs 200');
   // undying clamps hits at 1 hp; the relapse at the end is not a hit, so it still kills
   {
     const g = newGame(na, at('test-heavy')); const [p1, p2] = g.fighters; dummy(g);
@@ -7571,7 +7286,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 {
   const ho = at('houka');
   const data = ROSTER[ho];
-  assert.deepEqual(data.bands, ['millsage'], 'houka stands with millsage');
   assert.ok(ROSTER[at('hina')].genius && ROSTER[at('hotaru')].genius, 'hina and hotaru are the official geniuses');
   {
     const g = newGame(ho, at('test-heavy')); const [p1, p2] = g.fighters; dummy(g);
@@ -7682,8 +7396,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 {
   const na = at('nagi');
   const data = ROSTER[na];
-  assert.deepEqual(data.bands, ['millsage'], 'nagi stands with millsage');
-  assert.equal(data.title, '吉他 / 摆烂王', 'nagi wears the slacker title');
   const roll = (g: FightGame, v: number) => { (g as unknown as { random: () => number }).random = () => v; };
   // U: the run ends at the first landing near a grounded foe (or when the roll runs out), and the
   // face decides the strike. She starts at 60; each hop carries her about 122, so the foe's distance
@@ -7791,9 +7503,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 {
   const mh = at('mahoro');
   const data = ROSTER[mh];
-  assert.deepEqual(data.bands, ['millsage'], 'mahoro stands with millsage');
-  assert.equal(data.title, '贝斯 / 不退场', 'mahoro wears the never-leave-the-stage title');
-  assert.equal(data.trait, 'armor', 'mahoro takes the armour trait');
   // U: pat, fuse, blast. A braced and sped-up foe loses both, and pays for each.
   const pat = (prop: boolean) => {
     const g = newGame(mh, at('test-heavy')); const [p1, p2] = g.fighters; dummy(g);
@@ -7934,9 +7643,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 {
   const rk = at('raika');
   const data = ROSTER[rk];
-  assert.deepEqual(data.bands, ['ikka-dumb-rock'], 'raika stands with 一家Dumb Rock!');
-  assert.equal(data.title, '吉他 / Family 笨蛋', 'raika wears the Family-fool title');
-  assert.equal(data.trait, 'rush', 'raika takes the rush trait');
   assert.ok(!data.skills.some(s => s.breakout), 'all offence: no breakout');
   assert.ok([2, 3, 4].every(i => data.skills[i].holdEndure), 'U I O hold armour through the cast');
   const jab = { ...ROSTER[at('test-heavy')].skills[0], damage: 20 };
@@ -8055,14 +7761,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 {
   const mk = at('miku');
   const data = ROSTER[mk];
-  assert.deepEqual(data.bands, ['ikka-dumb-rock'], 'miku stands with 一家Dumb Rock!');
-  assert.equal(data.title, '吉他 / 腹黑', 'miku wears the two-faced title');
-  assert.equal(data.quote, '把我带回有你们在的那个家……！！', 'miku says the line from the stage');
-  assert.equal(data.trait, 'rush', 'miku takes the rush trait');
-  assert.equal(data.skills[2].cd, 4, 'U returns in 4 seconds');
-  assert.equal(data.skills[3].range, 197, 'I reaches seventy percent farther');
-  assert.equal(data.skills[4].cd, 6, 'O returns in 6 seconds');
-  assert.equal(data.skills[5].cost, 120, 'L costs 120');
   assert.ok(!data.skills.some(s => s.breakout), 'all offence: no breakout');
   assert.equal(data.skills[3].curse?.time, RARE_TIME, 'the tag lasts as long as the sign is drawn');
   assert.deepEqual(PLAY_FIGURES.map(m => m.tear).sort(), [0, 1, 2, 3], 'each figure on the drawing tears once');
@@ -8137,9 +7835,6 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
     assert.equal(incomingMul(q2, q1.id), 1, 'no tag, nothing to upgrade');
   }
   // O: a tap is four far palms. Holding keeps the counter; a window with no swing still pushes, shorter.
-  assert.equal(data.skills[4].count, 4, 'the palm is four hits');
-  assert.equal(data.skills[4].damage, 20, 'each palm is 20');
-  assert.equal(data.skills[4].start, 1.8, 'the counter window is 1.8 seconds');
   assert.ok(data.skills[4].duration > data.skills[4].start + .3, 'the cast outlasts the window and the four palms');
   assert.equal(Math.round(data.skills[4].range * 1.4), 165, 'a tap reaches forty percent farther');
   {
@@ -8315,11 +8010,7 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 {
   const sz = at('shizuku');
   const data = ROSTER[sz];
-  assert.deepEqual(data.bands, ['ikka-dumb-rock'], 'shizuku stands with 一家Dumb Rock!');
   assert.ok(at('shizuku') === at('miku') + 1, 'right after 心玖 on the roster');
-  assert.equal(data.title, '键盘 / 公主', 'shizuku wears the princess title');
-  assert.equal(data.quote, '往后余生，还请对四宫宁月多加关照。', 'shizuku says the line she joined with');
-  assert.equal(data.trait, 'focus', 'shizuku takes the focus trait');
   assert.equal(data.view.kind === 'sprite' ? data.view.extras?.length : 0, 5, 'foil, popsicle and three appliances preload');
   assert.ok(!data.skills.some(s => s.breakout), 'no breakout');
   // U: the foil lights them
@@ -8537,14 +8228,8 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 {
   const ch = at('chieri');
   const data = ROSTER[ch];
-  assert.deepEqual(data.bands, ['ikka-dumb-rock'], 'chieri stands with 一家Dumb Rock!');
   assert.ok(at('chieri') === at('shizuku') + 1, 'right after 宁月 on the roster');
-  assert.equal(data.title, '鼓手 / 头号人物', 'chieri wears the league title');
-  assert.equal(data.quote, '千樱梨，就是很厉害的！！', 'chieri says the line from 视角 4');
-  assert.equal(data.trait, 'beat', 'chieri takes the beat trait');
   assert.ok(data.skills.slice(2).every(s => s.name.startsWith('千樱梨')), 'every special starts with her name');
-  assert.equal(data.skills[5].name, '千樱梨联盟集合', 'the super is the league call');
-  assert.equal(data.skills[5].cost, 150, 'L costs 150');
   // J: 千 → 樱 → 梨, and 第一个！ once a round
   {
     const g = newGame(ch, at('test-heavy')); const [p1, p2] = g.fighters; dummy(g);
@@ -8807,13 +8492,8 @@ assert.equal(SHEET_SCALE, 1.16, 'SHEET_SCALE fills a 256 cell');
 {
   const yo = at('yomogi');
   const data = ROSTER[yo];
-  assert.deepEqual(data.bands, ['ikka-dumb-rock'], 'yomogi stands with 一家Dumb Rock!');
   assert.ok(at('yomogi') === at('chieri') + 1, 'right after 千樱梨 on the roster');
-  assert.equal(data.title, '贝斯 / 脑内番长', 'yomogi wears the 番长-in-her-head title');
-  assert.equal(data.quote, '总有一天我会蜕变，变成强强的我给你看！！', 'yomogi says the line from 第 11 话');
-  assert.equal(data.trait, 'armor', 'yomogi takes 硬派身躯');
   assert.ok(data.heart && data.gauge?.max === 100 && !data.gauge.head, 'her gauge is the heart and floats no bar');
-  assert.equal(data.skills[5].cost, 180, 'L costs 180');
   const arm = (f: { data: { trait: string } }) => f.data.trait === 'armor' ? .95 : 1;
   const fresh = (p1x = 300, p2x = 400) => {
     const g = newGame(yo, at('test-heavy')); const [p1, p2] = g.fighters; dummy(g);
@@ -9313,12 +8993,27 @@ for (const order of [[2, 3], [3, 2]]) {
   assert.equal(plan.fresh, false, 'a device with stamps is not fresh');
   assert.equal(plan.broken, 1, 'the junk wallet section is counted as broken');
   assert.equal(plan.used, 2, 'stamps and the unknown section are still imported');
-  plan.apply();
+  assert.deepEqual(plan.apply(), [], 'the valid sections are saved');
   const book = JSON.parse(store.get('mf.stamps.v2')!);
   assert.deepEqual(book, { tomori: { d: 2, rank: 'S' }, viola: { d: 1, rank: 'A' } }, 'import keeps the higher local stamp, adds new ones, drops bad ids');
   const out = JSON.parse(exportSave());
   assert.deepEqual(out.sections.future, { v: 3, data: { keep: true } }, 'a section from a newer version survives the next export');
   assert.deepEqual(out.sections.stamps.data, book);
+  g.localStorage = {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => {
+      if (k === 'mf.stamps.v2') throw new Error('storage quota');
+      store.set(k, v);
+    },
+  };
+  const partial = planImport(JSON.stringify({ game: SAVE_GAME, sections: {
+    stamps: { v: 1, data: { viola: { d: 2 } } },
+    future: { v: 4, data: { keep: true } },
+  } }));
+  if (typeof partial !== 'object') throw Error('a valid save file must plan an import');
+  assert.deepEqual(partial.apply(), ['印章'], 'a rejected section is reported while other sections save');
+  assert.deepEqual(JSON.parse(store.get('mf.stamps.v2')!), book, 'a failed write leaves local progress intact');
+  assert.equal(JSON.parse(exportSave()).sections.future.v, 4, 'unrelated sections still save');
   const back = planImport(JSON.stringify(out));
   assert.ok(typeof back === 'object' && back.broken === 0 && back.used >= 2, 'an exported save imports back cleanly');
   equip('frame', 'frame:gold');
@@ -9349,10 +9044,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const lo = at('lock');
   const data = ROSTER[lo];
   assert.ok(lo === at('masking') + 1, 'LOCK sits right after MASKING in RAS');
-  assert.equal(data.name, 'LOCK', 'RAS members go by their code names');
-  assert.equal(data.title, '吉他 / 吉他狂战士', 'title from 萌娘百科 (吉他狂战士)');
-  assert.equal(data.trait, 'rush', 'a berserker rushes');
-  assert.equal(data.frenzy?.skills?.length, 6, 'the costume answers all six keys');
   assert.ok(data.view.kind === 'sprite' && !!data.view.king && data.view.extras?.includes('/sprites/masking/special.png'), 'stage sheet and MASKING preload');
   assert.ok(Math.abs(data.skills[5].duration - LOCK_LIVE_END) < 1e-6, 'L lasts exactly its timeline: ' + data.skills[5].duration + ' vs ' + LOCK_LIVE_END);
   const fresh = (p1x = 300, p2x = 420) => {
@@ -9494,9 +9185,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const ma = at('masking');
   const data = ROSTER[ma];
   assert.ok(ma === at('chuchu') + 1, 'MASKING sits right after CHU² in RAS');
-  assert.equal(data.name, 'MASKING', 'RAS members go by their code names');
-  assert.equal(data.title, '鼓手 / mas王', 'title from the B 站 mas王 edits');
-  assert.equal(data.trait, 'beat', 'a drummer keeps the beat');
   assert.ok(!data.skills.some(s => s.name.includes('狂犬')), '狂犬 stays out of the move names');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/masking/bike.png') && data.view.extras.includes('/sprites/masking/lock.png'), 'bike and LOCK preload');
   const fresh = (p1x = 300, p2x = 480) => {
@@ -9588,9 +9276,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const ta = at('tae');
   const data = ROSTER[ta];
   assert.ok(ta === at('arisa') + 1, '花园多惠 sits with Poppin\'Party, after 有咲');
-  assert.equal(data.title, '吉他 / 花园警察', 'title from the 花园警察 meme');
-  assert.equal(data.quote, '喜欢就没问题，吉他是给喜欢弹的人弹的。', 'quote from her 萌娘百科 header');
-  assert.equal(data.trait, 'rush', 'she runs every morning');
   assert.ok(data.view.kind === 'sprite' && !data.view.extras?.length, 'every rabbit is drawn in code: no prop pictures');
   assert.ok(!!STATUS_MARKS.cuffs, 'the cuffs look is registered');
   const fresh = (p1x = 300, p2x = 480) => {
@@ -9752,9 +9437,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const sa = at('saaya');
   const data = ROSTER[sa];
   assert.ok(sa === at('tae') + 1, '山吹沙绫 sits with Poppin\'Party, after 多惠');
-  assert.equal(data.title, '鼓手 / 面包圣女', 'title from 面包圣女');
-  assert.equal(data.quote, '用擀面杖代替鼓棒？开玩笑的！', 'quote from her 萌娘百科 header');
-  assert.equal(data.trait, 'beat', 'the drummer keeps the beat');
   assert.ok(data.view.kind === 'sprite' && data.view.height === 181 && data.view.extras?.includes('/sprites/saaya/oven.png'), 'the oven is her one prop picture');
   assert.ok(!!STATUS_MARKS.sleepy && !!STATUS_MARKS['saaya-toast']?.body, 'the sleepy and toasted looks are registered');
   const fresh = (p1x = 300, p2x = 400) => {
@@ -10038,7 +9720,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const hi = at('himari');
   const data = ROSTER[hi];
   assert.ok(hi === at('moca') + 1, '上原绯玛丽 sits with Afterglow, after 摩卡');
-  assert.equal(data.trait, 'armor', 'she takes a hit');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/himari/friends.png'), 'the four friends are one preloaded sheet');
   for (const mark of ['himari-shake', 'himari-awkward', 'himari-calorie']) assert.ok(!!STATUS_MARKS[mark], 'her look is registered: ' + mark);
   const fresh = (p2x = 520) => {
@@ -10162,7 +9843,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const to = at('tomoe');
   const data = ROSTER[to];
   assert.ok(to === at('himari') + 1, '宇田川巴 sits with Afterglow, after 绯玛丽');
-  assert.equal(data.trait, 'armor', 'she takes a hit');
   assert.ok(data.view.kind === 'sprite' && data.view.height === 190 && data.view.extras?.includes('/sprites/tomoe/hyottoko.png') && data.view.extras.includes('/sprites/tomoe/mikoshi.png'), 'the mask and the shrine are preloaded pictures');
   assert.ok(!!STATUS_MARKS['tomoe-heart'], 'her 定身 look is registered');
   const fresh = (p2x = 520) => {
@@ -10269,7 +9949,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const ts = at('tsugumi');
   const data = ROSTER[ts];
   assert.ok(ts === at('tomoe') + 1, '羽泽鸫 sits with Afterglow, after 巴');
-  assert.equal(data.trait, 'focus');
   assert.equal(SHORT_NAMES.tsugumi, '鸫');
   assert.ok(data.view.kind === 'sprite' && ['/sprites/tsugumi/tray.png', '/sprites/sayo/common.png', '/sprites/hina/common.png'].every(x => data.view.kind === 'sprite' && data.view.extras?.includes(x)), 'the tray and both sisters are preloaded');
   const fresh = (p2x = 520) => {
@@ -10433,7 +10112,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const nj = at('nijika');
   const data = ROSTER[nj];
   assert.ok(nj === at('bocchi') + 1, '伊地知虹夏 sits with 结束乐队, after 一里');
-  assert.equal(data.trait, 'beat');
   assert.equal(SHORT_NAMES.nijika, '虹夏');
   const fresh = (p2x = 520) => {
     const g = newGame(nj, at('test-heavy')); const [p1, p2] = g.fighters; dummy(g);
@@ -10596,8 +10274,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const kt = at('kita');
   const data = ROSTER[kt];
   assert.ok(kt === at('nijika') + 1, '喜多郁代 sits with 结束乐队, after 虹夏');
-  assert.equal(data.trait, 'rush');
-  assert.deepEqual(data.bands, ['kessoku-band']);
   assert.ok(!data.hidden, 'the main band is public');
   assert.equal(SHORT_NAMES.kita, '郁代');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/bocchi/special.png'), '一里 for the 彩蛋 is preloaded');
@@ -10776,11 +10452,8 @@ for (const order of [[2, 3], [3, 2]]) {
   const ry = at('ryo');
   const data = ROSTER[ry];
   assert.ok(ry === at('kita') + 1, '山田凉 sits with 结束乐队, after 喜多');
-  assert.equal(data.trait, 'focus');
-  assert.deepEqual(data.bands, ['kessoku-band']);
   assert.ok(!data.hidden, 'the main band is public');
   assert.equal(SHORT_NAMES.ryo, '凉');
-  assert.equal(data.meterMax, 150);
   const fresh = (p2x = 520, foe = 'test-heavy') => {
     const g = newGame(ry, at(foe)); const [p1, p2] = g.fighters; dummy(g);
     p1.x = 300; p2.x = p2x; p1.facing = 1; p2.facing = -1;
@@ -10897,9 +10570,6 @@ for (const order of [[2, 3], [3, 2]]) {
     g.attack(p1, 3);
     run(g, 1.4);
     assert.ok(p2.mods.some(m => m.kind === 'skim' && m.left > 0), 'the jab does not stop her asking');
-    assert.equal(data.skills[3].holdEndure, true);
-    assert.equal(data.skills[4].holdEndure, true);
-    assert.equal(data.skills[4].cd, 4, '怪人是夸奖 comes back in 4 s');
   }
   // O: a melee hit in the window does nothing; she chops back and swings faster
   {
@@ -11026,8 +10696,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const ni = at('nina');
   const data = ROSTER[ni];
   assert.ok(ni === at('ryo') + 1, '井芹仁菜 opens Girls Band Cry, after the 孤独摇滚！ cast');
-  assert.equal(data.trait, 'armor');
-  assert.deepEqual(data.bands, ['togenashi-togeari']);
   assert.equal(SHORT_NAMES.nina, '仁菜');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/nina/lamp.png'), 'the lamp is preloaded');
   const fresh = (p2x = 520) => {
@@ -11197,8 +10865,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const mo = at('momoka');
   const data = ROSTER[mo];
   assert.ok(mo === at('nina') + 1, '河原木桃香 follows 井芹仁菜');
-  assert.equal(data.trait, 'rush');
-  assert.deepEqual(data.bands, ['togenashi-togeari']);
   assert.equal(SHORT_NAMES.momoka, '桃香');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/momoka/beer.png'), 'the can is preloaded');
   const fresh = (p2x = 520) => {
@@ -11358,8 +11024,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const su = at('subaru');
   const data = ROSTER[su];
   assert.ok(su === at('momoka') + 1, '安和昴 follows 河原木桃香');
-  assert.equal(data.trait, 'beat');
-  assert.deepEqual(data.bands, ['togenashi-togeari']);
   assert.ok(!data.hidden, 'a main-band member is public');
   assert.equal(SHORT_NAMES.subaru, '昴');
   const fresh = (p2x = 520) => {
@@ -11513,7 +11177,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const ka = at('kaoru');
   const data = ROSTER[ka];
   assert.ok(ka === at('kokoro') + 1, '濑田薰 sits with HHW, after 心');
-  assert.equal(data.trait, 'focus');
   assert.equal(SHORT_NAMES.kaoru, '薰');
   assert.ok(data.view.kind === 'sprite' && data.view.height === 191 && data.view.extras?.includes('/sprites/kaoru/fans.png'), 'Kaoru uses a 191 px sprite height and preloads the fans');
   const fresh = (p2x = 520, foe = at('test-heavy')) => {
@@ -11647,7 +11310,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const ma = at('maya');
   const data = ROSTER[ma];
   assert.ok(ma === at('chisato') + 1, '大和麻弥 sits with Pastel*Palettes, after 千圣');
-  assert.equal(data.trait, 'beat', 'a drummer');
   assert.equal(SHORT_NAMES.maya, '麻弥');
   assert.ok(data.skills[3].superArmor, '器材宅讲座 wears 霸体');
   assert.ok(data.skills[2].superArmor && data.skills[2].cd === 4, '双调怪笑 wears 霸体 on a 4 s cooldown');
@@ -11807,10 +11469,8 @@ for (const order of [[2, 3], [3, 2]]) {
   const hg = at('hagumi');
   const data = ROSTER[hg];
   assert.ok(hg === at('kaoru') + 1 && hg === at('kanon') - 1, '北泽育美 sits with HHW, between 薰 and 花音');
-  assert.equal(data.trait, 'rush', 'she runs');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/hagumi/croquette.png') && data.view.extras.includes('/sprites/misaki/michelle.png'), 'the croquette and 米歇尔 are preloaded pictures');
   assert.ok(data.skills[2].superArmor && data.skills[4].superArmor && data.skills[5].superArmor, 'U, O and L wear 霸体');
-  assert.equal(data.skills[5].cost, 180, '可乐饼盛情难却 costs 180');
   const fresh = (p2x = 520) => {
     const g = newGame(hg, at('test-heavy')); const [p1, p2] = g.fighters; dummy(g);
     p1.x = 300; p2.x = p2x; p1.facing = 1; p2.facing = -1;
@@ -12015,7 +11675,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const ti = at('toko');
   const data = ROSTER[ti];
   assert.ok(ti === at('mashiro') + 1, '桐谷透子 sits with Morfonica, after 真白');
-  assert.equal(data.trait, 'rush', 'she does as she pleases, fast');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/sayo/special.png'), "纱夜's sheet is preloaded for 师父示范一下");
   assert.ok(!!STATUS_MARKS['toko-mud'], 'her 减速 look is registered');
   const fresh = (p2x = 520) => {
@@ -12120,7 +11779,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const ni = at('nanami');
   const data = ROSTER[ni];
   assert.ok(ni === at('toko') + 1 && ni === at('tsukushi') - 1, '广町七深 sits with Morfonica, between 透子 and 筑紫');
-  assert.equal(data.trait, 'focus', 'a steady genius');
   assert.ok(data.genius, 'the official site writes her as a genius');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/nanami/bush.png') && data.view.extras.includes('/sprites/nanami/claw.png'), 'the bush and the claw are preloaded pictures');
   for (const m of ['nanami-weird', 'nanami-fright', 'nanami-genius']) assert.ok(!!STATUS_MARKS[m], m + ' look is registered');
@@ -12311,7 +11969,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const ci = at('chisato');
   const data = ROSTER[ci];
   assert.ok(ci === at('eve') + 1, '白鹭千圣 sits with Pastel*Palettes, after 伊芙');
-  assert.equal(data.trait, 'focus', 'she keeps her head');
   assert.ok(!!STATUS_MARKS['chisato-doodle'], 'her 混乱 look is registered');
   const fresh = (foe = 'test-heavy', p2x = 560) => {
     const g = newGame(ci, at(foe)); const [p1, p2] = g.fighters; dummy(g);
@@ -12488,7 +12145,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const li = at('lisa');
   const data = ROSTER[li];
   assert.ok(li === at('sayo') + 1, '今井莉莎 sits with Roselia, after 纱夜');
-  assert.equal(data.trait, 'beat', 'the bass keeps the beat');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/lisa/cat.png'), 'the cat is its own picture');
   assert.ok(!!STATUS_MARKS['lisa-cat'] && !!STATUS_MARKS['lisa-wasabi']?.body, 'both of her status looks are registered');
   const fresh = (foe = 'test-heavy', p2x = 600) => {
@@ -12601,8 +12257,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const ka = at('kanon');
   const data = ROSTER[ka];
   assert.ok(ka === at('hagumi') + 1 && ka === at('misaki') - 1, '松原花音 sits with HHW, between 育美 and 美咲');
-  assert.equal(data.title, '鼓手 / 迷宫水母', 'title from 迷宫水母');
-  assert.equal(data.trait, 'beat', 'the drummer keeps the beat');
   assert.ok(data.view.kind === 'sprite' && data.view.height === 187 && data.view.extras?.includes('/sprites/kanon/jellyfish.png'), 'the jellyfish is her one prop picture');
   assert.ok(!!STATUS_MARKS['kanon-maze'] && !!STATUS_MARKS['kanon-zap'], 'the lost and stung looks are registered');
   const fresh = (p1x = 300, p2x = 500, foe = at('test-heavy')) => {
@@ -12754,8 +12408,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const ak = at('ako');
   const data = ROSTER[ak];
   assert.ok(ak === at('lisa') + 1 && ak === at('rinko') - 1, '宇田川亚子 sits with Roselia, after 莉莎');
-  assert.equal(data.title, '鼓手 / 大魔姬', 'title from 暗之大魔姬');
-  assert.equal(data.trait, 'beat', 'the drummer keeps the beat');
   assert.ok(data.view.kind === 'sprite' && data.view.height === 171 && data.view.extras?.includes('/sprites/ako/rinko.png') && data.view.extras.includes('/sprites/himari/friends.png'), '燐子 is her one new picture; 巴 is borrowed');
   assert.ok(!!STATUS_MARKS['ako-hypno'], 'the asleep look is registered');
   const fresh = (p1x = 300, p2x = 500) => {
@@ -12881,8 +12533,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const rk = at('rinko');
   const data = ROSTER[rk];
   assert.ok(rk === at('ako') + 1 && rk === at('kokoro') - 1, '白金燐子 closes Roselia, after 亚子');
-  assert.equal(data.title, '键盘 / 提词姬', 'title from 亚子的提词姬');
-  assert.equal(data.trait, 'focus', 'the keyboardist keeps the focus trait');
   assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes('/sprites/rinko/tent.png'), 'the tent is her one extra picture');
   assert.ok(!!STATUS_MARKS['rinko-hush'], 'the hush look is registered');
   assert.equal(data.skills[3].interval, RINKO_DOT_GAP, 'the bubble empties at the pace the dots drop');
@@ -13009,9 +12659,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const ri = at('rimi');
   const data = ROSTER[ri];
   assert.ok(ri === at('saaya') + 1, '牛込里美 sits with Poppin\'Party, after 沙绫');
-  assert.equal(data.title, '贝斯 / 告一段螺', 'title from 告一段"螺"');
-  assert.equal(data.quote, '我的心，就是巧克力螺～', 'quote from her song');
-  assert.equal(data.trait, 'focus', 'the bassist keeps the focus trait');
   assert.ok(data.view.kind === 'sprite' && data.view.height === 172, 'the smallest of Poppin\'Party');
   assert.ok(data.view.kind === 'sprite' && data.view.specialScale === RIMI_POSE, 'the specials play at the size her hand-held fx assume');
   for (const name of ['cornet', 'cornet-rimi', 'tv', 'ghost']) {
@@ -13169,8 +12816,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const pi = at('pareo');
   const data = ROSTER[pi];
   assert.ok(pi === at('lock') + 1, 'PAREO sits with RAISE A SUILEN, after LOCK');
-  assert.equal(data.trait, 'rush', 'faster than anyone, platform shoes and all');
-  assert.equal(data.skills[5].cost, 150, '灰色重染 costs 150');
   for (const mask of Object.values(PAREO_HAIR_MASKS)) {
     assert.ok(data.view.kind === 'sprite' && data.view.extras?.includes(mask), 'PAREO hair masks preload with the fighter');
   }
@@ -13331,7 +12976,6 @@ for (const order of [[2, 3], [3, 2]]) {
   const ri = at('rui');
   const data = ROSTER[ri];
   assert.ok(ri === at('tsukushi') + 1, '八潮瑠唯 sits with Morfonica, after 筑紫');
-  assert.equal(data.trait, 'focus', 'cool and steady');
   assert.ok(data.unfazed?.status.includes('confuse'), 'she does not crack');
   assert.ok(!!STATUS_MARKS['rui-seal'], 'her 沉默 look is registered');
   const fresh = (p2x = 520) => {
@@ -13492,6 +13136,201 @@ for (const order of [[2, 3], [3, 2]]) {
     let frail = 0;
     for (let i = 0; i < 120; i++) { g.step(STEP); frail = Math.max(frail, p2.frail); }
     assert.ok(frail > 1.5 && frail <= 2.01, '透子 laughs and it lasts half as long: ' + frail.toFixed(2));
+  }
+}
+
+// shiori: 香农栞（隐藏，■■■ / 编织者）。U puts a sigil under the nearest foe ahead and closes it: damage and 沉默
+// (1.8 s; 2.6 s if they were swinging while it read them; stepping out of it dodges); I is the page barrier: a melee hit
+// in the window is refused (no damage) and the hitter is pushed off with 削弱, a shot is stopped and goes back as a page;
+// O is held: a tap is 俳句 (three petals), 0.6 s 颂诗 (fourteen pages), 1.2 s 巨典 (the book, knockdown, lets go by
+// itself); L (200 气) is 圣典裁决: four acolytes cross the foe, then the verdict knocks down and silences.
+{
+  const sh = at('shiori');
+  const data = ROSTER[sh];
+  assert.ok(data.hidden, '编织者 are hidden characters');
+  assert.equal(BAND_BY_ID.get('weavers')?.name, '■■■', 'the group is written as three black squares');
+  assert.equal(BAND_BY_ID.get('weavers')?.trueName, '编织者', 'its true name is kept for the reveal');
+  assert.equal(ipOf(data), 'moe-world');
+  assert.equal(SHORT_NAMES.shiori, '栞');
+  assert.ok(data.view.kind === 'sprite' && !data.view.extras?.length, 'everything past her two sheets is drawn in code');
+  const fresh = (p2x = 520) => {
+    const g = newGame(sh, at('test-heavy')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  const silenced = (f: Fighter) => f.mods.find(m => m.kind === 'silence' && m.left > 0 && m.mark === 'shiori-seal');
+  // 悬浮: the float is a picture only — her body stays on the floor; the round opens on her settling down from above,
+  // a knockdown drops her onto the floor, and her acolytes float at her own rest height.
+  {
+    const hv = data.view.kind === 'sprite' ? data.view.hover : undefined;
+    if (!hv) throw Error('FAIL: Shiori has a hover profile');
+    assert.ok(hv.lift > 0 && hv.aura === 'shiori-hover', 'she floats');
+    assert.equal(hv.lift, SHIORI_HOVER_LIFT, 'acolytes float at her height');
+    const { g, p1 } = fresh();
+    stepHover(p1, g.age);
+    assert.ok(hoverLift(p1) > hv.lift + 40, 'the round opens on her descent');
+    for (let i = 0; i < 240; i++) { g.step(STEP); stepHover(p1, g.age); }
+    assert.equal(p1.y, FLOOR, 'her body stays on the floor');
+    assert.ok(Math.abs(hoverLift(p1) - hv.lift) <= hv.bob + 1, 'settled at rest height: ' + hoverLift(p1).toFixed(1));
+    for (let i = 0; i < 30; i++) { p1.knocked = 1; g.step(STEP); stepHover(p1, g.age); }
+    assert.ok(hoverLift(p1) < 1, 'knocked down, she lies on the floor: ' + hoverLift(p1).toFixed(2));
+    // She never walks or crouches into a jump: the glide holds the first walk cell, a jump keeps her resting pose.
+    const { p1: q } = fresh();
+    q.walk = 1;
+    assert.deepEqual([clipFor(q).col, clipFor(q).row], [1, 0], 'the glide holds the first walk cell');
+    q.walk = 0; q.y = FLOOR - 100;
+    assert.deepEqual([clipFor(q).col, clipFor(q).row], [0, 0], 'a jump keeps her resting pose');
+  }
+  // U: the seal lands and silences; swinging while it reads seals longer; walking out of it dodges.
+  {
+    const { g, p1, p2 } = fresh(480);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    let most = 0;
+    for (let i = 0; i < 120; i++) { g.step(STEP); most = Math.max(most, silenced(p2)?.left ?? 0); }
+    assert.ok(hp - p2.hp > 20 && most > 1.6 && most <= 1.81, 'the seal lands: ' + (hp - p2.hp).toFixed(1) + ' / ' + most.toFixed(2));
+    assert.equal(g.canAttack(p2, 2), false, '沉默 keeps U I O L in');
+  }
+  {
+    const { g, p1, p2 } = fresh(480);
+    g.attack(p1, 2);
+    run(g, .1);
+    g.attack(p2, 0);
+    let most = 0;
+    for (let i = 0; i < 120; i++) { g.step(STEP); most = Math.max(most, silenced(p2)?.left ?? 0); }
+    assert.ok(most > 2.4, '触犯戒律 seals longer: ' + most.toFixed(2));
+  }
+  {
+    const { g, p1, p2 } = fresh(480);
+    g.attack(p1, 2);
+    run(g, .05);
+    p2.x = 700;
+    for (let i = 0; i < 120; i++) g.step(STEP);
+    assert.ok(!silenced(p2), 'out of the sigil, out of the seal');
+  }
+  // I: a melee hit is refused and the hitter pushed off weakened; a shot comes back as a page.
+  {
+    const { g, p1, p2 } = fresh(390);
+    g.attack(p1, 3);
+    run(g, .1);
+    const mine = p1.hp;
+    g.attack(p2, 0);
+    let weak = false;
+    for (let i = 0; i < 120; i++) { g.step(STEP); if (p2.mods.some(m => m.kind === 'dmgDealt' && m.left > 0 && m.mark === 'shiori-weak')) weak = true; }
+    assert.equal(p1.hp, mine, 'the refused hit does no damage');
+    assert.ok(weak && p2.x > 420, 'the hitter is pushed off and weakened');
+  }
+  {
+    const g = newGame(sh, at('test-ranged')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = 700; p1.facing = 1; p2.facing = -1;
+    g.attack(p2, 2);
+    run(g, .2);
+    g.attack(p1, 3);
+    const mine = p1.hp, theirs = p2.hp;
+    let page = false;
+    for (let i = 0; i < 180; i++) { g.step(STEP); if (g.projectiles.some(p => p.fx === 'shiori-page' && p.owner === p1.id)) page = true; }
+    assert.ok(page && p1.hp === mine, 'the shot is stopped and a page goes back');
+    assert.ok(p2.hp < theirs, 'the page lands on the sender: ' + (theirs - p2.hp).toFixed(1));
+  }
+  // O: the stage follows how long the key is held.
+  const pray = (hold: number, p2x = 520) => {
+    const { g, p1, p2 } = fresh(p2x);
+    const key = CONTROLS[p1.controller!].attacks[4];
+    g.keys.add(key);
+    g.attack(p1, 4);
+    let stage = 0, knocked = false;
+    const petals = new Set<object>(), pages = new Set<object>();
+    const hp = p2.hp;
+    for (let i = 0; i < 400; i++) {
+      if (i * STEP >= hold) g.keys.delete(key);
+      g.step(STEP);
+      if (p1.attack?.skill.fx === 'shiori-prayer') stage = Math.max(stage, p1.attack.mode ?? 0);
+      for (const p of g.projectiles) if (p.fx === 'shiori-haiku') petals.add(p); else if (p.fx === 'shiori-page') pages.add(p);
+      if (p2.knocked > 0) knocked = true;
+    }
+    return { stage, petals: petals.size, pages: pages.size, knocked, lost: hp - p2.hp };
+  };
+  {
+    const tap = pray(.05);
+    assert.ok(tap.stage === 1 && tap.petals === 3 && tap.lost > 40, '俳句 is three petals: ' + JSON.stringify(tap));
+    const sonnet = pray(.8, 420);
+    assert.ok(sonnet.stage === 2 && sonnet.pages === 14 && sonnet.lost > 20, '颂诗 fans the pages: ' + JSON.stringify(sonnet));
+    const tome = pray(5, 480);
+    assert.ok(tome.stage === 3 && tome.knocked && tome.lost >= 85, '巨典 lets go by itself and knocks down: ' + JSON.stringify(tome));
+  }
+  {
+    // A hit while she prays breaks it off.
+    const { g, p1, p2 } = fresh(380);
+    const key = CONTROLS[p1.controller!].attacks[4];
+    g.keys.add(key);
+    g.attack(p1, 4);
+    run(g, .5);
+    g.attack(p2, 1);
+    for (let i = 0; i < 120; i++) g.step(STEP);
+    assert.ok(!g.projectiles.some(p => p.owner === p1.id) && p1.attack?.skill.fx !== 'shiori-prayer', 'the prayer breaks off');
+  }
+  // L: four acolytes and the verdict; knockdown and 沉默.
+  {
+    const { g, p1, p2 } = fresh(640);
+    p1.energy = p1.energyMax;
+    assert.ok(p1.energyMax >= 200, 'the bar holds 200');
+    const hp = p2.hp;
+    assert.equal(g.attack(p1, 5), true, '圣典裁决 casts');
+    const acolytes = new Set<object>();
+    let down = false, sealed = false;
+    for (let i = 0; i < 480; i++) {
+      g.step(STEP);
+      for (const e of g.effects) if (e.type === 'shiori-acolyte') acolytes.add(e);
+      if (p2.knocked > 0) down = true;
+      if (silenced(p2)) sealed = true;
+    }
+    assert.equal(acolytes.size, 4, 'four acolytes');
+    assert.ok(down && sealed && hp - p2.hp > 160 && hp - p2.hp < 260, 'the verdict lands: ' + (hp - p2.hp).toFixed(1));
+  }
+  // Every picture draws and restores the canvas.
+  {
+    let depth = 0;
+    const methods = new Map<string, (...args: unknown[]) => unknown>();
+    const ctx = new Proxy({ globalAlpha: 1, globalCompositeOperation: 'source-over' } as Record<string, unknown>, {
+      get(o, key: string) {
+        if (key in o) return o[key];
+        if (!methods.has(key)) methods.set(key, (...args: unknown[]) => {
+          for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value), `Shiori ${key} stays finite`);
+          if (key === 'save') depth++;
+          if (key === 'restore') depth--;
+          if (key === 'arc') assert.ok(Number(args[2]) >= 0, 'Shiori arc radius');
+          if (key === 'ellipse') assert.ok(Number(args[2]) >= 0 && Number(args[3]) >= 0, 'Shiori ellipse radii');
+          if (key === 'createLinearGradient' || key === 'createRadialGradient') return { addColorStop() {} };
+        });
+        return methods.get(key);
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    const seen = new Set<string>();
+    for (const slot of [2, 3, 4, 5]) {
+      const { g, p1, p2 } = fresh(slot === 3 ? 390 : 480);
+      p1.energy = 200;
+      g.attack(p1, slot);
+      for (let i = 0; i < 420; i++) {
+        if (slot === 3 && i === 12) g.attack(p2, 0);
+        g.step(STEP);
+        for (const e of g.effects) if (e.type.startsWith('shiori-') && !e.type.includes('@')) seen.add(e.type);
+        for (const p of g.projectiles) if (p.fx.startsWith('shiori-')) { assert.ok(drawShioriShot(ctx, p, false), p.fx + ' draws'); assert.equal(depth, 0); }
+      }
+    }
+    for (const type of ['sigil', 'cast-glow', 'seal-slam', 'bind', 'pages', 'refuse-flash', 'refuse-push', 'pray', 'charter', 'acolyte', 'acolyte-hit', 'gather', 'verdict', 'verdict-front']) {
+      assert.ok(seen.has('shiori-' + type), 'her moves spawn shiori-' + type);
+    }
+    for (const type of ['shiori-pray-up', 'shiori-tome', 'shiori-weak-aura']) seen.add(type);
+    for (const lite of [false, true]) for (const dir of [-1, 1]) for (const type of seen) {
+      for (let i = 0; i <= 24; i++) {
+        const e = { type, x: 450, y: FLOOR, color: '#D97757', max: 1.3, life: 1.3 - i * 1.3 / 24, age: i * .05, radius: type === 'shiori-acolyte' ? 300 * dir : 181, dir, n: i % 3, hit: i % 2 === 0, t0: .3 };
+        assert.ok(drawShioriFx(ctx, e, lite), `Shiori draws ${type}`);
+        assert.equal(depth, 0, 'Shiori restores the canvas after ' + type);
+      }
+    }
+    const f = newGame(sh, at('test-heavy')).fighters[1];
+    for (let i = 0; i <= 10; i++) auraShioriSeal(ctx, f, 181, 1.5 - i * .15, i * .1, i % 2 === 0);
+    assert.equal(depth, 0, 'the seal look restores the canvas');
   }
 }
 

@@ -22,6 +22,8 @@ export interface MatchReport {
   score: [number, number];
   /** 最后一回合的终结技，空串表示不显示（时间到、或没有记到）。 */
   fin: string;
+  /** 最后一回合是不是必杀收尾（ult.ts 的必杀状态判定，不看招式名）。 */
+  finL: boolean;
   /** 观看者一方（中立时为胜方）的数据。 */
   combo: number;
   dmg: number;
@@ -80,6 +82,7 @@ export function buildReport(g: FightGame, viewer: number | null, online = false)
     loseHp: teamPct(loseTeam),
     score: [g.wins[winTeam], g.wins[loseTeam]],
     fin: g.roundLog[g.roundLog.length - 1]?.fin ?? '',
+    finL: !!g.roundLog[g.roundLog.length - 1]?.ult,
     combo,
     dmg: Math.round(g.dealt[me] ?? 0),
     ult: g.ults[me] ?? 0,
@@ -115,7 +118,7 @@ export function sanitizeReport(v: unknown): MatchReport | null {
   const win = o.win === true || o.win === false || o.win === null ? o.win : undefined;
   const r = {
     win, seal: o.seal, stage: text(o.stage, 40), winners, losers,
-    winHp: int(o.winHp, 100), loseHp: int(o.loseHp, 100), fin: text(o.fin ?? '', 40),
+    winHp: int(o.winHp, 100), loseHp: int(o.loseHp, 100), fin: text(o.fin ?? '', 40), finL: o.finL === true,
     combo: int(o.combo, 9999), dmg: int(o.dmg, 9999999), ult: int(o.ult, 999),
     rank: o.rank, tag: o.tag ?? '',
   };
