@@ -6467,7 +6467,9 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
     assert.equal(w.p2.dodge > 0, dodge, 'snapshots replay the touch gesture after a lost or unsampled keydown');
 
     const lock = pair(true);
-    const pad = new LocalPad(lock.guest);
+    const pad = new LocalPad(lock.guest, 1);
+    assert.equal(pad.fighters, lock.guest.fighters, 'LocalPad exposes fighters for touch parry check');
+    assert.equal(pad.localController, 1, 'guest lockstep LocalPad tracks local seat controller');
     pad.keyDown('KeyS'); pad.keyUp('KeyS', dodge);
     new RemotePad().apply(lock.host, pad.sample());
     lock.host.step(STEP);
@@ -13349,5 +13351,165 @@ await checkHub();
   assert.ok(ids.every(id => /^[0-9a-f]{8}$/.test(PORTRAITS[id].h) && PORTRAITS[id].face.every(v => v > 0 && v < 1)), 'portrait fingerprints and face positions are well-formed');
   const g = new FightGame([ROSTER[0], ROSTER[1]], { mode: 'cpu', difficulty: 1, stage: STAGES[0], audio: { play() {} } });
   assert.ok(!g.options.ultFreeze, 'the L freeze is opt-in');
+}
+// tensora: 天素罗（隐藏，素世的梗形态）。U: stamp, then a run of half a screen into the first grounded body (further on chip
+// fuel). I: strain (no armour — a hit is 耶不出来, half the wait back), an egg that hatches a chick which walks into the foe.
+// O: crumbs ahead, heals and feeds the 胖度 gauge, fuels the next U. L (75 气): a floor ring of tear ripples, jumpable; every
+// egg and chick of hers cries along. 胖宝宝: a full gauge is 大胖 (霸体) and then empties.
+{
+  const ts = at('tensora');
+  const data = ROSTER[ts];
+  assert.equal(groupOf(data), 'none:bang-dream', '天素罗 sits under BanG Dream! 无所属');
+  assert.ok(data.hidden, 'a meme form stays hidden');
+  assert.equal(SHORT_NAMES.tensora, '天素罗');
+  assert.equal(data.skills[5].cost, 75, 'the cry is cheap');
+  const fresh = (p2x = 520) => {
+    const g = newGame(ts, at('test-heavy')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  // U: 300 away is in reach; 480 is not, unless she ate a chip first
+  {
+    const { g, p1, p2 } = fresh(600);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    run(g, 1);
+    assert.ok(hp - p2.hp > 40, 'the run lands: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(780);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    run(g, 1);
+    assert.equal(p2.hp, hp, 'half a screen is all she runs');
+  }
+  {
+    const { g, p1, p2 } = fresh(780);
+    p1.mods.push({ kind: 'chips', left: 5 });
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    run(g, 1);
+    assert.ok(hp - p2.hp > 40, 'chip fuel runs further');
+    assert.ok(!p1.mods.some(m => m.kind === 'chips' && m.left > 0), 'and burns the fuel');
+  }
+  // I: the egg, the hatch, the chick's bump; a hit while straining is 耶不出来
+  {
+    const { g, p1, p2 } = fresh(620);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    run(g, .7);
+    assert.equal(g.projectiles.filter(p => p.fx === 'tensora-egg').length, 1, 'one egg laid');
+    run(g, 1.8);
+    assert.equal(hp, p2.hp, 'an egg does not hurt anyone');
+    run(g, 2.2);
+    assert.ok(hp - p2.hp > 20, 'the chick walks into them: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(380);
+    g.attack(p1, 3);
+    run(g, .2);
+    p2.cooldowns[0] = 0; g.attack(p2, 0);
+    run(g, .4);
+    assert.ok(!g.projectiles.some(p => p.fx === 'tensora-egg'), 'no egg comes');
+    assert.ok(g.effects.some(e => e.type === 'tensora-fizzle'), '耶不出来');
+    assert.ok(p1.cooldowns[3] < data.skills[3].cd * .6, 'half the wait comes back: ' + p1.cooldowns[3].toFixed(2));
+  }
+  {
+    const { g, p1 } = fresh(900);
+    for (let i = 0; i < 3; i++) { p1.cooldowns[3] = 0; p1.attack = null; g.attack(p1, 3); run(g, .9); }
+    assert.equal(g.projectiles.filter(p => p.fx === 'tensora-egg' && p.life > 0).length, 2, 'two of hers at most');
+  }
+  // O: heals, feeds the gauge, fuels the run
+  {
+    const { g, p1 } = fresh(900);
+    p1.hp -= 100;
+    const hp = p1.hp;
+    g.attack(p1, 4);
+    run(g, .8);
+    assert.equal(p1.hp - hp, 30, 'the chip heals');
+    assert.ok(p1.gauge >= 30, 'and fattens: ' + p1.gauge);
+    assert.ok(p1.mods.some(m => m.kind === 'chips' && m.left > 0), 'and fuels the next run');
+  }
+  // L: the ring reaches a grounded foe; a jump clears it; an egg on the field cries along
+  {
+    const { g, p1, p2 } = fresh(600);
+    p1.energy = 75;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    run(g, 1.6);
+    assert.ok(hp - p2.hp > 25, 'the ripples hit: ' + (hp - p2.hp).toFixed(1));
+  }
+  {
+    const { g, p1, p2 } = fresh(600);
+    p1.energy = 75;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    run(g, .66);
+    p2.y = FLOOR - 120; p2.vy = -200;
+    run(g, .3);
+    assert.equal(p2.hp, hp, 'a jump clears the floor ring');
+  }
+  {
+    const { g, p1 } = fresh(900);
+    g.attack(p1, 3);
+    run(g, .9);
+    p1.energy = 75;
+    g.attack(p1, 5);
+    run(g, 1);
+    assert.equal(g.effects.filter(e => e.type === 'tensora-sob').length, 1, 'the egg cries along');
+  }
+  {
+    // Two of hers out; the older one pops just as the cry starts: the other still cries, once.
+    const { g, p1 } = fresh(900);
+    for (let i = 0; i < 2; i++) { p1.cooldowns[3] = 0; p1.attack = null; g.attack(p1, 3); run(g, .9); }
+    p1.energy = 75;
+    g.attack(p1, 5);
+    run(g, .63);
+    g.projectiles.filter(p => p.fx === 'tensora-egg').sort((p, q) => q.age - p.age)[0].life = 0;
+    run(g, .45);
+    assert.equal(g.effects.filter(e => e.type === 'tensora-sob').length, 1, 'only the one left cries');
+    // The pose-bound pictures name her, or they vanish on the first frame.
+    for (const e of g.effects) if (e.cast) assert.equal(e.fighter, p1.id, e.type + ' names its fighter');
+  }
+  // 胖宝宝: full gauge → 大胖 with 霸体, then it empties (and clears even if gauge rises near the end, without inflating ultLeft)
+  {
+    const { g, p1, p2 } = fresh(900);
+    p1.gauge = 100;
+    run(g, .1);
+    assert.ok(p1.mods.some(m => m.kind === 'bigfat' && m.left > 0), '大胖');
+    assert.ok(p1.poise > 0, '霸体 while 大胖');
+    run(g, 7.85);
+    p1.gauge += 15;
+    run(g, .35);
+    assert.equal(p1.gauge, 0, 'emptied after: ' + p1.gauge.toFixed(1));
+    assert.ok(!p1.mods.some(m => m.kind === 'bigfat'), 'bigfat mod retired');
+    // Popping 大胖 during 坏人类！ must not hold the L finisher window open for 8s.
+    p1.gauge = 95;
+    p1.energy = 75;
+    p2.x = 500;
+    g.attack(p1, 5);
+    run(g, 1.0);
+    assert.ok(p1.mods.some(m => m.kind === 'bigfat' && m.left > 0), 'L hit triggered 大胖');
+    run(g, 1.5);
+    assert.equal(p1.ultLeft, 0, '大胖 passive does not extend ultLeft: ' + p1.ultLeft);
+  }
+  // U stamp detaches if interrupted during windup; U knocks forward even when crossing center
+  {
+    const { g, p1, p2 } = fresh(332);
+    g.attack(p1, 2);
+    run(g, .05);
+    const stamp = g.effects.find(e => e.type === 'tensora-stamp');
+    assert.ok(stamp?.cast && stamp.fighter === p1.id, 'stamp is bound to cast');
+    p2.cooldowns[0] = 0; g.attack(p2, 0);
+    run(g, .2);
+    assert.ok(!g.effects.some(e => e.type === 'tensora-stamp'), 'interrupted stamp fades away');
+  }
+  {
+    const { g, p1, p2 } = fresh(290);
+    const x0 = p2.x;
+    g.attack(p1, 2);
+    run(g, .5);
+    assert.ok(p2.x > x0, 'crossing-center U still knocks forward: ' + p2.x);
+  }
 }
 console.log('selfcheck ok');

@@ -80,7 +80,14 @@ export type ModKind =
   | 'aura'
   /** 微醺醉拳: on 河原木桃香 while drunk; v 1 while a sway is ready. The next hit (no grab, super or tick) slides off her
    *  (combat.ts hit() → game/momoka.ts swayOff); the beat pulse readies the next. */
-  | 'sway';
+  | 'sway'
+  /** 欧耶！: on 天素罗 while she strains for the egg; v is the slot. A hit that drops the cast while it holds is
+   *  「耶不出来」 (game/tensora.ts). */
+  | 'strain'
+  /** 薯片挑战: on 天素罗, the chip fuel her next 最神速的脚脚 burns (game/tensora.ts). */
+  | 'chips'
+  /** 胖宝宝: on 天素罗 while she is 大胖; the body swell reads it (render/clips.ts tensoraSquash). */
+  | 'bigfat';
 
 /**
  * One running buff.

@@ -37,6 +37,7 @@ import { RYO_BACK, RYO_SCREEN_BACK } from './ryoFx.ts';
 import { NINA_BACK, NINA_SCREEN_BACK, drawNinaBack } from './ninaFx.ts';
 import { MOMOKA_BACK, MOMOKA_SCREEN_BACK } from './momokaFx.ts';
 import { SUBARU_BACK, SUBARU_SCREEN_FRONT } from './subaruFx.ts';
+import { TENSORA_BACK } from './tensoraFx.ts';
 import { KAORU_BACK, KAORU_SCREEN_BACK } from './kaoruFx.ts';
 import { HAGUMI_BACK, HAGUMI_SCREEN_BACK } from './hagumiFx.ts';
 import { drawTokoSoloLight, TOKO_BACK } from './tokoFx.ts';
@@ -76,7 +77,7 @@ const NIGHTMARE_DIM = .42;
 const HOVER_AURA: Record<string, (c: CanvasRenderingContext2D, f: Fighter, lift: number, level: number, age: number, lite: boolean) => void> = {
   'shiori-hover': drawShioriHover,
 };
-const BACK_FX = new Set([...SHIORI_BACK, 'coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK, ...MIZUHO_BACK, ...MIKU_BACK, ...SHIZUKU_BACK, ...CHIERI_BACK, ...YOMOGI_BACK, ...MASKING_BACK, ...TAE_BACK, ...SAAYA_BACK, ...HIMARI_BACK, ...TOMOE_BACK, ...TSUGUMI_BACK, ...KAORU_BACK, ...HAGUMI_BACK, ...TOKO_BACK, ...RUI_BACK, ...NANAMI_BACK, ...CHISATO_BACK, ...MAYA_BACK, ...BOCCHI_BACK, ...LOCK_BACK, ...KANON_BACK, ...AKO_BACK, ...RINKO_BACK, ...RIMI_BACK, ...ANON_BACK, ...UMIRI_BACK, ...NINA_BACK, ...MOMOKA_BACK, ...SUBARU_BACK, ...KITA_BACK, ...RYO_BACK]);
+const BACK_FX = new Set([...SHIORI_BACK, 'coffin', 'stage-lights', 'spotlight', 'nagi-sea', 'encore-spot', 'family-lineup', 'family-zone', 'family-door', ...SAKIKO_BACK, ...MIZUHO_BACK, ...MIKU_BACK, ...SHIZUKU_BACK, ...CHIERI_BACK, ...YOMOGI_BACK, ...MASKING_BACK, ...TAE_BACK, ...SAAYA_BACK, ...HIMARI_BACK, ...TOMOE_BACK, ...TSUGUMI_BACK, ...KAORU_BACK, ...HAGUMI_BACK, ...TOKO_BACK, ...RUI_BACK, ...NANAMI_BACK, ...CHISATO_BACK, ...MAYA_BACK, ...BOCCHI_BACK, ...LOCK_BACK, ...KANON_BACK, ...AKO_BACK, ...RINKO_BACK, ...RIMI_BACK, ...ANON_BACK, ...UMIRI_BACK, ...NINA_BACK, ...MOMOKA_BACK, ...SUBARU_BACK, ...TENSORA_BACK, ...KITA_BACK, ...RYO_BACK]);
 /** Screen-space layers that ignore the body zoom: behind every body, and in front of them. */
 const SCREEN_BACK = new Set(['encore-stage', 'family-dim', ...SAKIKO_SCREEN_BACK, ...MIZUHO_SCREEN_BACK, ...MIKU_SCREEN_BACK, ...YOMOGI_SCREEN_BACK, ...MASKING_SCREEN_BACK, ...TAE_SCREEN_BACK, ...SAAYA_SCREEN_BACK, ...HIMARI_SCREEN_BACK, ...TOMOE_SCREEN_BACK, ...TSUGUMI_SCREEN_BACK, ...NIJIKA_SCREEN_BACK, ...KITA_SCREEN_BACK, ...RYO_SCREEN_BACK, ...NINA_SCREEN_BACK, ...MOMOKA_SCREEN_BACK, ...KAORU_SCREEN_BACK, ...HAGUMI_SCREEN_BACK, ...CHISATO_SCREEN_BACK, ...MAYA_SCREEN_BACK, ...BOCCHI_SCREEN_BACK, ...LOCK_SCREEN_BACK, ...KANON_SCREEN_BACK, ...AKO_SCREEN_BACK, ...RINKO_SCREEN_BACK]);
 const SCREEN_FRONT = new Set(['encore-rain', 'encore-crowd', 'encore-call', 'slap-flash', ...CHIERI_SCREEN_FRONT, ...YOMOGI_SCREEN_FRONT, ...HIMARI_SCREEN_FRONT, ...TOMOE_SCREEN_FRONT, ...CHISATO_SCREEN_FRONT, ...MAYA_SCREEN_FRONT, ...AKO_SCREEN_FRONT, ...RINKO_SCREEN_FRONT, ...PAREO_SCREEN_FRONT, ...PAREO_SCREEN_FRONT, ...KITA_SCREEN_FRONT, ...SUBARU_SCREEN_FRONT]);

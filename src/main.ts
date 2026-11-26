@@ -2,7 +2,7 @@ import { PLAYABLE, PLAYABLE_BY_ID, guestsFor } from './data/characters.ts';
 import { STAGES } from './data/stages.ts';
 import type { CharacterData, StageData } from './data/types.ts';
 import { FightGame, MINION_BAND } from './game/game.ts';
-import { KeyboardInput, TouchInput } from './game/input.ts';
+import { KeyboardInput, TouchInput, type InputTarget } from './game/input.ts';
 import type { Renderer } from './render/renderer.ts';
 import { isLiteFx, setLiteFx, shouldGoLite } from './render/fxQuality.ts';
 import { createViews } from './render/view.ts';
@@ -87,7 +87,7 @@ let challenge: ChallengeRun | null = null;
 
 /** Lockstep: inputs write to this device's pad, which the session samples; the sim never sees a raw key. */
 let localPad: LocalPad | null = null;
-const inputGame = (): FightGame | null => (game?.netRole === 'lock' && localPad ? localPad as unknown as FightGame : game);
+const inputGame = (): InputTarget | null => (game?.netRole === 'lock' && localPad ? localPad : game);
 const input = new KeyboardInput(inputGame);
 input.attach();
 new TouchInput(inputGame, $('touchpad')).attach();
@@ -359,8 +359,12 @@ function leaveBattleFullscreen(): void {
   else if (doc.webkitFullscreenElement) doc.webkitExitFullscreen?.();
 }
 
+let startGen = 0;
 let releaseBulk: (() => void) | null = null;
 async function startGame(setup: MatchSetup): Promise<void> {
+  const gen = ++startGen;
+  const wire = pendingLink;
+  pendingLink = null;
   closeHub(true);
   sfx.unlock();
   /* pointerdown 上的开始/重开把这次手势让给了全屏，音乐改在这条仍处于点击里的路径接上。 */
@@ -386,6 +390,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
   queue.pause();
   // 后台下载：联机整场停着（holdBulk，回选人页 restBack 再继续）；本地对战只走小文件慢车道（prefetch.ts）。
   if (setup.online) releaseBulk ??= holdBulk();
+  else { releaseBulk?.(); releaseBulk = null; }
   setPrefetchScene(setup.online ? 'online' : 'local');
   // 最近玩过 = 玩家自己操控的角色（人机对手不算）。没写操控表时 1P 是玩家。
   noteRecent(setup.characters.filter((c, i) => !c.hidden && (setup.controllers ? setup.controllers[i] != null : i === 0)).map(c => c.id));
@@ -404,15 +409,22 @@ async function startGame(setup: MatchSetup): Promise<void> {
         : Promise.resolve(),
     ]);
   } catch (err) {
-    queue.resume();
-    releaseBulk?.();
-    releaseBulk = null;
-    setPrefetchScene('menu');
-    hideVersus();
+    wire?.close();
+    if (gen === startGen) {
+      queue.resume();
+      releaseBulk?.();
+      releaseBulk = null;
+      setPrefetchScene('menu');
+      hideVersus();
+    }
     throw err;
   } finally {
     releaseIdle();
-    $('start').removeAttribute('disabled');
+    if (gen === startGen) $('start').removeAttribute('disabled');
+  }
+  if (gen !== startGen) {
+    wire?.close();
+    return;
   }
   {
     const finaleSrcs = setup.characters.flatMap(c => [c.finale?.art, ...(c.finale?.props ?? [])]).filter((s): s is string => !!s);
@@ -528,8 +540,6 @@ async function startGame(setup: MatchSetup): Promise<void> {
       $('deck-label').textContent = deck;
     },
   });
-  const wire = pendingLink;
-  pendingLink = null;
   if (setup.online && wire) {
     beginNet(setup.online, wire, {
       hud: updateHUD,
@@ -562,7 +572,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
       mute: on => { muted = on; },
     } : undefined);
   }
-  localPad = setup.lock && game ? new LocalPad(game) : null;
+  localPad = setup.lock && game ? new LocalPad(game, setup.online === 'guest' ? 1 : 0) : null;
   applyHudFrame();
   hostTicker(setup.online === 'host' || !!setup.lock);
   // previewViews covers the whole roster: a 诗超绊 bandmate borrows their sheets mid-match.
@@ -770,6 +780,8 @@ function menuUp(): boolean {
 
 /** Leave the battle screen for the select one; any waiting run stays parked, storage untouched. */
 function restBack(): void {
+  startGen++;
+  hideVersus();
   abortPadEditor();
   showPauseMenu(false);
   endNet();

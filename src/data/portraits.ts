@@ -21,6 +21,7 @@ export interface Portrait {
 
 /** 自动估计不准的脸位置（戴高帽、玩偶头这类轮廓最上沿不是头顶的）。 */
 const FACE_FIX: Record<string, readonly [number, number]> = {
+  tensora: [.58, .415],
   kokoro: [.70, .267],
   kaoru: [.48, .21],
   hagumi: [.49, .255],

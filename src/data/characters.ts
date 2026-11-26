@@ -2873,6 +2873,55 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    // 天素罗 (game/tensora.ts, render/tensoraFx.ts): 隐藏角色。长崎素世的梗形态——社区把素世的玩偶塞进天妇罗炸虾套装喂给 AI，
+    // 生出这只没手没脚的黄色毛绒球（只有两只橙色小脚），会自己下蛋。梗全部来自 B 站：
+    // 「欧耶～」（它的口头禅和下蛋时的叫声；欧耶蛋、天素球、《一只耶不出来的天素罗》《天素罗生饱饱了！》），
+    // 「最神速的脚脚」（火车头天素罗、百公里薯耗一包），《天素罗宝宝的薯片挑战》（大胖战力强），「坏人类！！」。
+    // 治愈搞笑向：不用油炸、踩、泥、委屈哭这类虐向画面；L 是跺脚撒泼，不是被欺负。
+    // 身体是一只球，没有手：J 头槌、K 脚脚踢、格挡缩成一团。天素球（蛋）是 egg.png，小天素罗用她自己的走路格缩小。
+    id: 'tensora', name: '天素罗', title: '毛绒 / 神速脚脚', quote: '欧耶～', color: '#FFD84A',
+    hidden: true,
+    ...stats('armor'),
+    passive: ['硬派身躯 · 胖宝宝', '受到伤害降低 5%；打中对手或吃薯片会长胖，胖度满了变成大胖：霸体、伤害提高、走得更慢，坏人类！的音波更大，结束后胖度清空'],
+    gauge: { max: 100, onHitDealt: 7, label: '胖度', color: '#FFB347', head: true },
+    view: { kind: 'sprite', common: '/sprites/tensora/common.png', special: '/sprites/tensora/special.png', height: 130, lift: 5, extras: ['/sprites/tensora/egg.png'] },
+    skills: [
+      // 没有手：用圆身子往前一顶
+      skill(0, 'light', '头槌', { range: 86 }),
+      // 两只小橙脚
+      skill(1, 'heavy', '脚脚踢', { range: 108 }),
+      // 最神速的脚脚（火车头天素罗；百公里薯耗一包）
+      skill(2, 'dash', '最神速的脚脚', {
+        damage: 58, range: 62, start: .22, duration: .95, cd: 6.5, knock: 330, fx: 'tensora-dash',
+        react: { kind: 'stand', stun: .4 },
+        brief: '蹬脚飞奔冲撞，吃过薯片更快更远；跳起可躲',
+        detail: '原地蹬脚 0.22 秒后脚脚抡出残影飞奔，撞上第一个地面对手即停下并击退；吃过薯片后 6 秒内的下一次冲得更快、距离从半屏变成大半屏；跳起可躲',
+      }),
+      // 欧耶！（欧耶蛋 / 天素球；《一只耶不出来的天素罗》）
+      skill(3, 'projectile', '欧耶！', {
+        damage: 26, range: 900, start: .5, duration: .85, cd: 9, knock: 160, size: 60, life: 5.4, fx: 'tensora-egg',
+        react: { kind: 'stand', stun: .3 },
+        brief: '下蛋孵出小天素罗撞人，至多两只；前摇被打中则作废',
+        detail: '身体挤扁憋气 0.5 秒，在身后下一颗天素球，2 秒后孵出小天素罗朝最近的对手走去，撞到地面对手即消失；跳起可躲，可格挡；前摇被打中则「耶不出来」，返还一半冷却；场上天素球和小天素罗合计至多两只，再下会挤掉最早的',
+      }),
+      // 薯片挑战（天素罗宝宝的薯片挑战；百公里薯耗一包）
+      skill(4, 'heavy', '薯片挑战', {
+        damage: 30, range: 150, start: .34, duration: .72, cd: 8, knock: 200, fx: 'tensora-chips',
+        brief: '咬碎薯片喷碎屑；回血长胖，下次冲刺更快更远',
+        detail: '咬碎薯片朝身前喷出碎屑；不论命中都回复 30 体力、胖度 +30，6 秒内的下一次最神速的脚脚更快更远',
+      }),
+      // 坏人类！（《坏人类!!》《机甲天素罗制裁坏人类》）：憋气鼓成一团，跺着脚脚撒泼大哭
+      skill(5, 'endure', '坏人类！', {
+        cost: 75, damage: 34, range: 380, start: .62, duration: 1.45, knock: 360, fx: 'tensora-wail', noSparks: true,
+        react: { kind: 'stand', stun: .45 },
+        guardPlan: [10, 14, 34],
+        finale: { damage: 14, knock: 220, react: { kind: 'stand', stun: .3 } },
+        brief: '大哭涟漪贴地扩散击退，蛋和小家伙跟着哭；跳起可躲',
+        detail: '憋气 0.62 秒后撒泼大哭，泪水涟漪贴地向两侧扩散到大半屏，击退并造成伤害；每个天素球和小天素罗跟着哭，各在原地补一圈小涟漪 14 伤害；大胖时涟漪扩散到更远；涟漪贴地，跳起可躲；可格挡',
+      }),
+    ],
+  },
+  {
     // 后藤一里 (game/bocchi.ts, render/bocchiFx.ts): 孤独摇滚！的波奇，第一位 BanG Dream! 以外的角色。
     // U I O 都不是用人形出招（纸箱、槌子蛇、怪兽皮套），只有 L 是全场唯一帅的时刻。
     id: 'bocchi', name: '后藤一里', title: '吉他 / 吉他英雄', quote: '社会好可怕！！', color: '#F5A9C0',

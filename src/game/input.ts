@@ -1,11 +1,24 @@
 import { assignImage } from '../assets/loader.ts';
-import type { FightGame } from './game.ts';
 import { atkIcon } from '../ui/touchIcons.ts';
 import { advancedLive, blankLive } from '../ui/controls.ts';
 
+/** Input surface shared by FightGame and Lockstep's LocalPad. */
+export interface InputTarget {
+  readonly keys: Set<string>;
+  readonly paused: boolean;
+  readonly phase: string;
+  readonly netRole?: string | null;
+  readonly fighters: readonly { controller: number | null; blocking: boolean }[];
+  readonly localController?: number;
+  isLocalControl(code: string): boolean;
+  togglePause(force?: boolean): void;
+  keyDown(code: string): void;
+  keyUp(code: string, dodge?: boolean): void;
+}
+
 /* Keyboard → game. Also pauses when the tab loses focus so nobody gets hit while alt-tabbed. */
 export class KeyboardInput {
-  private readonly getGame: () => FightGame | null;
+  private readonly getGame: () => InputTarget | null;
   private readonly down = (e: KeyboardEvent) => {
     const g = this.getGame();
     if (!g || (typeof document !== 'undefined' && document.querySelector('dialog[open]'))) return;
@@ -31,7 +44,7 @@ export class KeyboardInput {
   };
   private readonly visibility = () => { if (document.hidden) this.blur(); };
 
-  constructor(getGame: () => FightGame | null) { this.getGame = getGame; }
+  constructor(getGame: () => InputTarget | null) { this.getGame = getGame; }
 
   attach(): void {
     window.addEventListener('keydown', this.down);
@@ -136,7 +149,7 @@ export function stickFingerGone(stickTouch: number | null, activeIds: number[]):
 
 /* On-screen pad → the same keyDown / keyUp the keyboard uses. Buttons carry data-key; the stick is left / right plus jump at the edge. */
 export class TouchInput {
-  private readonly getGame: () => FightGame | null;
+  private readonly getGame: () => InputTarget | null;
   private readonly pad: HTMLElement;
   private readonly arena: HTMLElement | null;
   private readonly held = new Map<number, HTMLElement>();
@@ -195,7 +208,8 @@ export class TouchInput {
       } else if (b.hasAttribute('data-atk')) {
         const id = e.pointerId;
         // 完美格挡: while guarding, the press is the timing read, so it goes out on touch-down, not on release.
-        if (g.fighters.some(f => f.controller === 0 && f.blocking)) { g.keyDown('KeyJ'); g.keyUp('KeyJ'); this.atkParry.add(id); return; }
+        const ctrl = g.localController ?? 0;
+        if (g.fighters.some(f => f.controller === ctrl && f.blocking)) { g.keyDown('KeyJ'); g.keyUp('KeyJ'); this.atkParry.add(id); return; }
         this.atkTimer.set(id, window.setTimeout(() => {
           this.atkTimer.delete(id);
           if (!this.held.has(id)) return;
@@ -261,7 +275,7 @@ export class TouchInput {
     e.preventDefault();
   };
 
-  constructor(getGame: () => FightGame | null, pad: HTMLElement) {
+  constructor(getGame: () => InputTarget | null, pad: HTMLElement) {
     this.getGame = getGame;
     this.pad = pad;
     this.arena = document.getElementById('arena');

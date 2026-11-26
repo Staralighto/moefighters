@@ -1287,6 +1287,58 @@ export const SUBARU_FILM = {
   beats: [1, 1.15, 1.29, 1.41, 1.52, 1.62] as readonly number[], stars: 1.72, burst: 1.98, bow: 2.2,
 } as const;
 
+/* ---- 天素罗: shared by src/game/tensora.ts, the cell picks below and render/tensoraFx.ts ---- */
+/** 最神速的脚脚 a.mode: stamping on the spot, the run, the skid. */
+export const TENSORA_DASH_MODE = { wind: 0, run: 1, brake: 2 } as const;
+/** 最神速的脚脚: the run covers `reach` px in `run` s (`boostReach` / `boostRun` on chip fuel); `grip` is how close the
+ *  body has to come; the skid holds `brake` s. A body higher than `air` above the floor is jumped over. */
+export const TENSORA_DASH = { run: .3, reach: 380, boostRun: .27, boostReach: 560, grip: 62, brake: .24, air: 105 } as const;
+/** 欧耶！: the egg lands `back` px behind her, hatches `hatch` s later and the chick walks at `walk` px/s, its body
+ *  `y` px above the floor and `reach` wide; at most `max` of hers are out at once; `refund` of the wait comes back
+ *  when the egg will not come (耶不出来). */
+export const TENSORA_EGG = { back: 34, hatch: 2, walk: 180, y: 24, reach: 42, max: 2, life: 5.4, refund: .5 } as const;
+/** 薯片挑战: the gauge the chip feeds, the hp it heals, and how long the fuel waits for the next 最神速的脚脚. */
+export const TENSORA_CHIPS = { gauge: 30, fuel: 6, heal: 30 } as const;
+/** 坏人类！: the ring rolls out at `speed` px/s to `reach` (`fatReach` while 大胖), its wet front `band` px deep; every
+ *  egg and chick of hers answers with an `echoR` ring, `echoGap` s apart; the cry holds `cry` s after the start. */
+export const TENSORA_WAIL = { speed: 720, reach: 380, fatReach: 540, band: 70, echoR: 170, echoGap: .14, cry: .62 } as const;
+/** 胖宝宝: 大胖 lasts `time` s; the body swells by up to `grow` as the gauge fills and to `big` while 大胖. */
+export const TENSORA_FAT = { time: 8, grow: .08, big: 1.2, dmg: .2, speed: .85 } as const;
+/** 胖宝宝 and the two strains (欧耶！ squashed down then popping up; 坏人类！ puffed round), scaled about the feet. */
+export function tensoraSquash(f: Fighter): { x: number; y: number } | undefined {
+  if (f.data.id !== 'tensora') return undefined;
+  const max = f.data.gauge?.max ?? 100;
+  const fat = f.mods.find(m => m.kind === 'bigfat' && m.left > 0);
+  let k = 1 + TENSORA_FAT.grow * Math.min(1, Math.max(0, f.gauge / max));
+  if (fat) {
+    const into = Math.min(1, (TENSORA_FAT.time - fat.left) / .3), out = Math.min(1, fat.left / .3);
+    k += (TENSORA_FAT.big - k) * Math.min(into, out);
+  }
+  let x = k, y = k;
+  const a = f.attack;
+  if (a?.skill.fx === 'tensora-egg') {
+    const s = a.skill;
+    if (a.t < s.start) {
+      const p = Math.min(1, a.t / s.start), w = Math.sin(a.t * 38) * .02 * p;
+      x *= 1 + .14 * p + w; y *= 1 - .14 * p;
+    } else if (a.t < s.start + .2) {
+      const p = 1 - (a.t - s.start) / .2;
+      x *= 1 - .08 * p; y *= 1 + .12 * p;
+    }
+  }
+  if (a?.skill.fx === 'tensora-wail') {
+    const s = a.skill;
+    if (a.t < s.start) {
+      const p = Math.min(1, a.t / s.start);
+      x *= 1 + .12 * p * p; y *= 1 + .06 * p * p;
+    } else if (a.t < s.start + .14) {
+      const p = 1 - (a.t - s.start) / .14;
+      x *= 1 - .06 * p; y *= 1 + .1 * p;
+    }
+  }
+  return x === 1 && y === 1 ? undefined : { x, y };
+}
+
 /* ---- 濑田薰: shared by src/game/kaoru.ts, the cell picks below and render/kaoruFx.ts ---- */
 /** 高空微笑坠落: a.mode — the crouch, the leap (KAORU_RISE, up KAORU_APEX), the faint at the top (KAORU_HANG), the drop
  *  (KAORU_DROP), lying where she landed (KAORU_LIE, her opening), then back up in a pose. */
@@ -1389,7 +1441,7 @@ export function flatSquash(f: Fighter): { x: number; y: number } | undefined {
   return { x: 1 + (RIMI_FLAT.x - 1) * k, y: 1 - (1 - RIMI_FLAT.y) * k };
 }
 export function bodySquash(f: Fighter): { x: number; y: number } | undefined {
-  return lectureSquash(f) ?? kneadSquash(f) ?? flatSquash(f) ?? squeezeSquash(f);
+  return lectureSquash(f) ?? kneadSquash(f) ?? flatSquash(f) ?? squeezeSquash(f) ?? tensoraSquash(f);
 }
 
 
@@ -1714,6 +1766,12 @@ export function clipFor(f: Fighter): Clip {
     // 别想走: the crane stance; the pounce and the lock; the throw (or the sprawl of a miss). 笑容满面: the closed-eye
     // smile over the stomp; the elbow; the smile after. 手刀架挡: the crossed guard; the chops; the hands lowered.
     // 找到想做的事了: the script held up in the film; the beats; the look back.
+    // 最神速的脚脚: stamping on the spot; the run; the skid. 坏人类！: puffed up; the cry (held); the sniffle.
+    if (f.attack.skill.fx === 'tensora-dash') return at('special', f.attack.index - 2, f.attack.mode ?? TENSORA_DASH_MODE.wind);
+    if (f.attack.skill.fx === 'tensora-wail') {
+      const a = f.attack, s = a.skill;
+      return at('special', a.index - 2, a.t < s.start ? 0 : a.t < s.start + TENSORA_WAIL.cry ? 1 : 2);
+    }
     if (f.attack.skill.fx === 'subaru-catch') {
       const a = f.attack, mode = a.mode ?? SUBARU_CATCH.stance;
       if (mode === SUBARU_CATCH.stance) return at('special', a.index - 2, 0);

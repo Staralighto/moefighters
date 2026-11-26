@@ -16,6 +16,11 @@ export const PORTRAITS: Record<string, { v: string; h: string; face: readonly [n
     "h": "9d187837",
     "face": [0.481, 0.148]
   },
+  "tensora": {
+    "v": "v1",
+    "h": "8cf6b755",
+    "face": [0.499, 0.16]
+  },
   "uika": {
     "v": "v1",
     "h": "9b949ce9",

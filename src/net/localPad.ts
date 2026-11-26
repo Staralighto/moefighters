@@ -11,11 +11,16 @@ export class LocalPad {
   private readonly taps: number[] = new Array(TAP_SLOTS).fill(0);
   private softBlock = false;
   private readonly game: FightGame;
+  readonly localController: number;
 
-  constructor(game: FightGame) { this.game = game; }
+  constructor(game: FightGame, localController = 0) {
+    this.game = game;
+    this.localController = localController;
+  }
 
   get paused(): boolean { return this.game.paused; }
   get phase(): FightGame['phase'] { return this.game.phase; }
+  get fighters(): FightGame['fighters'] { return this.game.fighters; }
   isLocalControl(code: string): boolean { return this.game.isLocalControl(code); }
   togglePause(force?: boolean): void { this.game.togglePause(force); }
 

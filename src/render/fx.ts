@@ -26,6 +26,7 @@ import { drawRyoFx } from './ryoFx.ts';
 import { drawNinaFx, drawNinaShot } from './ninaFx.ts';
 import { drawMomokaFx, drawMomokaShot } from './momokaFx.ts';
 import { drawSubaruFx } from './subaruFx.ts';
+import { drawTensoraFx, drawTensoraShot } from './tensoraFx.ts';
 import { drawKaoruFx, drawKaoruShot } from './kaoruFx.ts';
 import { drawHagumiFx, drawHagumiShot } from './hagumiFx.ts';
 import { drawTokoFx, drawTokoShot } from './tokoFx.ts';
@@ -1050,6 +1051,8 @@ export function drawEffect(ctx: CanvasRenderingContext2D, e: Effect, images?: Im
   if (drawNinaFx(ctx, e, liteFx, images)) return;
   if (drawMomokaFx(ctx, e, liteFx, images)) return;
   if (drawSubaruFx(ctx, e, liteFx)) return;
+  // 天素罗 too.
+  if (drawTensoraFx(ctx, e, liteFx)) return;
   if (drawKaoruFx(ctx, e, liteFx, images)) return;
   // 北泽育美 too.
   if (drawHagumiFx(ctx, e, liteFx, images)) return;
@@ -6239,6 +6242,7 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, ima
   if (drawHimariShot(ctx, p, liteFx)) return;
   if (drawTsugumiShot(ctx, p, liteFx, images)) return;
   if (drawNijikaShot(ctx, p, liteFx)) return;
+  if (drawTensoraShot(ctx, p, liteFx, images)) return;
   if (drawKitaShot(ctx, p, liteFx)) return;
   if (drawShioriShot(ctx, p, liteFx)) return;
   if (drawNinaShot(ctx, p, liteFx, images)) return;
