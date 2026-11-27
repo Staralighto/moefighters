@@ -1287,6 +1287,47 @@ export const SUBARU_FILM = {
   beats: [1, 1.15, 1.29, 1.41, 1.52, 1.62] as readonly number[], stars: 1.72, burst: 1.98, bow: 2.2,
 } as const;
 
+/* ---- 海老冢智: shared by src/game/tomo.ts, the cell picks below and render/tomoFx.ts ---- */
+/** 拿去吃掉！: bouncing cream puff speed/gravity/floor life and self-heal. */
+export const TOMO_PUFF = { vy: -260, bounceVy: -350, g: 1650, bounceFriction: .86, floorLife: 2.5, heal: 18, pickR: 46, hitR: 34 } as const;
+/** 少主，上！: 少主 glides along the floor (`hitR` wide), 千代丸 heals `heal` HP on cast completion. */
+export const TOMO_SNAKE = { heal: 25, hitR: 36, groundTol: 18 } as const;
+/** 给我重练！: 148cm hop + scold burst; bonus damage if target is already confused. */
+export const TOMO_SCOLD = { bonus: 14, hopPeak: .38 } as const;
+/** 心象的分形: dark neon synth stage, five rising fractal pillars, and the crystal burst. */
+export const TOMO_FRACTAL = {
+  pillars: [.45, .60, .75, .90, 1.05] as readonly number[],
+  xs: [70, 165, 260, 355, 450] as readonly number[],
+  hitDelay: .04,
+  burstSpawn: 1.28,
+  burst: 1.33,
+  bow: 1.75,
+  reach: 520,
+} as const;
+
+/* ---- 卢帕: shared by src/game/rupa.ts, the cell picks below and render/rupaFx.ts ---- */
+/** 特盛急送 a.mode: serving prep, dash run, stop brake. */
+export const RUPA_RUSH_MODE = { wind: 0, run: 1, brake: 2 } as const;
+/** 特盛急送: tray dash covers `reach` px in `run` s; clean hit heals `heal` HP and grants `gain` energy. */
+export const RUPA_RUSH = { reach: 330, run: .26, grip: 68, heal: 28, gain: 16, brake: .22, air: 105 } as const;
+/** 芳心快门: quick forward step and flash reach; clean hit grants `gain` energy alongside 跟班. */
+export const RUPA_SNAP = { lunge: 75, lungeTime: .14, reach: 155, gain: 15, air: 125 } as const;
+/** 酒胆无忌: 6s bold state — faster walk, higher damage dealt, slightly higher damage taken. */
+export const RUPA_BOLD = { time: 6, speed: 1.2, dmgDealt: .25, dmgTaken: 1.15, reach: 175 } as const;
+/** 因此才需要摇滚: Gibson SG bass melee super — rush, 3 slap beats, finale smash, relaxed bow. */
+export const RUPA_BASS = {
+  dashStart: .2,
+  dashEnd: .46,
+  dashReach: 340,
+  grip: 82,
+  beats: [.48, .66, .84] as readonly number[],
+  finale: 1.12,
+  bow: 1.4,
+  hitReach: 135,
+  boldRangeMul: 1.25,
+  boldBonus: .25,
+} as const;
+
 /* ---- 天素罗: shared by src/game/tensora.ts, the cell picks below and render/tensoraFx.ts ---- */
 /** 最神速的脚脚 a.mode: stamping on the spot, the run, the skid. */
 export const TENSORA_DASH_MODE = { wind: 0, run: 1, brake: 2 } as const;
@@ -1791,6 +1832,19 @@ export function clipFor(f: Fighter): Clip {
     if (f.attack.skill.fx === 'subaru-film') {
       const t = f.attack.t, S = SUBARU_FILM;
       return at('special', f.attack.index - 2, t < S.flood ? 0 : t < S.bow ? 1 : 2);
+    }
+    // 海老冢智: U 拿去吃掉！ / I 少主，上！ / O 给我重练！ use the default three phases;
+    // L 心象的分形 holds the keyboard prep until the first pillar, plays through the crystal burst, then looks away.
+    if (f.attack.skill.fx === 'tomo-fractal') {
+      const t = f.attack.t, F = TOMO_FRACTAL;
+      return at('special', f.attack.index - 2, t < F.pillars[0] ? 0 : t < F.bow ? 1 : 2);
+    }
+    // 卢帕: U 特盛急送 follows wind / run / brake mode; I 芳心快门 & O 酒胆无忌 use default three phases;
+    // L 因此才需要摇滚 holds bass prep until dashStart, rushes & slaps through bow, then smiles relaxed.
+    if (f.attack.skill.fx === 'rupa-rush') return at('special', f.attack.index - 2, f.attack.mode ?? RUPA_RUSH_MODE.wind);
+    if (f.attack.skill.fx === 'rupa-bass') {
+      const t = f.attack.t, B = RUPA_BASS;
+      return at('special', f.attack.index - 2, t < B.dashStart ? 0 : t < B.bow ? 1 : 2);
     }
     // 吸顶灯乱舞 / 正义之刺: the default three phases. 绝不低头: chest out and glaring; the slap (or the shove); the
     // shake of the hand after. 雨夜嘶吼: both hands on the mic; leaning into the scream; the little finger up.

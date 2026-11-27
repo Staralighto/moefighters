@@ -29,6 +29,8 @@ import { applyBeerFoam, applyMomokaDust, auraBeerFoam, auraMomokaDust } from './
 import { applyAnonLight, auraAnonLight, expireAnonLight } from './anonFx.ts';
 import { auraUmiriQuote } from './umiriFx.ts';
 import { applyKaoruQuote, auraKaoruQuote } from './kaoruFx.ts';
+import { applyTomoCream, applyTomoHush, auraTomoCream, auraTomoHush } from './tomoFx.ts';
+import { applyRupaFan, auraRupaBold, auraRupaFan } from './rupaFx.ts';
 
 /** A status that changes the body itself, painted by the renderer with the view's own outline and tint:
  *  the outline replaces the team rim, each wash is the sprite's silhouette in one colour laid over it, and the
@@ -988,6 +990,12 @@ export const STATUS_MARKS: Record<string, MarkDrawer> = {
   'momoka-dust': { aura: (ctx, f, left, t) => auraMomokaDust(ctx, f, bodyH(f), left, t), apply: applyMomokaDust },
   'beer-foam': { aura: (ctx, f, left, t) => auraBeerFoam(ctx, f, bodyH(f), left, t), apply: applyBeerFoam },
   'anon-light': { aura: (ctx, f, left, t) => auraAnonLight(ctx, f, left, t, isLiteFx()), apply: applyAnonLight, expire: expireAnonLight },
+  // 海老冢智: cream dollops on the face (混乱) and sharp rose scold seal (沉默). Drawn in tomoFx.ts.
+  'tomo-cream': { aura: (ctx, f, left, t) => auraTomoCream(ctx, f, bodyH(f), left, t, isLiteFx()), apply: applyTomoCream },
+  'tomo-hush': { aura: (ctx, f, left, t) => auraTomoHush(ctx, f, bodyH(f), left, t), apply: applyTomoHush },
+  // 卢帕: polaroid fan charm (跟班) and golden beer fizz bold aura (酒胆无忌). Drawn in rupaFx.ts.
+  'rupa-fan': { aura: (ctx, f, left, t) => auraRupaFan(ctx, f, bodyH(f), left, t, isLiteFx()), apply: applyRupaFan },
+  'rupa-bold': { aura: (ctx, f, left, t) => auraRupaBold(ctx, f, bodyH(f), left, t, isLiteFx()) },
 };
 
 /** Live marks this body wears that the table knows. Older looks (摩卡's bubble, the petals) are not in the

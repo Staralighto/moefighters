@@ -32,7 +32,7 @@ export const SHORT_NAMES: Readonly<Record<string, string>> = {
   // 一家Dumb Rock!
   raika: '蕾叶', miku: '心玖', shizuku: '宁月', chieri: '千樱梨', yomogi: '蓬咲',
   // 其他
-  mizuho: '瑞穗', viola: '薇欧拉', bocchi: '一里', nijika: '虹夏', kita: '郁代', ryo: '凉', nina: '仁菜', momoka: '桃香', subaru: '昴', tensora: '天素罗', shiori: '栞',
+  mizuho: '瑞穗', viola: '薇欧拉', bocchi: '一里', nijika: '虹夏', kita: '郁代', ryo: '凉', nina: '仁菜', momoka: '桃香', subaru: '昴', tomo: '智', rupa: '卢帕', tensora: '天素罗', shiori: '栞',
 };
 
 /** 短称；表里没有（不该发生，selfcheck 会拦）时退回全名，绝不按字数截。 */

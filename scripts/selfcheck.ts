@@ -47,6 +47,8 @@ import { drawNinaFx, drawNinaShot } from '../src/render/ninaFx.ts';
 import { thornLevel } from '../src/game/nina.ts';
 import { drawMomokaFx, drawMomokaShot } from '../src/render/momokaFx.ts';
 import { drawSubaruFx } from '../src/render/subaruFx.ts';
+import { drawTomoFx, drawTomoShot } from '../src/render/tomoFx.ts';
+import { drawRupaFx } from '../src/render/rupaFx.ts';
 import { drawKaoruFx, drawKaoruShot } from '../src/render/kaoruFx.ts';
 import { drawHagumiFx, drawHagumiShot } from '../src/render/hagumiFx.ts';
 import { AKO_CHANT } from '../src/game/akoPath.ts';
@@ -224,11 +226,11 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
 {
   const breaksAt: Record<string, number> = {
     nyamu: 4, sakiko: 10, anon: 5, rana: 10, soyo: 3, kokoro: 3, miyako: 5,
-    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5, toko: 4, rui: 5, nanami: 5, kanon: 7, ako: 9, rinko: 6, rimi: 5, hagumi: 6, nijika: 4, kita: 5, ryo: 5, nina: 4, momoka: 5, subaru: 8, shiori: 5,
+    eve: 5, tsukushi: 5, kanata: 6, mashiro: 2, nagi: 5, yomogi: 5, misaki: 5, tae: 6, mizuho: 6, bocchi: 5, toko: 4, rui: 5, nanami: 5, kanon: 7, ako: 9, rinko: 6, rimi: 5, hagumi: 6, nijika: 4, kita: 5, ryo: 5, nina: 4, momoka: 5, subaru: 8, tomo: 5, rupa: 4, shiori: 5,
   };
   const segments: Record<string, number> = {
     nyamu: 4, sakiko: 16, anon: 6, rana: 22, soyo: 3, kokoro: 3, miyako: 6,
-    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7, toko: 5, rui: 6, nanami: 5, kanon: 13, ako: 9, rinko: 7, rimi: 6, hagumi: 9, nijika: 6, kita: 6, ryo: 5, nina: 4, momoka: 5, subaru: 8, shiori: 5,
+    eve: 7, tsukushi: 6, kanata: 10, mashiro: 2, nagi: 7, yomogi: 6, misaki: 11, tae: 8, mizuho: 9, bocchi: 7, toko: 5, rui: 6, nanami: 5, kanon: 13, ako: 9, rinko: 7, rimi: 6, hagumi: 9, nijika: 6, kita: 6, ryo: 5, nina: 4, momoka: 5, subaru: 8, tomo: 6, rupa: 4, shiori: 5,
   };
   for (const [id, breakAt] of Object.entries(breaksAt)) {
     const s = ROSTER[at(id)].skills[5];
@@ -11176,6 +11178,296 @@ for (const order of [[2, 3], [3, 2]]) {
   }
 }
 
+// tomo: 海老冢智。U: bouncing cream puff (confuse on hit; settles on floor so owner can walk up and eat for heal).
+// I: 少主 glides along the floor (roots grounded, jumped over) while 千代丸 heals her on completion.
+// O: 148cm hop scold — breakout radial burst that silences and deals bonus damage to confused targets.
+// L (150 气): 心象的分形 — 5 rising fractal pillars + crystal burst that knocks down and silences.
+{
+  const tm = at('tomo');
+  const data = ROSTER[tm];
+  assert.ok(tm === at('subaru') + 1, '海老冢智 follows 安和昴');
+  assert.ok(!data.hidden, 'a main-band member is public');
+  assert.equal(SHORT_NAMES.tomo, '智');
+  const fresh = (p2x = 560) => {
+    const g = newGame(tm, at('test-heavy')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  // U: hits and confuses; a missed puff bounces and settles for self-heal pickup.
+  {
+    const { g, p1, p2 } = fresh(460);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    run(g, .65);
+    assert.ok(hp - p2.hp > 20, 'puff hits: ' + (hp - p2.hp).toFixed(1));
+    assert.ok(hasStatus(p2, 'confuse'), 'puff confuses');
+  }
+  {
+    const { g, p1, p2 } = fresh(900);
+    p1.hp = 800;
+    g.attack(p1, 2);
+    run(g, 1.3);
+    const puff = g.projectiles.find(p => p.fx === 'tomo-puff' && p.settled);
+    assert.ok(puff, 'missed puff settles on the floor');
+    p1.x = puff!.x;
+    g.step(STEP);
+    assert.ok(p1.hp > 800, 'walking onto dropped puff heals');
+  }
+  {
+    const { g, p1, p2 } = fresh(440);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    run(g, .32);
+    p2.dodge = .3;
+    run(g, .2);
+    assert.equal(p2.hp, hp, 'dodging passes through the puff');
+    assert.ok(g.projectiles.some(p => p.fx === 'tomo-puff' && p.life > 0), 'dodging does not pop the puff');
+  }
+  // I: heals owner, roots grounded enemy, misses jumped enemy.
+  {
+    const { g, p1, p2 } = fresh(480);
+    p1.hp = 800;
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    run(g, .75);
+    assert.ok(p1.hp > 800, '千代丸 heals on completion');
+    assert.ok(hp - p2.hp > 20 && p2.root > 0, '少主 bites and roots');
+  }
+  {
+    const { g, p1, p2 } = fresh(480);
+    const hp = p2.hp;
+    g.attack(p1, 3);
+    run(g, .36);
+    p2.y = FLOOR - 140; p2.vy = -120;
+    run(g, .5);
+    assert.equal(p2.hp, hp, 'jumping clears 少主');
+  }
+  // O: breakout out of stun, silences, and deals bonus damage to confused foes.
+  {
+    const { g, p1, p2 } = fresh(400);
+    p1.stun = .6;
+    assert.ok(g.canAttack(p1, 4), 'O is a breakout');
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    run(g, .4);
+    const baseDmg = hp - p2.hp;
+    assert.ok(baseDmg > 25 && hasStatus(p2, 'silence'), 'O hits and silences: ' + baseDmg.toFixed(1));
+    const { g: g2, p1: q1, p2: q2 } = fresh(400);
+    q2.mods.push({ kind: 'confuse', left: 2, mark: 'tomo-cream' });
+    const hp2 = q2.hp;
+    g2.attack(q1, 4);
+    run(g2, .4);
+    assert.ok(hp2 - q2.hp > baseDmg + 8, 'O deals bonus damage on confused foe');
+  }
+  // L: 5 fractal pillars + crystal burst knocks down and silences.
+  {
+    const { g, p1, p2 } = fresh(520);
+    p1.energy = p1.energyMax;
+    const hp = p2.hp;
+    let pillars = 0, down = false;
+    const seen = new Set<object>();
+    g.attack(p1, 5);
+    for (let i = 0; i < 260; i++) {
+      g.step(STEP);
+      for (const e of g.effects) if (e.type === 'tomo-pillar' && !seen.has(e)) { seen.add(e); pillars++; }
+      if (p2.knocked > 0) down = true;
+    }
+    assert.equal(pillars, 5, 'five fractal pillars');
+    assert.ok(down && hasStatus(p2, 'silence') && hp - p2.hp > 120, 'L lands full combo: ' + (hp - p2.hp).toFixed(1));
+  }
+  // L visual sync: a far foe is untouched until the later pillar reaches them.
+  {
+    const { g, p1, p2 } = fresh(750);
+    p1.energy = p1.energyMax;
+    const hp = p2.hp;
+    g.attack(p1, 5);
+    run(g, .7);
+    assert.equal(p2.hp, hp, 'early pillars do not hit a distant foe before reaching them');
+    run(g, .8);
+    assert.ok(p2.hp < hp && hasStatus(p2, 'silence'), 'later pillar and crystal hit once they arrive');
+  }
+  // Canvas draw & restore check for all Tomo effects and projectiles.
+  {
+    let depth = 0;
+    const methods = new Map<string, (...args: unknown[]) => unknown>();
+    const ctx = new Proxy({ globalAlpha: 1 } as Record<string, unknown>, {
+      get(o, key: string) {
+        if (key in o) return o[key];
+        if (!methods.has(key)) methods.set(key, (...args: unknown[]) => {
+          for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value), `Tomo ${key} stays finite`);
+          if (key === 'save') depth++;
+          if (key === 'restore') depth--;
+          if (key === 'arc') assert.ok(Number(args[2]) >= 0, 'Tomo arc radius');
+          if (key === 'ellipse') assert.ok(Number(args[2]) >= 0 && Number(args[3]) >= 0, 'Tomo ellipse radii');
+          if (key === 'createLinearGradient' || key === 'createRadialGradient') return { addColorStop() {} };
+        });
+        return methods.get(key);
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    const seen = new Set<string>();
+    for (const slot of [2, 3, 4, 5]) {
+      const { g, p1 } = fresh(500);
+      p1.energy = p1.energyMax;
+      g.attack(p1, slot);
+      for (let i = 0; i < 260; i++) {
+        g.step(STEP);
+        for (const e of g.effects) if (e.type.startsWith('tomo-') && !e.type.includes('@')) seen.add(e.type);
+        for (const p of g.projectiles) if (p.fx.startsWith('tomo-')) {
+          assert.ok(drawTomoShot(ctx, p, false), `Tomo draws shot ${p.fx}`);
+          assert.equal(depth, 0, 'Tomo restores canvas after shot ' + p.fx);
+        }
+      }
+    }
+    seen.add('tomo-puff-bounce');
+    seen.add('tomo-puff-eat');
+    for (const lite of [false, true]) for (const dir of [-1, 1]) for (const type of seen) {
+      for (let i = 0; i <= 12; i++) {
+        const e = { type, x: 450, y: FLOOR, color: '#E34D8D', max: 1.5, life: 1.5 - i * .1, age: i * .1, radius: 181, dir, n: i % 5 };
+        assert.ok(drawTomoFx(ctx, e, lite), `Tomo draws ${type}`);
+        assert.equal(depth, 0, 'Tomo restores canvas after ' + type);
+      }
+      const zero = { type, x: 450, y: FLOOR, color: '#E34D8D', max: 0, life: 0, age: 0, radius: 181, dir, n: 0 };
+      assert.ok(drawTomoFx(ctx, zero, lite), `Tomo handles zero max cleanly for ${type}`);
+      assert.equal(depth, 0, 'Tomo restores canvas on zero max for ' + type);
+    }
+    for (const mark of ['tomo-cream@apply', 'tomo-hush@apply']) {
+      for (let i = 0; i <= 6; i++) {
+        const e = { type: mark, x: 450, y: FLOOR, color: '#E34D8D', max: .5, life: .5 - i * .07, age: i * .07 };
+        assert.ok(drawStatusEffect(ctx, e), `Tomo status mark ${mark}`);
+        assert.equal(depth, 0, 'Tomo restores canvas after ' + mark);
+      }
+    }
+  }
+}
+
+// rupa: 卢帕。U: tray rush heals and grants energy on clean hit, cleared by jumping.
+// I: polaroid shutter snap turns target into 跟班 and grants energy.
+// O: breakout bold state boosts move speed and damage dealt while raising damage taken.
+// L (125 气): Gibson SG bass rush + 4 slap/finale hits that knock down; bold state amplifies reach & finale.
+{
+  const rp = at('rupa');
+  const data = ROSTER[rp];
+  assert.ok(rp === at('tomo') + 1, '卢帕 follows 海老冢智');
+  assert.ok(!data.hidden, 'a main-band member is public');
+  assert.equal(SHORT_NAMES.rupa, '卢帕');
+  const fresh = (p2x = 500) => {
+    const g = newGame(rp, at('test-heavy')); const [p1, p2] = g.fighters; dummy(g);
+    p1.x = 300; p2.x = p2x; p1.facing = 1; p2.facing = -1;
+    return { g, p1, p2 };
+  };
+  // U: tray rush hits grounded target, heals owner & adds meter; jumping clears it.
+  {
+    const { g, p1, p2 } = fresh(520);
+    p1.hp = 800; p1.energy = 0;
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    run(g, .65);
+    assert.ok(hp - p2.hp > 25 && p1.hp > 800 && p1.energy >= 16, 'U rush hits, heals, and grants meter');
+  }
+  {
+    const { g, p1, p2 } = fresh(520);
+    const hp = p2.hp;
+    g.attack(p1, 2);
+    run(g, .15);
+    p2.y = FLOOR - 140; p2.vy = -120;
+    run(g, .5);
+    assert.equal(p2.hp, hp, 'jumping clears 特盛急送');
+  }
+  // I: polaroid shutter turns target into 跟班 and grants meter; noGain suppresses meter without crashing.
+  {
+    const { g, p1, p2 } = fresh(420);
+    p1.energy = 0;
+    const x0 = p1.x;
+    g.attack(p1, 3);
+    run(g, .45);
+    assert.ok(hasStatus(p2, 'follow') && p1.energy >= 15 && p1.x > x0 + 60, 'I snap steps in, lays 跟班, and grants meter');
+
+    const { g: g2, p1: q1 } = fresh(420);
+    q1.energy = 0;
+    q1.mods.push({ kind: 'noGain', left: 3 });
+    g2.attack(q1, 3);
+    run(g2, .45);
+    assert.equal(q1.energy, 0, 'I snap respects noGain');
+    assert.ok(!g2.texts.some(t => t.text.includes('气')), 'I snap does not show +气 text under noGain');
+  }
+  // O: breakout from stun, speeds up, raises damage dealt and damage taken.
+  {
+    const { g, p1, p2 } = fresh(390);
+    p1.stun = .6;
+    assert.ok(g.canAttack(p1, 4), 'O is a breakout');
+    const hp = p2.hp;
+    g.attack(p1, 4);
+    run(g, .45);
+    assert.ok(hp - p2.hp > 18, 'O radial burst lands');
+    assert.ok(p1.sprint > 0 && p1.mods.some(m => m.kind === 'dmgDealt' && m.tag === 'rupa-bold') && p1.mods.some(m => m.kind === 'dmgTaken' && m.tag === 'rupa-bold'), 'O enters bold state');
+  }
+  // L: 4-hit melee bass combo knocks down; bold state amplifies finale damage.
+  {
+    const { g, p1, p2 } = fresh(520);
+    p1.energy = p1.energyMax;
+    const hp = p2.hp;
+    let down = false;
+    g.attack(p1, 5);
+    for (let i = 0; i < 200; i++) { g.step(STEP); if (p2.knocked > 0) down = true; }
+    const baseDmg = hp - p2.hp;
+    assert.ok(down && baseDmg > 150, 'L melee bass lands 4-hit combo and knocks down: ' + baseDmg.toFixed(1));
+
+    const { g: g2, p1: q1, p2: q2 } = fresh(580);
+    q1.energy = q1.energyMax;
+    q1.mods.push({ kind: 'look', left: 6, tag: 'rupa-bold', mark: 'rupa-bold' });
+    q1.mods.push({ kind: 'dmgDealt', left: 6, v: .25, tag: 'rupa-bold' });
+    const hp2 = q2.hp;
+    g2.attack(q1, 5);
+    run(g2, 1.5);
+    assert.ok(hp2 - q2.hp > baseDmg + 30, 'bold state amplifies reach and damage');
+  }
+  // Canvas draw & restore check for all Rupa effects and status marks.
+  {
+    let depth = 0;
+    const methods = new Map<string, (...args: unknown[]) => unknown>();
+    const ctx = new Proxy({ globalAlpha: 1 } as Record<string, unknown>, {
+      get(o, key: string) {
+        if (key in o) return o[key];
+        if (!methods.has(key)) methods.set(key, (...args: unknown[]) => {
+          for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value), `Rupa ${key} stays finite`);
+          if (key === 'save') depth++;
+          if (key === 'restore') depth--;
+          if (key === 'arc') assert.ok(Number(args[2]) >= 0, 'Rupa arc radius');
+          if (key === 'ellipse') assert.ok(Number(args[2]) >= 0 && Number(args[3]) >= 0, 'Rupa ellipse radii');
+          if (key === 'createLinearGradient' || key === 'createRadialGradient') return { addColorStop() {} };
+        });
+        return methods.get(key);
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    const seen = new Set<string>();
+    for (const slot of [2, 3, 4, 5]) {
+      const { g, p1 } = fresh(430);
+      p1.energy = p1.energyMax;
+      g.attack(p1, slot);
+      for (let i = 0; i < 200; i++) {
+        g.step(STEP);
+        for (const e of g.effects) if (e.type.startsWith('rupa-') && !e.type.includes('@')) seen.add(e.type);
+      }
+    }
+    for (const lite of [false, true]) for (const dir of [-1, 1]) for (const type of seen) {
+      for (let i = 0; i <= 10; i++) {
+        const e = { type, x: 450, y: FLOOR, color: '#EEDA01', max: 1.5, life: 1.5 - i * .12, age: i * .12, radius: 181, dir, n: i % 3 };
+        assert.ok(drawRupaFx(ctx, e, lite), `Rupa draws ${type}`);
+        assert.equal(depth, 0, 'Rupa restores canvas after ' + type);
+      }
+      const zero = { type, x: 450, y: FLOOR, color: '#EEDA01', max: 0, life: 0, age: 0, radius: 181, dir, n: 0 };
+      assert.ok(drawRupaFx(ctx, zero, lite), `Rupa handles zero max cleanly for ${type}`);
+      assert.equal(depth, 0, 'Rupa restores canvas on zero max for ' + type);
+    }
+    const e = { type: 'rupa-fan@apply', x: 450, y: FLOOR, color: '#EEDA01', max: .5, life: .25, age: .25 };
+    assert.ok(drawStatusEffect(ctx, e), 'Rupa status mark rupa-fan@apply');
+    assert.equal(depth, 0, 'Rupa restores canvas after rupa-fan@apply');
+    const dummyBody = { ...fresh().p2, mods: [{ kind: 'follow' as const, left: 1.5, mark: 'rupa-fan' }, { kind: 'look' as const, left: 4, tag: 'rupa-bold', mark: 'rupa-bold' }] };
+    drawStatusAuras(ctx, dummyBody, .5);
+    assert.equal(depth, 0, 'Rupa restores canvas after status auras');
+  }
+}
+
 // kaoru: 濑田薰。U leaps at the spot chosen at take-off, faints at the top and drops on it (knockdown; walking out of
 // the shadow clears it); I is a slow petal vortex that leaves 混乱, and a second one while still muddled adds a finger
 // snap; O is a counter (a melee swing at her is taken by her fans, who stampede the swinger; nobody swings and they
@@ -13350,7 +13642,7 @@ await checkHub();
   const known = new Set(GAME_ROSTER.map(c => c.id));
   assert.ok(ids.every(id => known.has(id)), 'every portrait id is a roster character');
   // 主乐队的角色立绘没到位也公开（过场和特写会退回无人物版）：这里列着、等立绘；到了就从表里删掉。
-  const portraitPending = new Set<string>([]);
+  const portraitPending = new Set<string>();
   assert.ok([...portraitPending].every(id => !PORTRAITS[id]), 'a pending portrait that has arrived comes off the pending list');
   assert.ok(PLAYABLE.filter(c => !c.hidden && !portraitPending.has(c.id)).every(c => PORTRAITS[c.id]), 'every public playable character has a portrait');
   assert.ok(ids.every(id => /^[0-9a-f]{8}$/.test(PORTRAITS[id].h) && PORTRAITS[id].face.every(v => v > 0 && v < 1)), 'portrait fingerprints and face positions are well-formed');

@@ -35,6 +35,7 @@ const FACE_FIX: Record<string, readonly [number, number]> = {
   nina: [.521, .168],
   momoka: [.477, .204],
   subaru: [.545, .192],
+  tomo: [.534, .187],
 };
 
 export function portraitOf(characterId: string): Portrait | null {

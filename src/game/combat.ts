@@ -24,6 +24,8 @@ import './shiori.ts';
 import './ryo.ts';
 import './nina.ts';
 import './subaru.ts';
+import './tomo.ts';
+import './rupa.ts';
 import './tensora.ts';
 import { swayOff } from './momoka.ts';
 import './kaoru.ts';

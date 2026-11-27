@@ -3261,6 +3261,105 @@ export const ROSTER: CharacterData[] = [
     ],
   },
   {
+    // 海老冢智 (game/tomo.ts, render/tomoFx.ts): Girls Band Cry / TOGENASHI TOGEARI 的键盘手，「红生姜 / 吉野家少主」。
+    // 辛辣压制 + 爬宠控场型：U 扔出不善拒绝买多的弹跳大泡芙（糊脸混乱，落空可自己捡来回血），I 放出蛇「少主」贴地咬住定身并抚摸守宫「千代丸」回血，
+    // O 148cm 跳起毒舌霸体震开并沉默（可解控，已混乱的对手吃额外伤害），L 架起 Nord 键盘以 150 气奏响《心象的分形》五道分形光阵推进并炸裂击倒。
+    // 梗：6th Single「警戒心 50%、爬虫类 30%、牛肉盖饭 20% ※注意：很辣！」、前组合 beni-shouga（红生姜）、广播剧《智与蒙布朗》买多甜品、
+    // 宠物蛇「少主」与守宫「千代丸」、148cm 跳起来看 Live、第 8 话放狠话、第 6 话 beni-shouga 插曲《心象的フラクタル》。
+    id: 'tomo', name: '海老冢智', title: '键盘 / 红生姜', quote: '我倒是无所谓……你们做得到吗？', color: '#E34D8D',
+    bands: ['togenashi-togeari'],
+    ...stats('focus'),
+    view: { kind: 'sprite', common: '/sprites/tomo/common.png', special: '/sprites/tomo/special.png', height: 181, lift: 5 },
+    skills: [
+      // 6th Single 角色说明书：「警戒心 50%」
+      skill(0, 'light', '警戒刺拳'),
+      // 和仁菜互当小孩子的 148cm 踢击
+      skill(1, 'heavy', '才不是小孩子'),
+      // 拿去吃掉！（《智与蒙布朗》：不擅长拒绝店员推销，每次买甜品总会多抱回一堆泡芙；弹跳一次，糊脸混乱，落空可自拾回血）
+      skill(2, 'projectile', '拿去吃掉！', {
+        damage: 24, speed: 460, size: 46, life: 2.5, start: .24, duration: .58, cd: 6, knock: 80, fx: 'tomo-puff',
+        status: [{ kind: 'confuse', time: 1.2, mark: 'tomo-cream' }],
+        brief: '扔出弹跳大泡芙，命中混乱；落地可自己捡来回血',
+        detail: '掷出弹跳一次的大泡芙，命中 24 伤害并糊脸混乱 1.2 秒（左右颠倒）；落空会停在地上 2.5 秒，自己走到跟前吃掉回复 18 体力，被对手踩到则压扁消失；可格挡',
+      }),
+      // 少主，上！（宠物蛇「少主」贴地扑咬 + 肩头守宫「千代丸」：身旁有爬虫类心情就会变好）
+      skill(3, 'projectile', '少主，上！', {
+        damage: 26, speed: 520, size: 42, life: 1.5, start: .35, duration: .72, cd: 9, knock: 0, fx: 'tomo-snake',
+        reach: 'ground', root: 1.6, rootBreak: 2, rootPin: true,
+        brief: '放少主贴地咬定，跳起可躲；同时抚宠回血',
+        detail: '护宠 0.35 秒后放出少主贴地游走，咬中 26 伤害并定身 1.6 秒（受击两次解除），跳起可躲；同时抚摸千代丸回复 25 体力；前摇被打断则作废；可格挡',
+      }),
+      // 给我重练！（148cm 跳起来 + 毒舌批评逼退前队友 + 第 8 话放狠话）
+      skill(4, 'endure', '给我重练！', {
+        damage: 32, range: 180, start: .26, duration: .72, cd: 10, knock: 380, fx: 'tomo-scold',
+        breakout: true, holdEndure: true, hitbox: 'radial', hitAll: true,
+        status: [{ kind: 'silence', time: 2, mark: 'tomo-hush' }],
+        react: { kind: 'stand', stun: .35 },
+        brief: '跳起毒舌霸体震开并沉默；可解控',
+        detail: '霸体跳起怒斥，震开身周 32 伤害并沉默 2 秒（不能用 U / I / O / L）；命中后已混乱的对手额外受 14 伤害；可解控；可格挡',
+      }),
+      // 心象的分形（第 6 话 beni-shouga 插曲《心象的フラクタル》：架起 Nord 红色键盘高速滚奏，五道分形光阵推进后晶体炸裂）
+      skill(5, 'endure', '心象的分形', {
+        cost: 150, damage: 16, range: 520, start: .45, duration: 2.25, knock: 0, gain: 2, fx: 'tomo-fractal',
+        superArmor: true, holdEndure: true, noSparks: true,
+        react: { kind: 'stand', stun: .32 },
+        guardPlan: [6, 10, 14, 22, 48, 60],
+        finale: { damage: 95, knock: 440, react: { kind: 'knockdown', vy: -320, knocked: 1 }, status: [{ kind: 'silence', time: 2, mark: 'tomo-hush' }] },
+        brief: '真霸体奏键盘，五道分形光阵推进后击倒沉默；可挡',
+        detail: '真霸体架起键盘弹奏，前方由近及远升起五道分形光阵各 16 伤害，最后汇聚炸裂 95 伤害击倒并沉默 2 秒；可格挡，第五段破防；消耗 150 气',
+      }),
+    ],
+  },
+  {
+    // 卢帕 (game/rupa.ts, render/rupaFx.ts): Girls Band Cry / TOGENASHI TOGEARI 的贝斯手，「酒豪 / 珠颈斑鸠」。
+    // 稳重反差压制型：U 吉野家高速端盘突进撞实回血回气，I 拍立得快门抓拍使对手短暂跟班并回气，
+    // O 酒豪豪饮霸体解控进入「大胆」状态（加速增伤但微易伤），L 真霸体抱起 Gibson SG Standard Bass 前冲贴脸四连重拨击倒。
+    // common 与 U / I / O 空手，L 列三格手持黑色贝斯；托盘热汤、拍立得、啤酒、低音震波全部由代码绘制。
+    id: 'rupa', name: '卢帕', title: '贝斯 / 酒豪', quote: '因此，我才需要摇滚。', color: '#EEDA01',
+    bands: ['togenashi-togeari'],
+    ...stats('armor'),
+    view: { kind: 'sprite', common: '/sprites/rupa/common.png', special: '/sprites/rupa/special.png', height: 181, lift: 5 },
+    skills: [
+      // 萌娘百科别号「珠颈斑鸠」
+      skill(0, 'light', '斑鸠轻拨'),
+      // 6th Single 说明书：「偶尔会说一些切中要处的话」
+      skill(1, 'heavy', '切中要害', { range: 132 }),
+      // 特盛急送（和智在吉野家打工，端盘快步冲刺，撞实回复体力与气）
+      skill(2, 'dash', '特盛急送', {
+        damage: 34, range: 110, start: .18, duration: .72, cd: 6, knock: 220, fx: 'rupa-rush',
+        react: { kind: 'stand', stun: .32 },
+        brief: '端盘前冲撞击；打实回血回气，跳起可躲',
+        detail: '端盘快速前冲，撞中对手击退，跳起可躲；打实后回复 28 体力并额外获得 16 气',
+      }),
+      // 芳心快门（乐队海王担当，每次拍立得发售吸引大批合照）
+      skill(3, 'light', '芳心快门', {
+        damage: 22, range: 155, start: .22, duration: .62, cd: 8, knock: 0, gain: 6, fx: 'rupa-snap',
+        react: { kind: 'pin', stun: .25, holdStill: true },
+        status: [{ kind: 'follow', time: 1.8, mark: 'rupa-fan' }],
+        brief: '踏前快门抓拍；命中让对手跟班并回气，可挡可跳',
+        detail: '踏前快门闪光，命中使对手跟班 1.8 秒（留印记 6 秒）并回 15 气；可格挡，跳起可躲',
+      }),
+      // 酒胆无忌（酒豪，「唯一的缺点是喝太多酒就会变得很大胆」+ 包容力 60% 兜底）
+      skill(4, 'endure', '酒胆无忌', {
+        damage: 24, range: 175, start: .26, duration: .68, cd: 11, knock: 360, fx: 'rupa-bold',
+        breakout: true, holdEndure: true, hitbox: 'radial', hitAll: true,
+        react: { kind: 'stand', stun: .32 },
+        brief: '霸体解控震开，进入大胆：加速增伤但微易伤',
+        detail: '豪饮后霸体震开周围（可解控），进入大胆状态 6 秒：移速 +20%、伤害 +25%，但受击伤害 +15%',
+      }),
+      // 因此才需要摇滚（名台词 + Gibson SG Standard Bass 近战超重低音四连拨）
+      skill(5, 'endure', '因此才需要摇滚', {
+        cost: 125, damage: 28, range: 135, start: .2, duration: 1.72, knock: 30, gain: 2, fx: 'rupa-bass',
+        superArmor: true, holdEndure: true, noSparks: true,
+        guardPlan: [8, 14, 24, 65],
+        react: { kind: 'pin', stun: .32, holdStill: true },
+        finale: { damage: 115, knock: 460, react: { kind: 'knockdown', vy: -340, knocked: .95, stun: .5 } },
+        brief: '真霸体突进贴脸四连重拨击倒；大胆或跟班强化',
+        detail: '真霸体抱琴前冲贴脸四连重拨击倒，第四段破防；大胆中冲更远且末击 +25%，带跟班印记则拉近吃满；125 气',
+      }),
+    ],
+  },
+  {
     // 香农栞 (game/shiori.ts, render/shioriFx.ts): 隐藏角色。萌趣世界「编织者」之一（名册上写作 ■■■），织萌神殿的司书，
     // 看管编织这个世界所用的纹样书《圣典》；侍奉织萌而有圣女的神性，又被圣典约束，被迫给薇欧拉的大逃杀当记分员。
     // 原型是社区里的 Claude 娘（橙色长直发、放射状花饰、手持书本、家教严格的大小姐），梗都换成圣职的说法：
