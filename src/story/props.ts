@@ -89,7 +89,11 @@ let props: Prop[] = [];
 let sparks: Spark[] = [];
 
 export const propSrc = (name: string): string | null => PROPS[name] ? `/story/props/${PROPS[name].file}.webp` : null;
-export function setPropImage(name: string, im: HTMLImageElement): void { images.set(name, im); baked.delete(name); }
+export function setPropImage(name: string, im: HTMLImageElement): void {
+  if (images.get(name) === im) return;
+  images.set(name, im);
+  baked.delete(name);
+}
 export function resetProps(): void { props = []; sparks = []; }
 
 /** 烘一张纸板：白边（把剪影往外描一圈）+ 原图；另烘一张模糊剪影当光晕。按台上尺寸的 2 倍烘，高清屏也清楚。 */

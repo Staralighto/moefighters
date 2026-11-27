@@ -270,10 +270,23 @@ async function prepare(s: Script, cmds: Cmd[]): Promise<void> {
   const ids = new Set<string>();
   const port = new Set<string>();
   const onStage = new Set<string>();
-  for (const o of s.opening) { const id = idOfName(o.who); if (id) { ids.add(id); onStage.add(id); } }
+  const poses = new Map<string, Set<Pose>>();
+  const needPose = (id: string, p: Pose) => {
+    let set = poses.get(id);
+    if (!set) poses.set(id, set = new Set<Pose>(['idle']));
+    set.add(p);
+  };
+  for (const o of s.opening) { const id = idOfName(o.who); if (id) { ids.add(id); onStage.add(id); needPose(id, 'idle'); } }
   for (const c of cmds) {
     if ((c.k === 'act' || c.k === 'line') && c.id) ids.add(c.id);
-    if (c.k === 'act' && c.id) onStage.add(c.id);
+    if (c.k === 'act' && c.id) {
+      onStage.add(c.id);
+      needPose(c.id, 'idle');
+      if (c.verb === '倒下') needPose(c.id, 'down');
+      else if (c.verb === '后退') needPose(c.id, 'hurt');
+      else if (c.verb === '换' && c.arg) { const p = POSE_OF[c.arg]; if (p && p !== 'hurt' && p !== 'jump') needPose(c.id, p); }
+    }
+    if (c.k === 'line' && c.id && c.pose && c.pose !== 'hurt' && c.pose !== 'jump') needPose(c.id, c.pose);
     if (c.k === 'stage' && c.verb === '立绘' && c.arg) { const id = idOfName(c.arg); if (id) port.add(id); }
   }
   const stage = STAGES.find(x => x.id === s.scene || x.name === s.scene);
@@ -297,8 +310,8 @@ async function prepare(s: Script, cmds: Cmd[]): Promise<void> {
   // 网络卡住（请求既不成功也不报错）时不能让玩家一直停在「下载中」的大幕上：最多等 PREPARE_WAIT 毫秒，
   // 没到的图按缺图演（纸板、背景、道具各自有缺图退路），晚到的照样记进缓存，下一句就用上。
   await Promise.race([Promise.all(jobs), new Promise(r => setTimeout(r, PREPARE_WAIT))]);
-  // 纸板在这里烘：烘一格十几毫秒，放进下载等待里，演出中途不卡。只烘会上台的人（广播的声音不用纸板）。
-  for (const id of onStage) for (const p of ['idle', 'jump', 'hurt', 'block', 'down'] as Pose[]) { try { cardOf(id, p); } catch (e) { console.warn('纸板烘焙失败', id, p, e); } }
+  // 纸板在这里烘：只预烘这一段实际用到的动作格（其余动作真用到时再由 cardOf 按需补烘），避免 20 人同关时一次烘上百张卡顿。
+  for (const id of onStage) for (const p of poses.get(id) ?? ['idle']) { try { cardOf(id, p); } catch (e) { console.warn('纸板烘焙失败', id, p, e); } }
 }
 let idOfName: (n: string) => string | null = () => null;
 /** 开演前最多等素材这么久（毫秒）。 */
@@ -1325,6 +1338,9 @@ export function closeTheatre(): void {
   setMusicPausedForTheatre(false);
   document.documentElement.classList.remove('story-on');
   line = null;
-  // 纸板和背景留着：同一章反复进出不用重烘。换章时换一批人，自然重烘新的。
-  if (cards.size > 160) cards.clear();
+  // 纸板和背景留着：同一章反复进出不用重烘。超出上限时清理，避免切章或切到无尽模式后大贴图常驻。
+  if (cards.size > 120) cards.clear();
+  if (sheets.size > 24) sheets.clear();
+  if (avatars.size > 48) avatars.clear();
+  if (portraits.size > 12) portraits.clear();
 }

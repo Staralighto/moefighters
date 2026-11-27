@@ -95,6 +95,11 @@ import { checkSpriteGuard } from './sprite-guard.ts';
 import { PAREO_HAIR_MASKS, recolorWigPixels } from '../src/render/pareoWig.ts';
 import { PAREO_WIGS } from '../src/render/clips.ts';
 import { noteJab } from '../src/game/ai.ts';
+import { CHAPTERS, HEROES, difficultyOf, formatOf, goalText, storyFoes } from '../src/story/chapters.ts';
+import { idOf, parseScript } from '../src/story/parse.ts';
+import { PROPS, PROP_VERBS } from '../src/story/props.ts';
+import { FX_LASTING, FX_NAMES } from '../src/story/fx.ts';
+import { block as stageBlock, enter as stageEnter, openStage, reaim as stageReaim, SLOT_X, type Body as StageBody } from '../src/story/stage.ts';
 
 /* `npm run check` runs this file through node's type stripping: no bundler, and no @types/node to type
    `import 'node:fs'` with. `process.getBuiltinModule` reaches the same builtin without an import. */
@@ -13510,6 +13515,98 @@ await checkHub();
     g.attack(p1, 2);
     run(g, .5);
     assert.ok(p2.x > x0, 'crossing-center U still knocks forward: ' + p2.x);
+  }
+}
+
+// story mode: every stage resolves valid scenes/characters/scripts, battles step cleanly, and stage blocking stays finite
+{
+  const seenIds = new Set<string>();
+  const stageIds = new Set(STAGES.map(s => s.id));
+  for (const ch of CHAPTERS) {
+    assert.ok(ch.stages.length > 0, `chapter ${ch.no} has stages`);
+    for (const s of ch.stages) {
+      assert.ok(!seenIds.has(s.id), `duplicate story stage id: ${s.id}`);
+      seenIds.add(s.id);
+      assert.ok(stageIds.has(s.scene), `${s.id} scene ${s.scene} exists`);
+      for (const id of s.cast) assert.ok(GAME_ROSTER.some(c => c.id === id), `${s.id} cast ${id} exists`);
+
+      const raw = readFileSync(`story/ch${ch.no}/${s.id}.md`, 'utf8');
+      const sc = parseScript(raw);
+      assert.equal(sc.id, s.id, `${s.id} script id matches`);
+      assert.equal(sc.type, s.type, `${s.id} script type matches`);
+      assert.equal(sc.scene, s.scene, `${s.id} script scene matches`);
+
+      let cast: StageBody[] = [];
+      const present = () => cast.filter(a => !a.leaving);
+      const mk = (name: string, slot: string): StageBody => {
+        const x = SLOT_X[slot] ?? 640;
+        const a: StageBody = { name, x, to: x, face: x < 640 ? 1 : -1, pose: 'idle', leaving: false, revealed: false, lock: false, flip: null };
+        cast = cast.filter(o => o.name !== name).concat(a);
+        return a;
+      };
+      for (const o of sc.opening) mk(o.who, o.slot);
+      openStage(cast);
+      const allCmds = [...sc.pre, ...sc.post];
+      for (let i = 0; i < allCmds.length; i++) {
+        const c = allCmds[i];
+        if (c.k === 'prop') {
+          assert.ok(!!PROPS[c.name], `${s.id} prop ${c.name} exists`);
+          assert.ok(PROP_VERBS.includes(c.verb), `${s.id} prop verb ${c.verb} valid`);
+        } else if (c.k === 'fx') {
+          if (c.verb === '收') assert.ok(FX_LASTING.includes(c.arg ?? ''), `${s.id} fx收 ${c.arg} valid`);
+          else assert.ok(FX_NAMES.includes(c.verb), `${s.id} fx ${c.verb} valid`);
+        } else if (c.k === 'act') {
+          if (c.id) assert.ok(GAME_ROSTER.some(r => r.id === c.id), `${s.id} actor ${c.who} resolves`);
+          if (c.verb === '走入') {
+            const a = mk(c.who, c.arg ?? '中');
+            stageEnter(present(), a, c.arg);
+          } else {
+            const a = present().find(o => o.name === c.who);
+            if (a && c.verb !== '消散' && !(c.verb === '退场' && c.who === '墨提斯' && !c.arg)) {
+              const target = (c.verb === '靠近' || c.verb === '背对' || c.verb === '面向') && c.arg ? present().find(o => o.name === c.arg) : undefined;
+              stageBlock(present(), a, c.verb, c.arg, { target });
+            } else if (a && (c.verb === '消散' || c.verb === '退场')) {
+              a.leaving = true;
+            }
+          }
+          if (allCmds[i + 1]?.k !== 'act') {
+            for (const a of cast) a.x = a.to;
+            cast = present();
+            stageReaim(cast, (a, dir) => { a.face = dir; });
+          }
+          for (const a of cast) assert.ok(Number.isFinite(a.x) && Number.isFinite(a.to), `${s.id} actor ${a.name} stays finite`);
+        } else if (c.k === 'line' && c.who && c.who !== '织萌' && c.who !== '薇欧拉' && c.who !== '？？？') {
+          assert.ok(!!idOf(c.who), `${s.id} speaker ${c.who} resolves`);
+        }
+      }
+
+      if (s.battle) {
+        const usIds = s.battle.us ?? [...HEROES];
+        const foes = storyFoes(s);
+        assert.ok(usIds.length >= 1 && foes.length >= 1, `${s.id} has combatants`);
+        assert.ok(['2v2', '2v1', '1v1', '1v2'].includes(formatOf(s.battle)), `${s.id} valid format`);
+        for (const g of s.battle.goals) assert.ok(goalText(g).length > 0, `${s.id} goal text non-empty`);
+        const us = usIds.map(id => ROSTER_BY_ID.get(id)!);
+        const foeChars = foes.map(f => { const c = ROSTER_BY_ID.get(f.id)!; return f.hp !== 1 ? { ...c, hp: Math.round(c.hp * f.hp) } : c; });
+        assert.ok(us.every(Boolean) && foeChars.every(Boolean), `${s.id} fighters exist in roster`);
+        const duo = us.length + foeChars.length === 2;
+        const g = new FightGame([...us, ...foeChars], {
+          mode: duo ? 'cpu' : 'team',
+          difficulty: difficultyOf(s),
+          controllers: [0, ...us.slice(1).map(() => null), ...foeChars.map(() => null)],
+          stage: STAGES.find(x => x.id === s.scene) ?? STAGES[0],
+          mods: [s.battle.usMods ?? {}, ...us.slice(1).map(() => ({})), ...foes.map(f => f.mods)],
+          allies: duo ? undefined : us.length,
+          survive: s.battle.survive,
+          roundTime: 99,
+          roundsToWin: 1,
+          audio: silent,
+          random: rng(11),
+        });
+        run(g, .1);
+        assert.equal(g.fighters.length, us.length + foeChars.length, `${s.id} match spawned all fighters`);
+      }
+    }
   }
 }
 console.log('selfcheck ok');

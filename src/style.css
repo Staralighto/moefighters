@@ -4129,7 +4129,8 @@ body:not(.touch) .sm-node:not(.locked):hover .card { translate: 0 -2px; }
 .sm-scene::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgb(7 9 18 / 55%), transparent 30%, var(--panel) 100%); }
 .sm-deco { position: absolute; right: calc(-30px * var(--s)); top: 42%; width: calc(150px * var(--s)); height: calc(38px * var(--s)); border-radius: 99px; rotate: -18deg; background: repeating-linear-gradient(135deg, var(--brand) 0 7px, transparent 7px 16px); opacity: .35; }
 .sm-water { position: absolute; right: calc(-8px * var(--s)); bottom: calc(70px * var(--s)); font: 900 calc(96px * var(--s))/1 var(--font-head); color: transparent; -webkit-text-stroke: 1px rgb(255 255 255 / 7%); letter-spacing: -.04em; pointer-events: none; }
-.sm-body { position: relative; z-index: 1; margin-top: auto; display: flex; flex-direction: column; gap: calc(10px * var(--s)); padding: 0 calc(18px * var(--s)) max(calc(16px * var(--s)), env(safe-area-inset-bottom, 0px)); padding-right: max(calc(18px * var(--s)), env(safe-area-inset-right, 0px)); }
+.sm-body { position: relative; z-index: 1; margin-top: auto; max-height: 100%; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: calc(10px * var(--s)); padding: calc(14px * var(--s)) calc(18px * var(--s)) max(calc(16px * var(--s)), env(safe-area-inset-bottom, 0px)); padding-right: max(calc(18px * var(--s)), env(safe-area-inset-right, 0px)); }
+.sm-body > * { flex-shrink: 0; }
 .sm-tag { align-self: flex-start; font: 600 calc(9px * var(--s))/1 var(--font-display); letter-spacing: .16em; padding: 4px 7px; border-radius: 4px; background: rgb(7 9 18 / 75%); color: var(--muted); }
 .sm-head { display: flex; align-items: center; gap: 10px; }
 .sm-head .code { font: 800 calc(34px * var(--s))/1 var(--font-num); letter-spacing: -.01em; }
@@ -4143,8 +4144,8 @@ body:not(.touch) .sm-node:not(.locked):hover .card { translate: 0 -2px; }
   display: grid; place-items: center; background: rgb(7 9 18 / 70%); box-shadow: inset 0 0 0 1.5px rgb(238 240 250 / 28%); color: var(--muted); font: 800 calc(14px * var(--s))/1 var(--font-num); cursor: pointer; transition: color .15s ease, box-shadow .15s ease; }
 .sm-info:hover, .sm-info:focus-visible { color: var(--text); box-shadow: inset 0 0 0 1.5px var(--brand-ink); }
 .sm-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.sm-label { font: 600 calc(9px * var(--s))/1 var(--font-display); letter-spacing: .16em; color: var(--muted); }
-.sm-cast { display: flex; align-items: center; gap: 6px; }
+.sm-label { flex: none; white-space: nowrap; font: 600 calc(9px * var(--s))/1 var(--font-display); letter-spacing: .16em; color: var(--muted); }
+.sm-cast { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; }
 .sm-cast img { width: calc(34px * var(--s)); height: calc(34px * var(--s)); border-radius: 9px; background: var(--panel-2); }
 .sm-cast .vs { font: 800 calc(11px * var(--s))/1 var(--font-num); color: var(--brand-ink); margin: 0 3px; }
 .sm-cast .foe { box-shadow: 0 0 0 1.5px rgb(255 59 127 / 60%); }

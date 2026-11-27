@@ -58,14 +58,21 @@ const BUDGET_CH1: Budget = {
   Boss: { pre: [10, 18], post: [4, 8] },
   章末: { pre: [30, 40] },
 };
-/** 第 2 章起：关数少一点、每关的戏更足（主线推进、关关相接，不再「遇到谁就打」）。改这里要同步改技能里的「指令」和「剧本格式」。 */
+/** 第 2–3 章的预算。 */
 const BUDGET: Budget = {
   剧情: { pre: [30, 45] },
   战斗: { pre: [14, 22], post: [6, 10] },
   Boss: { pre: [18, 28], post: [8, 12] },
   章末: { pre: [40, 55] },
 };
-const budgetOf = (id: string): Budget => id.startsWith('1-') ? BUDGET_CH1 : BUDGET;
+/** 第 4 章起：剧本加码翻倍，留足人物互动和喘息空间。 */
+const BUDGET_CH4: Budget = {
+  剧情: { pre: [55, 95] },
+  战斗: { pre: [25, 45], post: [10, 22] },
+  Boss: { pre: [34, 58], post: [14, 26] },
+  章末: { pre: [70, 110] },
+};
+const budgetOf = (id: string): Budget => id.startsWith('1-') ? BUDGET_CH1 : /^(2|3)-/.test(id) ? BUDGET : BUDGET_CH4;
 const LINE_SOFT = 30, LINE_HARD = 56;
 
 /* ---------------- 名字 ---------------- */
@@ -93,7 +100,7 @@ function clipSet(text: string) {
   if (process.env.STORY_CLIP) { write(process.env.STORY_CLIP, text); return; }
   const tmp = path.join(os.tmpdir(), 'moefighters-story-clip.txt');
   fs.writeFileSync(tmp, text, 'utf8');
-  if (isWin) execFileSync('powershell', ['-NoProfile', '-Command', `Get-Content -Raw -Encoding UTF8 -LiteralPath '${tmp}' | Set-Clipboard`]);
+  if (isWin) execFileSync('powershell', ['-NoProfile', '-Command', `Get-Content -Raw -Encoding UTF8 -LiteralPath '${tmp.replace(/'/g, "''")}' | Set-Clipboard`]);
   else console.log(C.y(`（非 Windows：提示词已写到 ${tmp}）`));
 }
 function clipGet(): string {
@@ -344,7 +351,7 @@ function cardFor(id: string): string {
 - 说话人写法：${shortOf(id)}
 - 乐队：${band}
 - 战斗称号：${c.title}　代表台词：${c.quote}
-- 闪耀之力（战斗技能，可在台词里提到技能名，不写数值）：
+- 闪耀之力（战斗能力特点，台词与旁白中绝不喊出技能名，只描述能力效果）：
 ${sk}
 - 性格与说话方式：（待填，留空则按原作）
 - 称呼表（她怎么叫别人）：（待填，例：对祥子→「小祥」）
