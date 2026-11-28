@@ -2896,7 +2896,7 @@ html.hub-covered[data-skin="winter"] .stage-frame::before, html.hub-covered[data
 .fn-stage { position: relative; aspect-ratio: 16 / 9; overflow: hidden; background: linear-gradient(rgb(16 16 27 / 25%), rgb(16 16 27 / 45%)), var(--fv-art, none) center bottom / cover no-repeat, var(--bg); }
 .fn-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .fn-loading { position: absolute; left: 50%; top: 50%; translate: -50% -50%; padding: .5em 1.1em; border-radius: 999px; background: rgb(8 10 20 / 70%); color: var(--text-strong); font-weight: 700; opacity: 0; transition: opacity .2s ease; pointer-events: none; }
-.fn-stage.loading .fn-loading { opacity: 1; }
+.fn-stage.loading .fn-loading, .fn-stage.load-error .fn-loading { opacity: 1; }
 .fn-ult { display: flex; align-items: baseline; gap: 8px; margin: 0; font-weight: 800; }
 .fn-ult small { padding: .15em .55em; border-radius: 6px; background: var(--wash); color: var(--muted); font-size: 11px; font-weight: 700; }
 .fn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

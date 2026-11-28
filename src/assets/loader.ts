@@ -2,6 +2,19 @@ import type { CharacterData, StageData } from '../data/types.ts';
 
 export type ImageCache = Map<string, HTMLImageElement>;
 
+/** Leave the loading screen even if a browser request never settles. */
+export async function withLoadTimeout<T>(loading: Promise<T>, ms = 30_000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('资源加载超时')), ms);
+    });
+    return await Promise.race([loading, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** 1×1 WebP. One decode decides the browser can use the format, so a no is not N failed sheet requests. */
 const WEBP_PROBE = 'data:image/webp;base64,UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA';
 
@@ -281,7 +294,7 @@ function fetchImage(src: string): Promise<HTMLImageElement> {
 let webpOk: Promise<boolean> | null = null;
 export function supportsWebp(): Promise<boolean> {
   if (!import.meta.env.PROD) return Promise.resolve(false);
-  webpOk ??= fetchImage(WEBP_PROBE).then(() => true, () => false);
+  webpOk ??= withLoadTimeout(fetchImage(WEBP_PROBE)).then(() => true, () => false);
   return webpOk;
 }
 
@@ -302,7 +315,7 @@ export function loadImage(src: string, pri: NetPri = 1): Promise<HTMLImageElemen
   let pending = loaded.get(src);
   if (pending) bumpNet(src, pri);
   else {
-    pending = netTask(src, pri, () => fetchFirst(src)).catch(err => {
+    pending = netTask(src, pri, () => withLoadTimeout(fetchFirst(src))).catch(err => {
       loaded.delete(src);
       throw err;
     });
@@ -371,7 +384,7 @@ export function loadKujiFont(): Promise<void> {
   if (kujiFont) return kujiFont;
   if (typeof document === 'undefined' || !document.fonts) return Promise.resolve();
   const face = new FontFace('Ma Shan Zheng', `url(${assetUrl('/fonts/ma-shan-zheng-kuji.woff2')})`);
-  kujiFont = face.load().then(loaded => { document.fonts.add(loaded); }).catch(() => {});
+  kujiFont = withLoadTimeout(face.load()).then(loaded => { document.fonts.add(loaded); }).catch(() => { kujiFont = null; });
   return kujiFont;
 }
 

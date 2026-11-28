@@ -60,7 +60,7 @@ export function challengeName(kind: ChallengeKind): string { return kind === 'cl
 /** How many random foes a sub-mode fields per stage. */
 export function foeCount(kind: ChallengeKind): number { return kind === 'brawl' ? 2 : 1; }
 
-/** The live endless run of one sub-mode, kept in localStorage so a refresh or crash resumes the current stage. */
+/** The live endless run of one sub-mode, kept in localStorage for 继续挑战 after reopening. */
 export interface ChallengeRun {
   kind: ChallengeKind;
   stage: number;
@@ -226,6 +226,7 @@ export function stageSetup(kind: ChallengeKind, player: CharacterData, picks: st
   return {
     characters: [data, ...enemies.map(e => ({ ...e, hp: Math.round(e.hp * (1 + .05 * growth)) }))],
     mode: 'challenge',
+    challengeKind: kind,
     difficulty: 2,
     controllers: [0, ...enemies.map(() => null)],
     stage: scene,

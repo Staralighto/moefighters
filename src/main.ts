@@ -6,7 +6,7 @@ import { KeyboardInput, TouchInput, type InputTarget } from './game/input.ts';
 import type { Renderer } from './render/renderer.ts';
 import { isLiteFx, setLiteFx, shouldGoLite } from './render/fxQuality.ts';
 import { createViews } from './render/view.ts';
-import { assetsFor, cssUrl, easeLoad, holdBulk, holdIdle, imageQueue, trimImages, liteFight, loadInto, loadKujiFont, missingImages, pendingNet, portraitSrc, preload, slowLink, stageThumbSrc, supportsWebp, type ImageCache } from './assets/loader.ts';
+import { assetsFor, cssUrl, easeLoad, holdBulk, holdIdle, imageQueue, trimImages, liteFight, loadInto, loadKujiFont, missingImages, pendingNet, portraitSrc, preload, slowLink, stageThumbSrc, supportsWebp, withLoadTimeout, type ImageCache } from './assets/loader.ts';
 import { noteRecent, predict, prefetchHas, recentIds, setPrefetchScene, startPrefetch } from './assets/prefetch.ts';
 import { Sfx } from './audio/sfx.ts';
 import { musouSongs } from './musou/songs.ts';
@@ -62,6 +62,7 @@ import { bindLockerPage } from './ui/lockerPage.ts';
 import { bindFramePreview, setFramePreviewOpener } from './ui/framePreview.ts';
 import { bindFinalePreview, setFinalePreviewHooks } from './ui/finalePreview.ts';
 import { bindItemPreview, setItemPreviewOpener } from './ui/itemPreview.ts';
+import { toast } from './ui/toast.ts';
 import { Rng } from './net/lock.ts';
 import { progressLine, refreshStoryMap, selectStage, setStoryPlay, setStoryRules, storyPage, storyRulesHtml } from './story/map.ts';
 import { afterWin, bindStory, leaveStory, playStage, storyFight } from './story/run.ts';
@@ -178,6 +179,14 @@ function beginWait(srcs: string[]): void {
   const el = $('stage-load');
   el.classList.remove('is-out');
   el.hidden = true;
+  $('select-stage').setAttribute('aria-busy', 'false');
+}
+
+function finishWait(): void {
+  bootDone = true;
+  setMusicHeld(false);
+  $('stage-load').hidden = true;
+  $('stage-load').classList.remove('is-out');
   $('select-stage').setAttribute('aria-busy', 'false');
 }
 
@@ -312,16 +321,6 @@ bindOnline(() => select.onlinePick(), (role, hostChar, guestChar, stageId, link,
 }
 watchTouch(() => { syncFullscreenLabel(); select.refresh(); });
 
-/* An armed run survives a refresh or crash: with the stage's card already picked, the fight was
-   the next thing the player was about to see, so it restarts directly. A parked run (stage won,
-   next card not picked) stays in storage only — seeding it here would leak challenge state into
-   other modes' end screens. The select screen renders a parked run's 继续挑战 entry from storage. */
-const saved = [readRun('brawl'), readRun('climb')].find(r => r?.armed && (select.showsHidden || !r.char.hidden));
-if (saved) {
-  challenge = saved;
-  startChallengeStage();
-}
-
 function queueSelectFrame(): void {
   if (!selectRaf && !$('selection').hidden && (!bootDone || selectOnScreen())) selectRaf = requestAnimationFrame(selectLoop);
 }
@@ -411,7 +410,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
   let musouModule: typeof import('./musou/director.ts') | null;
   try {
     // Online starts the instant it is ready: the cut only covers the load, it never holds a live match.
-    [missing, render, musouModule] = await Promise.all([
+    [missing, render, musouModule] = await withLoadTimeout(Promise.all([
       preload(images, need), chunk(() => import('./render/renderer.ts')),
       setup.mode === 'musou' ? chunk(() => import('./musou/director.ts')) : null,
       loadKujiFont(), setup.online ? Promise.resolve() : versusHeld(),
@@ -419,17 +418,15 @@ async function startGame(setup: MatchSetup): Promise<void> {
       setup.characters.some(c => c.finale)
         ? chunk(() => import('./render/finale.ts')).then(m => { for (const c of setup.characters) if (c.finale) m.prewarmFinale(c.finale); })
         : Promise.resolve(),
-    ]);
+    ]));
   } catch (err) {
     wire?.close();
-    if (gen === startGen) {
-      queue.resume();
-      releaseBulk?.();
-      releaseBulk = null;
-      setPrefetchScene('menu');
-      hideVersus();
-    }
-    throw err;
+    if (gen !== startGen) return;
+    restBack();
+    if (setup.story) throw err;
+    console.warn('对战加载失败', err);
+    toast('对战加载失败，请重试');
+    return;
   } finally {
     releaseIdle();
     if (gen === startGen) $('start').removeAttribute('disabled');
@@ -459,11 +456,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
   cancelAnimationFrame(raf);
   cancelAnimationFrame(selectRaf);
   selectRaf = 0;
-  bootDone = true;
-  setMusicHeld(false);
-  $('stage-load').hidden = true;
-  $('stage-load').classList.remove('is-out');
-  $('select-stage').setAttribute('aria-busy', 'false');
+  finishWait();
   $('selection').hidden = true;
   $('battle').hidden = false;
   document.body.classList.add('in-battle');
@@ -830,6 +823,8 @@ function menuUp(): boolean {
 /** Leave the battle screen for the select one; any waiting run stays parked, storage untouched. */
 function restBack(): void {
   startGen++;
+  $('start').removeAttribute('disabled');
+  finishWait();
   stageRelease();
   clearMusouHud();
   hideVersus();

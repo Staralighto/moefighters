@@ -2,7 +2,7 @@
    playFinale：在任意 canvas 上循环播放某位角色的终幕（与战斗里同一个 drawFinale，喂一个只带时间的假对局）。
    每轮播完停一小会儿再从头；定格帧和切走后露出来的都是舞台图。商店的展台和仓库的详情弹窗都用它。 */
 
-import { loadInto, type ImageCache } from '../assets/loader.ts';
+import { loadInto, withLoadTimeout, type ImageCache } from '../assets/loader.ts';
 import { chunk } from '../assets/chunk.ts';
 import { PUBLIC_ROSTER } from '../data/characters.ts';
 import type { CharacterData } from '../data/types.ts';
@@ -38,11 +38,14 @@ export function playFinale(canvas: HTMLCanvasElement, box: HTMLElement, char: Ch
   io?.observe(canvas);
   const covered = () => { const d = document.querySelector('dialog[open]'); return !!d && !d.contains(canvas); };
   const restart = () => { t0 = performance.now(); cue = 0; };
+  const status = box.querySelector<HTMLElement>('.fn-loading');
+  if (status) status.textContent = '载入中…';
+  box.classList.remove('load-error');
   box.classList.add('loading');
   preload();
   const art = stageArtUrl();
   const srcs = [spec.art, ...(spec.props ?? []), art].filter((s): s is string => !!s);
-  void Promise.all([chunk(() => import('../render/finale.ts')), ...srcs.map(s => loadInto(images, s))]).then(([m]) => {
+  void withLoadTimeout(Promise.all([chunk(() => import('../render/finale.ts')), ...srcs.map(s => loadInto(images, s))])).then(([m]) => {
     if (!live) return;
     m.prewarmFinale(spec);
     box.classList.remove('loading');
@@ -69,9 +72,21 @@ export function playFinale(canvas: HTMLCanvasElement, box: HTMLElement, char: Ch
       m.drawFinale(c, w, h, fake, images, snap ? { img: snap, x: 0, y: 0, w, h } : null);
     };
     raf = requestAnimationFrame(tick);
+  }).catch(err => {
+    if (!live) return;
+    box.classList.remove('loading');
+    box.classList.add('load-error');
+    if (status) status.textContent = '终幕预览加载失败';
+    console.warn('终幕预览加载失败', err);
   });
   return {
-    stop() { live = false; io?.disconnect(); cancelAnimationFrame(raf); const c = canvas.getContext('2d'); c?.clearRect(0, 0, canvas.width, canvas.height); },
+    stop() {
+      live = false;
+      io?.disconnect();
+      cancelAnimationFrame(raf);
+      box.classList.remove('loading', 'load-error');
+      canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+    },
     restart,
   };
 }
