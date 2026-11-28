@@ -72,8 +72,8 @@ export function stepCamera(g: FightGame | null): void {
   const now = performance.now();
   const dt = Math.min(.1, Math.max(0, (now - lastT) / 1000));
   lastT = now;
-  // 倒下的人也要在画面里：KO 的那一下正是要看的，不能镜头一转把他甩出去。召唤物和残影不算。
-  const xs = g.fighters.filter(f => !f.minion && !f.echo).map(f => f.x);
+  // 倒下的人也要在画面里：KO 的那一下正是要看的，不能镜头一转把他甩出去。召唤物、残影与无双杂兵不算。
+  const xs = g.fighters.filter(f => !f.minion && !f.echo && !f.mob).map(f => f.x);
   const t = cameraTarget(xs, box.w, box.h);
   if (snap) { z = t.z; cx = t.cx; snap = false; }
   else {

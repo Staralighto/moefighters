@@ -13,7 +13,7 @@ import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const dist = fileURLToPath(new URL('../dist/', import.meta.url));
-const GROUPS = ['sprites', 'avatars', 'portraits', 'stages', 'finale', 'bgm', 'sfx', 'frames', 'albums', 'fonts', 'icons', 'assets'];
+const GROUPS = ['sprites', 'avatars', 'portraits', 'stages', 'finale', 'bgm', 'sfx', 'frames', 'albums', 'fonts', 'icons', 'assets', 'musou'];
 
 function walk(dir: string): string[] {
   const out: string[] = [];

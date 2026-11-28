@@ -8,6 +8,47 @@ export type AnimState =
 
 export const ATTACK_STATES: AnimState[] = ['light', 'heavy', 'skill1', 'skill2', 'skill3', 'super'];
 
+/** 音浪无双杂兵的轻量状态：仍是 Fighter（原版 75 人的技能脚本都能打到它），但 AI / 渲染 / 受击都走轻量分支。 */
+export interface MobState {
+  kind: 'fan' | 'glow' | 'amp' | 'guard' | 'scalper';
+  speed: number;
+  /** 保安的盾：还剩几下重击 / 技能才破（破之前轻击只吃两成）。 */
+  shield: number;
+  /** 黄牛：抢到经验后逃跑的剩余秒数；抢到多少。荧光棒：下一次投掷倒计时。 */
+  flee: number;
+  stolen: number;
+  throwCd: number;
+  atkCd: number;
+  phase: number;
+  /** 围上来时停在离主角多远：每只不同，人群才会散开围成一圈而不是叠成一坨。 */
+  gap: number;
+  /** 画面纵深（仅绘制）：0 在后排，1 在前排；往下错开几像素并略放大，人群才有厚度。 */
+  depth: number;
+  /** 空中旋转角（仅绘制）。 */
+  spin: number;
+  /** 最后一次被打的方向与力度，死亡时按它把尸体抛飞。 */
+  lastDir: number;
+  lastKnock: number;
+  /** 精英：体型更大、带描边和血条；砸地前有预警（windup 倒数，dir 是砸的方向），打倒掉宝箱。 */
+  /** move：这次抡的是哪一招（砸地 / 抓投 / 霸体冲刺）；act：冲刺剩余秒数。 */
+  elite?: { windup: number; max: number; dir: 1 | -1; cd: number; reach: number; move?: 'slam' | 'grab' | 'dash'; act?: number };
+  /** 最后一下是不是不踩拍的轻击（音箱怪据此决定原地炸还是被打飞到人群里炸）。 */
+  light?: boolean;
+  /** 次数盾：剩几格（每次命中敲掉一格，不管伤害多高）。厚甲：单次伤害低于这个值几乎不掉血。 */
+  pips?: number;
+  pipMax?: number;
+  armor?: number;
+  /** 应援团长：躲在后排，隔一会儿给身边的人加次数盾。 */
+  captain?: { cd: number };
+  /** 编队里一起走的人：同一个速度，不散开。 */
+  squad?: boolean;
+  /** 围堵圈的人墙：-1 左墙、1 右墙。站得住（不飞），普攻不踩拍只吃一半。 */
+  wall?: -1 | 1;
+  /** 带电反伤倒计时（秒）：>0 时全身带红电刺，盲目下砸会吃反伤，用横向冲锋 / 远程可破除。 */
+  thorns?: number;
+  thornsCd?: number;
+}
+
 export interface Attack {
   skill: Skill;
   index: number;
@@ -260,6 +301,10 @@ export interface Fighter {
   /** 这次不算: hp actually lost to hit(), stamped with the game clock. Only hit() writes it; entries
    *  older than the refund window are dropped on the next write. */
   dmgLog: { t: number; dmg: number }[];
+  /** 音浪无双 Q版杂兵轻量化标记：跳过完整 AI 决策树与 hardRim 描边，直接走图集 blit。 */
+  mob?: MobState;
+  /** 音浪无双「扩音」：近战范围倍率。非无双模式保持 undefined。 */
+  musouRangeMul?: number;
 }
 
 export const DECAY_TIMERS = ['stun', 'invuln', 'comboTime', 'hitFlash', 'landing', 'guardBroken', 'dodge', 'dodgeCd', 'frenzy', 'jabChainClock', 'braceFx', 'ban', 'frail', 'recLeft', 'rainbowCd', 'parry', 'parryLock', 'parryOrbCd', 'ultLeft'] as const;

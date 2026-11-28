@@ -1,4 +1,4 @@
-import { PLAYABLE, PLAYABLE_BY_ID, guestsFor } from './data/characters.ts';
+import { PLAYABLE, PLAYABLE_BY_ID, PUBLIC_ROSTER, ROSTER_BY_ID, bandMembers, guestsFor } from './data/characters.ts';
 import { STAGES } from './data/stages.ts';
 import type { CharacterData, StageData } from './data/types.ts';
 import { FightGame, MINION_BAND } from './game/game.ts';
@@ -9,7 +9,12 @@ import { createViews } from './render/view.ts';
 import { assetsFor, cssUrl, easeLoad, holdBulk, holdIdle, imageQueue, trimImages, liteFight, loadInto, loadKujiFont, missingImages, pendingNet, portraitSrc, preload, slowLink, stageThumbSrc, supportsWebp, type ImageCache } from './assets/loader.ts';
 import { noteRecent, predict, prefetchHas, recentIds, setPrefetchScene, startPrefetch } from './assets/prefetch.ts';
 import { Sfx } from './audio/sfx.ts';
-import { cycleMusicOrder, onMusicChange, fightShuffle, musicEnabled, musicOrder, musicTitle, musicVolume, nudgeMusic, pokeMusic, setFightShuffle, setMusicEnabled, setMusicHeld, setMusicOrder, setMusicSuspended, setMusicVolume, shuffleFightTrack, stepMusic } from './audio/bgm.ts';
+import { musouSongs } from './musou/songs.ts';
+import { MUSOU_FIGHT_ART } from './musou/placeholders.ts';
+import { bindMusouSound, clearMusouHud, renderPauseBuild, syncMusouAudio } from './musou/hud.ts';
+import { recordMusouRun } from './musou/records.ts';
+import { buildMusouReport } from './musou/report.ts';
+import { cycleMusicOrder, onMusicChange, fightShuffle, musicEnabled, musicOrder, musicTitle, musicTracks, musicVolume, nudgeMusic, pokeMusic, setFightShuffle, setMusicEnabled, setMusicHeld, setMusicOrder, setMusicSuspended, setMusicVolume, shuffleFightTrack, stageOwnsMusic, stagePause, stageRelease, stepMusic } from './audio/bgm.ts';
 import { matchName, parseRosterThumb, SelectScreen, type MatchSetup } from './ui/select.ts';
 import { bestLabel, challengeName, deckLabel, foeCount, hideBuffPicker, readBest, readRun, rollEnemies, showBuffPicker, stageSetup, writeBest, writeRun, type ChallengeKind, type ChallengeRun } from './ui/challenge.ts';
 import { cycleSkillTier, hideEnd, setBattleGuide, setRoundLabel, showBanner, showEnd, updateHUD } from './ui/hud.ts';
@@ -63,6 +68,8 @@ import { afterWin, bindStory, leaveStory, playStage, storyFight } from './story/
 import { hasNew, nextStage, onStory } from './story/progress.ts';
 import { ALL_STAGES, stageById } from './story/chapters.ts';
 import { setTheatreSound } from './story/theatre.ts';
+import { bindMusou, musouPage } from './musou/page.ts';
+import { earn } from './save/wallet.ts';
 
 /* 展示模式：只给录宣传视频 / 截宣传图用（地址带 ?showcase）。版式不变，只把会被低倍率栅格化的部分改成按设备像素清晰重画；
    平时不带参数，什么都不改。录制时浏览器自己把 deviceScaleFactor 设到 4，大厅 852×393 就出 3408×1572。 */
@@ -138,10 +145,6 @@ function commonOf(list: CharacterData[]): string[] {
 function withGuests(characters: CharacterData[]): CharacterData[] {
   const guests = guestsFor(characters, MINION_BAND);
   return guests.length ? [...characters, ...guests] : characters;
-}
-
-function fightSources(characters: CharacterData[], stage: StageData): string[] {
-  return assetsFor(withGuests(characters), stage);
 }
 
 /** Fight sheets only (no backdrop): what the background downloader guesses a fighter will need. */
@@ -368,20 +371,26 @@ async function startGame(setup: MatchSetup): Promise<void> {
   closeHub(true);
   sfx.unlock();
   /* pointerdown 上的开始/重开把这次手势让给了全屏，音乐改在这条仍处于点击里的路径接上。 */
-  shuffleFightTrack();
+  // 音浪无双的曲目由导演定（开打后第一帧 HUD 就切过去），不走战斗随机换曲。
+  if (setup.mode !== 'musou') { stageRelease(); shuffleFightTrack(); }
   pokeMusic();
   syncMusicUi();
   const versusLabel = setup.online ? '联机对战'
     : setup.story ? storyLabel(setup.story)
     : setup.mode === 'challenge' ? challengeName(setup.challengeKind ?? 'brawl') + ' · 第 ' + setup.stageNumber + ' 关'
     : matchName(setup);
-  showVersus(versusSides(setup.characters, setup.mode === 'team', setup.allies), setup.stage.name, versusLabel, previewViews, k => sfx.ui(k));
+  if (setup.mode === 'musou') {
+    // 你 vs 上半场的梦魇；场景名写上半场的曲目。
+    const song = setup.musou?.songs?.[setup.musou.first ?? -1];
+    showVersus({ left: [setup.characters[0]], right: setup.characters.slice(1, 2) }, song?.title ?? '音浪无双', '音浪无双 · 上半场', previewViews, k => sfx.ui(k));
+  } else showVersus(versusSides(setup.characters, setup.mode === 'team', setup.allies), setup.stage.name, versusLabel, previewViews, k => sfx.ui(k));
   const cast = withGuests(setup.characters);
   // Result-screen faces and glyphs ride the versus load, so the end of the match shows them at once.
   preloadReport(setup.characters);
-  const srcs = fightSources(setup.characters, setup.stage);
+  const musouArt = setup.mode === 'musou' ? MUSOU_FIGHT_ART : [];
+  const srcs = [...assetsFor(cast, setup.stage), ...musouArt];
   const lite = litePlan(cast, setup.stage);
-  const need = lite?.need ?? srcs;
+  const need = lite ? [...lite.need, ...musouArt] : srcs;
   if (need.some(s => !images.has(s) && !missingImages.has(s))) beginWait(need);
   $('start').setAttribute('disabled', '');
   // The fight's own sheets take the link; the background roster queue waits so the
@@ -399,10 +408,13 @@ async function startGame(setup: MatchSetup): Promise<void> {
   for (const s of need) missingImages.delete(s);
   let missing: string[];
   let render: typeof import('./render/renderer.ts');
+  let musouModule: typeof import('./musou/director.ts') | null;
   try {
     // Online starts the instant it is ready: the cut only covers the load, it never holds a live match.
-    [missing, render] = await Promise.all([
-      preload(images, need), chunk(() => import('./render/renderer.ts')), loadKujiFont(), setup.online ? Promise.resolve() : versusHeld(),
+    [missing, render, musouModule] = await Promise.all([
+      preload(images, need), chunk(() => import('./render/renderer.ts')),
+      setup.mode === 'musou' ? chunk(() => import('./musou/director.ts')) : null,
+      loadKujiFont(), setup.online ? Promise.resolve() : versusHeld(),
       // 终幕 textures bake here, behind the versus screen, not in the middle of a fight.
       setup.characters.some(c => c.finale)
         ? chunk(() => import('./render/finale.ts')).then(m => { for (const c of setup.characters) if (c.finale) m.prewarmFinale(c.finale); })
@@ -462,6 +474,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
   $('battle-mode').textContent = setup.online
     ? '联机 · ' + setup.stage.name
     : setup.story ? storyLabel(setup.story)
+    : setup.mode === 'musou' ? '音浪无双'
     : setup.mode === 'challenge'
     ? challengeName(setup.challengeKind ?? 'brawl') + ' · 第 ' + setup.stageNumber + ' 关'
     : matchName(setup) + ' · ' + setup.stage.name;
@@ -474,10 +487,12 @@ async function startGame(setup: MatchSetup): Promise<void> {
   setIconBtn($('rematch'), '再来一局 ↻');
   $('rematch').hidden = false;
   $('end-book').hidden = true;
-  setIconBtn($('reselect'), setup.story ? '返回地图' : setup.mode === 'challenge' ? '返回选人' : '重新选人');
+  $('end-1v1').hidden = true;
+  clearMusouHud();
+  setIconBtn($('reselect'), setup.story ? '返回地图' : setup.mode === 'musou' ? '返回备战' : setup.mode === 'challenge' ? '返回选人' : '重新选人');
   // 剧情关的战斗里，左上返回和暂停菜单的离开都是回剧情地图（battleExit），字要对上。
-  setIconBtn($('back'), setup.story ? '← 返回地图' : '← 返回选人');
-  setIconBtn($('pause-quit'), setup.story ? '返回地图' : '返回选人');
+  setIconBtn($('back'), setup.story ? '← 返回地图' : setup.mode === 'musou' ? '← 返回备战' : '← 返回选人');
+  setIconBtn($('pause-quit'), setup.story ? '返回地图' : setup.mode === 'musou' ? '返回备战' : '返回选人');
 
   const lockRng = setup.lock ? new Rng(setup.lock.seed) : null;
   // Lockstep plays its own sounds; a resync replay runs with them off, so nothing is heard twice.
@@ -498,6 +513,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
     roundTime: setup.roundTime,
     stage: setup.stage,
     ultFreeze: ultCut,
+    createMusou: musouModule ? g => new musouModule.MusouDirector(g, setup.musou ?? {}) : undefined,
     training: trainPrefs(),
     random: lockRng?.next,
     audio: lockSound ?? (setup.online ? netAudio(sfx) : sfx),
@@ -531,6 +547,7 @@ async function startGame(setup: MatchSetup): Promise<void> {
       showEnd(g.winnerTeam === 0 ? '你赢了' : g.winnerTeam === 1 ? '你输了' : title, stats, hostReport);
     },
     onPause: paused => {
+      if (setup.mode === 'musou') stagePause(paused);
       setIconBtn($('pause'), paused ? '继续 ESC' : '暂停 ESC');
       showPauseMenu(paused);
       showLayoutExit(paused);
@@ -538,6 +555,14 @@ async function startGame(setup: MatchSetup): Promise<void> {
       const deck = paused && game?.mode === 'challenge' ? deckLabel(challenge?.picks ?? []) : '';
       $('deck-label').hidden = !deck;
       $('deck-label').textContent = deck;
+      const pb = $('pause-build');
+      if (paused && game?.mode === 'musou' && game.musou) {
+        pb.innerHTML = renderPauseBuild(game.musou);
+        pb.hidden = false;
+      } else {
+        pb.hidden = true;
+        pb.replaceChildren();
+      }
     },
   });
   if (setup.online && wire) {
@@ -634,6 +659,31 @@ function onFightEnd(title: string, stats: string): void {
     setIconBtn($('reselect'), '返回地图');
     return;
   }
+  // 音浪无双：结算发放星之碎片并保留「用她打一局 1V1」回流入口。
+  if (game && game.mode === 'musou' && game.musou) {
+    const earned = game.musou.shardsEarned;
+    if (earned > 0) earn(earned);
+    const charId = game.fighters[0]?.data.id;
+    $('end-1v1').hidden = !charId;
+    $('end-1v1').onclick = () => {
+      if (!charId) return;
+      restBack();
+      select.pick1v1(charId);
+      if (lobbyMode()) openHub('battle');
+      else window.scrollTo({ top: 0, behavior: 'auto' });
+    };
+    const m = game.musou;
+    const report = buildMusouReport(game, m);
+    if (charId) {
+      const isPb = recordMusouRun(charId, {
+        rank: report.rank, kills: m.kills, bosses: m.bossesDefeated,
+        streak: m.bestStreak, level: m.level, clear: m.bossesDefeated >= 2,
+      });
+      if (isPb && !report.tag) report.tag = '新纪录';
+    }
+    showEnd(m.bossesDefeated >= 2 ? '演出成功' : '演出谢幕', `${stats} · +${earned} 星之碎片`, report);
+    return;
+  }
   if (!game || game.mode !== 'challenge' || !challenge) {
     const report = game ? buildReport(game, humanTeam(game)) : null;
     const first = game && report ? recordMatchClear(game, report) : false;
@@ -698,18 +748,17 @@ function frame(now: number): void {
   const gap = lastNow ? now - lastNow : 0;
   lastNow = now;
   document.body.classList.toggle('in-finale', game.phase === 'finale');
+  if (game.musou) syncMusouAudio(game, game.musou);
   if (game.netRole === 'lock') netLockFrame(now);
   else if (game.netRole === 'guest') netAfter(game, now);
-  else {
-    if (game.netRole === 'host') hostTick(now);
-    else game.advance(now);
-    if (gap > 0 && gap < 250 && !game.paused && game.phase === 'fight') {
-      gapSum += gap;
-      if (++gapCount >= 90) {
-        avgGap = gapSum / gapCount;
-        gapSum = gapCount = 0;
-        if (!isLiteFx() && shouldGoLite(avgGap, document.body.classList.contains('touch'))) setLiteFx(true);
-      }
+  else if (game.netRole === 'host') hostTick(now);
+  else game.advance(now);
+  if (gap > 0 && gap < 250 && !game.paused && game.phase === 'fight') {
+    gapSum += gap;
+    if (++gapCount >= 90) {
+      avgGap = gapSum / gapCount;
+      gapSum = gapCount = 0;
+      if (!isLiteFx() && shouldGoLite(avgGap, document.body.classList.contains('touch'))) setLiteFx(true);
     }
   }
   // The result poster covers the arena: once it is up, the frozen last frame stays and the canvas rests.
@@ -781,6 +830,8 @@ function menuUp(): boolean {
 /** Leave the battle screen for the select one; any waiting run stays parked, storage untouched. */
 function restBack(): void {
   startGen++;
+  stageRelease();
+  clearMusouHud();
   hideVersus();
   abortPadEditor();
   showPauseMenu(false);
@@ -823,6 +874,7 @@ function goBack(): void {
     screen parks the run, and a dead run (or a plain match) just leaves. */
 function battleExit(): void {
   if (lastSetup?.story && storyFight()) { const id = leaveStory(); restBack(); backToStory(id); return; }
+  if (lastSetup?.mode === 'musou') { restBack(); openHub('musou'); return; }
   if (game?.mode === 'challenge' && challenge && $('end').hidden) {
     openQuit('结束本次挑战？',
       `当前进行到第 ${challenge.stage} 关。离开后本次挑战结束、进度清零，历史最高纪录保留。`,
@@ -1162,6 +1214,9 @@ function syncMusicUi(): void {
     const title = $('music-title');
     const name = musicTitle();
     if (title.textContent !== name) title.textContent = name;
+    const locked = stageOwnsMusic();
+    ($('music-prev') as HTMLButtonElement).disabled = locked;
+    ($('music-next') as HTMLButtonElement).disabled = locked;
     const out = $('music-volume-value') as HTMLOutputElement;
     const text = ($('music-volume') as HTMLInputElement).value + '%';
     if (out.textContent !== text) out.textContent = text;
@@ -1412,7 +1467,7 @@ window.addEventListener('focus', () => setMusicSuspended(false));
 document.addEventListener('pointerdown', e => {
   const t = e.target;
   /* Start/rematch spend the tap on fullscreen. Audio unlock here would consume it first, and Chrome then rejects requestFullscreen. */
-  const start = t instanceof Element ? t.closest('#start:not([aria-disabled="true"]), #lobby-quick:not([aria-disabled="true"]), #rematch') : null;
+  const start = t instanceof Element ? t.closest('#start:not([aria-disabled="true"]), #lobby-quick:not([aria-disabled="true"]), #musou-start, #rematch') : null;
   if (start && (start.id !== 'rematch' || !lastSetup || !hiddenRematch(lastSetup))) {
     enterBattleFullscreen();
     return;
@@ -1420,7 +1475,24 @@ document.addEventListener('pointerdown', e => {
   sfx.unlock();
   nudgeMusic();
 }, { capture: true });
-document.addEventListener('keydown', e => { if (!e.repeat) { sfx.unlock(); nudgeMusic(); } }, { capture: true });
+document.addEventListener('keydown', e => {
+  if (!e.repeat) {
+    sfx.unlock();
+    nudgeMusic();
+    // 音浪无双战斗中不暂停：按 1 / 2 / 3 秒选悬浮肉鸽词条，按 R 重随
+    if (game?.musou && game.phase === 'fight' && !game.paused && game.musou.upgradeOffers > 0) {
+      if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3') {
+        const idx = Number(e.code.slice(-1)) - 1;
+        const card = game.musou.pendingChoices()?.[idx];
+        if (card && game.musou.pickUpgrade(game, card.id)) {
+          updateHUD(game);
+        }
+      } else if (e.code === 'KeyR') {
+        if (game.musou.rerollUpgrade(game)) updateHUD(game);
+      }
+    }
+  }
+}, { capture: true });
 // 终幕 skip: every press counts; finalePress ignores the first moment, and only a second press inside the prompt skips.
 document.addEventListener('pointerdown', () => game?.finalePress(), { capture: true });
 document.addEventListener('keydown', e => { if (!e.repeat) game?.finalePress(); }, { capture: true });
@@ -1482,6 +1554,34 @@ function paintStoryEntry(): void {
   $('lb-story-new').hidden = !fresh;
 }
 registerHubPage('story', storyPage);
+bindMusouSound((k, n, at) => sfx.musou(k, n, at));
+registerHubPage('musou', musouPage);
+bindMusou({
+  images,
+  views: previewViews,
+  defaultCharId: () => select.onlinePick().charId,
+  startMusou: (char, song) => {
+    sfx.unlock();
+    const songs = musouSongs(musicTracks());
+    const first = song >= 0 && song < songs.length ? song : Math.floor(Math.random() * songs.length);
+    // 上半场、下半场的梦魇和乱入队友开打前就抽好：它们的精灵表跟着这次加载一起下好，打到一半不再等图。
+    const pool = PUBLIC_ROSTER.filter(c => c.id !== char.id);
+    const bosses: string[] = [];
+    while (bosses.length < 2 && pool.length) bosses.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0].id);
+    const band = char.bands?.[0];
+    const mates = band ? bandMembers(band, char.id) : [];
+    const guest = mates.length ? mates[Math.floor(Math.random() * mates.length)].id : undefined;
+    const cast = [char, ...bosses.map(id => ROSTER_BY_ID.get(id)!), ...(guest ? [ROSTER_BY_ID.get(guest)!] : [])].filter(Boolean);
+    void startGame({
+      characters: cast,
+      mode: 'musou',
+      difficulty: 1,
+      controllers: [0],
+      stage: { ...STAGES[0], image: undefined },
+      musou: { songs, first, bosses, guest },
+    });
+  },
+});
 setStoryPlay(id => { sfx.unlock(); void playStage(id); });
 const storyRulesDialog = $('story-rules-dialog') as HTMLDialogElement;
 setStoryRules(() => { $('story-rules-body').innerHTML = storyRulesHtml(); openDialog(storyRulesDialog); });

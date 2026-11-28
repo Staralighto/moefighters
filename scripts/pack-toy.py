@@ -17,7 +17,7 @@ out = os.path.join("\u7d20\u6750", "moefighters-toy.zip")
 TOY_BGM_BITRATE = "64k"
 # Most aggressive libwebp quality. Alpha stays lossless so the cutout edge does not fringe.
 TOY_PORTRAIT_Q = 1
-PNG_WEBP = ("sprites/", "stages/", "avatars/", "finale/")
+PNG_WEBP = ("sprites/", "stages/", "avatars/", "finale/", "musou/")
 TOY_CACHE = os.path.join("\u7d20\u6750", ".toy-cache")
 
 def cache_path(path, recipe, ext):
@@ -108,7 +108,8 @@ def main():
         for rel, dst in portrait_zip.items():
             rewritten[rel] = file_stat(dst)
             portrait_to += rewritten[rel][0]
-        n = dropped = lite_dropped = 0
+        n = lite_dropped = 0
+        dropped_pngs = set()
         bgm_from = bgm_to = 0
         with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as z:
             for dp, _dirs, fns in os.walk(root):
@@ -128,7 +129,7 @@ def main():
                         n += 1
                         continue
                     if f.endswith(".png") and rel.startswith(PNG_WEBP) and os.path.exists(p[:-4] + ".webp"):
-                        dropped += 1
+                        dropped_pngs.add(rel)
                         continue
                     if rel.startswith("bgm/") and rel.endswith(".m4a"):
                         # ponytail: always re-encodes, so a master already at 64k takes another lossy pass.
@@ -160,7 +161,7 @@ def main():
                     out_entries = []
                     for entry in entries:
                         base = entry[0].split("?", 1)[0]
-                        if base.startswith("sprites/") and base.endswith("-lite.webp"):
+                        if base in dropped_pngs or (base.startswith("sprites/") and base.endswith("-lite.webp")):
                             continue
                         out_entries.append([entry[0], *rewritten[base]] if base in rewritten else entry)
                     return out_entries
@@ -190,7 +191,7 @@ def main():
     size = os.path.getsize(out)
     if size >= cap:
         raise SystemExit("over 50MiB: " + str(size))
-    print(n, dropped, size, bgm_from, bgm_to, portrait_from, portrait_to)
+    print(n, len(dropped_pngs), size, bgm_from, bgm_to, portrait_from, portrait_to)
     print("toy cache:", hits, "hit /", misses, "encoded; lite sheets left out:", lite_dropped)
 
 if __name__ == "__main__":

@@ -61,6 +61,13 @@ function readVolume(): number {
   } catch { return 1; }
 }
 
+/** 音浪无双的声音（导演排、HUD 交过来；见 musou/director.ts 的 MuSound）。 */
+export type MusouSound = 'hit' | 'kill' | 'perfect' | 'heatUp' | 'heatDown' | 'cardIn' | 'cardPick' | 'riser' | 'fever' | 'ultCast' | 'ultDrop'
+  | 'tick' | 'ding' | 'supply' | 'boom' | 'warn' | 'rush' | 'break' | 'squeeze' | 'hurt' | 'slam'
+  | 'milestone' | 'grab' | 'escape' | 'dash' | 'slow' | 'pop' | 'crowd'
+  | 'slam' | 'slamHeavy' | 'jump2' | 'charge' | 'bowl' | 'pip' | 'pipBreak' | 'armor' | 'shieldUp'
+  | 'giantLand' | 'giantBreak' | 'liftUp' | 'liftDown' | 'rare' | 'rareEnd'
+  | 'laser' | 'feedback' | 'zap' | 'anomaly' | 'ball' | 'pad' | 'grooveUp' | 'scratch';
 export type StorySound = 'blip' | 'pop' | 'boing' | 'sparkle' | 'step' | 'flip' | 'thud' | 'curtain' | 'bell' | 'glitch' | 'nod' | 'stomp';
 
 export class Sfx {
@@ -305,6 +312,284 @@ export class Sfx {
       case 'nod': tone('triangle', 420, 380, 0, .06, .025); break;
       case 'stomp': tone('sine', 140, 70, 0, .12, .09); hiss(0, .08, .04, 800, 400, 1.2); break;
     }
+  }
+
+  /* ---- 音浪无双：合成音效 ----
+     原则：装饰，不抢背景音乐；同类限发声数、音高随机偏一点，一招打中一片也不会糊成噪音；
+     击破、完美按五声音阶往上爬（连击越长越高）；大的落点由导演对齐到半拍上（at）。 */
+  private muBus: GainNode | null = null;
+  private muVoices = new Map<string, number[]>();
+  musou(kind: MusouSound, n = 0, at = 0): void {
+    if (this.muted || !this.ctx) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    // 同类最多同时几个声音在响。
+    const cap = kind === 'hit' ? 3 : kind === 'kill' ? 4 : kind === 'tick' ? 2 : 2;
+    const live = (this.muVoices.get(kind) ?? []).filter(e => e > now);
+    if (live.length >= cap) return;
+    if (!this.muBus) { this.muBus = ctx.createGain(); this.muBus.gain.value = .9; this.muBus.connect(this.dest()); }
+    const bus = this.muBus;
+    const t0 = now + Math.max(0, Math.min(.2, at));
+    const jit = 2 ** ((Math.random() * 2 - 1) * .6 / 12);
+    let end = t0;
+    const tone = (type: OscillatorType, f0: number, f1: number, a: number, dur: number, gain: number, lowpass = 0, attack = .006) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(f0, t0 + a);
+      o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t0 + a + dur);
+      g.gain.setValueAtTime(.0001, t0 + a);
+      g.gain.exponentialRampToValueAtTime(gain, t0 + a + Math.min(attack, dur / 3));
+      g.gain.exponentialRampToValueAtTime(.0001, t0 + a + dur);
+      let head: AudioNode = o;
+      if (lowpass) { const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = lowpass; head = o.connect(lp); }
+      head.connect(g).connect(bus);
+      o.start(t0 + a); o.stop(t0 + a + dur + .02);
+      end = Math.max(end, t0 + a + dur);
+    };
+    const hiss = (a: number, dur: number, gain: number, f0: number, f1: number, q = .8, attack = .3) => {
+      const src = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), g = ctx.createGain();
+      src.buffer = this.noiseBuffer();
+      src.loop = true;
+      bp.type = 'bandpass'; bp.Q.value = q;
+      bp.frequency.setValueAtTime(f0, t0 + a);
+      bp.frequency.exponentialRampToValueAtTime(f1, t0 + a + dur);
+      g.gain.setValueAtTime(.0001, t0 + a);
+      g.gain.exponentialRampToValueAtTime(gain, t0 + a + Math.max(.004, dur * attack));
+      g.gain.exponentialRampToValueAtTime(.0001, t0 + a + dur);
+      src.connect(bp).connect(g).connect(bus);
+      src.start(t0 + a); src.stop(t0 + a + dur + .02);
+      end = Math.max(end, t0 + a + dur);
+    };
+    // 五声音阶（C 大调五声）从 C6 往上爬，两个八度循环。
+    const PENTA = [0, 2, 4, 7, 9];
+    const ladder = (i: number, base = 1046.5) => { const k = Math.max(0, i) % 10; return base * 2 ** ((PENTA[k % 5] + 12 * Math.floor(k / 5)) / 12); };
+    switch (kind) {
+      case 'hit':
+        if (n) { tone('sine', 150 * jit, 46, 0, .14, .16); hiss(0, .09, .07, 1400, 300, .7, .1); }
+        else { tone('sine', 210 * jit, 72, 0, .075, .1); hiss(0, .05, .045, 2600 * jit, 900, .8, .1); }
+        break;
+      case 'kill':
+        tone('triangle', ladder(n - 1, 880) * jit, ladder(n - 1, 880) * 1.02, 0, .07, .022, 5200, .003);
+        hiss(0, .025, .018, 5200, 3000, 1.4, .1);
+        break;
+      case 'perfect': {
+        const f = ladder(n - 1);
+        tone('sine', f, f, 0, .32, .05, 0, .004);
+        tone('sine', f * 2, f * 2, .01, .18, .018, 0, .004);
+        hiss(0, .03, .03, 6000, 4000, 2, .1);
+        break;
+      }
+      case 'heatUp': {
+        const b = 523.25 * 2 ** ((n * 2) / 12);
+        [0, 4, 7, 12].forEach((s, i) => tone('triangle', b * 2 ** (s / 12), b * 2 ** (s / 12), i * .055, .2, .032, 4800));
+        break;
+      }
+      case 'heatDown':
+        tone('sine', 523, 440, 0, .14, .035, 1800); tone('sine', 392, 330, .09, .2, .03, 1500);
+        break;
+      case 'cardIn':
+        hiss(0, .28, .035, 700, 3200, .7, .5);
+        for (let i = 0; i < (n ? 4 : 3); i++) tone('sine', 1568 * 2 ** (i * 4 / 12), 1568 * 2 ** (i * 4 / 12), .06 + i * .045, .14, .018);
+        break;
+      case 'cardPick':
+        // 盖章：一声闷的「咚」+ 纸面的「咔」，稀有度越高后面跟的和弦越亮。
+        tone('sine', 150, 58, 0, .13, .16); hiss(0, .035, .06, 2400, 1600, 1.2, .1);
+        if (n >= 1) [0, 4, 7].forEach((s, i) => tone('triangle', 784 * 2 ** (s / 12), 784 * 2 ** (s / 12), .05 + i * .04, .3, .03, 5000));
+        if (n >= 2) [12, 16, 19, 24].forEach((s, i) => tone('sine', 784 * 2 ** (s / 12), 784 * 2 ** (s / 12), .2 + i * .05, .6, .025));
+        break;
+      case 'riser':
+        hiss(0, 1.2, .05, 300, 7000, .9, .95);
+        tone('sine', 220, 880, 0, 1.2, .018, 0, 1.1);
+        break;
+      case 'fever':
+        // 镲片 + 底鼓 + 一个亮的和弦，落在副歌第一拍。
+        hiss(0, 1.3, .075, 7500, 3600, .5, .01);
+        tone('sine', 90, 38, 0, .55, .22);
+        [0, 4, 7, 12].forEach(s => tone('triangle', 523.25 * 2 ** (s / 12), 523.25 * 2 ** (s / 12), 0, n ? .9 : .6, .02, 4000));
+        break;
+      case 'ultCast':
+        tone('sine', 55, 95, 0, .6, .12, 0, .3); hiss(0, .6, .04, 400, 2600, .7, .9);
+        break;
+      case 'ultDrop':
+        tone('sine', 120, 30, 0, .9, .26); hiss(0, 1.1, .07, 3600, 300, .5, .02);
+        [0, 7, 12].forEach(s => tone('sine', 1046.5 * 2 ** (s / 12), 1046.5 * 2 ** (s / 12), .05, 1.1, .018));
+        break;
+      case 'tick':
+        tone('sine', 1500 + n * 90, 1300 + n * 90, 0, .028, .03);
+        break;
+      case 'ding':
+        tone('sine', 1318.5, 1318.5, 0, 1.2, .06, 0, .003); tone('sine', 2637, 2637, 0, .5, .015, 0, .003);
+        if (n) tone('sine', 1975.5, 1975.5, .08, 1.1, .04, 0, .003);
+        break;
+      case 'supply':
+        if (n === 0) { tone('sine', 660, 1320, 0, .1, .05); tone('sine', 1320, 1320, .08, .12, .03); }
+        else if (n === 1) { for (let i = 0; i < 3; i++) tone('sine', 500 + i * 160, 900 + i * 160, i * .05, .07, .035); }
+        else if (n === 2) { tone('triangle', 330, 1320, 0, .3, .04, 3000); hiss(0, .3, .03, 800, 4000, .8, .7); }
+        else { [0, 4, 7, 11].forEach((s, i) => tone('sine', 1046.5 * 2 ** (s / 12), 1046.5 * 2 ** (s / 12), i * .04, .5, .025)); }
+        break;
+      case 'boom':
+        tone('sine', 110, 36, 0, .55, .24); hiss(0, .5, .08, 2200, 250, .6, .02);
+        break;
+      case 'warn':
+        // 提醒，不是警报：两声柔和的下行，压了高频。
+        tone('triangle', 880, 860, 0, .12, .04, 2600); tone('triangle', 660, 650, .14, .16, .04, 2400);
+        break;
+      case 'rush':
+        hiss(0, .7, .07, 350, 2400, .7, .6); tone('sine', 70, 110, 0, .7, .06, 0, .4);
+        break;
+      case 'break':
+        // 撕开 / 破圈：一声撕裂的噪音 + 下沉的闷响，n=1（横幅）更脆。
+        hiss(0, .22, .08, n ? 3200 : 2000, 500, 1.1, .05); tone('sine', 140, 50, 0, .22, .17);
+        tone('triangle', 784, 1568, .03, .18, .03, 5000);
+        break;
+      case 'squeeze':
+        tone('sine', 95, 52, 0, .16, .08, 600);
+        break;
+      case 'hurt':
+        tone('sine', 170, 62, 0, .11, .1, 900); hiss(0, .07, .04, 700, 260, .8, .1);
+        break;
+      case 'slam':
+        // 精英砸地（n 不用）和主角轻砸共用：一声短促的「咚」。
+        tone('sine', 95, 36, 0, .3, .2); hiss(0, .2, .06, 900, 200, .8, .05);
+        break;
+      case 'milestone':
+        // 盖章：一声闷响 + 一个上扬的三度，越往后的百位越高一点。
+        tone('sine', 130, 55, 0, .16, .18); hiss(0, .04, .06, 2600, 1800, 1.2, .1);
+        { const b = 659.25 * 2 ** (Math.min(10, n) / 24); tone('triangle', b, b, .06, .22, .035, 5000); tone('triangle', b * 1.26, b * 1.26, .13, .32, .035, 5000); }
+        break;
+      case 'grab':
+        tone('sine', 220, 120, 0, .18, .12, 1200); hiss(0, .12, .06, 900, 400, .9, .1);
+        break;
+      case 'escape':
+        hiss(0, .2, .06, 1500, 5000, .8, .2); tone('triangle', 660, 1320, 0, .16, .04, 5000);
+        break;
+      case 'dash':
+        hiss(0, .45, .07, 500, 3000, .7, .3); tone('sawtooth', 70, 140, 0, .45, .03, 400, .1);
+        break;
+      case 'slow':
+        // 慢动作：一声往下沉的「呜——」，像磁带被按慢了。
+        tone('sine', 520, 180, 0, .5, .04, 2000, .05); hiss(0, .5, .03, 3000, 600, .6, .1);
+        break;
+      case 'pop':
+        // 音箱怪炸开：n=1 是被打飞落地的（更亮、更脆，连锁时一串）。
+        tone('sine', 140 * jit, 50, 0, .2, n ? .14 : .11); hiss(0, .18, n ? .07 : .05, n ? 3000 : 1800, 400, .8, .05);
+        if (n) tone('triangle', 880 * jit, 1760, 0, .08, .02, 6000);
+        break;
+      case 'slamHeavy': {
+        // 重砸：一声很低的「咚」压底 + 碎裂的噪音 + 一个按连砸往上爬的音（五声音阶），像砸出一小段旋律。
+        const f = ladder(Math.max(0, n - 1) * 2, 523.25);
+        tone('sine', 120, 30, 0, .5, .28); hiss(0, .32, .09, 2600, 300, .7, .02);
+        tone('triangle', f, f, .01, .3, .04, 5000, .003); tone('sine', f * 2, f * 2, .02, .18, .015);
+        if (n >= 4) hiss(0, .9, .05, 6000, 2000, .5, .01);
+        break;
+      }
+      case 'jump2':
+        hiss(0, .14, .04, 1200, 4200, .9, .3); tone('sine', 520, 880, 0, .12, .03);
+        break;
+      case 'charge':
+        // 冲锋：一道快速的风声 + 低频推进，踩拍时多一个亮音。
+        hiss(0, .28, .07, 700, 3800, .7, .15); tone('sine', 90, 160, 0, .22, .1);
+        if (n) tone('triangle', 1318.5, 1318.5, 0, .2, .03, 6000, .003);
+        break;
+      case 'bowl':
+        tone('sine', 180 * jit, 70, 0, .08, .08); hiss(0, .05, .04, 2200, 1200, 1, .1);
+        break;
+      case 'pip':
+        tone('triangle', 1760 * jit, 1700, 0, .05, .025, 7000, .002);
+        break;
+      case 'pipBreak':
+        hiss(0, .2, .05, 6000, 2500, 1.2, .05); tone('triangle', 2093, 1568, 0, .16, .03, 8000, .002);
+        break;
+      case 'armor':
+        // 打在厚甲上：一声发闷的「当」，不刺耳。n=1 是打在巨型障碍物上。
+        tone('triangle', n ? 220 : 440 * jit, n ? 180 : 400, 0, .1, .04, 2400, .002); hiss(0, .05, .02, 3000, 1500, 1.5, .1);
+        break;
+      case 'shieldUp':
+        tone('sine', 660, 990, 0, .3, .03, 0, .05); tone('sine', 990, 1320, .08, .3, .02);
+        break;
+      case 'giantLand':
+        tone('sine', 70, 28, 0, .8, .3); hiss(0, .6, .1, 900, 120, .6, .02);
+        break;
+      case 'giantBreak':
+        tone('sine', 110, 35, 0, .7, .26); hiss(0, .7, .09, 3200, 300, .6, .02);
+        [0, 4, 7, 12, 16].forEach((s, i) => tone('triangle', 784 * 2 ** (s / 12), 784 * 2 ** (s / 12), .08 + i * .05, .35, .028, 6000));
+        break;
+      case 'liftUp':
+        tone('sine', 160, 320, 0, .5, .06, 0, .2); hiss(0, .5, .03, 600, 2400, .8, .6);
+        break;
+      case 'liftDown':
+        tone('sine', 320, 140, 0, .5, .05, 0, .05);
+        break;
+      case 'rare':
+        // 吃到稀有道具：一串往上冲的琶音 + 闪光的高频。
+        [0, 4, 7, 11, 14].forEach((s, i) => tone('triangle', 659.25 * 2 ** ((s + n) / 12), 659.25 * 2 ** ((s + n) / 12), i * .045, .3, .035, 7000, .003));
+        hiss(.1, .4, .03, 8000, 5000, 1, .3);
+        break;
+      case 'rareEnd':
+        tone('sine', 880, 440, 0, .3, .03, 3000);
+        break;
+      case 'crowd':
+        // 一招打中一大片：一层很快的「嚓」叠在打击声后面，打中越多越厚。
+        hiss(0, .16, Math.min(.07, .02 + n * .002), 4200, 1500, .6, .05);
+        tone('sine', 95, 45, 0, .14, Math.min(.16, .06 + n * .004));
+        break;
+      case 'laser':
+        tone('sawtooth', 320, 640, 0, .18, .04, 2400, .01);
+        hiss(0, .25, .04, 3800, 1400, .8, .02);
+        tone('sine', 110, 75, 0, .22, .12);
+        break;
+      case 'feedback':
+        tone('sine', 62, 128, 0, .38, .1, 0, .04);
+        tone('triangle', 248, 370, .04, .28, .025, 1600, .04);
+        break;
+      case 'zap':
+        hiss(0, .12, .05, 5200, 1800, 1.2, .01);
+        tone('triangle', 980 * jit, 420, 0, .11, .035, 5000, .002);
+        break;
+      case 'anomaly':
+        // 天地异象降临：暖色低频铺底滑音 + 明亮大调泛音 + 渐入暖风。
+        tone('sine', 110, 165, 0, .95, .12, 600, .25);
+        [0, 7, 12, 16].forEach((s, i) => tone('triangle', 523.25 * 2 ** (s / 12), 523.25 * 2 ** (s / 12), .06 + i * .07, .65, .026, 4800, .12));
+        hiss(0, 1.0, .04, 400, 2200, .7, .6);
+        break;
+      case 'ball':
+        if (n < 0) {
+          tone('triangle', 420 * jit, 290, 0, .08, .045, 3200);
+        } else {
+          const f = ladder(n, 659.25);
+          tone('sine', 170 * jit, 72, 0, .12, .13);
+          tone('triangle', f, f * 1.03, 0, .18, .042, 5600, .003);
+          if (n >= 3) {
+            tone('sine', f * 2, f * 2, .02, .16, .022, 0, .003);
+            hiss(0, .1, .03, 5200, 2800, 1.2, .05);
+          }
+        }
+        break;
+      case 'pad': {
+        const f = ladder(Math.max(0, n) * 2, 784);
+        tone('triangle', f, f, 0, .26, .045, 6200, .003);
+        tone('sine', f * 1.5, f * 1.5, .02, .18, .02, 0, .004);
+        if (n >= 3) {
+          tone('sine', 110, 48, 0, .42, .18);
+          hiss(0, .55, .045, 6400, 2600, .6, .02);
+          [0, 4, 7, 12].forEach((s, i) => tone('sine', 784 * 2 ** (s / 12), 784 * 2 ** (s / 12), i * .035, .4, .024, 0, .003));
+        }
+        break;
+      }
+      case 'grooveUp': {
+        const b = 587.33 * 2 ** ((Math.min(5, Math.max(1, n)) - 1) * 2 / 12);
+        [0, 4, 7, 12].forEach((s, i) => tone('triangle', b * 2 ** (s / 12), b * 2 ** (s / 12), i * .04, .22, .028, 5400, .003));
+        if (n >= 5) hiss(.04, .35, .035, 7000, 3200, .7, .02);
+        break;
+      }
+      case 'scratch':
+        tone('triangle', 680 * jit, 240, 0, .06, .028, 1900, .002);
+        tone('triangle', 260, 520, .055, .055, .024, 1900, .002);
+        hiss(0, .1, .02, 2200, 900, 1.4, .1);
+        break;
+    }
+    live.push(end);
+    this.muVoices.set(kind, live);
   }
 
   private noise?: AudioBuffer;

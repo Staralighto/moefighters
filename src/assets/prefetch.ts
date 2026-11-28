@@ -40,7 +40,7 @@ export function tierOf(path: string): Tier {
   const dir = path.split('/')[0];
   if (dir === 'sprites') return 'roster';
   if (dir === 'stages') return /-thumb\.\w+$/.test(path) ? 'core' : 'roster';
-  if (dir === 'bgm' || dir === 'portraits' || dir === 'finale') return 'heavy';
+  if (dir === 'bgm' || dir === 'portraits' || dir === 'finale' || dir === 'musou') return 'heavy';
   return 'core';
 }
 
@@ -63,7 +63,7 @@ export function netPolicy(mode: Mode, n: NetInfo): { tiers: Tier[]; predict: boo
 }
 
 const SHEET_FIRST = /\/(common|special|idle)\.\w+$/;
-const HEAVY_ORDER = ['portraits', 'finale', 'bgm'];
+const HEAVY_ORDER = ['portraits', 'finale', 'musou', 'bgm'];
 
 /** Download order: small common files first, then fighters in roster order (main sheets before form sheets),
  *  then the big files, music last. */

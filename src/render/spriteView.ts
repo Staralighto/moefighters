@@ -246,7 +246,9 @@ export class SpriteView implements FighterView {
     // transform only — the facing flip and the cartwheel rotate after this. The cap bounds
     // bake memory on huge canvases.
     const m = ctx.getTransform();
-    const hs = Math.min(512, Math.max(1, Math.round(h * Math.hypot(m.a, m.b))));
+    const rawHs = h * Math.hypot(m.a, m.b);
+    // Quantize raster bake height to 16px buckets so continuous camera zoom does not thrash cellCache / tintCache.
+    const hs = Math.min(512, Math.max(16, Math.round(rawHs / 16) * 16));
     const ax = -Math.round(h / 2);
     const cell = boxed ? { sx: 0, sy: 0 } : { sx: clip.sx * k, sy: clip.sy * k };
     const cs = CELL * k;

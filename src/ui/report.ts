@@ -7,13 +7,15 @@ import { ROSTER_BY_ID } from '../data/characters.ts';
 import type { CharacterData } from '../data/types.ts';
 import type { MatchReport, ReportFighter } from '../game/report.ts';
 import { assignFirst, loadImage } from '../assets/loader.ts';
+import { glyphSVG } from '../musou/hud.ts';
+import type { Glyph } from '../musou/upgrades.ts';
 
 const W = 960;
 const H = 540;
 const DIFF = ['轻松', '标准', '大师'];
 const DIFF_EN = ['EASY', 'NORMAL', 'MASTER'];
 /** 结算页的固定汉字，开局时让海报字先把这些字形下好。 */
-const GLYPHS = '首次观你赢了输获胜人机轻松标准大师对战联机绝境安可无伤新纪录终演剩余终结技被于巡演第站止步最远高连击造成伤害必杀';
+const GLYPHS = '首次观你赢了输获胜人机轻松标准大师对战联机绝境安可无伤新纪录终演剩余终结技被于巡演第站止步最远高连击造成伤害必杀音浪无双击破最长等级打倒梦魇';
 
 const avatarSrc = new Map<string, string>();
 
@@ -65,10 +67,11 @@ function sealSVG(seal: MatchReport['seal'], win: boolean | null): string {
   const burst = pts.join(' ');
   const cpu = typeof seal === 'number';
   const ring = cpu ? `★ MOEFIGHTERS ★ 人机对战 ★ ${DIFF_EN[seal]} ${win === false ? 'CHALLENGE' : 'CLEAR'} `
+    : seal === 'musou' ? '★ MOEFIGHTERS ★ 音浪无双 ★ SOUND RUSH ★ LIVE '
     : seal === 'online' ? '★ MOEFIGHTERS ★ 联机对战 ★ ONLINE MATCH ★ LIVE '
     : seal === 'watch' ? '★ MOEFIGHTERS ★ 人机观战 ★ SPECTATE ★ LIVE '
     : '★ MOEFIGHTERS ★ 玩家对战 ★ VERSUS MATCH ★ LIVE ';
-  const big = cpu ? DIFF[seal] : seal === 'online' ? '联机' : seal === 'watch' ? '观战' : '对战';
+  const big = cpu ? DIFF[seal] : seal === 'musou' ? '无双' : seal === 'online' ? '联机' : seal === 'watch' ? '观战' : '对战';
   const stars = cpu ? `<text class="rp-stars" x="${c + 1.5}" y="${c + 29}" text-anchor="middle">${'★'.repeat(seal + 1)}</text>` : '';
   return `<svg viewBox="0 0 160 160" aria-hidden="true">
     <defs><path id="rp-seal-arc" d="M${c},${c} m-52,0 a52,52 0 1,1 104,0 a52,52 0 1,1 -104,0"/></defs>
@@ -82,11 +85,11 @@ function sealSVG(seal: MatchReport['seal'], win: boolean | null): string {
   </svg>`;
 }
 
-function sideHTML(list: readonly ReportFighter[], lead: boolean, hp: number, tag: string): string {
+function sideHTML(list: readonly ReportFighter[], lead: boolean, hp: number, tag: string, endMark = '终演'): string {
   const avs = list.map(f => `<span class="rp-av"><img alt="" data-id="${esc(f.id)}" width="196" height="196" decoding="async"></span>`).join('');
   const names = list.map(f => esc(charOf(f.id)?.name ?? f.id)).join(' · ');
   const ribbon = tag ? `<span class="rp-ribbon${tag === '无伤' ? ' is-cool' : ''}">${esc(tag)}</span>` : '';
-  const mark = lead ? '' : '<span class="rp-endmark">终演</span>';
+  const mark = lead || !list.length ? '' : `<span class="rp-endmark">${endMark}</span>`;
   const d = lead ? 160 : 260;
   return `<div class="rp-side ${lead ? 'is-lead' : 'is-down'}${list.length > 1 ? ' is-duo' : ''}">
       <div class="rp-avs rp-a" style="--d:${d}">${avs}${ribbon}${mark}</div>
@@ -119,39 +122,45 @@ export function showReport(host: HTMLElement, r: MatchReport): void {
   const firstClear = tag.startsWith('首次 · ');
   const winNames = lead.map(f => charOf(f.id)?.name ?? f.id).join(' & ');
 
-  const title = tour ? (r.win === false ? 'TOUR<br>OVER' : `STAGE ${tour.stage}<br>CLEAR`)
+  const mu = r.musou;
+  const title = mu ? (r.win ? 'LIVE<br>CLEAR' : 'LIVE<br>OVER') : tour ? (r.win === false ? 'TOUR<br>OVER' : `STAGE ${tour.stage}<br>CLEAR`)
     : r.win === false ? 'LIVE<br>OVER' : 'LIVE<br>CLEAR';
-  const line = tour
+  const line = mu ? `音浪无双 · <b>${mu.songs.length}</b> 首 · 打倒梦魇 <b>${mu.bosses}</b>` : tour
     ? (r.win === false ? `止步第 <b>${tour.stage}</b> 站 · 最远 <b>${tour.best}</b> 站` : `巡演 第 <b>${tour.stage}</b> 站`)
     : r.win === true ? '<b>你赢了</b>' : r.win === false ? '你输了' : `<b>${esc(winNames)}</b> 获胜`;
   const fin = r.fin ? `<div class="rp-fin">${r.win === false ? '被终结于' : '终结技'}<b>${esc(r.fin)}</b></div>` : '';
-  const score = tour ? 'VS' : `${r.score[0]}<span> : </span>${r.score[1]}`;
+  const score = mu ? `${mu.bosses}<span> BOSS</span>` : tour ? 'VS' : `${r.score[0]}<span> : </span>${r.score[1]}`;
   const quote = leadChar?.quote ?? '';
 
   const card = document.createElement('div');
-  card.className = 'rp' + (r.win === false ? ' is-lose' : '') + (tour ? ' is-tour' : '');
+  card.className = 'rp' + (r.win === false ? ' is-lose' : '') + (tour ? ' is-tour' : '') + (mu ? ' is-musou' : '');
   card.style.setProperty('--win', color);
   card.style.setProperty('--on-win', onColor(color));
   card.innerHTML = `
     <div class="rp-slab"></div><div class="rp-pin"></div>
     <div class="rp-head rp-a" style="--d:0">
-      <span class="rp-live">${tour ? 'TOUR' : 'LIVE'}</span>
+      <span class="rp-live">${mu ? 'RUSH' : tour ? 'TOUR' : 'LIVE'}</span>
       <span class="rp-title">MOEFIGHTERS <span>／ ${esc(r.stage)}</span></span>
       <span class="rp-date">${date}</span>
     </div>
     <section class="rp-main">
       <div class="rp-match">
         ${sideHTML(lead, true, r.winHp, firstClear ? '' : tag)}
-        <div class="rp-foecol"><div class="rp-score rp-a" style="--d:360">${score}</div>${sideHTML(down, false, r.loseHp, firstClear ? tag : '')}</div>
+        <div class="rp-foecol"><div class="rp-score rp-a" style="--d:360">${score}</div>${sideHTML(down, false, r.loseHp, firstClear ? tag : '', mu ? (r.win ? '打倒' : '梦魇') : '终演')}</div>
       </div>
       <div class="rp-board">
         <div class="rp-verdict rp-a" style="--d:460"><h2>${title}</h2><p>${line}</p>${fin}</div>
         <div class="rp-stats rp-a" style="--d:600">
           <div class="rp-rank"><span>LIVE RANK</span>${r.rank}</div>
-          <div class="rp-stat"><span>最高连击</span><b data-n="${r.combo}">0</b></div>
+          ${mu ? `<div class="rp-stat"><span>击破</span><b data-n="${mu.kills}">0</b></div>
+          <div class="rp-stat"><span>最长连破</span><b data-n="${mu.streak}">0</b></div>
+          <div class="rp-stat"><span>等级</span><b data-n="${mu.level}">0</b></div>` : `<div class="rp-stat"><span>最高连击</span><b data-n="${r.combo}">0</b></div>
           <div class="rp-stat"><span>造成伤害</span><b data-n="${r.dmg}">0</b></div>
-          <div class="rp-stat"><span>必杀</span><b data-n="${r.ult}">0</b></div>
+          <div class="rp-stat"><span>必杀</span><b data-n="${r.ult}">0</b></div>`}
         </div>
+        ${mu?.build?.length ? `<div class="rp-build rp-a" style="--d:660">${mu.build.map(it =>
+          `<span class="rp-bchip" data-cat="${it.evo ? 'evo' : esc(it.cat)}">${glyphSVG(it.glyph as Glyph)}<b>${esc(it.name)}</b><em>${it.cat === 'evo' ? '进化' : `LV${it.lv}`}</em></span>`
+        ).join('')}</div>` : ''}
         <div class="rp-seal" data-seal="${r.seal}">${sealSVG(r.seal, r.win)}</div>
       </div>
     </section>

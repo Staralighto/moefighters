@@ -52,7 +52,7 @@ const WALL_CD = 4;
 
 /** The tier with the wall: master, a real CPU (not a summoned teammate), outside training. */
 export function reader(g: FightGame, f: Fighter): boolean {
-  return f.controller === null && !f.minion && !f.echo && g.difficulty === 2 && g.mode !== 'training';
+  return f.controller === null && !f.minion && !f.echo && !f.mob && g.difficulty === 2 && g.mode !== 'training';
 }
 
 /** game.attack(): any human move other than J breaks a jab-only string. Supers too. */
@@ -179,6 +179,11 @@ export function stepAI(g: FightGame, dt: number): void {
   for (const f of g.fighters) {
     if (f.controller !== null || f.hp <= 0 || f.echo) continue;
     if (training && !f.minion) continue;
+    // 音浪无双杂兵：整个交给导演（追、围、扔荧光棒、黄牛抢经验），跳过完整决策树。
+    if (f.mob) {
+      g.musou?.mobThink(g, f, dt);
+      continue;
+    }
     // 诗超绊 teammates always run the master brain, whatever the match difficulty is.
     // 舞台装置 has none of that: it swings on the easy tier, normals only (f.basic).
     const hard = f.minion ? (f.easyAI ? 0 : 2) : g.difficulty;

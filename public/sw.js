@@ -6,7 +6,7 @@
    · 清单里 sw:false 时自行注销并删掉缓存（kill switch：MF_NO_SW=1 npm run build）。 */
 const CACHE = 'mf-assets-v1';
 const META = 'mf-meta';
-const TRACK = /^(sprites|avatars|portraits|stages|finale|bgm|sfx|frames|albums|fonts|icons|assets)\//;
+const TRACK = /^(sprites|avatars|portraits|stages|finale|bgm|sfx|frames|albums|fonts|icons|assets|musou)\//;
 const SCOPE = new URL(self.registration.scope);
 
 /** rel path → hash, from the newest manifest the page handed over (kept in META across restarts). */

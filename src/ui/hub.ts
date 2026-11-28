@@ -11,7 +11,7 @@ import { cue, lobbyMode } from './mobile.ts';
 import { settleAppHeight } from './appHeight.ts';
 import { backOne, setPageBack } from './layerBack.ts';
 
-export type HubId = 'shop' | 'locker' | 'tasks' | 'music' | 'battle' | 'stage' | 'moves' | 'story';
+export type HubId = 'shop' | 'locker' | 'tasks' | 'music' | 'battle' | 'stage' | 'moves' | 'story' | 'musou';
 
 export interface HubPage {
   title: string;
@@ -27,7 +27,7 @@ export interface HubPage {
 }
 
 const $ = (id: string) => document.getElementById(id)!;
-const NO: Record<HubId, string> = { shop: 'A', locker: 'B', tasks: 'C', music: 'D', battle: '01', stage: '02', moves: '03', story: 'S' };
+const NO: Record<HubId, string> = { shop: 'A', locker: 'B', tasks: 'C', music: 'D', battle: '01', stage: '02', moves: '03', story: 'S', musou: 'M' };
 const BUILD_BUDGET_MS = 8;
 const pages = new Map<HubId, HubPage>();
 const hosts = new Map<HubId, HTMLElement>();
@@ -97,23 +97,25 @@ type Stop = { id: StopId; name: string; icon: string };
 const STOPS: readonly Stop[] = [
   { id: 'home', name: '首页', icon: 'i-house' },
   { id: 'story', name: '剧情', icon: 'n-story' },
+  { id: 'musou', name: '音浪无双', icon: 'n-musou' },
   { id: 'shop', name: '商店', icon: 'n-shop' },
   { id: 'locker', name: '仓库', icon: 'n-locker' },
   { id: 'tasks', name: '任务', icon: 'n-tasks' },
   { id: 'music', name: '音乐库', icon: 'i-music-notes' },
   { id: 'stamps', name: '印章册', icon: 'i-seal' },
 ];
-/* 横屏手机：首页是大厅，路线多出「备战」三站（作战 / 场景 / 招式），上方两段括号标出备战和后台。竖屏是七站。
-   「剧情」一站排在首页 / 大厅后面、备战前面。站多了放不下时整条路线可以左右拖。 */
+/* 横屏手机：首页是大厅，路线多出「备战」三站（作战 / 场景 / 招式），上方两段括号标出备战和后台。竖屏是八站。
+   「剧情」「音浪无双」排在首页 / 大厅后面、备战前面。站多了放不下时整条路线可以左右拖。 */
 const LAND_STOPS: readonly Stop[] = [
   { id: 'home', name: '大厅', icon: 'i-house' },
   STOPS[1],
+  STOPS[2],
   { id: 'battle', name: '作战', icon: 'n-battle' },
   { id: 'stage', name: '场景', icon: 'k-stage' },
   { id: 'moves', name: '招式', icon: 'n-moves' },
-  ...STOPS.slice(2),
+  ...STOPS.slice(3),
 ];
-const GROUPS = [{ name: '备战', from: 3, to: 6 }, { name: '后台', from: 6, to: 10 }];
+const GROUPS = [{ name: '备战', from: 4, to: 7 }, { name: '后台', from: 7, to: 11 }];
 /** 大厅模式：多出备战三站、返回叫「‹ 大厅」。只看大厅模式，不看版式（关了大厅的横屏手机仍是原来 6 站）。 */
 const land = () => lobbyMode();
 let prepMeta: (id: StopId) => string = () => '';

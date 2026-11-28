@@ -22,13 +22,13 @@ import sharp from 'sharp';
 const RECIPE = 'v1';
 /** Near-lossless WebP quality. Avatars, icons, and the 256px idle crop stay here. */
 const NEAR = 22;
-/** Stages, finales, and sprite sheets. Lossy q80 is several times smaller than near-lossless. */
+/** Large artwork. Lossy q80 is several times smaller than near-lossless. */
 const STAGE_Q = 80;
 /** clips.ts CELL. The select screen only paints this top-left cell. */
 const IDLE = 256;
 /** Slow-link stand-in: half size, lossy. Soft, but a fight can start on it; the q80 sheet replaces it. */
 const LITE_Q = 70;
-const DIRS = ['sprites', 'stages', 'icons', 'avatars', 'finale'];
+const DIRS = ['sprites', 'stages', 'icons', 'avatars', 'finale', 'musou'];
 
 const warm = process.argv.includes('--warm');
 const root = fileURLToPath(new URL(warm ? '../public/' : '../dist/', import.meta.url));
@@ -64,15 +64,18 @@ if (!files.length) {
 }
 
 const near = { lossless: true, nearLossless: true, quality: NEAR, effort: 6, alphaQuality: 100 } as const;
+const art = { quality: STAGE_Q, effort: 5, alphaQuality: 90 } as const;
 
 type Role = 'main' | 'thumb' | 'lite' | 'idle';
-type Kind = 'finale' | 'stage' | 'mask' | 'sheet' | 'flat';
+type Kind = 'finale' | 'stage' | 'mask' | 'sheet' | 'flat' | 'art';
 
 function kindOf(rel: string): Kind {
   if (rel.startsWith('finale/')) return 'finale';
   if (rel.startsWith('stages/')) return 'stage';
   if (rel.endsWith('-hair-mask.png')) return 'mask';
   if (rel.startsWith('sprites/')) return 'sheet';
+  if (rel.startsWith('musou/bg/')) return rel.endsWith('-neon.png') ? 'mask' : 'art';
+  if (rel.startsWith('musou/mobs/') || rel.startsWith('musou/objects/giant-')) return 'art';
   return 'flat';
 }
 
@@ -106,16 +109,16 @@ async function encode(bytes: Buffer, kind: Kind, key: string, roles: Role[], wid
     return;
   }
   if (kind === 'stage') {
-    await put('main', sharp(bytes).webp({ quality: STAGE_Q, effort: 5, alphaQuality: 90 }));
+    await put('main', sharp(bytes).webp(art));
     await put('thumb', sharp(bytes).resize({ width: 480, withoutEnlargement: true }).webp({ quality: STAGE_Q, effort: 4, alphaQuality: 80 }));
     return;
   }
   if (kind === 'mask') {
-    // Hair masks encode selection weights in RGB; a lossy colour edit would leak the dye.
+    // Keep the hair dye weights in RGB and the neon silhouette in alpha intact.
     await put('main', sharp(bytes).webp({ lossless: true, effort: 6 }));
     return;
   }
-  await put('main', sharp(bytes).webp(kind === 'sheet' ? { quality: STAGE_Q, effort: 5, alphaQuality: 90 } : near));
+  await put('main', sharp(bytes).webp(kind === 'sheet' || kind === 'art' ? art : near));
   if (kind !== 'sheet') return;
   await put('lite', sharp(bytes).resize({ width: Math.max(1, Math.round(width / 2)) }).webp({ quality: LITE_Q, effort: 5, alphaQuality: 80 }));
   if (roles.includes('idle')) {

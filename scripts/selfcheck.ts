@@ -24,6 +24,7 @@ import { RIB_OX, SKEWER_OX, STEAK_OX } from '../src/render/ritsuSheet.ts';
 import { kujiFlash, KUJI, KUJI_STEP, mortisAfterimage, sealSwell } from '../src/render/fx.ts';
 import { shouldGoLite } from '../src/render/fxQuality.ts';
 import { backingScale, portraitBodyScale, superZoom, teamGlowOn } from '../src/render/renderer.ts';
+import { musouVisibility } from '../src/render/musouCam.ts';
 import { previewFighter, gainEnergy, skillsOf, type Fighter } from '../src/game/fighter.ts';
 import { addMod, atkMul, clearMod, incomingMul, jumpMul, moveSign, speedMul } from '../src/game/mods.ts';
 import { DEFAULT_MARK, hasStatus, isRecruit, statusCount, statusMask } from '../src/game/status.ts';
@@ -102,6 +103,9 @@ import { idOf, parseScript } from '../src/story/parse.ts';
 import { PROPS, PROP_VERBS } from '../src/story/props.ts';
 import { FX_LASTING, FX_NAMES } from '../src/story/fx.ts';
 import { block as stageBlock, enter as stageEnter, openStage, reaim as stageReaim, SLOT_X, type Body as StageBody } from '../src/story/stage.ts';
+import { applyUpgrade, createBuild, evoHintFor, listBuild, rollUpgradeChoices } from '../src/musou/upgrades.ts';
+import { MusouDirector } from '../src/musou/director.ts';
+import { readMusouRecords, recordMusouRun } from '../src/musou/records.ts';
 
 /* `npm run check` runs this file through node's type stripping: no bundler, and no @types/node to type
    `import 'node:fs'` with. `process.getBuiltinModule` reaches the same builtin without an import. */
@@ -262,13 +266,24 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.ok(g.age > 0 && g.age <= 6 * STEP + 1e-9, 'a 1s hitch advances at most 6 steps, got ' + g.age / STEP);
   assert.equal(shouldGoLite(16, true), false, '60fps touch stays full');
   assert.equal(shouldGoLite(30, false), false, 'desktop never goes lite');
-  assert.equal(shouldGoLite(30, true), true, 'a ~33fps touch device goes lite');
-  assert.equal(backingScale(3, true, false), 3, 'a phone raster matches its screen');
-  assert.equal(backingScale(3, true, true), 2.25, 'lite sheds pixels from the screen ratio');
+  assert.equal(shouldGoLite(22, true), true, 'a touch device sustained below 50fps goes lite');
+  const fight = backingScale(3, true, false);
+  const musou = backingScale(3, true, false, true);
+  assert.ok(backingScale(3, true, true) < fight && fight < 3, 'both touch fight tiers reduce high-DPR fill');
+  assert.ok(backingScale(3, true, true, true) < musou && musou < fight, 'Musou has a tighter cap and lite still lowers it');
+  assert.equal(backingScale(1.25, true, false, true), 1.25, 'the cap does not supersample low-DPR screens');
   assert.equal(backingScale(2, false, true), 2, 'desktop keeps the monitor ratio');
   assert.equal(backingScale(0, true, false), 1, 'a missing ratio falls back to 1');
   assert.equal(portraitBodyScale(true), 1.3, 'a portrait split draws bodies at 1.3×');
   assert.equal(portraitBodyScale(false), 1, 'landscape and desktop keep body scale at 1');
+}
+
+{
+  const visible = musouVisibility({ a: 2, d: 3, e: -100, f: -60 }, 40, 440, 300);
+  assert.equal(visible(65, 60, 8), true, 'a sprite overlapping the cropped edge stays visible');
+  assert.equal(visible(60, 60, 8), false, 'a sprite fully left of the cropped edge is culled');
+  assert.equal(visible(150, 18, 10, 3), true, 'a shadow crossing the top edge stays visible');
+  assert.equal(visible(150, 16, 10, 3), false, 'a shadow above the shifted view is culled');
 }
 
 // light attack lands and builds energy
@@ -8780,6 +8795,7 @@ function dummy(g: FightGame) { g.fighters[1].controller = 1; return g.fighters[1
   assert.equal(sanitizeReport({ ...lost, stage: 'x'.repeat(200) }), null, 'long text is rejected');
   assert.equal(sanitizeReport('junk'), null);
   assert.equal(sanitizeReport({ ...lost, combo: 1e9 })?.combo, 9999, 'numbers are clamped');
+  assert.equal(sanitizeReport({ ...lost, musou: { kills: 100, bosses: 2 } })?.musou, undefined, 'a peer report cannot add local Musou data');
 
   // a sliver of life reads as 1%, not 0%
   const sliver = newGame(at('test-fast'), at('test-heavy'));
@@ -13900,5 +13916,381 @@ await checkHub();
       }
     }
   }
+}
+
+// 音浪无双（src/musou/）：原生 FightGame 内核、真技能和乐器武器打杂兵、不暂停的排队抽卡、Boss 打倒后切歌、世界平移卷轴。
+{
+  const key = 'mf.musou.records.v1';
+  const store = new Map<string, string>();
+  const global = globalThis as unknown as { localStorage?: unknown };
+  const prev = global.localStorage;
+  global.localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v) };
+  try {
+    const id = PLAYABLE[0].id;
+    const run = { rank: 'B' as const, kills: 52, bosses: 1, streak: 12, level: 5, clear: false };
+    store.set(key, JSON.stringify({ [id]: { ...run, kills: 'broken' } }));
+    assert.equal(readMusouRecords()[id], undefined);
+    assert.equal(recordMusouRun(id, run), true, 'a bad saved entry does not spoil a new best');
+    const save = exportSave();
+    store.set(key, JSON.stringify({ [id]: { ...run, kills: 22, streak: 20 } }));
+    const plan = planImport(save);
+    if (typeof plan === 'string') throw new Error(plan);
+    assert.deepEqual(plan.apply(), []);
+    assert.deepEqual(readMusouRecords()[id], { ...run, streak: 20 }, 'import keeps the best stat from each device');
+  } finally {
+    if (prev === undefined) delete global.localStorage;
+    else global.localStorage = prev;
+  }
+}
+{
+  const lead = PLAYABLE[0];
+  const songs = [{ track: -1, title: 'A', tag: 'hot' as const, bpm: 160, dur: 40 }, { track: -1, title: 'B', tag: 'dark' as const, bpm: 140, dur: 40 }];
+  const g = new FightGame([lead], {
+    mode: 'musou', difficulty: 1, controllers: [0], stage: STAGES[0],
+    createMusou: g => new MusouDirector(g, { songs, first: 0, bosses: [PLAYABLE[1].id, PLAYABLE[2].id] }),
+    audio: { play() {} }, random: rng(77),
+  });
+  const dir = g.musou!;
+  assert.ok(dir, 'musou mode attaches MusouDirector to FightGame');
+  assert.equal(g.phase, 'fight', 'musou starts directly in fight phase');
+  run(g, 1.2);
+  const mobs = g.fighters.filter(f => !!f.mob && f.hp > 0);
+  assert.ok(mobs.length > 0, 'musou director spawns lightweight mobs');
+  assert.equal(teamGlowOn(g), false, 'mobs do not trigger teamGlowOn rim on player');
+
+  const p1 = g.fighters[0];
+  for (const m of mobs) { m.x = 900; m.mob!.atkCd = 9; }
+  p1.x = 480; p1.stun = 0; p1.knocked = 0; p1.facing = 1;
+  const target = mobs[0];
+  target.x = p1.x + 56; target.y = FLOOR; target.stun = 0;
+  const hpBefore = target.hp;
+  assert.ok(g.attack(p1, 0), 'player can cast real J attack in musou mode');
+  run(g, .35);
+  assert.ok(target.hp < hpBefore || !g.fighters.includes(target), 'real fighting skill damages a mob via combat.ts hit()');
+
+  dir.build.stacks.set('w:' + dir.build.own, 5);
+  dir.build.stacks.set('t:amp', 2);
+  const beforeQ = dir.upgradeOffers;
+  dir.pushUpgradeOffer(g);
+  dir.pushUpgradeOffer(g);
+  assert.equal(dir.upgradeOffers, beforeQ + 2, 'upgrade offers can stack while awaiting a pick');
+  assert.equal(g.paused, false, 'an upgrade offer never pauses combat');
+  const head = dir.pendingChoices()!;
+  assert.ok(head.length === 3 && head.every(c => c.line.length > 0), 'each offer is three one-line cards');
+  assert.equal(head[0].id, 'e:own', 'a ready evolution appears in the current offer');
+  assert.ok(dir.pickUpgrade(g, head[0].id) && dir.upgradeOffers === beforeQ + 1, 'picking pops the head of the queue');
+  assert.ok(dir.pendingChoices()?.every(c => c.id !== head[0].id), 'the next offer cannot repeat an evolution already picked');
+
+  const build = createBuild('cone');
+  assert.equal(build.stacks.get('w:cone'), 1, 'the instrument weapon starts at level 1');
+  const dmgBefore = p1.dmgMul;
+  applyUpgrade(g, p1, build, 't:amp');
+  assert.ok(p1.dmgMul > dmgBefore, 'a stat card changes the real Fighter');
+  assert.equal(rollUpgradeChoices(build, rng(11), 3).length, 3, 'rolls three distinct cards');
+
+  // 世界平移：主角走出中间段，杂兵跟着整体平移。
+  const before = dir.scrollX;
+  const m0 = g.fighters.find(f => f.mob)!;
+  const mx = m0.x;
+  p1.x = 700;
+  run(g, STEP);
+  assert.ok(dir.scrollX > before && m0.x < mx + 1, 'walking out of the middle band scrolls the world');
+
+  // Boss 在最后一段浪潮结束时出场，打倒后进入切歌过场，再到下半场。
+  dir.songT = dir.plan.bossAt + .1;
+  run(g, STEP * 2);
+  const boss = dir.activeBoss();
+  assert.ok(boss && boss.nightmare, 'a nightmare boss enters in the last chorus');
+  boss!.hp = 0;
+  run(g, STEP * 2);
+  assert.equal(dir.phase, 'shift', 'downing the boss starts the song change');
+  assert.ok(!g.fighters.some(f => f.mob && f.hp > 0), 'the song change clears the mobs');
+  run(g, 3);
+  assert.equal(dir.half, 1, 'the second half starts after the change');
+  assert.equal(dir.song.title, 'B', 'the second half plays a song of another style');
+
+  // P4 五项舞台危机行为检查：激光封空、啸叫扩音塔、移动聚光灯、空中高压电球与带电音箱、连砸引雷。
+  const p4Lead = g.fighters[0];
+  p4Lead.hp = p4Lead.data.hp; p4Lead.stun = 0; p4Lead.knocked = 0; p4Lead.invuln = 0;
+  // 1. 高空激光：地面安全、空中受伤、打爆灯箱清场
+  const net = dir.spawnLaserNet(g, p4Lead);
+  net.phase = 'fire'; net.t = 0; net.hitCd = 0;
+  p4Lead.y = FLOOR;
+  const hpGround = p4Lead.hp;
+  run(g, STEP * 3);
+  assert.equal(p4Lead.hp, hpGround, 'firing laser net leaves grounded player unharmed');
+  p4Lead.y = net.ys[0] + 65; p4Lead.invuln = 0;
+  run(g, STEP * 2);
+  assert.ok(p4Lead.hp < hpGround, 'firing laser net hits airborne player');
+  dir.hitLaserNodes(g, net.nodes[0].x, net.nodes[0].y, 20, net.nodes[0].max + 50);
+  assert.equal(net.phase, 'clear', 'breaking a laser emitter clears the net in an overload discharge');
+
+  // 2. 啸叫扩音塔：超时过载扣血并掉热度；打爆反向充能
+  dir.slowT = 0; g.hitstop = 0;
+  p4Lead.hp = p4Lead.data.hp; p4Lead.y = FLOOR; p4Lead.invuln = 0;
+  dir.heat = 3;
+  const gi = dir.spawnGiant(g, p4Lead);
+  gi.phase = 'stand'; gi.life = .02;
+  const hpPreOverload = p4Lead.hp;
+  run(g, STEP * 3);
+  assert.equal(gi.phase, 'blown', 'expired giant tower enters overload blown phase');
+  assert.ok(p4Lead.hp < hpPreOverload && dir.heat < 3, 'giant overload damages player and strips heat');
+  dir.slowT = 0; g.hitstop = 0;
+  const gi2 = dir.spawnGiant(g, p4Lead);
+  gi2.phase = 'stand';
+  const eBefore = p4Lead.energy;
+  dir.hitGiants(g, gi2.x, 40, gi2.max + 100);
+  assert.equal(gi2.phase, 'broken', 'damaging giant down breaks it');
+  assert.ok(p4Lead.energy > eBefore, 'breaking giant grants ult energy');
+
+  // 3. 移动聚光灯死线：圈内增伤 +0.3，离开超过 1.2s 受伤
+  dir.slowT = 0; g.hitstop = 0; dir.gems.length = 0;
+  p4Lead.x = 480; p4Lead.y = FLOOR; p4Lead.invuln = 0;
+  run(g, STEP);
+  const dmgBase = p4Lead.dmgMul;
+  const solo = dir.spawnSolo(g, p4Lead);
+  solo.x = 480; solo.vx = 0;
+  run(g, STEP);
+  assert.ok(p4Lead.dmgMul > dmgBase + .25, 'standing inside solo spotlight boosts dmgMul');
+  p4Lead.x = 120;
+  const hpPreOut = p4Lead.hp;
+  run(g, 1.45);
+  assert.ok(p4Lead.hp < hpPreOut, 'staying outside solo spotlight >1.2s triggers shadow drain');
+  solo.t = solo.dur; run(g, STEP);
+
+  // 4. 高压电球 + 带电音箱 + 连砸 3 下引雷
+  p4Lead.x = 480; p4Lead.y = FLOOR - 180; p4Lead.vy = 0; p4Lead.invuln = 0;
+  p4Lead.hp = p4Lead.data.hp;
+  const orb = dir.spawnSkyOrb(g, p4Lead);
+  orb.x = p4Lead.x; orb.y = p4Lead.y - 75; orb.vx = 0;
+  const hpPreOrb = p4Lead.hp;
+  run(g, STEP * 2);
+  assert.ok(p4Lead.hp < hpPreOrb, 'passive jump into sky orb zaps player');
+  const orb2 = dir.spawnSkyOrb(g, p4Lead);
+  orb2.x = 480; orb2.y = FLOOR - 160;
+  dir.hitOrbs(g, 480, FLOOR - 160, 40);
+  assert.equal(orb2.phase, 'fall', 'attacking a sky orb drops it toward the floor');
+  dir.orbs.length = 0;
+
+  // 带电音箱反伤与冲锋破电
+  dir.slowT = 0; g.hitstop = 0;
+  p4Lead.x = 480; p4Lead.y = FLOOR - 200; p4Lead.vx = 0; p4Lead.vy = 0; p4Lead.invuln = 0; p4Lead.stun = 0; p4Lead.knocked = 0;
+  const amp = dir['spawnMob'](g, p4Lead, 1, 'amp');
+  amp.x = 490; amp.y = FLOOR; amp.mob!.thorns = 2;
+  dir.slam = null; dir.slamChain = 0;
+  assert.ok(dir.startSlam(p4Lead), 'player can start heavy slam');
+  const hpPreThorn = p4Lead.hp;
+  run(g, .35);
+  assert.ok(p4Lead.hp < hpPreThorn, 'slamming a thorned amp triggers recoil shock');
+  amp.hp = amp.data.hp; amp.mob!.thorns = 2;
+  p4Lead.x = 440; p4Lead.y = FLOOR; p4Lead.facing = 1; p4Lead.stun = 0; dir.landLag = 0; dir.slam = null; dir.dashCharges = 2;
+  assert.ok(dir.startDash(g, p4Lead), 'player can dash through thorned amp');
+  run(g, .1);
+  assert.equal(amp.mob!.thorns, 0, 'dashing breaks amp thorns');
+
+  // 连砸第 3 下引雷
+  dir.warns.length = 0; dir.slamChain = 2;
+  p4Lead.x = 480; p4Lead.y = FLOOR - 200; p4Lead.vy = 0; p4Lead.stun = 0; dir.landLag = 0; dir.dash = null;
+  const victim = dir['spawnMob'](g, p4Lead, 1, 'fan');
+  victim.x = 495; victim.y = FLOOR;
+  dir.startSlam(p4Lead);
+  run(g, .35);
+  assert.ok(dir.warns.length > 0, '3rd consecutive heavy slam spawns a pursuit rig warning');
+
+  // 化解危机微量回血：受伤后打爆扩音塔与激光灯箱回少量血且不溢出，倒地不回。
+  dir.slowT = 0; g.hitstop = 0;
+  p4Lead.hp = Math.round(p4Lead.data.hp * .5);
+  const hpBeforeCrisis = p4Lead.hp;
+  const giHeal = dir.spawnGiant(g, p4Lead);
+  giHeal.phase = 'stand';
+  dir.hitGiants(g, giHeal.x, 40, giHeal.max + 100);
+  const healed = p4Lead.hp - hpBeforeCrisis;
+  assert.ok(healed > 0 && healed <= Math.round(p4Lead.data.hp * .06), 'breaking giant tower grants small controlled heal');
+  p4Lead.hp = p4Lead.data.hp - 1;
+  const netHeal = dir.spawnLaserNet(g, p4Lead);
+  dir.hitLaserNodes(g, netHeal.nodes[0].x, netHeal.nodes[0].y, 20, netHeal.nodes[0].max + 50);
+  assert.equal(p4Lead.hp, p4Lead.data.hp, 'crisis micro-heal clamps to max hp');
+  p4Lead.hp = 0;
+  const giDead = dir.spawnGiant(g, p4Lead);
+  giDead.phase = 'stand';
+  dir.hitGiants(g, giDead.x, 40, giDead.max + 100);
+  assert.equal(p4Lead.hp, 0, 'crisis micro-heal does not revive a KO fighter');
+
+  // QoL 收尾：窗口防秒杀闸门（1 HP 不回血）、强化重随、进化提示与构筑列表、升级防偷袭震退、长按 J 自动普攻。
+  dir.slowT = 0; g.hitstop = 0;
+  p4Lead.hp = p4Lead.data.hp; p4Lead.x = 480; p4Lead.y = FLOOR; p4Lead.invuln = 0; p4Lead.stun = 0; p4Lead.knocked = 0;
+  run(g, STEP * 2);
+  assert.ok(dir.gateArmed && dir.gateWindowT > 0, 'healthy HP >= 25% arms windowed one-shot gate');
+  const killer = dir['spawnMob'](g, p4Lead, 1, 'fan');
+  killer.x = 500; killer.y = FLOOR;
+  dir['hurtLead'](g, p4Lead.data.hp - 10, killer.x, false, '连击段1');
+  run(g, STEP * 2);
+  assert.ok(p4Lead.hp > 0 && dir.gateWindowT > 0, 'window stays active briefly after heavy drop');
+  p4Lead.invuln = 0;
+  dir['hurtLead'](g, 9999, killer.x, false, '连击段2');
+  assert.equal(p4Lead.hp, 1, 'windowed one-shot gate clamps multi-hit lethal damage to 1 HP');
+  assert.ok(p4Lead.invuln >= .5 && !dir.gateArmed, 'gate grants brief invuln and disarms until healed >= 25%');
+  p4Lead.invuln = 0;
+  dir['hurtLead'](g, 50, killer.x, false, '补刀');
+  assert.equal(p4Lead.hp, 0, 'subsequent hit below 25% with spent gate kills without free revive');
+
+  p4Lead.hp = p4Lead.data.hp; p4Lead.invuln = 0;
+  run(g, STEP * 2);
+  const b2 = createBuild('cone');
+  const h0 = evoHintFor(b2, 'w:cone');
+  assert.ok(h0 && h0.partnerId === 't:amp' && h0.partnerHave === 0, 'evoHintFor reports unowned recipe partner');
+  applyUpgrade(g, p4Lead, b2, 't:amp');
+  const h1 = evoHintFor(b2, 'w:cone');
+  assert.ok(h1 && h1.partnerHave === 1, 'evoHintFor updates partner stack state');
+  assert.ok(listBuild(b2).length >= 2, 'listBuild lists active weapons and mods');
+
+  dir.rerolls = 2;
+  dir.pushUpgradeOffer(g);
+  const preReroll = dir.pendingChoices()!.map(c => c.id).join(',');
+  assert.ok(dir.rerollUpgrade(g), 'rerollUpgrade replaces active card choices');
+  assert.equal(dir.rerolls, 1, 'rerollUpgrade consumes one reroll');
+  assert.ok(dir.pendingChoices()!.map(c => c.id).join(',') !== preReroll, 'rerolled choices prefer new cards');
+  assert.ok(dir.rerollUpgrade(g) && !dir.rerollUpgrade(g), 'reroll stops when rerolls hit 0');
+
+  // 升级防偷袭震退 + 击倒精英吸星屑
+  p4Lead.invuln = 0;
+  const ambusher = dir['spawnMob'](g, p4Lead, 1, 'fan');
+  ambusher.x = p4Lead.x + 55; ambusher.vx = 0;
+  dir['gainXp'](g, dir.nextXp);
+  assert.ok(p4Lead.invuln >= .4 && ambusher.vx > 100, 'leveling up shoves close mobs and grants brief invuln');
+  dir.gems.push({ x: 40, y: FLOOR - 8, vx: 0, vy: 0, v: 2, t: 1 });
+  dir.magnetAll(g, true);
+  assert.ok(dir.gems.every(gm => gm.t >= 99), 'magnetAll marks all gems to fly to player');
+
+  // 长按 J 自动连招（仅音浪无双）
+  g.hitstop = 0; dir.slowT = 0; p4Lead.y = FLOOR; p4Lead.vy = 0; p4Lead.cooldowns[0] = 0; p4Lead.blocking = false; p4Lead.dodge = 0;
+  p4Lead.attack = null; p4Lead.queue.length = 0; p4Lead.stun = 0; p4Lead.knocked = 0; dir.slam = null; dir.dash = null; dir.landLag = 0;
+  g.keys.add('KeyJ');
+  run(g, STEP * 2);
+  const heldAtk = p4Lead.attack as { index: number } | null;
+  assert.ok(!!heldAtk && heldAtk.index === 0, 'holding J in musou triggers continuous light attack');
+  g.keys.delete('KeyJ');
+
+  // 天地异象 · 烈日：手动触发→增伤生效与完整退场恢复、切歌清理、下半场后半保底自然触发
+  p4Lead.hp = p4Lead.data.hp; p4Lead.invuln = 99; p4Lead.stun = 0; p4Lead.knocked = 0;
+  dir.anomaly = null;
+  const mulBase = p4Lead.dmgMul;
+  const sunA = dir.triggerAnomaly(g, 'sun');
+  assert.equal(sunA.phase, 'in', 'triggerAnomaly starts anomaly in fade-in phase');
+  run(g, 3);
+  assert.equal(sunA.phase, 'hold', 'sun anomaly advances into hold phase');
+  assert.ok(p4Lead.dmgMul > mulBase + .05, 'sun anomaly applies slight damage boost during active phase');
+  run(g, 18);
+  assert.equal(dir.anomaly, null, 'sun anomaly clears cleanly after hold and fade-out');
+  assert.ok(Math.abs(p4Lead.dmgMul - mulBase) < 1e-9, 'damage multiplier restores cleanly after sun anomaly ends');
+
+  // 切歌清理异象与增伤
+  dir.triggerAnomaly(g, 'sun');
+  run(g, 2.6);
+  assert.ok(p4Lead.dmgMul > mulBase + .05, 'sun anomaly boost active before song shift');
+  dir.songT = dir.plan.bossAt + .1;
+  run(g, STEP * 2);
+  const shiftBoss = dir.activeBoss();
+  assert.ok(shiftBoss, 'boss spawns for shift cleanup check');
+  shiftBoss!.hp = 0;
+  run(g, STEP * 2);
+  assert.equal(dir.anomaly, null, 'bossDown clears active anomaly on song shift');
+  assert.ok(Math.abs(p4Lead.dmgMul - mulBase) < 1e-9, 'bossDown restores anomaly damage boost on song shift');
+
+  // 下半场后半程自然触发（含保底，无 DOM 环境，90 秒统一半场节奏表）
+  const gAnom = new FightGame([lead], {
+    mode: 'musou', difficulty: 1, controllers: [0], stage: STAGES[0],
+    createMusou: g => new MusouDirector(g, {
+      songs: [
+        { track: -1, title: 'S1', tag: 'hot', bpm: 150, dur: 90 },
+        { track: -1, title: 'S2', tag: 'dark', bpm: 150, dur: 90 },
+      ],
+      first: 0, bosses: [PLAYABLE[1].id, PLAYABLE[2].id],
+    }),
+    audio: { play() {} }, random: rng(99),
+  });
+  const dAnom = gAnom.musou!;
+  assert.equal(dAnom.plan.bossAt, 76, '90s half plan places boss at 76s');
+  assert.equal(dAnom.plan.chorus.length, 2, '90s half plan schedules two fever waves');
+  dAnom.songT = dAnom.plan.bossAt + .1;
+  run(gAnom, STEP * 2);
+  const bAnom = dAnom.activeBoss()!;
+  bAnom.hp = 0;
+  run(gAnom, 3);
+  assert.equal(dAnom.half, 1, 'second half reached for anomaly pity check');
+  gAnom.fighters[0].invuln = 99;
+  dAnom.songT = 90 * .55;
+  for (let i = 0; i < 6 && !dAnom.anomaly; i++) run(gAnom, 4);
+  assert.ok(dAnom.anomaly && dAnom.anomaly.kind === 'sun', 'sun anomaly triggers reliably in second half when unseen');
+
+  // 场景物理玩具：共鸣弹球（抽飞升档/撞怪击飞/撞墙反弹/世界平移/切歌清理）与半空鼓点串（连续踩跳刷新二段跳与冲锋、压轴全清）
+  dAnom.balls.length = 0; dAnom.padChains.length = 0;
+  const b = dAnom.spawnBall();
+  assert.equal(dAnom.balls.length, 1, 'spawnBall adds a stage ball');
+  const ballMob = dAnom['spawnMob'](gAnom, gAnom.fighters[0], 1, 'fan');
+  b.y = FLOOR - 60;
+  ballMob.x = b.x + 90; ballMob.y = FLOOR; ballMob.stun = 0;
+  const ballMobHp = ballMob.hp;
+  dAnom.hitBalls(gAnom, gAnom.fighters[0], b.x, b.y, 40, false, true, 1);
+  assert.ok(b.level >= 2 && b.vx > 500, 'hitBalls launches ball with increased level and speed');
+  run(gAnom, .4);
+  assert.ok(ballMob.hp < ballMobHp || !gAnom.fighters.includes(ballMob), 'launched ball damages and knocks back mobs along its path');
+  b.x = X_MAX - 5; b.vx = 600; b.hitCd = 0;
+  run(gAnom, STEP * 3);
+  assert.ok(b.vx < 0, 'stage ball bounces off stage edge');
+  const bxBeforeShift = b.x;
+  dAnom['shiftWorld'](gAnom, 40);
+  assert.ok(Math.abs(b.x - (bxBeforeShift - 40)) < 1e-6, 'shiftWorld translates stage ball coordinates');
+
+  const leadToy = gAnom.fighters[0];
+  leadToy.energy = 0;
+  dAnom.airJumped = true;
+  dAnom.dashCharges = 0;
+  const ch = dAnom.spawnPadChain(gAnom, leadToy);
+  assert.equal(ch.pads.length, 4, 'spawnPadChain creates four airborne pads');
+  for (let i = 0; i < ch.pads.length; i++) {
+    dAnom.airJumped = true;
+    leadToy.x = ch.pads[i].x;
+    leadToy.y = ch.pads[i].y + 70;
+    leadToy.vy = 100;
+    run(gAnom, STEP * 2);
+    assert.equal(ch.pads[i].hit, true, `stepping onto pad ${i} triggers bounce`);
+    assert.equal(dAnom.airJumped, false, `pad ${i} refreshes air jump`);
+    assert.ok(leadToy.vy < -400, `pad ${i} launches player upward`);
+  }
+  assert.equal(ch.done, true, 'completing all pads marks chain done');
+  assert.ok(leadToy.energy > 0 && dAnom.dashCharges > 0, 'completing pad chain grants ult charge and dash charge');
+  run(gAnom, 1);
+  assert.equal(dAnom.padChains.length, 0, 'completed pad chain cleans up after burst fade');
+
+  // 动态黑胶评分：换招升档（产生彩色音轨）、连续复读同一招式不涨分并触发卡碟、换招立刻恢复、自然衰减与受伤扣分
+  dAnom.setGroove(0);
+  assert.equal(dAnom.grooveRank, 0, 'setGroove(0) resets groove rank');
+  dAnom.addGroove('jab', 12);
+  dAnom.addGroove('heavy', 12);
+  dAnom.addGroove('skill', 12);
+  dAnom.addGroove('dash', 12);
+  dAnom.addGroove('slam', 12);
+  const variedScore = dAnom.groove;
+  assert.ok(variedScore > 65 && dAnom.grooveRank >= 3 && dAnom.grooveTracks.length === 5, 'alternating move types builds vinyl groove, rank, and tracks');
+  dAnom.setGroove(40);
+  dAnom.addGroove('jab', 10);
+  const repStart = dAnom.groove;
+  dAnom.addGroove('jab', 10);
+  dAnom.addGroove('jab', 10);
+  dAnom.addGroove('jab', 10);
+  assert.ok(dAnom.grooveRepeat >= 3, 'repeating the same move accumulates repeat counter');
+  const beforeCap = dAnom.groove;
+  dAnom.addGroove('jab', 10);
+  assert.equal(dAnom.groove, beforeCap, 'repeating 3+ times grants zero groove gain');
+  assert.ok(dAnom.groove - repStart < 10, 'repeated move gives heavily diminished gain');
+  dAnom.addGroove('toy', 12);
+  assert.equal(dAnom.grooveRepeat, 0, 'switching move type resets repeat counter');
+  assert.ok(dAnom.groove > beforeCap, 'switching move type restores groove gain');
+  const gBeforeDecay = dAnom.groove;
+  run(gAnom, 1);
+  assert.ok(dAnom.groove < gBeforeDecay, 'groove decays smoothly during idle time');
+  dAnom.setGroove(95);
+  assert.equal(dAnom.grooveRank, 5, 'setGroove(95) reaches MAX/ENCORE rank');
 }
 console.log('selfcheck ok');

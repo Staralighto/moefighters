@@ -513,6 +513,9 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     return false;
   }
   source.hit.add(defender.id);
+  // 音浪无双杂兵：一招里第一只照常给顿帧和反馈，其余走轻量分支（见下方 crowd 的几处）。
+  const crowd = !!defender.mob && !!g.musou;
+  const crowdFirst = crowd && g.musou!.firstCrowdHit(source.hit);
   // 铁壁 (ai.ts): a mashed jab meets a guard that should not be up yet. Out of hitstun, turned
   // to face it, guard topped so it cannot break; mid-counter it is a silent armour instead (below).
   const wall = walled(g, defender, attacker, skill) && defender.knocked <= 0 && defender.y >= FLOOR - .1;
@@ -743,8 +746,12 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
           holdStill = false;
         }
       }
-      defender.stun = hitStun(skill.react?.stun ?? (skill.type === 'light' ? .28 : skill.super ? .42 : .37));
-      defender.attack = null;
+      // 音浪无双：已经抡起来的杂兵挨一下不踩拍的轻击不会被打断（导演判定），照样砸下来。
+      if (crowd && g.musou!.keepSwing(defender, attacker, skill)) { /* 照常掉血，不打断 */ }
+      else {
+        defender.stun = hitStun(skill.react?.stun ?? (skill.type === 'light' ? .28 : skill.super ? .42 : .37));
+        defender.attack = null;
+      }
       // Follow-ups keep the escape armed. Only a super raises the flag; it drops when the lock ends.
       retainEscape(defender, !!skill.super);
       defender.jumpRequest = false;
@@ -821,7 +828,8 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
         defender.vy = Math.min(defender.vy, -80);
         defender.stun = Math.max(defender.stun, hitStun(.4));
       }
-      if (attacker.combo >= defender.escapeCombo) {
+      // 音浪无双：主角的连击数被一整片杂兵和武器刷得很高，Boss 的脱离连段只数打在她自己身上的连段。
+      if (!defender.mob && (g.musou?.boss === defender ? g.musou.bossCombo(defender) : attacker.combo) >= defender.escapeCombo) {
         defender.invuln = .48;
         defender.vx = dir * 470;
         defender.stun = hitStun(.24);
@@ -829,7 +837,8 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       }
     }
     const rushBonus = attacker.data.trait === 'rush' && attacker.hitCount % 3 === 0 ? 14 : 0;
-    gainEnergy(attacker, (skill.gain ?? (skill.super ? 2 : 9)) + rushBonus);
+    // 音浪无双：一招打中一片时回气按人头会瞬间灌满，杂兵只给三成。
+    gainEnergy(attacker, ((skill.gain ?? (skill.super ? 2 : 9)) + rushBonus) * (crowd ? .3 : 1));
     gainEnergy(defender, 7);
     // 打气: clean hits charge both sides per the gauge spec. The composer's quiet ticks skip it,
     // and a move can opt itself out (the song must not refill the bar it spent).
@@ -839,11 +848,13 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
       defender.energy = clamp(defender.energy - skill.drain, 0, defender.energyMax);
       g.text(`-${skill.drain} 气`, defender.x, defender.y - 135, '#ffd27a', .6, 16);
     }
-    g.audio.play('hit', attacker.id);
-    g.text('-' + Math.round(damage), defender.x + dir * 15, defender.y - 160, skill.super ? SIDE[attacker.team] : '#fff', .65, (skill.super ? 30 : 23) + (crit ? 6 : 0));
+    // 音浪无双：同一招打中第二只起不再逐只出声、飘伤害数字、放大火花，否则一片杂兵会把画面糊满。
+    // 音浪无双的人群命中声由导演按「一招一声、限频、分轻重」排（musou/director.ts cue），这里不再叠方波。
+    if (!crowd) g.audio.play('hit', attacker.id);
+    if (!g.musou) g.text('-' + Math.round(damage), defender.x + dir * 15, defender.y - 160, skill.super ? SIDE[attacker.team] : '#fff', .65, (skill.super ? 30 : 23) + (crit ? 6 : 0));
     if (!skill.noSparks) {
-      g.sparks(defender.x - dir * 23, defender.y - bodyLift(defender) - 85, attacker.data.color, skill.super ? 36 : 18, skill.super ? 1.6 : 1);
-      g.effect('hit', defender.x - dir * 23, defender.y - bodyLift(defender) - 85, attacker.data.color, .25, { radius: skill.super ? 90 : 48 });
+      g.sparks(defender.x - dir * 23, defender.y - bodyLift(defender) - (crowd ? 45 : 85), attacker.data.color, crowd ? (crowdFirst ? 12 : 5) : skill.super ? 36 : 18, skill.super ? 1.6 : 1);
+      if (!crowd || source.hit.size <= 3) g.effect('hit', defender.x - dir * 23, defender.y - bodyLift(defender) - (crowd ? 45 : 85), attacker.data.color, .25, { radius: crowd ? 40 : skill.super ? 90 : 48 });
     }
     if (skill.frail) {
       const fresh = defender.frail <= 0;
@@ -906,6 +917,8 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
     defender.knocked = 0;
     defender.downTime = 0;
     g.sparks(defender.x, defender.y - 80, defender.data.color);
+  } else if (defender.hp <= 0 && g.musou && defender === g.fighters[0] && g.musou.guardLethal(g, defender)) {
+    // 音浪无双 · 一线生机窗口防猝死闸门：锁在 1 HP + 震退 + 短无敌，不回血。
   } else if (defender.hp <= 0 && attacker.vainDmg > 0) {
     // 因为我爱慕虚荣: the first kill of the round arms the bonus until resetRound rebuilds the fighters.
     attacker.dmgMul *= 1 + attacker.vainDmg;
@@ -916,7 +929,8 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   noteBlow(g, attacker, defender, skill.name, hpBefore - defender.hp, skill);
   // 潜在表明: a quiet cut of the damage dealt comes back as healing, capped at max health.
   // 起死开战: the window's lifesteal mod rides on top of the challenge-deck field.
-  const steal = attacker.lifesteal + lifestealOf(attacker);
+  // 音浪无双里打杂兵的吸血只算一成半：一招打一片，照原样吸血会回满，血量就不再累积。
+  const steal = (attacker.lifesteal + lifestealOf(attacker)) * (defender.mob ? .15 : 1);
   if (steal > 0 && damage > 0) attacker.hp = Math.min(attacker.data.hp, attacker.hp + damage * steal);
   // 竟敢无视灯: melee hits pain the attacker back — pure hp loss, no stagger, no fx, it can kill.
   const attackerFloor = has(attacker, 'undying') ? 1 : 0;
@@ -931,9 +945,20 @@ export function hit(g: FightGame, attacker: Fighter, defender: Fighter, skill: S
   if (!quiet && !SCRIPTS[skill.fx]?.noKnock && defender.invuln <= 0 && !endured) defender.vx = dir * knock * (braced || superBrace ? .5 : 1);
   else if (skill.react?.forceKnock) defender.vx = dir * knock;
   if (holdStill) { defender.vx = 0; defender.vy = 0; }
-  g.shake = quiet ? 0 : blocked ? (perfect ? 3 : 2) : skill.shake ?? (skill.super ? 12 : skill.type === 'heavy' ? 7 : 4);
+  if (!crowd || crowdFirst) g.shake = quiet ? 0 : blocked ? (perfect ? 3 : 2) : skill.shake ?? (skill.super ? 12 : skill.type === 'heavy' ? 7 : 4);
   const juggleHit = !blocked && !!skill.air && defender.y < FLOOR - .5;
-  g.hitstop = quiet ? 0 : blocked ? (perfect ? PARRY_HITSTOP : .018) : juggleHit ? .085 : skill.hitstop ?? (skill.super ? .065 : skill.type === 'heavy' ? .065 : .032);
+  if (crowd && !quiet) g.musou!.onMobHit(g, defender, attacker, skill, dir, rawKnock, source.hit.size, Math.max(0, hpBefore - defender.hp), source.hit);
+  if (g.musou?.boss === defender && attacker === g.fighters[0] && !quiet) g.musou.onBossHit(defender.x, defender.y - 140, hpBefore - defender.hp, crit);
+  // 音浪无双：主角挨杂兵的轻击只掉血、闪一下、蹭退一点，不被硬直锁死——压迫感来自数量和包围，不来自控制。
+  // 精英砸地、机关这类重击照常吃硬直。
+  if (g.musou && attacker.mob && skill.type !== 'heavy' && !defender.mob) {
+    defender.stun = Math.min(defender.stun, .1);
+    defender.knocked = 0;
+    defender.vx *= .4;
+  }
+  if (!crowd || crowdFirst) {
+    g.hitstop = quiet ? 0 : blocked ? (perfect ? PARRY_HITSTOP : .018) : juggleHit ? .085 : skill.hitstop ?? (skill.super ? .065 : skill.type === 'heavy' ? .065 : .032);
+  }
   return true;
 }
 
@@ -965,9 +990,11 @@ export function applyMelee(g: FightGame, f: Fighter, a: Attack): void {
     else hostMelee.set(a, { t: a.t, skill: s, hit: a.hit });
   }
   meleeSweep.length = 0;
+  const reach = s.range * (f.musouRangeMul ?? 1);
   for (const o of g.fighters) if (g.isEnemy(f, o) && o.hp > 0 && !o.echo) meleeSweep.push(o);
-  // Insertion sort by |x - f.x|: the sweep holds at most a handful of fighters and must
-  // keep the array's original order on ties, exactly like the stable sort it replaced.
+  // If nobody is in horizontal reach, even a disc cannot hit. Skip sorting the whole crowd on a whiff.
+  if (g.musou && !meleeSweep.some(o => Math.abs(o.x - f.x) < reach + girth(o))) return;
+  // Insertion sort keeps the fighters' original order on ties.
   for (let i = 1; i < meleeSweep.length; i++) {
     const t = meleeSweep[i];
     const d = Math.abs(t.x - f.x);
@@ -980,7 +1007,7 @@ export function applyMelee(g: FightGame, f: Fighter, a: Attack): void {
     const dy = Math.abs(o.y - f.y);
     if (s.hitbox === 'disc') {
       // 吉他激奏: a screen-facing disc centred on her — every direction, any height. A jump no longer dodges it.
-      if (Math.hypot(o.x - f.x, o.y - f.y) < s.range + girth(o)) {
+      if (Math.hypot(o.x - f.x, o.y - f.y) < reach + girth(o)) {
         hit(g, f, o, s, a);
         if (f.hp <= 0) break;
       }
@@ -993,7 +1020,7 @@ export function applyMelee(g: FightGame, f: Fighter, a: Attack): void {
     const height = s.reach === 'ground' || s.type === 'sweep' ? o.y > FLOOR - 40
       : s.reach === 'low' ? dy < 48
       : dy < (s.super ? 170 : s.air || s.type === 'upper' ? 150 : 112);
-    if (dist < s.range + girth(o) && (radial || front) && height) {
+    if (dist < reach + girth(o) && (radial || front) && height) {
       hit(g, f, o, s, a);
       if (f.hp <= 0 || f.stun > 0 || f.attack !== a || (radial && !s.hitAll && a.hit.size)) break;
     }

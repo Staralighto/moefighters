@@ -64,6 +64,8 @@ export interface MatchSetup {
   lock?: { seed: number };
   /** Online: both sides chose 特写 for the L cut-in (NetPlan.cut). Local matches read the setting instead. */
   ultCut?: boolean;
+  /** 音浪无双：曲目、预先抽好的 Boss 与乱入队友（见 musou/director.ts）。 */
+  musou?: import('../musou/director.ts').MusouOptions;
 }
 
 const STATE_KEY = 'mf-select-state';
@@ -111,6 +113,7 @@ export function guideIndex(controllers: (number | null)[]): number {
 
 export function matchName(setup: MatchSetup): string {
   const humans = setup.controllers.filter(c => c !== null).length;
+  if (setup.mode === 'musou') return '音浪无双';
   if (setup.mode === 'training') return '训练场';
   if (setup.mode === 'challenge') return challengeName(setup.challengeKind ?? 'brawl');
   if (humans === 0) return '人机对打';
@@ -263,6 +266,14 @@ export class SelectScreen {
   /** The character this player takes online, and the stage a host would use. */
   onlinePick(): { charId: string; stageId: string } {
     return { charId: this.roster[this.selected[0]].id, stageId: this.resolveStage().id };
+  }
+
+  /** Switch to 1V1 CPU and select the named character for 1P (used by Sound Rush funnel). */
+  pick1v1(charId: string): void {
+    this.setMode('cpu');
+    this.side = 0;
+    const idx = this.roster.findIndex(c => c.id === charId);
+    if (idx >= 0) this.pick(idx);
   }
 
   mount(): void {

@@ -7,6 +7,7 @@
 - `public/sprites/` 下的可选角色精灵表为参照角色形象、以图生图方式制作的同人图。其中丰川祥子、若叶睦、三角初华、祐天寺喵梦、八幡海铃、千早爱音、长崎素世、高松灯、要乐奈、椎名立希、弦卷心出自《BanG Dream!》系列，名称与形象的权利归各自权利人所有，不纳入本项目代码的授权范围；其余可选角色同样为参照既有角色形象制作的同人图，权利归属相同。
 - 疾风、星火、磐石为原创占位角色，仅用于无头规则检查，不在选人界面出现。
 - `public/stages/ring.png` 为自制场景图。`public/icons/` 为 Phosphor 图标，遵循其中的 MIT 许可（`LICENSE-phosphor.txt`）。
+- `public/musou/` 下的无双模式场景、杂兵、道具和特效为本项目制作的游戏素材。以角色或乐队为灵感的同人道具涉及的原作权利归各自权利人所有。
 - `public/fonts/` 下的字体均为 SIL Open Font License 1.1 授权，各自的许可全文与版权声明放在同目录的 `*-OFL.txt`：马善政（`ma-shan-zheng-kuji.woff2`）、Red Hat Mono、Geist Mono（`geist-mono-*.woff`，仅 ASCII 子集，用于后台页面的数字）、Nothing You Could Do，以及 Noto Sans CJK SC Black 的首屏用字子集（`noto-sans-sc-black-poster.woff2`）和结算页补字子集（`noto-sans-sc-black-report.woff`）。子集化只删减字形，未改动字形设计。
 - 音效以 Web Audio 现场合成为主，另有 `public/sfx/ship-horn.mp3` 一份采样：来自 Freesound 上 qubodup 的《Fog Horn》，CC0 授权，经裁剪淡入淡出处理，来源与改动记录见 `public/sfx/CREDITS.txt`。终幕的玻璃碎裂声 `public/sfx/finale/shatter.mp3` 来自 Freesound 上 unfa 的《Glass Break》，同为 CC0，记录在同一文件。`public/finale/` 下的终幕大图为参照角色形象生成的同人图，权利归属同上方精灵表。
 - `public/bgm/` 下的 `.m4a` 为站点背景音乐，由项目使用者提供。其中 `garupa-pico-instrumental.m4a` 是《BanG Dream! 少女乐团派对！☆PICO》第一季片尾曲的伴奏分离轨，播放列表里显示为「少女乐团PICO」，经重编码压缩；其余曲目按提供的文件入库。词曲及录音权利归原权利方所有，不纳入本项目代码的授权范围，来源与改动记录见 `public/bgm/CREDITS.txt`。

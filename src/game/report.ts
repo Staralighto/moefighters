@@ -10,7 +10,7 @@ export interface MatchReport {
   /** 从观看者座位看：true 赢、false 输。本地双人或无人操作时为 null，标题只说谁获胜。 */
   win: boolean | null;
   /** 印章：人机难度 0-2，或 'pvp' 本地对战 / 'online' 联机 / 'watch' 全员人机的观战。 */
-  seal: number | 'pvp' | 'online' | 'watch';
+  seal: number | 'pvp' | 'online' | 'watch' | 'musou';
   stage: string;
   /** 胜方在前。hp 是各自剩余血量百分比（整数）。 */
   winners: ReportFighter[];
@@ -33,6 +33,16 @@ export interface MatchReport {
   tag: string;
   /** 挑战模式：本关序号、历史最远、是否刷新纪录。 */
   tour?: { stage: number; best: number; newBest: boolean };
+  /** 音浪无双：本局数据（有它时海报换成无双版式的标题与三项数据）。 */
+  musou?: {
+    kills: number;
+    streak: number;
+    level: number;
+    time: number;
+    songs: string[];
+    bosses: number;
+    build?: { id: string; name: string; glyph: string; cat: string; lv: number; evo?: boolean }[];
+  };
 }
 
 /** 有真人操作的一方。两边都有人（本地双打）或都没人时返回 null。 */

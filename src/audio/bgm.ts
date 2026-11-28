@@ -188,8 +188,11 @@ let analyser: AnalyserNode | null = null;
 let levelBins: Uint8Array<ArrayBuffer> | null = null;
 let buffer: AudioBuffer | null = null;
 let decoding = false;
+let bufferFetch: AbortController | null = null;
 let bufferBroken = false;
 let ctxBroken = false;
+/** 音浪无双接管曲目时的记账（见文件末尾 stageTake）。放在这里：模块初始化期间 startSrc 就可能读到它。 */
+let stageLock: { index: number; offset: number; paused: boolean } | null = null;
 let src: AudioBufferSourceNode | null = null;
 /* src 从 offset 秒起播；停的时候把已播时长并回 offset，续播就接在原地。 */
 let offset = 0;
@@ -218,7 +221,7 @@ export function onMusicChange(fn: () => void): () => void {
 
 function save(): void {
   notify();
-  try { openStorage('localStorage')?.setItem(STORE_KEY, prefsJson(enabled, volume, { order, index, fight: fightShuffleOn })); }
+  try { openStorage('localStorage')?.setItem(STORE_KEY, prefsJson(enabled, volume, { order, index: stageLock?.index ?? index, fight: fightShuffleOn })); }
   catch { /* 隐私模式等存不进：这一页的内存状态照旧 */ }
 }
 
@@ -308,7 +311,7 @@ function scheduleWarm(): void {
 
 function tryWarm(): void {
   warmTimer = 0;
-  if (!enabled || pageSuspended || theatreOpen || !buffer) return;
+  if (!enabled || pageSuspended || theatreOpen || stageLock || !buffer) return;
   if (held || imagesBusy()) { scheduleWarm(); return; }
   if (!shouldWarmNext({ order, held: false, busy: false, slow: prefetchSlow(), haveBuffer: true })) return;
   const next = nextPlanned();
@@ -332,13 +335,15 @@ function ensureBuffer(): void {
   const gen = loadGen;
   const cached = warmBytes?.index === index ? warmBytes.buf : null;
   if (cached) warmBytes = null;
+  const ctrl = cached ? null : new AbortController();
+  bufferFetch = ctrl;
   const job = cached
     ? Promise.resolve(cached)
-    : fetch(assetUrl(TRACKS[index].src)).then(r => { if (!r.ok) throw new Error('bgm fetch ' + r.status); return r.arrayBuffer(); });
+    : fetch(assetUrl(TRACKS[index].src), { signal: ctrl!.signal }).then(r => { if (!r.ok) throw new Error('bgm fetch ' + r.status); return r.arrayBuffer(); });
   job
-    .then(ab => ctx!.decodeAudioData(ab))
+    .then(ab => gen === loadGen ? ctx!.decodeAudioData(ab) : null)
     .then(decoded => {
-      if (gen !== loadGen) return;
+      if (!decoded || gen !== loadGen) return;
       decoding = false;
       if (!enabled || !ctx) return; /* 等待期间被关掉：结果直接丢，不驻留内存 */
       buffer = decoded;
@@ -349,14 +354,14 @@ function ensureBuffer(): void {
       decoding = false;
       bufferBroken = true;
       notify();
-    });
+    }).finally(() => { if (bufferFetch === ctrl) bufferFetch = null; });
 }
 
 function startSrc(): void {
   if (src || !ctx || !gain || !buffer) return;
   const s = ctx.createBufferSource();
   s.buffer = buffer;
-  s.loop = order === 'one';
+  s.loop = order === 'one' || !!stageLock;
   s.connect(gain);
   s.onended = () => {
     if (src !== s) return;
@@ -365,8 +370,8 @@ function startSrc(): void {
     src = null;
     /* 单曲循环时 onended 只可能是被系统掐断。顺序和随机播到结尾才换曲，中途掐断从原处续上。 */
     const finished = duration > 0 && played >= duration - 0.05;
-    if (!finished || order === 'one') {
-      offset = finished ? 0 : played;
+    if (!finished || order === 'one' || stageLock) {
+      offset = duration > 0 ? played % duration : 0;
       sync();
       return;
     }
@@ -404,12 +409,13 @@ function dropSrc(): void {
   playing.disconnect();
 }
 
-function cutTrack(): void {
-  offset = 0;
+function cutTrack(at = 0): void {
+  offset = at;
   buffer = null;
   bufferBroken = false;
   decoding = false;
   loadGen++;
+  bufferFetch?.abort();
   planned = null;
   if (warmBytes?.index !== index) warmBytes = null;
   abortWarm();
@@ -421,7 +427,7 @@ function cutTrack(): void {
 
 /* 唯一的状态汇合点：开关开着、页面在前台且剧场关闭时才放音乐。 */
 function sync(): void {
-  if (!enabled || pageSuspended || theatreOpen) { stopSrc(); return; }
+  if (!enabled || pageSuspended || theatreOpen || stageLock?.paused) { stopSrc(); return; }
   const c = ensureCtx();
   if (!c) return;
   void c.resume().catch(() => { /* 低电量模式等会把 ctx 挂起：借下一次手势的 pokeMusic 重试 */ });
@@ -438,7 +444,7 @@ export function musicVolume(): number {
 }
 
 function rollShuffleStart(): void {
-  if (startRolled || !enabled || order !== 'shuffle') return;
+  if (startRolled || !enabled || order !== 'shuffle' || stageLock) return;
   startRolled = true;
   index = shuffleStartIndex(TRACKS.length, n => Math.floor(Math.random() * n));
   offset = 0;
@@ -459,6 +465,7 @@ export function setMusicEnabled(on: boolean): void {
     clearWarmTimer();
     loadGen++;
     decoding = false;
+    bufferFetch?.abort();
     dropPending();
   }
   sync(); /* 关：sync 收拾播放；开：借这次手势建 ctx、拉文件、接上 */
@@ -475,10 +482,11 @@ export function musicTitle(): string {
 export function setMusicOrder(next: MusicOrder): void {
   order = next;
   save();
-  if (src) src.loop = order === 'one';
+  if (src) src.loop = order === 'one' || !!stageLock;
 }
 
 export function stepMusic(dir: -1 | 1): void {
+  if (stageLock) return;
   index = stepTrack(index, dir, TRACKS.length);
   cutTrack();
 }
@@ -578,11 +586,11 @@ export function musicIndex(): number { return index; }
 /** 已经在出声（不是还在下载解码）。 */
 export function musicPlaying(): boolean { return !!src; }
 /** 开着但还没出声：在下载或解码。下载失败时为 false。 */
-export function musicLoading(): boolean { return enabled && !src && !bufferBroken && !pageSuspended && !theatreOpen; }
+export function musicLoading(): boolean { return enabled && !src && !bufferBroken && !pageSuspended && !theatreOpen && !stageLock?.paused; }
 
 /** 点列表里的某一首：换过去并保证音乐是开的。点正在放的那首不打断。 */
 export function playTrack(i: number): void {
-  if (!Number.isInteger(i) || i < 0 || i >= TRACKS.length) return;
+  if (stageLock || !Number.isInteger(i) || i < 0 || i >= TRACKS.length) return;
   if (i !== index) { index = i; cutTrack(); }
   if (!enabled) setMusicEnabled(true);
   else pokeMusic();
@@ -619,11 +627,48 @@ export function musicLevel(): number {
 
 /** 跳到第 t 秒。还没解码完就忽略。 */
 export function seekMusic(t: number): void {
-  if (!buffer || !Number.isFinite(t)) return;
+  if (stageLock || !buffer || !Number.isFinite(t)) return;
   const d = buffer.duration;
   const was = !!src;
   dropSrc();
   offset = Math.max(0, Math.min(d - 0.05, t));
   if (was) sync();
   notify();
+}
+
+/* 音浪无双按导演指令换曲，离开后从进入前的位置续播。 */
+export function stageOwnsMusic(): boolean { return !!stageLock; }
+
+export function stageTake(i: number): void {
+  if (!Number.isInteger(i) || i < 0 || i >= TRACKS.length) return;
+  if (!stageLock) stageLock = { index, offset: musicPosition()?.t ?? offset, paused: false };
+  abortWarm();
+  clearWarmTimer();
+  if (i !== index || bufferBroken) { index = i; cutTrack(); }
+  else { dropSrc(); offset = 0; }
+  if (enabled) pokeMusic();
+  notify();
+}
+export function stagePause(paused: boolean): void {
+  if (!stageLock || stageLock.paused === paused) return;
+  stageLock.paused = paused;
+  sync();
+}
+export function stageRelease(): void {
+  if (!stageLock) return;
+  const prev = stageLock;
+  stageLock = null;
+  if (prev.index !== index) { index = prev.index; cutTrack(prev.offset); }
+  else { dropSrc(); offset = prev.offset; sync(); notify(); }
+}
+/** 音浪无双的拍点时钟。 */
+export function stagePosition(): number | null {
+  return stageLock && src && ctx?.state === 'running' ? musicPosition()?.t ?? null : null;
+}
+/** 声音从排进去到真正从喇叭出来的延迟（秒），踩拍判定往后挪这么多。 */
+export function musicLatency(): number {
+  if (!ctx) return .03;
+  const c = ctx as AudioContext & { outputLatency?: number };
+  const v = (c.outputLatency || 0) + (c.baseLatency || 0);
+  return v > 0 && v < .3 ? v : .03;
 }

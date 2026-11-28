@@ -2,7 +2,7 @@ import type { StageData } from '../data/types.ts';
 import type { Effect, FightGame } from '../game/game.ts';
 import type { FighterView } from './view.ts';
 import type { Fighter } from '../game/fighter.ts';
-import { stageThumbSrc, type ImageCache } from '../assets/loader.ts';
+import { loadInto, stageThumbSrc, type ImageCache } from '../assets/loader.ts';
 import { FLOOR, H, SIDE, W } from '../game/constants.ts';
 import { comboAnchor } from '../ui/battleFrame.ts';
 import { unbowedRage, violetHidden } from '../game/combat.ts';
@@ -52,15 +52,23 @@ import { MIZUHO_BACK, MIZUHO_SCREEN_BACK } from './mizuhoFx.ts';
 import { BOCCHI_BACK, BOCCHI_SCREEN_BACK, drawBocchiSolo } from './bocchiFx.ts';
 import { LOCK_BACK, LOCK_SCREEN_BACK } from './lockFx.ts';
 import { heartTier } from './clips.ts';
+import { clamp } from '../game/constants.ts';
+import { getPlaceholderPack, MOB_BAKE_CELL, MOB_CELL, resolveCustomArt, STREET_ART, type MusouArtPack } from '../musou/placeholders.ts';
+import type { MobDebris } from '../musou/director.ts';
+import { drawMusouBack, drawMusouFront } from './musouFx.ts';
+import { drawVaporStreet } from './musouStreet.ts';
+import { drawBanner, drawHurtEdge, drawMusouUi } from './musouJuice.ts';
+import { MusouCam, musouVisibility, type CamView, type MusouVisibility } from './musouCam.ts';
+import { TAGS } from '../musou/songs.ts';
+import { reducedMotion } from '../ui/motion.ts';
+/** 音浪无双杂兵纵深：后排到前排往下错开的像素。 */
+const MOB_DEPTH = 16;
 
-/** Backing-store pixels per CSS pixel. The compositor then blits 1:1.
- *  Phones use the screen ratio too: a CSS pixel is several physical pixels, and a 1× store
- *  is filter-upscaled across the whole frame. Lite keeps its 44% pixel cut on that ratio.
- *  ponytail: no cap. A 3× phone is ~9× the fill of the old 1× store; if that misses frame
- *  budget, lite (sticky for the session) is the step down, not a lower default. */
-export function backingScale(dpr: number, touch: boolean, lite: boolean): number {
-  const native = dpr > 0 ? dpr : 1;
-  return touch && lite ? native * .75 : native;
+/** Pixels per CSS pixel. Lite reduces the effective scale after the mobile cap. */
+export function backingScale(dpr: number, touch: boolean, lite: boolean, musou = false): number {
+  const native = Number.isFinite(dpr) && dpr > 0 ? dpr : 1;
+  if (!touch) return native;
+  return Math.min(native, musou ? 1.5 : 2) * (lite ? .75 : 1);
 }
 
 /** Pad-split portrait draws bodies and their effects 1.3×. The 960×540 stage stays put. */
@@ -98,10 +106,11 @@ export function superZoom(p: number): number {
 /** On when one side has two real fighters, or the same character stands on both sides.
  *  2v2 and the 2-on-1 激战 are the first case; a 1v1 mirror match is the second.
  *  Minions and echoes are not real fighters; a minion still completes a mirror pair. */
-export function teamGlowOn(g: { fighters: { team: number; minion?: boolean; echo?: boolean; data: { id: string } }[] }): boolean {
+export function teamGlowOn(g: { fighters: { team: number; minion?: boolean; echo?: boolean; mob?: unknown; data: { id: string } }[] }): boolean {
   const n = [0, 0];
   const side = new Map<string, number>();
   for (const f of g.fighters) {
+    if (f.mob) continue;
     if (!f.minion && !f.echo) n[f.team]++;
     const prev = side.get(f.data.id);
     if (prev === undefined) side.set(f.data.id, f.team);
@@ -184,6 +193,8 @@ export class Renderer {
   private comboY = 205;
   private comboStamp = '';
   private comboHud: HTMLElement | null | undefined;
+  private musouPack: MusouArtPack | null = null;
+  private musouCam = new MusouCam();
 
   constructor(canvas: HTMLCanvasElement, views: Map<string, FighterView>, stage: StageData, images: ImageCache) {
     // The stage covers every pixel, so the page never needs to blend through the bitmap.
@@ -194,7 +205,6 @@ export class Renderer {
     this.views = views;
     this.stage = stage;
     this.images = images;
-    this.resize();
   }
 
   /** Stage baseline whose 45px HIT face clears the HUD, including the ticket under a portrait.
@@ -229,13 +239,12 @@ export class Renderer {
     return { w: cam.w / cam.k, h: cam.h / cam.k };
   }
 
-  /** Size the backing store to the on-screen box × devicePixelRatio, so the compositor blits
-      the canvas 1:1 and the fixed 960×540 world rasterises at screen resolution.
-      Cheap to call every frame: a no-op unless the box, the zoom or the monitor's scale moved. */
-  resize(): void {
+  /** Size the backing store just before drawing the fixed 960×540 world. */
+  private resize(musou: boolean): void {
     const cw = this.canvas.clientWidth, ch = this.canvas.clientHeight;
     if (!cw || !ch) return;
-    const dpr = backingScale(window.devicePixelRatio || 1, document.body.classList.contains('touch'), isLiteFx());
+    const touch = document.body.classList.contains('touch');
+    const dpr = backingScale(window.devicePixelRatio, touch, isLiteFx(), musou);
     const w = Math.max(1, Math.round(cw * dpr));
     const h = Math.max(1, Math.round(ch * dpr));
     if (this.canvas.width !== w || this.canvas.height !== h) {
@@ -250,7 +259,7 @@ export class Renderer {
     const c = this.ctx;
     // Refit before painting: a ResizeObserver would fire after this rAF and clearing the
     // bitmap there would flash a blank frame on every window change.
-    this.resize();
+    this.resize(g.mode === 'musou');
     c.setTransform(this.sx, 0, 0, this.sy, 0, 0);
     c.clearRect(0, 0, W, H);
     c.save();
@@ -264,7 +273,22 @@ export class Renderer {
       c.scale(s, s);
       c.translate(-zoom.x, -zoom.y);
     }
-    this.drawStage();
+    // 音浪无双的镜头调度（musouCam.ts）：FEVER 拉远跟拍抖、事件推拉、打击冲击、前瞻构图。纯画面，不碰模拟。
+    let visible: MusouVisibility | undefined;
+    if (g.mode === 'musou' && g.musou) {
+      const cam = this.musouCam.update(g, g.musou, reducedMotion());
+      c.translate(W / 2 + cam.ox, cam.fy + cam.oy);
+      c.scale(cam.z, cam.z);
+      c.translate(-cam.fx, -cam.fy);
+      const outer = cameraView();
+      const toRaster = outer ? this.sx / (outer.k * outer.z) : 0;
+      const left = outer ? Math.max(0, -outer.tx * toRaster - 2) : 0;
+      const right = outer ? Math.min(this.canvas.width, (outer.w - outer.tx) * toRaster + 2) : this.canvas.width;
+      visible = musouVisibility(c.getTransform(), left, right, this.canvas.height);
+      if (!drawVaporStreet(c, g.musou, cam, g.age, this.images)) this.drawMusouStreet(c, g.musou.scrollX, cam);
+      drawMusouBack(c, g, g.musou);
+    }
+    else this.drawStage();
 
     const bodyScale = portraitBodyScale(document.body.classList.contains('pad-split'));
     // 悬浮 (hover.ts): an effect that follows a floating body rides up with her drawn body.
@@ -299,6 +323,18 @@ export class Renderer {
     };
     for (const f of g.fighters) {
       if (violetHidden(f)) continue;
+      if (f.mob) {
+        const air = Math.max(0, FLOOR - f.y);
+        const k = Math.max(.35, 1 - air / 260) * (.9 + f.mob.depth * .16) * (f.mob.elite ? 1.6 : 1);
+        const y = FLOOR - 6 + f.mob.depth * MOB_DEPTH;
+        const rx = 26 * bodyScale * k, ry = 5.5 * bodyScale * k;
+        if (visible && !visible(f.x, y, rx + 1, ry + 1)) continue;
+        c.fillStyle = '#05050c38';
+        c.beginPath();
+        c.ellipse(f.x, y, rx, ry, 0, 0, Math.PI * 2);
+        c.fill();
+        continue;
+      }
       // 梦魇：影子深得几乎看不见地面（剧本里唯一的识别线索），也稍大一圈。
       const deep = f.nightmare && f.hp > 0;
       // 悬浮：影子更淡更小，随浮动一起呼吸。
@@ -358,14 +394,24 @@ export class Renderer {
         zoomAbout(c, bodyScale, x, f.y, () => view.draw(c, f, x, f.y, a * k, tint, undefined, pose));
       }
     }
-    const order = [...g.fighters].sort((a, b) => Number(a.hp > 0) - Number(b.hp > 0) || a.y - b.y);
+    // 音浪无双：杂兵按纵深先画（主角永远压在人群上面），飞出去的残骸夹在杂兵和角色之间。
+    const order = [...g.fighters].sort((a, b) => Number(!a.mob) - Number(!b.mob) || (a.mob && b.mob ? a.mob.depth - b.mob.depth : 0) || Number(a.hp > 0) - Number(b.hp > 0) || a.y - b.y);
+    let debrisDrawn = !(g.mode === 'musou' && g.musou);
     const teamRim = teamGlowOn(g);
     for (const f of order) {
       // 哭泣的紫罗兰: between the vanish and the reappear she does not exist on screen.
       if (violetHidden(f)) continue;
+      // 音浪无双 Q版杂兵：跳过 SpriteView / hardRim，直接从 128×128 预烘焙图集 drawImage。
+      if (f.mob) {
+        this.drawMusouMob(c, f, g.age, bodyScale, visible);
+        continue;
+      }
+      if (!debrisDrawn) { debrisDrawn = true; this.drawMusouDebris(c, g.musou!.debris, bodyScale, visible); this.drawMusouCharges(c, g, bodyScale); }
       const view = this.view(f.data.id);
       // 梦魇的紫描边盖过队伍描边：镜像对局里一眼分得清谁是谁。
-      const outline = f.nightmare ? NIGHTMARE_RIM : teamRim ? TEAM_GLOW[f.team] : undefined;
+      // 音浪无双 FEVER：主角身上勾一圈本曲风的灯光色（背景同时压暗了一层），一眼就落在她身上。
+      const feverRim = g.musou && g.musou.feverK > .3 && f === g.fighters[0] ? TAGS[g.musou.song.tag].mood.f2 : undefined;
+      const outline = f.nightmare ? NIGHTMARE_RIM : feverRim ?? (teamRim ? TEAM_GLOW[f.team] : undefined);
       // 舞台装置: a skill cast lifts the veil look for the length of the move, so the pose reads.
       // The veil mod itself stays: misses and targeting are untouched. Another live veil
       // (忍法·隐身术) keeps its transparency — only the device's own veil is lifted.
@@ -554,6 +600,7 @@ export class Renderer {
     // Screen-space effects: the petal rain, the floor-to-sky pillar and the encore crowd must not grow with the body.
     for (const e of g.effects) if (e.type === 'petal-rain' || e.type === 'apparatus' || SCREEN_FRONT.has(e.type)) drawEffect(c, e, this.images);
     for (const e of g.effects) if (e.type === 'moonlight') drawMoonlight(c, e, 'front');
+    if (g.musou && visible) drawMusouFront(c, g, g.musou, visible);
     drawParticles(c, g.particles, bodyScale);
     drawTexts(c, g.texts, bodyScale);
     drawKuji(c, g, bodyScale);
@@ -567,6 +614,10 @@ export class Renderer {
     }
     // After the shake and the super zoom, so the line stays under the portraits instead of sliding into them.
     drawCombo(c, g, this.comboBaseline(), ui.w);
+    if (g.mode === 'musou' && g.musou) {
+      drawHurtEdge(c, g.musou, g.fighters[0], ui.w, ui.h);
+      drawMusouUi(c, g.musou, this.musouCam.view, ui.w, ui.h, g);
+    }
     c.setTransform(this.sx, 0, 0, this.sy, 0, 0);
 
     if (g.flash > 0) { c.fillStyle = `rgba(255,248,221,${g.flash * 2.3})`; c.fillRect(0, 0, W, H); }
@@ -742,6 +793,163 @@ export class Renderer {
     this.domainBakes.set(src, cv);
     return cv;
   }
+
+  private getMusouPack(): MusouArtPack {
+    return this.musouPack ??= getPlaceholderPack();
+  }
+
+  private drawMusouStreet(c: CanvasRenderingContext2D, scrollX: number, cam: CamView): void {
+    const pack = this.getMusouPack();
+    // 镜头推拉、平移以后画面能看到的世界范围：横向按这个范围取长街，纵向拉远时把整层轻轻拉高盖住上下的空隙。
+    const x0 = cam.fx - (W / 2 + cam.ox) / cam.z - 4, vw = W / cam.z + 8;
+    const y0 = cam.fy - (cam.fy + cam.oy) / cam.z, y1 = cam.fy + (H - cam.fy - cam.oy) / cam.z;
+    const top = Math.min(0, y0 - 4), vh = Math.max(H, y1 + 4) - top;
+    const drawLayer = (customSrc: string, fallback: HTMLCanvasElement, ox: number) => {
+      const custom = resolveCustomArt(this.images, customSrc);
+      const img: CanvasImageSource = custom ?? fallback;
+      const iw = custom ? custom.naturalWidth : fallback.width;
+      const sw = Math.min(iw, vw);
+      const sx = clamp(ox + x0, 0, Math.max(0, iw - sw));
+      c.drawImage(img, sx, 0, sw, H, sx - ox, top, sw, vh);
+    };
+    drawLayer(STREET_ART[0], pack.bgFar, scrollX * 0.25);
+    drawLayer(STREET_ART[1], pack.bgMid, scrollX * 0.6);
+    drawLayer(STREET_ART[2], pack.bgNear, scrollX);
+  }
+
+  private mobSheet(kind: string): { sheet: CanvasImageSource; cell: number } {
+    const src = `/musou/mobs/${kind}.png`;
+    const custom = resolveCustomArt(this.images, src);
+    // 图集不在缓存里就按需拉一次（loadInto 自带去重；被内存回收后下一帧会自动重新拉）。到手前先用程序化占位。
+    if (!custom) void loadInto(this.images, src, 1);
+    return custom ? { sheet: custom, cell: MOB_CELL } : { sheet: this.getMusouPack().mobs[kind as keyof MusouArtPack['mobs']], cell: MOB_BAKE_CELL };
+  }
+
+  /** 一只杂兵：纵深往下错开并略放大；离地时按受击方向打转；挨打闪白。 */
+  private drawMusouMob(c: CanvasRenderingContext2D, f: Fighter, age: number, bodyScale: number, visible?: MusouVisibility): void {
+    const mob = f.mob;
+    if (!mob) return;
+    const k = (.9 + mob.depth * .16) * bodyScale * (mob.elite ? 1.55 : 1);
+    const h = (mob.kind === 'guard' ? 108 : 112) * k;
+    const y = f.y + mob.depth * MOB_DEPTH - h * .45;
+    const air = FLOOR - f.y;
+    // 离地才转；落地慢慢回正，不会突然弹直。
+    if (air > 6) mob.spin += (mob.lastDir || -f.facing) * .32;
+    else mob.spin *= .7;
+    // Leave room for the rotated sheet and its rim. Keep in-flight spin for the debris pose.
+    if (visible && !visible(f.x, y, h)) return;
+    const { sheet, cell } = this.mobSheet(mob.kind);
+    const hurt = f.stun > 0 || f.knocked > 0;
+    const col = hurt ? 2 : Math.floor(age * 5.5 + mob.phase) % 2;
+    c.save();
+    c.translate(f.x, y);
+    if (mob.spin) c.rotate(mob.spin);
+    if (f.facing < 0) c.scale(-1, 1);
+    // 挨打的一瞬间往受力方向压扁一下再弹回。
+    if (f.hitFlash > 0) { const q = Math.min(1, f.hitFlash * 7.7); c.scale(1 + .2 * q, 1 - .16 * q); }
+    // 精英：一圈金色描边（预警时转红），描边是预先烘好的纯色剪影错位画八次。
+    if (mob.elite) {
+      const warn = mob.elite.windup > 0;
+      const rim = this.mobRim(sheet, warn ? '#ff5a5a' : '#FDE979');
+      const d = Math.max(2, h * .028);
+      for (let i = 0; i < 8; i++) {
+        const a = i * Math.PI / 4;
+        c.drawImage(rim, col * cell, 0, cell, cell, -h / 2 + Math.cos(a) * d, -h * .55 + Math.sin(a) * d, h, h);
+      }
+    }
+    c.drawImage(sheet, col * cell, 0, cell, cell, -h / 2, -h * .55, h, h);
+    // 保安的盾：面朝方向一道青色弧，几层盾就几道。黄牛抢到经验：头顶一个金色小袋。
+    if (mob.kind === 'guard' && mob.shield > 0) {
+      c.strokeStyle = 'rgba(118,231,255,.85)';
+      for (let i = 0; i < mob.shield; i++) {
+        c.lineWidth = 3;
+        c.beginPath(); c.arc(h * .05, -h * .05, h * (.42 + i * .07), -.9, .9); c.stroke();
+      }
+    }
+    if (mob.kind === 'scalper' && mob.stolen > 0) {
+      c.fillStyle = '#E9C46A';
+      c.beginPath(); c.arc(0, -h * .62, h * .11, 0, Math.PI * 2); c.fill();
+    }
+    if (f.hitFlash > 0) {
+      c.globalCompositeOperation = 'lighter';
+      c.globalAlpha = Math.min(1, f.hitFlash * 6) * .7;
+      c.drawImage(sheet, col * cell, 0, cell, cell, -h / 2, -h * .55, h, h);
+    }
+    // 音箱怪残血：一闪一闪地泛红，提醒「别用普攻把它打死在身边」。
+    if (mob.kind === 'amp' && !mob.elite && f.hp < f.data.hp * .55 && f.hp > 0) {
+      c.globalCompositeOperation = 'lighter';
+      c.globalAlpha = .35 + .3 * Math.sin(age * 16);
+      c.drawImage(this.mobRim(sheet, '#ff4a6a'), col * cell, 0, cell, cell, -h / 2, -h * .55, h, h);
+    }
+    c.restore();
+  }
+
+  /** 横幅冲锋队：五个粉丝一排举着横幅（走路两格交替，跑起来更快），撕开后人已经变成残骸飞走，只剩横幅两半。 */
+  private drawMusouCharges(c: CanvasRenderingContext2D, g: FightGame, bodyScale: number): void {
+    const m = g.musou;
+    if (!m) return;
+    for (const ch of m.charges) {
+      const n = 5, gap = 34;
+      const back = ch.x - ch.dir * (n - 1) * gap;
+      const h = 112 * bodyScale;
+      if (ch.broken < 0) {
+        const { sheet, cell } = this.mobSheet('fan');
+        const rate = ch.phase === 'run' ? 14 : 4;
+        for (let i = n - 1; i >= 0; i--) {
+          const x = ch.x - ch.dir * i * gap;
+          const col = Math.floor(g.age * rate + i * .7 + ch.seed) % 2;
+          c.save();
+          c.translate(x, FLOOR - 4 + (i % 2) * 4 - h * .45);
+          if (ch.dir < 0) c.scale(-1, 1);
+          if (ch.phase === 'run') c.rotate(.12);
+          c.drawImage(sheet, col * cell, 0, cell, cell, -h / 2, -h * .55, h, h);
+          c.restore();
+        }
+      }
+      drawBanner(c, m, ch, back - ch.dir * 18, ch.x + ch.dir * 18, FLOOR - 4 - h * .62, g.age);
+    }
+  }
+
+  private rims = new Map<CanvasImageSource, Map<string, HTMLCanvasElement>>();
+  /** 一张杂兵图集的纯色剪影（精英描边用），每张图每种颜色只烘一次。 */
+  private mobRim(sheet: CanvasImageSource, color: string): HTMLCanvasElement {
+    let byColor = this.rims.get(sheet);
+    if (!byColor) { byColor = new Map(); this.rims.set(sheet, byColor); }
+    let cv = byColor.get(color);
+    if (cv) return cv;
+    const sw = (sheet as HTMLImageElement).naturalWidth || (sheet as HTMLCanvasElement).width;
+    const sh = (sheet as HTMLImageElement).naturalHeight || (sheet as HTMLCanvasElement).height;
+    cv = document.createElement('canvas');
+    cv.width = sw; cv.height = sh;
+    const x = cv.getContext('2d');
+    if (x) {
+      x.drawImage(sheet, 0, 0);
+      x.globalCompositeOperation = 'source-in';
+      x.fillStyle = color;
+      x.fillRect(0, 0, sw, sh);
+    }
+    byColor.set(color, cv);
+    return cv;
+  }
+
+  /** 被打死的杂兵：用倒地格旋转着飞出去，最后半秒淡出。 */
+  private drawMusouDebris(c: CanvasRenderingContext2D, list: readonly MobDebris[], bodyScale: number, visible?: MusouVisibility): void {
+    for (const d of list) {
+      const k = (.9 + d.depth * .16) * bodyScale * (d.big ? 1.55 : 1);
+      const h = (d.kind === 'guard' ? 108 : 112) * k;
+      const y = d.y + d.depth * MOB_DEPTH - h * .45;
+      if (visible && !visible(d.x, y, h)) continue;
+      const { sheet, cell } = this.mobSheet(d.kind);
+      c.save();
+      c.globalAlpha = Math.min(1, d.life * 2.2);
+      c.translate(d.x, y);
+      c.rotate(d.spin);
+      if (d.facing < 0) c.scale(-1, 1);
+      c.drawImage(sheet, 3 * cell, 0, cell, cell, -h / 2, -h * .55, h, h);
+      c.restore();
+    }
+  }
+
 
   private drawStage(): void {
     const c = this.ctx, s = this.stage;

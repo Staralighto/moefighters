@@ -10,6 +10,7 @@ import { CONTROLS } from '../game/constants.ts';
 import { SLOT_TINTS } from '../game/scripts.ts';
 import type { MatchReport } from '../game/report.ts';
 import { hideReport, showReport } from './report.ts';
+import { clearMusouHud, musouHud } from '../musou/hud.ts';
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
 const elCache = new Map<string, HTMLElement>();
@@ -81,7 +82,11 @@ function sealKey(el: HTMLElement, on: boolean): void {
   el.style.filter = on ? 'grayscale(1)' : '';
 }
 
+let wasMusou = false;
 export function updateHUD(g: FightGame): void {
+  const musou = g.mode === 'musou' && !!g.musou;
+  if (!musou && wasMusou) { clearMusouHud(); }
+  wasMusou = musou;
   const team = g.mode === 'team';
   const challenge = g.mode === 'challenge';
   // 无尽激战 only: a 1v1 闯关 keeps the standard duo HUD even when a summon pads the roster.
@@ -98,6 +103,9 @@ export function updateHUD(g: FightGame): void {
       if (!avatar.hidden) avatar.hidden = true;
     }
   }
+  if (musou && g.musou) {
+    musouHud(g, g.musou);
+  } else {
   // 剧情闯关 team 模式只有 3 名角色：二打一时对面只有一条血条，一打二时我方没有队友条。召唤物排在 characters 后面，不能按下标数。
   const three = team && g.characters.length === 3;
   const lone = three && g.options.allies === 1;
@@ -175,6 +183,7 @@ export function updateHUD(g: FightGame): void {
   if (challenge) { setText($m('score1'), ''); setText($m('score2'), ''); }
   setText($m('timer'), g.mode === 'training' ? '∞' : String(Math.max(0, Math.ceil(g.time))));
   setText($m('round'), roundLabel || 'ROUND ' + g.round);
+  }
   const me = g.fighters[guideFighter] ?? g.fighters[0];
   if ((me.form ?? 0) !== guideForm) showGuideMoves(me.data.forms ? { ...me.data, skills: skillsOf(me) } : me.data, me.form ?? 0);
   const ultCost = skillsOf(me)[5]?.cost ?? 100;

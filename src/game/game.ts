@@ -14,10 +14,11 @@ import { stepAI, noteCast } from './ai.ts';
 import { beginDomain as openDomain, stepDomains, type Domain } from './domains.ts';
 import { COMBO_DECAY, COMBO_ESCAPE, CONTROLS, FLOOR, GRAVITY, INPUT_BUFFER, PARRY_WHIFF_LOCK, PARRY_WINDOW, SIDE, STEP, X_MAX, X_MIN, clamp } from './constants.ts';
 import { clipFor } from '../render/clips.ts';
+import type { MusouDirector } from '../musou/director.ts';
 
 /* Fixed-step arcade simulation. This module never touches the DOM or a canvas; it emits effects as data. */
 
-export type Mode = 'cpu' | 'training' | 'team' | 'challenge';
+export type Mode = 'cpu' | 'training' | 'team' | 'challenge' | 'musou';
 export type Phase = 'intro' | 'fight' | 'finale' | 'roundend' | 'finished';
 
 /** 终幕: how long the cut-in holds the match (s), how long a press is ignored after it starts
@@ -219,6 +220,8 @@ export interface GameOptions {
   /** 必杀演出「特写」：主角色放 L 时全场冻住 ULT_FREEZE 秒并省掉 L 横幅（画面由 ui/ultCut.ts 演）。
    *  关着就是「报幕」：不停顿，照旧挂横幅。main.ts 按设置传入，联机按双方协商（两端必须一致）；缺省关。 */
   ultFreeze?: boolean;
+  /** 音浪无双的导演随开演加载，普通对局不需要它。 */
+  createMusou?(game: FightGame): MusouDirector;
   onHUD?(g: FightGame): void;
   onBanner?(title: string, sub: string): void;
   onEnd?(title: string, stats: string): void;
@@ -348,6 +351,8 @@ export class FightGame {
   private finaleFlight = false;
   keys = new Set<string>();
 
+  /** 音浪无双模式导演实例；非无双模式为 null。 */
+  musou: MusouDirector | null = null;
   private accumulator = 0;
   private lastFrame = 0;
   private uiClock = 0;
@@ -411,6 +416,13 @@ export class FightGame {
     return code === 'Escape' || CONTROLS.some(c => c.left === code || c.right === code || c.block === code || c.jump.includes(code) || c.attacks.includes(code));
   }
 
+  /** Allocate a unique fighter id for summons, mobs, and bosses. */
+  nextFighterId(): number { return this.minionSeq++; }
+  /** Ensure totalHits / maxCombo arrays cover the given fighter id. */
+  ensureStats(id: number): void {
+    while (this.totalHits.length <= id) { this.totalHits.push(0); this.maxCombo.push(0); }
+  }
+
   /* ---- round lifecycle ---- */
   resetRound(): void {
     this.roundFin = ['', ''];
@@ -421,11 +433,13 @@ export class FightGame {
     this.finaleFlight = false;
     // 剧情闯关的二打一也走 team：我方两人照 2V2 站位，对面一人站在 2V2 的前排。
     // 一打二（allies 1）照无尽激战站位：我方一人在左，对面两人在右。
-    const spawn = this.mode === 'team' ? (this.characters.length === 3 ? (this.options.allies === 1 ? CHALLENGE_SPAWN : TEAM_SPAWN.slice(0, 3)) : TEAM_SPAWN)
+    const spawn = this.mode === 'musou' ? [{ x: 240, facing: 1 as const, team: 0, controller: 0 as number | null }]
+      : this.mode === 'team' ? (this.characters.length === 3 ? (this.options.allies === 1 ? CHALLENGE_SPAWN : TEAM_SPAWN.slice(0, 3)) : TEAM_SPAWN)
       : this.mode === 'challenge' ? (this.characters.length === 2 ? DUO_SPAWN : CHALLENGE_SPAWN)
       : DUO_SPAWN;
     const controls = this.options.controllers;
-    this.fighters = this.characters.map((d, i) => {
+    const cast = this.mode === 'musou' ? this.characters.slice(0, 1) : this.characters;
+    this.fighters = cast.map((d, i) => {
       const f = makeFighter(d, i, {
         ...spawn[i],
         controller: controls ? (controls[i] ?? null) : spawn[i].controller,
@@ -471,7 +485,15 @@ export class FightGame {
     this.hitstop = 0;
     this.timeStop = null;
     this.keys.clear();
-    this.setBanner('ROUND ' + this.round, this.roundsToWin === 1 ? '单回合决胜 · READY' : '先赢两回合 · READY');
+    if (this.mode === 'musou') {
+      this.phase = 'fight';
+      this.phaseTime = 0;
+      if (!this.options.createMusou) throw new Error('Musou needs a director');
+      this.musou = this.options.createMusou(this);
+    } else {
+      this.musou = null;
+      this.setBanner('ROUND ' + this.round, this.roundsToWin === 1 ? '单回合决胜 · READY' : '先赢两回合 · READY');
+    }
     this.options.onHUD?.(this);
   }
 
@@ -483,7 +505,8 @@ export class FightGame {
     if (!this.lastFrame) this.lastFrame = nowMs;
     const delta = Math.min((nowMs - this.lastFrame) / 1000, .05);
     this.lastFrame = nowMs;
-    this.accumulator += delta;
+    // 音浪无双的慢动作收尾：模拟时间按导演给的倍率走（画面、音乐照常）。
+    this.accumulator += delta * (this.musou?.timeScale ?? 1);
     while (this.accumulator >= STEP) {
       this.step(STEP);
       this.accumulator -= STEP;
@@ -642,6 +665,11 @@ export class FightGame {
   }
 
   attack(f: Fighter, index: number): boolean {
+    // 音浪无双：主角空中按 K = 下砸（导演接管）；下砸、冲锋途中不出别的招。
+    if (this.musou && f === this.fighters[0]) {
+      if (this.musou.busy()) return false;
+      if (index === 1 && this.airborne(f) && this.musou.startSlam(f)) return true;
+    }
     const slot = this.frenzyChain(f, index);
     if (!this.canAttack(f, slot)) return false;
     const skill = this.skillFor(f, slot);
@@ -859,7 +887,7 @@ export class FightGame {
       return;
     }
 
-    if (this.mode !== 'training') this.time -= dt;
+    if (this.mode !== 'training' && this.mode !== 'musou') this.time -= dt;
     stepAI(this, dt);
     this.stepEchos(dt);
     stepDomains(this, dt);
@@ -869,8 +897,20 @@ export class FightGame {
     for (const f of this.fighters) advanceAnim(f, dt);
     this.snapFollowers();
     stepProjectiles(this, dt);
-
-    if (this.mode === 'training') {
+    if (this.mode === 'musou' && this.musou) {
+      this.musou.step(this, dt);
+      if (!this.teamAlive(0)) {
+        this.phase = 'finished';
+        this.winnerTeam = 1;
+        const lead = this.fighters[0];
+        const sec = Math.floor(this.musou.elapsed);
+        const stats = `坚持 ${Math.floor(sec / 60)}分${sec % 60}秒 · ${this.musou.halfLabel} · 击破 ${this.musou.kills} · 打倒梦魇 ${this.musou.bossesDefeated}`;
+        this.audio.play('ko');
+        this.options.onHUD?.(this);
+        this.options.onEnd?.(`${lead.data.name} · 演出谢幕`, stats);
+        return;
+      }
+    } else if (this.mode === 'training') {
       // Empty bar refills. Damage in between just sticks; stopping the combo does not heal.
       const heal = this.options.training?.quickHeal === true;
       for (const f of this.fighters) {
@@ -1244,6 +1284,8 @@ export class FightGame {
 
   private startDodge(f: Fighter): void {
     if (f.purge > 0) return;
+    // 音浪无双：主角的闪避换成往前冲锋穿人（导演接管，没格子了就退回原版闪避）。
+    if (this.musou && f === this.fighters[0] && this.musou.startDash(this, f)) return;
     f.dodge = DODGE_TIME;
     f.dodgeCd = DODGE_CD * f.dodgeCdMul * (formTune(f)?.dodgeCd ?? 1);
     f.invuln = Math.max(f.invuln, DODGE_INVULN);
@@ -1375,6 +1417,8 @@ export class FightGame {
     }
 
     if (f.jumpRequest) { f.jumpBuffer = INPUT_BUFFER; f.jumpRequest = false; }
+    // 音浪无双：主角空中再按一次跳 = 二段跳。
+    if (this.musou && f === this.fighters[0] && f.jumpBuffer > 0 && !grounded && this.musou.airJump(this, f)) f.jumpBuffer = 0;
     const jumpHeld = human && !!c && c.jump.some(code => this.keys.has(code));
     const canHop = grounded && f.stun <= 0 && f.knocked <= 0 && f.dodge <= 0 && !f.blocking && f.root <= 0 && f.ban <= 0 && !following;
     // 跳取消: a skill can name the second a jump press drops the move and hops. No cooldown refund —
@@ -1415,6 +1459,10 @@ export class FightGame {
         if (f.vy < 0 && f.y >= FLOOR - 2) f.cooldowns[index] = 0;
         this.attack(f, index);
       }
+    }
+    // 音浪无双地面按住 J 自动连挥普攻，减负防手酸；重击和踩拍点按照常手动。
+    if (this.mode === 'musou' && human && c && f === this.fighters[0] && !this.airborne(f) && !f.attack && !f.queue.length && !this.musou?.busy() && this.keys.has(c.attacks[0])) {
+      this.attack(f, 0);
     }
 
     if (f.dodge > 0) {
